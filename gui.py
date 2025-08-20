@@ -14,39 +14,41 @@ from orders import copy_per_production_and_orders, DEFAULT_FOOTER_NOTE
 def start_gui():
     import tkinter as tk
     from tkinter import ttk, filedialog, messagebox, simpledialog
+    import sys
 
-    BG_COLOR = "#2B1B2B"
-    BTN_BG = "#FF77FF"
-    BTN_FG = "#1A1A1A"
-    TXT_FG = "#F8C4FF"
-    TREE_ODD_BG = "#3A213A"
-    TREE_EVEN_BG = "#4D2C4D"
+    TREE_ODD_BG = "#FFFFFF"
+    TREE_EVEN_BG = "#F5F5F5"
+
+    style = ttk.Style()
+    if sys.platform == "darwin":
+        style.theme_use("aqua")
+    else:
+        style.theme_use("clam")
 
     class SuppliersManagerWin(tk.Toplevel):
         def __init__(self, master, db: SuppliersDB, on_change=None):
             super().__init__(master)
             self.title("Leveranciers Beheer")
-            self.configure(bg=BG_COLOR)
             self.db = db
             self.on_change = on_change
             self.minsize(960, 480)
 
             # Bovenbalk: Zoek links, knoppen rechts
-            topbar = tk.Frame(self, bg=BG_COLOR); topbar.pack(fill="x", padx=8, pady=(8,4))
-            left = tk.Frame(topbar, bg=BG_COLOR); left.pack(side="left", fill="x", expand=True)
-            tk.Label(left, text="Zoek:", bg=BG_COLOR, fg=TXT_FG).pack(side="left")
+            topbar = tk.Frame(self); topbar.pack(fill="x", padx=8, pady=(8,4))
+            left = tk.Frame(topbar); left.pack(side="left", fill="x", expand=True)
+            tk.Label(left, text="Zoek:").pack(side="left")
             self.search_var = tk.StringVar()
-            se = tk.Entry(left, textvariable=self.search_var, bg="#3A213A", fg=TXT_FG, insertbackground=TXT_FG, width=32)
+            se = tk.Entry(left, textvariable=self.search_var, width=32)
             se.pack(side="left", padx=6)
             se.bind("<KeyRelease>", lambda e: self.refresh())
 
-            btns = tk.Frame(topbar, bg=BG_COLOR); btns.pack(side="right")
-            tk.Button(btns, text="Toevoegen", bg=BTN_BG, fg=BTN_FG, command=self.add_supplier).pack(side="left", padx=4)
-            tk.Button(btns, text="Verwijderen", bg=BTN_BG, fg=BTN_FG, command=self.remove_sel).pack(side="left", padx=4)
-            tk.Button(btns, text="Favoriet ★", bg=BTN_BG, fg=BTN_FG, command=self.toggle_fav_sel).pack(side="left", padx=4)
-            tk.Button(btns, text="Update uit CSV (merge)", bg=BTN_BG, fg=BTN_FG, command=self.update_from_csv).pack(side="left", padx=4)
-            tk.Button(btns, text="Alles verwijderen", bg="#ffb3b3", fg="#1A1A1A", command=self.clear_all).pack(side="left", padx=4)
-            tk.Button(btns, text="Sluiten", bg=BTN_BG, fg=BTN_FG, command=self.destroy).pack(side="left", padx=4)
+            btns = tk.Frame(topbar); btns.pack(side="right")
+            tk.Button(btns, text="Toevoegen", command=self.add_supplier).pack(side="left", padx=4)
+            tk.Button(btns, text="Verwijderen", command=self.remove_sel).pack(side="left", padx=4)
+            tk.Button(btns, text="Favoriet ★", command=self.toggle_fav_sel).pack(side="left", padx=4)
+            tk.Button(btns, text="Update uit CSV (merge)", command=self.update_from_csv).pack(side="left", padx=4)
+            tk.Button(btns, text="Alles verwijderen", command=self.clear_all).pack(side="left", padx=4)
+            tk.Button(btns, text="Sluiten", command=self.destroy).pack(side="left", padx=4)
 
             # Tabel: verberg postcode, gemeente, land
             cols = ("★","Supplier","Description","BTW","E-mail","Tel","Adres_1","Adres_2")
@@ -58,8 +60,7 @@ def start_gui():
             self.tree.pack(fill="both", expand=True, padx=8, pady=(4,8))
 
             style = ttk.Style(self)
-            style.theme_use("clam")
-            style.configure("Treeview", background=BG_COLOR, fieldbackground=BG_COLOR, foreground=TXT_FG, rowheight=22)
+            style.configure("Treeview", rowheight=22)
             self.tree.tag_configure("oddrow", background=TREE_ODD_BG)
             self.tree.tag_configure("evenrow", background=TREE_EVEN_BG)
 
@@ -151,7 +152,6 @@ def start_gui():
         def __init__(self, master, productions: List[str], db: SuppliersDB, callback):
             super().__init__(master)
             self.title("Selecteer leveranciers per productie")
-            self.configure(bg=BG_COLOR)
             self.db = db
             self.callback = callback
             self._preview_supplier: Optional[Supplier] = None
@@ -162,19 +162,19 @@ def start_gui():
             self.grid_columnconfigure(0, weight=1)
             self.grid_rowconfigure(0, weight=1)
 
-            content = tk.Frame(self, bg=BG_COLOR)
+            content = tk.Frame(self)
             content.grid(row=0, column=0, sticky="nsew", padx=10, pady=6)
             content.grid_columnconfigure(0, weight=1)  # left
             content.grid_columnconfigure(1, weight=0)  # right
 
             # Left: per productie comboboxen
-            left = tk.Frame(content, bg=BG_COLOR)
+            left = tk.Frame(content)
             left.grid(row=0, column=0, sticky="nw", padx=(0,8))
             self.rows = []
             for prod in productions:
-                row = tk.Frame(left, bg=BG_COLOR)
+                row = tk.Frame(left)
                 row.pack(fill="x", pady=3)
-                tk.Label(row, text=prod, bg=BG_COLOR, fg=TXT_FG, width=18, anchor="w").pack(side="left")
+                tk.Label(row, text=prod, width=18, anchor="w").pack(side="left")
                 var = tk.StringVar()
                 self.sel_vars[prod] = var
                 combo = ttk.Combobox(row, textvariable=var, state="normal", width=50)
@@ -187,23 +187,21 @@ def start_gui():
             # Right: preview details (klikbaar) in LabelFrame met ondertitel
             right = tk.LabelFrame(content,
                                   text="Leverancier details\n(klik om te selecteren)",
-                                  fg=TXT_FG, bg=BG_COLOR, labelanchor="n")
+                                  labelanchor="n")
             right.grid(row=0, column=1, sticky="ne", padx=(8,0))
-            self.preview = tk.Label(right, text="", justify="left", bg=BG_COLOR, fg=TXT_FG, anchor="nw", cursor="hand2")
+            self.preview = tk.Label(right, text="", justify="left", anchor="nw", cursor="hand2")
             self.preview.pack(fill="both", expand=True, padx=8, pady=8)
             self.preview.configure(wraplength=360)
             self.preview.bind("<Button-1>", self._on_preview_click)
 
             # Buttons bar (altijd zichtbaar)
-            btns = tk.Frame(self, bg=BG_COLOR)
+            btns = tk.Frame(self)
             btns.grid(row=1, column=0, sticky="ew", padx=10, pady=(6,10))
             btns.grid_columnconfigure(0, weight=1)
             self.remember_var = tk.BooleanVar(value=True)
-            tk.Checkbutton(btns, text="Onthoud keuze per productie", variable=self.remember_var,
-                           bg=BG_COLOR, fg=TXT_FG, selectcolor=BG_COLOR,
-                           activebackground=BG_COLOR, activeforeground=TXT_FG).grid(row=0, column=0, sticky="w")
-            tk.Button(btns, text="Annuleer", bg=BTN_BG, fg=BTN_FG, command=self.destroy).grid(row=0, column=1, sticky="e", padx=(4,0))
-            tk.Button(btns, text="Bevestig", bg=BTN_BG, fg=BTN_FG, command=self._confirm).grid(row=0, column=2, sticky="e")
+            tk.Checkbutton(btns, text="Onthoud keuze per productie", variable=self.remember_var).grid(row=0, column=0, sticky="w")
+            tk.Button(btns, text="Annuleer", command=self.destroy).grid(row=0, column=1, sticky="e", padx=(4,0))
+            tk.Button(btns, text="Bevestig", command=self._confirm).grid(row=0, column=2, sticky="e")
 
             # Init
             self._refresh_options(initial=True)
@@ -343,7 +341,6 @@ def start_gui():
         def __init__(self):
             super().__init__()
             self.title("File Hopper – Miami Vice Edition (Dual-mode)")
-            self.configure(bg=BG_COLOR)
             self.minsize(1024, 720)
 
             self.db = SuppliersDB.load(SUPPLIERS_DB_FILE)
@@ -353,32 +350,32 @@ def start_gui():
             self.bom_df: Optional[pd.DataFrame] = None
 
             # Top folders
-            top = tk.Frame(self, bg=BG_COLOR); top.pack(fill="x", padx=8, pady=6)
-            tk.Label(top, text="Bronmap:", fg=TXT_FG, bg=BG_COLOR).grid(row=0, column=0, sticky="w")
-            self.src_entry = tk.Entry(top, width=60, bg="#3A213A", fg=TXT_FG, insertbackground=TXT_FG); self.src_entry.grid(row=0, column=1, padx=4)
-            tk.Button(top, text="Bladeren", command=self._pick_src, bg=BTN_BG, fg=BTN_FG).grid(row=0, column=2, padx=4)
+            top = tk.Frame(self); top.pack(fill="x", padx=8, pady=6)
+            tk.Label(top, text="Bronmap:").grid(row=0, column=0, sticky="w")
+            self.src_entry = tk.Entry(top, width=60); self.src_entry.grid(row=0, column=1, padx=4)
+            tk.Button(top, text="Bladeren", command=self._pick_src).grid(row=0, column=2, padx=4)
 
-            tk.Label(top, text="Bestemmingsmap:", fg=TXT_FG, bg=BG_COLOR).grid(row=1, column=0, sticky="w")
-            self.dst_entry = tk.Entry(top, width=60, bg="#3A213A", fg=TXT_FG, insertbackground=TXT_FG); self.dst_entry.grid(row=1, column=1, padx=4)
-            tk.Button(top, text="Bladeren", command=self._pick_dst, bg=BTN_BG, fg=BTN_FG).grid(row=1, column=2, padx=4)
+            tk.Label(top, text="Bestemmingsmap:").grid(row=1, column=0, sticky="w")
+            self.dst_entry = tk.Entry(top, width=60); self.dst_entry.grid(row=1, column=1, padx=4)
+            tk.Button(top, text="Bladeren", command=self._pick_dst).grid(row=1, column=2, padx=4)
 
             # Filters
-            filt = tk.LabelFrame(self, text="Selecteer bestandstypen om te kopiëren", fg=TXT_FG, bg=BG_COLOR, labelanchor="n"); filt.pack(fill="x", padx=8, pady=6)
+            filt = tk.LabelFrame(self, text="Selecteer bestandstypen om te kopiëren", labelanchor="n"); filt.pack(fill="x", padx=8, pady=6)
             self.pdf_var = tk.IntVar(); self.step_var = tk.IntVar(); self.dxf_var = tk.IntVar(); self.dwg_var = tk.IntVar()
-            tk.Checkbutton(filt, text="PDF (.pdf)", variable=self.pdf_var, fg=TXT_FG, bg=BG_COLOR, selectcolor=BG_COLOR).pack(anchor="w", padx=8)
-            tk.Checkbutton(filt, text="STEP (.step, .stp)", variable=self.step_var, fg=TXT_FG, bg=BG_COLOR, selectcolor=BG_COLOR).pack(anchor="w", padx=8)
-            tk.Checkbutton(filt, text="DXF (.dxf)", variable=self.dxf_var, fg=TXT_FG, bg=BG_COLOR, selectcolor=BG_COLOR).pack(anchor="w", padx=8)
-            tk.Checkbutton(filt, text="DWG (.dwg)", variable=self.dwg_var, fg=TXT_FG, bg=BG_COLOR, selectcolor=BG_COLOR).pack(anchor="w", padx=8)
+            tk.Checkbutton(filt, text="PDF (.pdf)", variable=self.pdf_var).pack(anchor="w", padx=8)
+            tk.Checkbutton(filt, text="STEP (.step, .stp)", variable=self.step_var).pack(anchor="w", padx=8)
+            tk.Checkbutton(filt, text="DXF (.dxf)", variable=self.dxf_var).pack(anchor="w", padx=8)
+            tk.Checkbutton(filt, text="DWG (.dwg)", variable=self.dwg_var).pack(anchor="w", padx=8)
 
             # BOM controls
-            bf = tk.Frame(self, bg=BG_COLOR); bf.pack(fill="x", padx=8, pady=6)
-            tk.Button(bf, text="Laad BOM (CSV/Excel)", command=self._load_bom, bg=BTN_BG, fg=BTN_FG).pack(side="left", padx=6)
-            tk.Button(bf, text="Leveranciers Beheer", command=self._open_suppliers, bg=BTN_BG, fg=BTN_FG).pack(side="left", padx=6)
-            tk.Button(bf, text="Controleer Bestanden", command=self._check_files, bg=BTN_BG, fg=BTN_FG).pack(side="left", padx=6)
+            bf = tk.Frame(self); bf.pack(fill="x", padx=8, pady=6)
+            tk.Button(bf, text="Laad BOM (CSV/Excel)", command=self._load_bom).pack(side="left", padx=6)
+            tk.Button(bf, text="Leveranciers Beheer", command=self._open_suppliers).pack(side="left", padx=6)
+            tk.Button(bf, text="Controleer Bestanden", command=self._check_files).pack(side="left", padx=6)
 
             # Tree
-            style = ttk.Style(self); style.theme_use("clam")
-            style.configure("Treeview", background=BG_COLOR, fieldbackground=BG_COLOR, foreground=TXT_FG, rowheight=24)
+            style = ttk.Style(self)
+            style.configure("Treeview", rowheight=24)
             self.tree = ttk.Treeview(self, columns=("PartNumber","Description","Production","Bestanden gevonden","Status"), show="headings")
             for col in ("PartNumber","Description","Production","Bestanden gevonden","Status"):
                 self.tree.heading(col, text=col)
@@ -390,13 +387,13 @@ def start_gui():
             self.tree.pack(fill="both", expand=True, padx=8, pady=6)
 
             # Actions
-            act = tk.Frame(self, bg=BG_COLOR); act.pack(fill="x", padx=8, pady=8)
-            tk.Button(act, text="Kopieer zonder submappen", command=self._copy_flat, bg="#c8f7c5", fg="#1A1A1A").pack(side="left", padx=6)
-            tk.Button(act, text="Kopieer per productie + bestelbonnen", command=self._copy_per_prod, bg="#bfe0ff", fg="#1A1A1A").pack(side="left", padx=6)
+            act = tk.Frame(self); act.pack(fill="x", padx=8, pady=8)
+            tk.Button(act, text="Kopieer zonder submappen", command=self._copy_flat).pack(side="left", padx=6)
+            tk.Button(act, text="Kopieer per productie + bestelbonnen", command=self._copy_per_prod).pack(side="left", padx=6)
 
             # Status
             self.status_var = tk.StringVar(value="Klaar")
-            tk.Label(self, textvariable=self.status_var, anchor="w", bg=BG_COLOR, fg=TXT_FG).pack(fill="x", padx=8, pady=(0,8))
+            tk.Label(self, textvariable=self.status_var, anchor="w").pack(fill="x", padx=8, pady=(0,8))
 
         def _open_suppliers(self):
             SuppliersManagerWin(self, self.db, on_change=lambda: None)
