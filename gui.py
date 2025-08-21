@@ -22,8 +22,8 @@ def start_gui():
     from tkinter import ttk, filedialog, messagebox, simpledialog
     import sys
 
-    TREE_ODD_BG = "#FFFFFF"
-    TREE_EVEN_BG = "#F5F5F5"
+    TREE_ODD_BG = "#262A4A"
+    TREE_EVEN_BG = "#1B1F3B"
 
     style = ttk.Style()
     if sys.platform == "darwin":
@@ -76,7 +76,18 @@ def start_gui():
             self.tree.pack(fill="both", expand=True, padx=8, pady=(4,8))
 
             style = ttk.Style(self)
-            style.configure("Treeview", rowheight=22)
+            style.configure(
+                "Treeview",
+                rowheight=22,
+                background=MIAMI_BG,
+                fieldbackground=MIAMI_BG,
+                foreground=MIAMI_TEXT,
+            )
+            style.map(
+                "Treeview",
+                background=[("selected", MIAMI_TEAL)],
+                foreground=[("selected", MIAMI_BG)],
+            )
             self.tree.tag_configure("oddrow", background=TREE_ODD_BG)
             self.tree.tag_configure("evenrow", background=TREE_EVEN_BG)
 
