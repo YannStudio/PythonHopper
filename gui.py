@@ -16,6 +16,7 @@ MIAMI_BG = "#1B1F3B"
 MIAMI_PINK = "#FF6EC7"
 MIAMI_TEAL = "#2EF9FF"
 MIAMI_TEXT = "#FFFFFF"
+MIAMI_FONT = ("Helvetica", 10)
 
 def start_gui():
     import tkinter as tk
@@ -33,11 +34,13 @@ def start_gui():
 
     # Global styling for Miami Vice theme
     style.configure("TFrame", background=MIAMI_BG)
-    style.configure("TLabel", background=MIAMI_BG, foreground=MIAMI_TEXT)
-    style.configure("TCheckbutton", background=MIAMI_BG, foreground=MIAMI_TEXT)
+    style.configure("TLabel", background=MIAMI_BG, foreground=MIAMI_TEXT, font=MIAMI_FONT)
+    style.configure("TCheckbutton", background=MIAMI_BG, foreground=MIAMI_TEXT, font=MIAMI_FONT)
     style.configure("TLabelframe", background=MIAMI_BG, foreground=MIAMI_TEXT)
-    style.configure("TLabelframe.Label", background=MIAMI_BG, foreground=MIAMI_TEXT)
-    style.configure("Miami.TButton", background=MIAMI_PINK, foreground=MIAMI_TEXT)
+    style.configure("TLabelframe.Label", background=MIAMI_BG, foreground=MIAMI_TEXT, font=MIAMI_FONT)
+    style.configure("Miami.TButton", background=MIAMI_PINK, foreground=MIAMI_TEXT, font=MIAMI_FONT)
+    style.configure("Treeview.Heading", background=MIAMI_PINK, foreground=MIAMI_TEXT, font=MIAMI_FONT)
+    style.configure("Preview.TLabel", background=MIAMI_BG, foreground=MIAMI_TEXT, font=MIAMI_FONT)
     style.map("Miami.TButton", background=[("active", MIAMI_TEAL), ("pressed", MIAMI_TEAL)])
 
     class SuppliersManagerWin(tk.Toplevel):
@@ -50,15 +53,15 @@ def start_gui():
             self.minsize(960, 480)
 
             # Bovenbalk: Zoek links, knoppen rechts
-            topbar = ttk.Frame(self); topbar.pack(fill="x", padx=8, pady=(8,4))
-            left = ttk.Frame(topbar); left.pack(side="left", fill="x", expand=True)
+            topbar = ttk.Frame(self, style="TFrame"); topbar.pack(fill="x", padx=8, pady=(8,4))
+            left = ttk.Frame(topbar, style="TFrame"); left.pack(side="left", fill="x", expand=True)
             ttk.Label(left, text="Zoek:").pack(side="left")
             self.search_var = tk.StringVar()
             se = tk.Entry(left, textvariable=self.search_var, width=32)
             se.pack(side="left", padx=6)
             se.bind("<KeyRelease>", lambda e: self.refresh())
 
-            btns = ttk.Frame(topbar); btns.pack(side="right")
+            btns = ttk.Frame(topbar, style="TFrame"); btns.pack(side="right")
             ttk.Button(btns, text="Toevoegen", command=self.add_supplier, style="Miami.TButton").pack(side="left", padx=4)
             ttk.Button(btns, text="Verwijderen", command=self.remove_sel, style="Miami.TButton").pack(side="left", padx=4)
             ttk.Button(btns, text="Favoriet ★", command=self.toggle_fav_sel, style="Miami.TButton").pack(side="left", padx=4)
@@ -82,6 +85,7 @@ def start_gui():
                 background=MIAMI_BG,
                 fieldbackground=MIAMI_BG,
                 foreground=MIAMI_TEXT,
+                font=MIAMI_FONT,
             )
             style.map(
                 "Treeview",
@@ -190,17 +194,17 @@ def start_gui():
             self.grid_columnconfigure(0, weight=1)
             self.grid_rowconfigure(0, weight=1)
 
-            content = ttk.Frame(self)
+            content = ttk.Frame(self, style="TFrame")
             content.grid(row=0, column=0, sticky="nsew", padx=10, pady=6)
             content.grid_columnconfigure(0, weight=1)  # left
             content.grid_columnconfigure(1, weight=0)  # right
 
             # Left: per productie comboboxen
-            left = ttk.Frame(content)
+            left = ttk.Frame(content, style="TFrame")
             left.grid(row=0, column=0, sticky="nw", padx=(0,8))
             self.rows = []
             for prod in productions:
-                row = ttk.Frame(left)
+                row = ttk.Frame(left, style="TFrame")
                 row.pack(fill="x", pady=3)
                 ttk.Label(row, text=prod, width=18, anchor="w").pack(side="left")
                 var = tk.StringVar()
@@ -215,15 +219,16 @@ def start_gui():
             # Right: preview details (klikbaar) in LabelFrame met ondertitel
             right = ttk.LabelFrame(content,
                                   text="Leverancier details\n(klik om te selecteren)",
-                                  labelanchor="n")
+                                  labelanchor="n",
+                                  style="TLabelframe")
             right.grid(row=0, column=1, sticky="ne", padx=(8,0))
-            self.preview = ttk.Label(right, text="", justify="left", anchor="nw", cursor="hand2")
+            self.preview = ttk.Label(right, text="", justify="left", anchor="nw", cursor="hand2", style="Preview.TLabel")
             self.preview.pack(fill="both", expand=True, padx=8, pady=8)
             self.preview.configure(wraplength=360)
             self.preview.bind("<Button-1>", self._on_preview_click)
 
             # Buttons bar (altijd zichtbaar)
-            btns = ttk.Frame(self)
+            btns = ttk.Frame(self, style="TFrame")
             btns.grid(row=1, column=0, sticky="ew", padx=10, pady=(6,10))
             btns.grid_columnconfigure(0, weight=1)
             self.remember_var = tk.BooleanVar(value=True)
