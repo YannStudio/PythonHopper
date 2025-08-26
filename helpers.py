@@ -31,7 +31,7 @@ def _pn_wrap_25(pn: str) -> str:
 
 def _material_nowrap(s: str) -> str:
     """Voorkom wrapping in Paragraph: vervang spaties door &nbsp;."""
-    return _to_str(s).replace(" ", "&nbsp;").replace("-", "&#8209;")  # non-breaking hyphen
+    return _to_str(s).replace(" ", "&nbsp;")
 
 
 def _build_file_index(source_folder: str, selected_exts: List[str]) -> Dict[str, List[str]]:

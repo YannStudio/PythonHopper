@@ -8,6 +8,7 @@ import os
 import sys
 import shutil
 import datetime
+import re
 from collections import defaultdict
 from typing import Dict, List, Tuple
 
@@ -26,6 +27,7 @@ try:
         TableStyle,
         Spacer,
     )
+    from reportlab.pdfbase.pdfmetrics import stringWidth
     REPORTLAB_OK = True
 except Exception:
     REPORTLAB_OK = False
@@ -49,6 +51,20 @@ from helpers import (
 from models import Supplier, Client
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from bom import load_bom  # noqa: F401 - imported for module dependency
+
+
+def _parse_qty(val: object) -> int:
+    """Parse quantity values to int within [1, 999]."""
+    s = _to_str(val).strip()
+    if not s:
+        return 1
+    s = s.replace(",", ".")
+    s = re.sub(r"[^0-9.]+", "", s)
+    try:
+        q = int(float(s))
+    except Exception:
+        q = 1
+    return max(1, min(999, q))
 
 
 def generate_pdf_order_platypus(
@@ -141,10 +157,7 @@ def generate_pdf_order_platypus(
         pn = _pn_wrap_25(it.get("PartNumber", ""))
         desc = _to_str(it.get("Description", ""))
         mat = _material_nowrap(it.get("Materiaal", ""))
-        qty = int(
-            pd.to_numeric(_to_str(it.get("Aantal", "")).strip() or 1, errors="coerce") or 1
-        )
-        qty = max(1, min(999, qty))
+        qty = _parse_qty(it.get("Aantal", ""))
         opp = _num_to_2dec(it.get("Oppervlakte", ""))
         gew = _num_to_2dec(it.get("Gewicht", ""))
         data.append(
@@ -160,7 +173,26 @@ def generate_pdf_order_platypus(
 
     usable_w = width - 2 * margin
     col_fracs = [0.22, 0.40, 0.14, 0.06, 0.09, 0.09]
-    col_widths = [usable_w * f for f in col_fracs]
+    desc_w = usable_w * col_fracs[1]
+    mat_w = usable_w * col_fracs[2]
+    try:
+        max_desc = (
+            max(stringWidth(_to_str(it.get("Description", "")), "Helvetica", 9) for it in items)
+            + 6
+        )
+        if max_desc < desc_w:
+            mat_w += desc_w - max_desc
+            desc_w = max_desc
+    except Exception:
+        pass
+    col_widths = [
+        usable_w * col_fracs[0],
+        desc_w,
+        mat_w,
+        usable_w * col_fracs[3],
+        usable_w * col_fracs[4],
+        usable_w * col_fracs[5],
+    ]
 
     tbl = LongTable(data, colWidths=col_widths, repeatRows=1)
     tbl.setStyle(
@@ -251,13 +283,21 @@ def pick_supplier_for_production(
     prod: str, db: SuppliersDB, override_map: Dict[str, str]
 ) -> Supplier:
     """Select a supplier for a given production."""
-    name = override_map.get(prod) or db.get_default(prod)
+    name = override_map.get(prod)
     sups = db.suppliers_sorted()
-    if name:
+    if name is not None:
+        if not name.strip():
+            return Supplier(supplier="")
         for s in sups:
             if s.supplier.lower() == name.lower():
                 return s
-    return sups[0] if sups else Supplier(supplier="Onbekend")
+        return Supplier(supplier=name)
+    default = db.get_default(prod)
+    if default:
+        for s in sups:
+            if s.supplier.lower() == default.lower():
+                return s
+    return sups[0] if sups else Supplier(supplier="")
 
 
 def copy_per_production_and_orders(
@@ -296,7 +336,7 @@ def copy_per_production_and_orders(
 
         supplier = pick_supplier_for_production(prod, db, override_map)
         chosen[prod] = supplier.supplier
-        if remember_defaults and supplier.supplier != "Onbekend":
+        if remember_defaults and supplier.supplier not in ("", "Onbekend"):
             db.set_default(prod, supplier.supplier)
 
         items = []
@@ -306,9 +346,7 @@ def copy_per_production_and_orders(
                     "PartNumber": row.get("PartNumber", ""),
                     "Description": row.get("Description", ""),
                     "Materiaal": row.get("Materiaal", ""),
-                    "Aantal": int(
-                        pd.to_numeric(_to_str(row.get("Aantal", "") or 1), errors="coerce") or 1
-                    ),
+                    "Aantal": _parse_qty(row.get("Aantal", "")),
                     "Oppervlakte": row.get("Oppervlakte", ""),
                     "Gewicht": row.get("Gewicht", ""),
                 }
@@ -320,22 +358,22 @@ def copy_per_production_and_orders(
             "vat": client.vat if client else "",
             "email": client.email if client else "",
         }
+        if supplier.supplier:
+            excel_path = os.path.join(prod_folder, f"Bestelbon_{prod}_{today}.xlsx")
+            write_order_excel(excel_path, items, company, supplier)
 
-        excel_path = os.path.join(prod_folder, f"Bestelbon_{prod}_{today}.xlsx")
-        write_order_excel(excel_path, items, company, supplier)
-
-        pdf_path = os.path.join(prod_folder, f"Bestelbon_{prod}_{today}.pdf")
-        try:
-            generate_pdf_order_platypus(
-                pdf_path,
-                company,
-                supplier,
-                prod,
-                items,
-                footer_note=footer_note or DEFAULT_FOOTER_NOTE,
-            )
-        except Exception as e:
-            print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
+            pdf_path = os.path.join(prod_folder, f"Bestelbon_{prod}_{today}.pdf")
+            try:
+                generate_pdf_order_platypus(
+                    pdf_path,
+                    company,
+                    supplier,
+                    prod,
+                    items,
+                    footer_note=footer_note or DEFAULT_FOOTER_NOTE,
+                )
+            except Exception as e:
+                print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
 
     # Persist any (possibly unchanged) supplier defaults so that callers can rely on
     # the database reflecting the latest state on disk.
