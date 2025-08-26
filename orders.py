@@ -46,7 +46,6 @@ from helpers import (
     _pn_wrap_25,
     _material_nowrap,
     _build_file_index,
-    _unique_path,
 )
 from models import Supplier, Client
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
@@ -157,14 +156,14 @@ def generate_pdf_order_platypus(
         pn = _pn_wrap_25(it.get("PartNumber", ""))
         desc = _to_str(it.get("Description", ""))
         mat = _material_nowrap(it.get("Materiaal", ""))
-        qty = _parse_qty(it.get("Aantal", ""))
+        qty = it.get("Aantal", "")
         opp = _num_to_2dec(it.get("Oppervlakte", ""))
         gew = _num_to_2dec(it.get("Gewicht", ""))
         data.append(
             [
                 wrap_cell_html(pn, small=False, align="LEFT"),
                 wrap_cell_html(desc, small=False, align="LEFT"),
-                wrap_cell_html(mat, small=True, align="LEFT"),
+                wrap_cell_html(mat, small=True, align="RIGHT"),
                 wrap_cell_html(qty, small=True, align="RIGHT"),
                 wrap_cell_html(opp, small=True, align="RIGHT"),
                 wrap_cell_html(gew, small=True, align="RIGHT"),
@@ -203,8 +202,8 @@ def generate_pdf_order_platypus(
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                 ("FONTSIZE", (0, 0), (-1, 0), 10),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("ALIGN", (3, 0), (5, 0), "RIGHT"),
-                ("ALIGN", (3, 1), (5, -1), "RIGHT"),
+                ("ALIGN", (2, 0), (5, 0), "RIGHT"),
+                ("ALIGN", (2, 1), (5, -1), "RIGHT"),
                 ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
                 ("LEFTPADDING", (0, 0), (-1, -1), 3),
@@ -330,7 +329,7 @@ def copy_per_production_and_orders(
         for row in rows:
             pn = str(row["PartNumber"])
             for src_file in file_index.get(pn, []):
-                dst = _unique_path(os.path.join(prod_folder, os.path.basename(src_file)))
+                dst = os.path.join(prod_folder, os.path.basename(src_file))
                 shutil.copy2(src_file, dst)
                 count_copied += 1
 
