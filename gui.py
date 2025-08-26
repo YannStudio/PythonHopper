@@ -14,16 +14,9 @@ from orders import copy_per_production_and_orders, DEFAULT_FOOTER_NOTE
 def start_gui():
     import tkinter as tk
     from tkinter import ttk, filedialog, messagebox, simpledialog
-    import sys
 
     TREE_ODD_BG = "#FFFFFF"
     TREE_EVEN_BG = "#F5F5F5"
-
-    style = ttk.Style()
-    if sys.platform == "darwin":
-        style.theme_use("aqua")
-    else:
-        style.theme_use("clam")
 
     class SuppliersManagerWin(tk.Toplevel):
         def __init__(self, master, db: SuppliersDB, on_change=None):
@@ -340,6 +333,12 @@ def start_gui():
     class App(tk.Tk):
         def __init__(self):
             super().__init__()
+            import sys
+            style = ttk.Style(self)
+            if sys.platform == "darwin":
+                style.theme_use("aqua")
+            else:
+                style.theme_use("clam")
             self.title("File Hopper – Miami Vice Edition (Dual-mode)")
             self.minsize(1024, 720)
 
@@ -374,7 +373,6 @@ def start_gui():
             tk.Button(bf, text="Controleer Bestanden", command=self._check_files).pack(side="left", padx=6)
 
             # Tree
-            style = ttk.Style(self)
             style.configure("Treeview", rowheight=24)
             self.tree = ttk.Treeview(self, columns=("PartNumber","Description","Production","Bestanden gevonden","Status"), show="headings")
             for col in ("PartNumber","Description","Production","Bestanden gevonden","Status"):
