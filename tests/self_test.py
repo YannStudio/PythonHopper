@@ -5,8 +5,9 @@ import tempfile
 
 import pandas as pd
 
-from models import Supplier
+from models import Supplier, Client
 from suppliers_db import SuppliersDB
+from clients_db import ClientsDB
 from bom import load_bom
 from orders import copy_per_production_and_orders, DEFAULT_FOOTER_NOTE
 
@@ -29,6 +30,15 @@ def run_tests() -> int:
     assert db.suppliers[0].favorite
     db.set_default("Laser", "ACME")
     assert db.get_default("Laser") == "ACME"
+
+    cdb = ClientsDB()
+    cdb.upsert(Client.from_any({
+        "name": "TestClient",
+        "address": "Straat 1, 1000 Brussel",
+        "vat": "BE000",
+        "email": "test@example.com",
+    }))
+    client = cdb.clients[0]
 
     with tempfile.TemporaryDirectory() as td:
         src = os.path.join(td, "src")
@@ -69,6 +79,7 @@ def run_tests() -> int:
             db,
             {},
             True,
+            client=client,
             footer_note=DEFAULT_FOOTER_NOTE,
         )
         assert cnt == 2
