@@ -24,44 +24,99 @@ def start_gui():
             super().__init__(master)
             self.db = db
             self.on_change = on_change
-            self.list = tk.Listbox(self)
-            self.list.pack(fill="both", expand=True, padx=8, pady=8)
+
+            cols = ("Naam", "Adres", "BTW", "E-mail")
+            self.tree = ttk.Treeview(self, columns=cols, show="headings", selectmode="browse")
+            for c in cols:
+                self.tree.heading(c, text=c)
+                self.tree.column(c, width=160, anchor="w")
+            self.tree.pack(fill="both", expand=True, padx=8, pady=8)
+            self.tree.bind("<Double-1>", lambda _e: self.edit_sel())
+
             btns = tk.Frame(self)
             btns.pack(fill="x")
             tk.Button(btns, text="Toevoegen", command=self.add_client).pack(side="left", padx=4)
+            tk.Button(btns, text="Bewerken", command=self.edit_sel).pack(side="left", padx=4)
             tk.Button(btns, text="Verwijderen", command=self.remove_sel).pack(side="left", padx=4)
             tk.Button(btns, text="Favoriet ★", command=self.toggle_fav_sel).pack(side="left", padx=4)
+            tk.Button(btns, text="Importeer CSV", command=self.import_csv).pack(side="left", padx=4)
             self.refresh()
 
         def refresh(self):
-            self.list.delete(0, "end")
-            for c in self.db.clients_sorted():
-                star = "★ " if c.favorite else ""
-                self.list.insert("end", star + c.name)
+            for it in self.tree.get_children():
+                self.tree.delete(it)
+            for idx, c in enumerate(self.db.clients_sorted()):
+                name = self.db.display_name(c)
+                vals = (name, c.address or "", c.vat or "", c.email or "")
+                tag = "odd" if idx % 2 == 0 else "even"
+                self.tree.insert("", "end", values=vals, tags=(tag,))
+            self.tree.tag_configure("odd", background=TREE_ODD_BG)
+            self.tree.tag_configure("even", background=TREE_EVEN_BG)
 
         def _sel_name(self):
-            sel = self.list.curselection()
+            sel = self.tree.selection()
             if not sel:
                 return None
-            val = self.list.get(sel[0])
-            return val.replace("★ ", "", 1)
+            vals = self.tree.item(sel[0], "values")
+            return vals[0].replace("★ ", "", 1)
+
+        def _open_edit_dialog(self, client: Optional[Client] = None):
+            win = tk.Toplevel(self)
+            win.title("Opdrachtgever")
+            fields = [
+                ("Naam", "name"),
+                ("Adres", "address"),
+                ("BTW", "vat"),
+                ("E-mail", "email"),
+            ]
+            entries = {}
+            for i, (lbl, key) in enumerate(fields):
+                tk.Label(win, text=lbl + ":").grid(row=i, column=0, sticky="e", padx=4, pady=2)
+                ent = tk.Entry(win, width=40)
+                ent.grid(row=i, column=1, padx=4, pady=2)
+                if client:
+                    ent.insert(0, _to_str(getattr(client, key)))
+                entries[key] = ent
+            fav_var = tk.BooleanVar(value=client.favorite if client else False)
+            tk.Checkbutton(win, text="Favoriet", variable=fav_var).grid(row=len(fields), column=1, sticky="w", padx=4, pady=2)
+
+            def _save():
+                rec = {k: e.get().strip() for k, e in entries.items()}
+                rec["favorite"] = fav_var.get()
+                if not rec["name"]:
+                    messagebox.showwarning("Let op", "Naam is verplicht.", parent=win)
+                    return
+                c = Client.from_any(rec)
+                self.db.upsert(c)
+                self.db.save(CLIENTS_DB_FILE)
+                self.refresh()
+                if self.on_change:
+                    self.on_change()
+                win.destroy()
+
+            btnf = tk.Frame(win)
+            btnf.grid(row=len(fields)+1, column=0, columnspan=2, pady=6)
+            tk.Button(btnf, text="Opslaan", command=_save).pack(side="left", padx=4)
+            tk.Button(btnf, text="Annuleer", command=win.destroy).pack(side="left", padx=4)
+            win.transient(self)
+            win.grab_set()
+            entries["name"].focus_set()
 
         def add_client(self):
-            name = simpledialog.askstring("Nieuwe opdrachtgever", "Naam:", parent=self)
-            if not name:
+            self._open_edit_dialog(None)
+
+        def edit_sel(self):
+            n = self._sel_name()
+            if not n:
                 return
-            c = Client.from_any({"name": name})
-            self.db.upsert(c)
-            self.db.save(CLIENTS_DB_FILE)
-            self.refresh()
-            if self.on_change:
-                self.on_change()
+            c = self.db.get(n)
+            if c:
+                self._open_edit_dialog(c)
 
         def remove_sel(self):
             n = self._sel_name()
             if not n:
                 return
-            from tkinter import messagebox
             if messagebox.askyesno("Bevestigen", f"Verwijder '{n}'?", parent=self):
                 if self.db.remove(n):
                     self.db.save(CLIENTS_DB_FILE)
@@ -78,6 +133,36 @@ def start_gui():
                 self.refresh()
                 if self.on_change:
                     self.on_change()
+
+        def import_csv(self):
+            path = filedialog.askopenfilename(filetypes=[("CSV","*.csv"),("Excel","*.xlsx;*.xls")])
+            if not path:
+                return
+            try:
+                if path.lower().endswith((".xls", ".xlsx")):
+                    df = pd.read_excel(path)
+                else:
+                    try:
+                        df = pd.read_csv(path, encoding="latin1", sep=";")
+                    except Exception:
+                        df = read_csv_flex(path)
+            except Exception as e:
+                messagebox.showerror("Fout", str(e))
+                return
+            changed = 0
+            for _, row in df.iterrows():
+                try:
+                    rec = {k: row[k] for k in df.columns if k in row}
+                    c = Client.from_any(rec)
+                    self.db.upsert(c)
+                    changed += 1
+                except Exception:
+                    pass
+            self.db.save(CLIENTS_DB_FILE)
+            self.refresh()
+            if self.on_change:
+                self.on_change()
+            messagebox.showinfo("Import", f"Verwerkt (upsert): {changed}")
 
     class SuppliersManagerFrame(tk.Frame):
         def __init__(self, master, db: SuppliersDB, on_change=None):
