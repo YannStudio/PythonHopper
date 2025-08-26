@@ -9,10 +9,17 @@ import sys
 import shutil
 import datetime
 import re
+import zipfile
 from collections import defaultdict
 from typing import Dict, List, Tuple
 
 import pandas as pd
+from openpyxl.styles import Alignment
+
+try:
+    from PyPDF2 import PdfMerger
+except Exception:  # pragma: no cover - PyPDF2 might be absent
+    PdfMerger = None
 
 # ReportLab (PDF). Script works without it (PDF generation is skipped).
 try:
@@ -121,12 +128,12 @@ def generate_pdf_order_platypus(
     if full_addr:
         supp_lines.append(full_addr)
     supp_lines.append(f"BTW: {supplier.btw or ''}")
+    if supplier.contact_sales:
+        supp_lines.append(f"Contact sales: {supplier.contact_sales}")
     if supplier.sales_email:
         supp_lines.append(f"E-mail: {supplier.sales_email}")
     if supplier.phone:
         supp_lines.append(f"Tel: {supplier.phone}")
-    if supplier.contact_sales:
-        supp_lines.append(f"Contact sales: {supplier.contact_sales}")
 
     story = []
     story.append(Paragraph(f"Bestelbon productie: {production}", title_style))
@@ -175,13 +182,13 @@ def generate_pdf_order_platypus(
     desc_w = usable_w * col_fracs[1]
     mat_w = usable_w * col_fracs[2]
     try:
-        max_desc = (
-            max(stringWidth(_to_str(it.get("Description", "")), "Helvetica", 9) for it in items)
+        max_mat = (
+            max(stringWidth(_material_nowrap(it.get("Materiaal", "")), "Helvetica", 9) for it in items)
             + 6
         )
-        if max_desc < desc_w:
-            mat_w += desc_w - max_desc
-            desc_w = max_desc
+        if max_mat < mat_w:
+            desc_w += mat_w - max_mat
+            mat_w = max_mat
     except Exception:
         pass
     col_widths = [
@@ -277,6 +284,12 @@ def write_order_excel(
             ws.cell(row=r, column=1, value=label)
             ws.cell(row=r, column=2, value=value)
 
+        left_cols = {"PartNumber", "Description"}
+        for col_idx, col_name in enumerate(df.columns, start=1):
+            align = Alignment(horizontal="left" if col_name in left_cols else "right")
+            for row in range(startrow + 1, startrow + len(df) + 2):
+                ws.cell(row=row, column=col_idx).alignment = align
+
 
 def pick_supplier_for_production(
     prod: str, db: SuppliersDB, override_map: Dict[str, str]
@@ -311,6 +324,7 @@ def copy_per_production_and_orders(
     remember_defaults: bool,
     client: Client | None = None,
     footer_note: str = "",
+    zip_parts: bool = False,
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents."""
     os.makedirs(dest, exist_ok=True)
@@ -330,10 +344,19 @@ def copy_per_production_and_orders(
 
         for row in rows:
             pn = str(row["PartNumber"])
-            for src_file in file_index.get(pn, []):
-                dst = os.path.join(prod_folder, os.path.basename(src_file))
-                shutil.copy2(src_file, dst)
-                count_copied += 1
+            files = file_index.get(pn, [])
+            if zip_parts:
+                if files:
+                    zip_path = os.path.join(prod_folder, f"{pn}.zip")
+                    with zipfile.ZipFile(zip_path, "w") as zf:
+                        for src_file in files:
+                            zf.write(src_file, arcname=os.path.basename(src_file))
+                            count_copied += 1
+            else:
+                for src_file in files:
+                    dst = os.path.join(prod_folder, os.path.basename(src_file))
+                    shutil.copy2(src_file, dst)
+                    count_copied += 1
 
         supplier = pick_supplier_for_production(prod, db, override_map)
         chosen[prod] = supplier.supplier
@@ -381,3 +404,35 @@ def copy_per_production_and_orders(
     db.save(SUPPLIERS_DB_FILE)
 
     return count_copied, chosen
+
+
+def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
+    """Combine PDF drawing files per production folder into single PDFs.
+
+    The resulting files are written to a subdirectory ``combined pdf`` inside
+    ``dest``. Output filenames contain the production name and current date.
+    Returns the number of combined PDF files created.
+    """
+    if PdfMerger is None:
+        return 0
+
+    date_str = date_str or datetime.date.today().strftime("%Y-%m-%d")
+    out_dir = os.path.join(dest, "combined pdf")
+    os.makedirs(out_dir, exist_ok=True)
+    count = 0
+    for prod in sorted(os.listdir(dest)):
+        prod_path = os.path.join(dest, prod)
+        if not os.path.isdir(prod_path):
+            continue
+        pdfs = [f for f in os.listdir(prod_path) if f.lower().endswith(".pdf") and not f.startswith("Bestelbon_")]
+        if not pdfs:
+            continue
+        pdfs.sort(key=lambda x: x.lower())
+        merger = PdfMerger()
+        for fname in pdfs:
+            merger.append(os.path.join(prod_path, fname))
+        out_name = f"{prod}_{date_str}_combined.pdf"
+        merger.write(os.path.join(out_dir, out_name))
+        merger.close()
+        count += 1
+    return count

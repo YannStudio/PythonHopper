@@ -12,7 +12,11 @@ from models import Supplier, Client
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from clients_db import ClientsDB, CLIENTS_DB_FILE
 from bom import read_csv_flex, load_bom
-from orders import copy_per_production_and_orders, DEFAULT_FOOTER_NOTE
+from orders import (
+    copy_per_production_and_orders,
+    DEFAULT_FOOTER_NOTE,
+    combine_pdfs_per_production,
+)
 
 def start_gui():
     import tkinter as tk
@@ -587,10 +591,12 @@ def start_gui():
             # Filters
             filt = tk.LabelFrame(main, text="Selecteer bestandstypen om te kopiëren", labelanchor="n"); filt.pack(fill="x", padx=8, pady=6)
             self.pdf_var = tk.IntVar(); self.step_var = tk.IntVar(); self.dxf_var = tk.IntVar(); self.dwg_var = tk.IntVar()
+            self.zip_var = tk.IntVar()
             tk.Checkbutton(filt, text="PDF (.pdf)", variable=self.pdf_var).pack(anchor="w", padx=8)
             tk.Checkbutton(filt, text="STEP (.step, .stp)", variable=self.step_var).pack(anchor="w", padx=8)
             tk.Checkbutton(filt, text="DXF (.dxf)", variable=self.dxf_var).pack(anchor="w", padx=8)
             tk.Checkbutton(filt, text="DWG (.dwg)", variable=self.dwg_var).pack(anchor="w", padx=8)
+            tk.Checkbutton(filt, text="Zip per part", variable=self.zip_var).pack(anchor="w", padx=8)
 
             # BOM controls
             bf = tk.Frame(main); bf.pack(fill="x", padx=8, pady=6)
@@ -631,6 +637,7 @@ def start_gui():
             act = tk.Frame(main); act.pack(fill="x", padx=8, pady=8)
             tk.Button(act, text="Kopieer zonder submappen", command=self._copy_flat).pack(side="left", padx=6)
             tk.Button(act, text="Kopieer per productie + bestelbonnen", command=self._copy_per_prod).pack(side="left", padx=6)
+            tk.Button(act, text="Combine pdf", command=self._combine_pdf).pack(side="left", padx=6)
 
             # Status
             self.status_var = tk.StringVar(value="Klaar")
@@ -820,12 +827,24 @@ def start_gui():
                     cnt, chosen = copy_per_production_and_orders(
                         self.source_folder, self.dest_folder, self.bom_df, exts, self.db, sel_map, remember,
                         client=client,
-                        footer_note=DEFAULT_FOOTER_NOTE
+                        footer_note=DEFAULT_FOOTER_NOTE,
+                        zip_parts=bool(self.zip_var.get())
                     )
                     self.status_var.set(f"Klaar. Gekopieerd: {cnt}. Leveranciers: {chosen}")
                     messagebox.showinfo("Klaar", "Bestelbonnen aangemaakt.")
                 threading.Thread(target=work, daemon=True).start()
             SupplierSelectionPopup(self, prods, self.db, on_sel)
+
+        def _combine_pdf(self):
+            from tkinter import messagebox
+            if not self.dest_folder:
+                messagebox.showwarning("Let op", "Selecteer bestemmingsmap."); return
+            def work():
+                self.status_var.set("PDF's combineren...")
+                cnt = combine_pdfs_per_production(self.dest_folder)
+                self.status_var.set(f"Gecombineerde pdf's: {cnt}")
+                messagebox.showinfo("Klaar", "PDF's gecombineerd.")
+            threading.Thread(target=work, daemon=True).start()
 
     App().mainloop()
 
