@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from helpers import _to_str, _build_file_index, _unique_path
+from helpers import _to_str, _build_file_index
 from models import Supplier, Client
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from clients_db import ClientsDB, CLIENTS_DB_FILE
@@ -589,9 +589,13 @@ def start_gui():
             # BOM controls
             bf = tk.Frame(main); bf.pack(fill="x", padx=8, pady=6)
             tk.Button(bf, text="Laad BOM (CSV/Excel)", command=self._load_bom).pack(side="left", padx=6)
-            tk.Button(bf, text="Klant beheer", command=lambda: self.nb.select(self.clients_frame)).pack(side="left", padx=6)
-            tk.Button(bf, text="Leverancier beheer", command=lambda: self.nb.select(self.suppliers_frame)).pack(side="left", padx=6)
             tk.Button(bf, text="Controleer Bestanden", command=self._check_files).pack(side="left", padx=6)
+
+            pnf = tk.Frame(main); pnf.pack(fill="x", padx=8, pady=(0,6))
+            tk.Label(pnf, text="PartNumbers (één per lijn):").pack(anchor="w")
+            self.pn_text = tk.Text(pnf, height=4)
+            self.pn_text.pack(fill="x")
+            tk.Button(pnf, text="Gebruik PartNumbers", command=self._load_manual_pns).pack(anchor="w", pady=4)
 
             # Tree
             style.configure("Treeview", rowheight=24)
@@ -652,6 +656,30 @@ def start_gui():
             except Exception as e:
                 messagebox.showerror("Fout", str(e))
 
+        def _load_manual_pns(self):
+            text = self.pn_text.get("1.0", "end").strip()
+            if not text:
+                return
+            lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+            if not lines:
+                return
+            n = len(lines)
+            self.bom_df = pd.DataFrame(
+                {
+                    "PartNumber": lines,
+                    "Description": ["" for _ in range(n)],
+                    "Production": ["" for _ in range(n)],
+                    "Bestanden gevonden": ["" for _ in range(n)],
+                    "Status": ["" for _ in range(n)],
+                    "Materiaal": ["" for _ in range(n)],
+                    "Aantal": [1 for _ in range(n)],
+                    "Oppervlakte": ["" for _ in range(n)],
+                    "Gewicht": ["" for _ in range(n)],
+                }
+            )
+            self._refresh_tree()
+            self.status_var.set(f"Partnummers geladen: {n} rijen")
+
         def _refresh_tree(self):
             for it in self.tree.get_children():
                 self.tree.delete(it)
@@ -709,7 +737,7 @@ def start_gui():
                 cnt = 0
                 for _, paths in idx.items():
                     for p in paths:
-                        dst = _unique_path(os.path.join(self.dest_folder, os.path.basename(p)))
+                        dst = os.path.join(self.dest_folder, os.path.basename(p))
                         shutil.copy2(p, dst)
                         cnt += 1
                 self.status_var.set(f"Gekopieerd: {cnt}")
