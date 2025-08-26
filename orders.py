@@ -82,14 +82,6 @@ def generate_pdf_order_platypus(
     text_style.leading = 13
     small_style = ParagraphStyle("small", parent=text_style, fontSize=8.5, leading=10.5)
 
-    # Address: Adres_1, Adres_2 as one line
-    addr_line = None
-    if supplier.adres_1 or supplier.adres_2:
-        if supplier.adres_1 and supplier.adres_2:
-            addr_line = f"{supplier.adres_1}, {supplier.adres_2}"
-        else:
-            addr_line = supplier.adres_1 or supplier.adres_2
-
     company_lines = [
         f"<b>{company_info.get('name','')}</b>",
         f"{company_info.get('address','')}",
@@ -97,23 +89,29 @@ def generate_pdf_order_platypus(
         f"E-mail: {company_info.get('email','')}",
     ]
 
-    supp_lines = [f"<b>Besteld bij:</b> {supplier.supplier}"]
-    if addr_line:
-        supp_lines.append(addr_line)
-    if not addr_line:
-        pc_gem = " ".join(x for x in [supplier.postcode, supplier.gemeente] if x)
-        if pc_gem:
-            supp_lines.append(pc_gem)
-        if supplier.land:
-            supp_lines.append(supplier.land)
+    # Supplier info with full address and contact details
+    addr_parts = []
+    if supplier.adres_1:
+        addr_parts.append(supplier.adres_1)
+    if supplier.adres_2:
+        addr_parts.append(supplier.adres_2)
+    pc_gem = " ".join(x for x in [supplier.postcode, supplier.gemeente] if x)
+    if pc_gem:
+        addr_parts.append(pc_gem)
+    if supplier.land:
+        addr_parts.append(supplier.land)
+    full_addr = ", ".join(addr_parts)
 
+    supp_lines = [f"<b>Besteld bij:</b> {supplier.supplier}"]
+    if full_addr:
+        supp_lines.append(full_addr)
     supp_lines.append(f"BTW: {supplier.btw or ''}")
-    if supplier.contact_sales:
-        supp_lines.append(f"Contact sales: {supplier.contact_sales}")
     if supplier.sales_email:
-        supp_lines.append(f"Sales e-mail: {supplier.sales_email}")
+        supp_lines.append(f"E-mail: {supplier.sales_email}")
     if supplier.phone:
         supp_lines.append(f"Tel: {supplier.phone}")
+    if supplier.contact_sales:
+        supp_lines.append(f"Contact sales: {supplier.contact_sales}")
 
     story = []
     story.append(Paragraph(f"Bestelbon productie: {production}", title_style))
@@ -194,13 +192,59 @@ def generate_pdf_order_platypus(
     doc.build(story)
 
 
-def write_order_excel(path: str, items: List[Dict[str, str]]) -> None:
-    """Write order information to an Excel file."""
+def write_order_excel(
+    path: str,
+    items: List[Dict[str, str]],
+    company_info: Dict[str, str] | None = None,
+    supplier: Supplier | None = None,
+) -> None:
+    """Write order information to an Excel file with header info."""
     df = pd.DataFrame(
         items,
         columns=["PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht"],
     )
-    df.to_excel(path, index=False, engine="openpyxl")
+
+    header_lines: List[Tuple[str, str]] = []
+    if company_info:
+        header_lines.extend(
+            [
+                ("Bedrijf", company_info.get("name", "")),
+                ("Adres", company_info.get("address", "")),
+                ("BTW", company_info.get("vat", "")),
+                ("E-mail", company_info.get("email", "")),
+                ("", ""),
+            ]
+        )
+    if supplier:
+        addr_parts = []
+        if supplier.adres_1:
+            addr_parts.append(supplier.adres_1)
+        if supplier.adres_2:
+            addr_parts.append(supplier.adres_2)
+        pc_gem = " ".join(x for x in [supplier.postcode, supplier.gemeente] if x)
+        if pc_gem:
+            addr_parts.append(pc_gem)
+        if supplier.land:
+            addr_parts.append(supplier.land)
+        full_addr = ", ".join(addr_parts)
+        header_lines.extend(
+            [
+                ("Leverancier", supplier.supplier),
+                ("Adres", full_addr),
+                ("BTW", supplier.btw or ""),
+                ("E-mail", supplier.sales_email or ""),
+                ("Tel", supplier.phone or ""),
+                ("", ""),
+            ]
+        )
+
+    startrow = len(header_lines)
+    with pd.ExcelWriter(path, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, startrow=startrow)
+        ws = writer.sheets[list(writer.sheets.keys())[0]]
+        for r, (label, value) in enumerate(header_lines, start=1):
+            ws.cell(row=r, column=1, value=label)
+            ws.cell(row=r, column=2, value=value)
 
 
 def pick_supplier_for_production(
@@ -270,16 +314,17 @@ def copy_per_production_and_orders(
                 }
             )
 
-        excel_path = os.path.join(prod_folder, f"Bestelbon_{prod}_{today}.xlsx")
-        write_order_excel(excel_path, items)
-
-        pdf_path = os.path.join(prod_folder, f"Bestelbon_{prod}_{today}.pdf")
         company = {
             "name": client.name if client else "",
             "address": client.address if client else "",
             "vat": client.vat if client else "",
             "email": client.email if client else "",
         }
+
+        excel_path = os.path.join(prod_folder, f"Bestelbon_{prod}_{today}.xlsx")
+        write_order_excel(excel_path, items, company, supplier)
+
+        pdf_path = os.path.join(prod_folder, f"Bestelbon_{prod}_{today}.pdf")
         try:
             generate_pdf_order_platypus(
                 pdf_path,
