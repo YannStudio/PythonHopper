@@ -1,5 +1,7 @@
 import os
 import shutil
+import subprocess
+import sys
 import threading
 from typing import Dict, List, Optional
 
@@ -422,6 +424,10 @@ def start_gui():
             for prod, combo in self.rows:
                 typed = combo.get()
                 combo["values"] = self._base_options
+                lower_prod = prod.strip().lower()
+                if lower_prod in ("dummy part", "nan", "spare part"):
+                    combo.set(self._base_options[0])
+                    continue
                 name = self.db.get_default(prod)
                 if not typed:
                     if not name and initial:
@@ -524,7 +530,7 @@ def start_gui():
             sel_map: Dict[str, str] = {}
             for prod, combo in self.rows:
                 typed = combo.get().strip()
-                if typed.lower() in ("(geen)", "geen"):
+                if not typed or typed.lower() in ("(geen)", "geen"):
                     sel_map[prod] = ""
                 else:
                     s = self._resolve_text_to_supplier(typed)
@@ -593,21 +599,33 @@ def start_gui():
 
             pnf = tk.Frame(main); pnf.pack(fill="x", padx=8, pady=(0,6))
             tk.Label(pnf, text="PartNumbers (één per lijn):").pack(anchor="w")
-            self.pn_text = tk.Text(pnf, height=4)
-            self.pn_text.pack(fill="x")
+            txtf = tk.Frame(pnf); txtf.pack(fill="x")
+            self.pn_text = tk.Text(txtf, height=4)
+            pn_scroll = ttk.Scrollbar(txtf, orient="vertical", command=self.pn_text.yview)
+            self.pn_text.configure(yscrollcommand=pn_scroll.set)
+            self.pn_text.pack(side="left", fill="both", expand=True)
+            pn_scroll.pack(side="left", fill="y")
             tk.Button(pnf, text="Gebruik PartNumbers", command=self._load_manual_pns).pack(anchor="w", pady=4)
 
             # Tree
             style.configure("Treeview", rowheight=24)
-            self.tree = ttk.Treeview(main, columns=("PartNumber","Description","Production","Bestanden gevonden","Status"), show="headings")
+            treef = tk.Frame(main)
+            treef.pack(fill="both", expand=True, padx=8, pady=6)
+            self.tree = ttk.Treeview(treef, columns=("PartNumber","Description","Production","Bestanden gevonden","Status"), show="headings")
             for col in ("PartNumber","Description","Production","Bestanden gevonden","Status"):
-                self.tree.heading(col, text=col)
                 w = 140
                 if col=="Description": w=320
                 if col=="Bestanden gevonden": w=180
                 if col=="Status": w=120
-                self.tree.column(col, width=w, anchor="w")
-            self.tree.pack(fill="both", expand=True, padx=8, pady=6)
+                anchor = "center" if col=="Status" else "w"
+                self.tree.heading(col, text=col, anchor=anchor)
+                self.tree.column(col, width=w, anchor=anchor)
+            tree_scroll = ttk.Scrollbar(treef, orient="vertical", command=self.tree.yview)
+            self.tree.configure(yscrollcommand=tree_scroll.set)
+            self.tree.pack(side="left", fill="both", expand=True)
+            tree_scroll.pack(side="left", fill="y")
+            self.tree.bind("<Button-1>", self._on_tree_click)
+            self.item_links: Dict[str, str] = {}
 
             # Actions
             act = tk.Frame(main); act.pack(fill="x", padx=8, pady=8)
@@ -681,18 +699,43 @@ def start_gui():
             self.status_var.set(f"Partnummers geladen: {n} rijen")
 
         def _refresh_tree(self):
+            self.item_links.clear()
             for it in self.tree.get_children():
                 self.tree.delete(it)
-            if self.bom_df is None: return
+            if self.bom_df is None:
+                return
             for _, row in self.bom_df.iterrows():
                 vals = (
-                    row.get("PartNumber",""),
-                    row.get("Description",""),
-                    row.get("Production",""),
-                    row.get("Bestanden gevonden",""),
-                    row.get("Status","")
+                    row.get("PartNumber", ""),
+                    row.get("Description", ""),
+                    row.get("Production", ""),
+                    row.get("Bestanden gevonden", ""),
+                    row.get("Status", ""),
                 )
-                self.tree.insert("", "end", values=vals)
+                item = self.tree.insert("", "end", values=vals)
+                link = row.get("Link")
+                if link:
+                    self.item_links[item] = link
+
+        def _on_tree_click(self, event):
+            item = self.tree.identify_row(event.y)
+            col = self.tree.identify_column(event.x)
+            if col != "#5" or not item:
+                return
+            if self.tree.set(item, "Status") != "❌":
+                return
+            path = self.item_links.get(item)
+            if not path or not os.path.exists(path):
+                return
+            try:
+                if sys.platform.startswith("win"):
+                    os.startfile(path)
+                elif sys.platform == "darwin":
+                    subprocess.run(["open", path], check=False)
+                else:
+                    subprocess.run(["xdg-open", path], check=False)
+            except Exception:
+                pass
 
         def _check_files(self):
             from tkinter import messagebox
@@ -706,7 +749,8 @@ def start_gui():
             self.status_var.set("Bezig met controleren...")
             self.update_idletasks()
             idx = _build_file_index(self.source_folder, exts)
-            found, status = [], []
+            sw_idx = _build_file_index(self.source_folder, [".sldprt", ".slddrw"])
+            found, status, links = [], [], []
             groups = []
             exts_set = set(e.lower() for e in exts)
             if ".step" in exts_set or ".stp" in exts_set:
@@ -721,8 +765,25 @@ def start_gui():
                 all_present = all(any(ext in hit_exts for ext in g) for g in groups)
                 found.append(", ".join(sorted(e.lstrip('.') for e in hit_exts)))
                 status.append("✅" if all_present else "❌")
+                link = ""
+                if not all_present:
+                    missing = []
+                    for g in groups:
+                        if not any(ext in hit_exts for ext in g):
+                            missing.extend(g)
+                    sw_hits = sw_idx.get(pn, [])
+                    drw = next((p for p in sw_hits if p.lower().endswith(".slddrw")), None)
+                    prt = next((p for p in sw_hits if p.lower().endswith(".sldprt")), None)
+                    if ".pdf" in missing and drw:
+                        link = drw
+                    elif prt:
+                        link = prt
+                    elif drw:
+                        link = drw
+                links.append(link)
             self.bom_df["Bestanden gevonden"] = found
             self.bom_df["Status"] = status
+            self.bom_df["Link"] = links
             self._refresh_tree()
             self.status_var.set("Controle klaar.")
 
