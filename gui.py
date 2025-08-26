@@ -169,26 +169,62 @@ def start_gui():
             super().__init__(master)
             self.db = db
             self.on_change = on_change
-            self.list = tk.Listbox(self)
-            self.list.pack(fill="both", expand=True, padx=8, pady=8)
+            search = tk.Frame(self)
+            search.pack(fill="x", padx=8, pady=(8, 0))
+            tk.Label(search, text="Zoek:").pack(side="left")
+            self.search_var = tk.StringVar()
+            entry = tk.Entry(search, textvariable=self.search_var)
+            entry.pack(side="left", fill="x", expand=True)
+            self.search_var.trace_add("write", lambda *_: self.refresh())
+            cols = ("Supplier", "BTW", "E-mail", "Tel", "Adres 1", "Adres 2")
+            self.tree = ttk.Treeview(self, columns=cols, show="headings")
+            for c in cols:
+                self.tree.heading(c, text=c)
+                self.tree.column(c, anchor="w")
+            self.tree.pack(fill="both", expand=True, padx=8, pady=8)
             btns = tk.Frame(self)
             btns.pack(fill="x")
             tk.Button(btns, text="Toevoegen", command=self.add_supplier).pack(side="left", padx=4)
+            tk.Button(btns, text="Bewerken", command=self.edit_sel).pack(side="left", padx=4)
             tk.Button(btns, text="Verwijderen", command=self.remove_sel).pack(side="left", padx=4)
+            tk.Button(btns, text="Update uit CSV (merge)", command=self.merge_csv).pack(side="left", padx=4)
             tk.Button(btns, text="Favoriet ★", command=self.toggle_fav_sel).pack(side="left", padx=4)
             self.refresh()
 
         def refresh(self):
-            self.list.delete(0, "end")
-            for s in self.db.suppliers_sorted():
-                star = "★ " if s.favorite else ""
-                self.list.insert("end", star + s.supplier)
+            for r in self.tree.get_children():
+                self.tree.delete(r)
+            q = self.search_var.get()
+            sups = self.db.find(q)
+            for i, s in enumerate(sups):
+                vals = (
+                    ("★ " if s.favorite else "") + (s.supplier or ""),
+                    s.btw or "",
+                    s.sales_email or "",
+                    s.phone or "",
+                    s.adres_1 or "",
+                    s.adres_2 or "",
+                )
+                tag = "odd" if i % 2 else "even"
+                self.tree.insert("", "end", iid=s.supplier, values=vals, tags=(tag,))
+            self.tree.tag_configure("odd", background=TREE_ODD_BG)
+            self.tree.tag_configure("even", background=TREE_EVEN_BG)
 
         def _sel_name(self):
-            sel = self.list.curselection()
+            sel = self.tree.selection()
             if not sel:
                 return None
-            return self.list.get(sel[0]).replace("★ ", "", 1)
+            name = self.tree.item(sel[0], "values")[0]
+            return name.replace("★ ", "", 1)
+
+        def _sel_supplier(self) -> Optional[Supplier]:
+            n = self._sel_name()
+            if not n:
+                return None
+            for s in self.db.suppliers:
+                if s.supplier == n:
+                    return s
+            return None
 
         def add_supplier(self):
             name = simpledialog.askstring("Nieuwe leverancier", "Naam:", parent=self)
@@ -205,7 +241,6 @@ def start_gui():
             n = self._sel_name()
             if not n:
                 return
-            from tkinter import messagebox
             if messagebox.askyesno("Bevestigen", f"Verwijder '{n}'?", parent=self):
                 if self.db.remove(n):
                     self.db.save(SUPPLIERS_DB_FILE)
@@ -218,6 +253,83 @@ def start_gui():
             if not n:
                 return
             if self.db.toggle_fav(n):
+                self.db.save(SUPPLIERS_DB_FILE)
+                self.refresh()
+                if self.on_change:
+                    self.on_change()
+
+        def merge_csv(self):
+            path = filedialog.askopenfilename(
+                parent=self,
+                title="CSV bestand",
+                filetypes=[("CSV", "*.csv"), ("Alle bestanden", "*.*")],
+            )
+            if not path:
+                return
+            try:
+                df = read_csv_flex(path)
+                for rec in df.to_dict(orient="records"):
+                    try:
+                        sup = Supplier.from_any(rec)
+                        self.db.upsert(sup)
+                    except Exception:
+                        pass
+                self.db.save(SUPPLIERS_DB_FILE)
+                self.refresh()
+                if self.on_change:
+                    self.on_change()
+            except Exception as e:
+                messagebox.showerror("Fout", str(e), parent=self)
+
+        class _EditDialog(tk.Toplevel):
+            def __init__(self, master, supplier: Supplier):
+                super().__init__(master)
+                self.title("Leverancier bewerken")
+                self.result = None
+                fields = [
+                    ("supplier", "Naam"),
+                    ("description", "Beschrijving"),
+                    ("supplier_id", "ID"),
+                    ("adres_1", "Adres 1"),
+                    ("adres_2", "Adres 2"),
+                    ("postcode", "Postcode"),
+                    ("gemeente", "Gemeente"),
+                    ("land", "Land"),
+                    ("btw", "BTW"),
+                    ("contact_sales", "Contact"),
+                    ("sales_email", "E-mail"),
+                    ("phone", "Tel"),
+                ]
+                self.vars = {}
+                for i, (f, lbl) in enumerate(fields):
+                    tk.Label(self, text=lbl + ":").grid(row=i, column=0, sticky="e", padx=4, pady=2)
+                    var = tk.StringVar(value=getattr(supplier, f) or "")
+                    tk.Entry(self, textvariable=var, width=40).grid(row=i, column=1, padx=4, pady=2)
+                    self.vars[f] = var
+                btn = tk.Frame(self)
+                btn.grid(row=len(fields), column=0, columnspan=2, pady=4)
+                tk.Button(btn, text="Opslaan", command=self._ok).pack(side="left", padx=4)
+                tk.Button(btn, text="Annuleer", command=self.destroy).pack(side="left", padx=4)
+                self.transient(master)
+                self.grab_set()
+
+            def _ok(self):
+                data = {f: v.get().strip() or None for f, v in self.vars.items()}
+                try:
+                    self.result = Supplier.from_any(data)
+                except Exception as e:
+                    messagebox.showerror("Fout", str(e), parent=self)
+                    return
+                self.destroy()
+
+        def edit_sel(self):
+            s = self._sel_supplier()
+            if not s:
+                return
+            dlg = self._EditDialog(self, s)
+            self.wait_window(dlg)
+            if dlg.result:
+                self.db.upsert(dlg.result)
                 self.db.save(SUPPLIERS_DB_FILE)
                 self.refresh()
                 if self.on_change:
