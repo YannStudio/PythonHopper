@@ -5,6 +5,7 @@ from typing import List, Optional
 from cli import (
     build_parser,
     cli_suppliers,
+    cli_clients,
     cli_bom_check,
     cli_copy,
     cli_copy_per_prod,
@@ -33,6 +34,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.cmd == "suppliers":
         return cli_suppliers(args)
+    if args.cmd == "clients":
+        return cli_clients(args)
     if args.cmd == "bom":
         return cli_bom_check(args)
     if args.cmd == "copy":

@@ -11,8 +11,9 @@ from typing import List
 import pandas as pd
 
 from helpers import _to_str, _build_file_index, _unique_path
-from models import Supplier
+from models import Supplier, Client
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
+from clients_db import ClientsDB, CLIENTS_DB_FILE
 from bom import read_csv_flex, load_bom
 from orders import copy_per_production_and_orders, DEFAULT_FOOTER_NOTE
 
@@ -134,6 +135,46 @@ def cli_suppliers(args):
     return 2
 
 
+def cli_clients(args):
+    db = ClientsDB.load(CLIENTS_DB_FILE)
+    if args.action == "list":
+        rows = db.clients_sorted()
+        if not rows:
+            print("(geen opdrachtgevers)")
+            return 0
+        for c in rows:
+            star = "★" if c.favorite else " "
+            print(
+                f"{star} {c.name} | {c.address or '-'} | BTW: {c.vat or '-'} | Mail: {c.email or '-'}"
+            )
+        return 0
+    if args.action == "add":
+        rec = {"name": args.name}
+        if args.address:
+            rec["address"] = args.address
+        if args.vat:
+            rec["vat"] = args.vat
+        if args.email:
+            rec["email"] = args.email
+        c = Client.from_any(rec)
+        db.upsert(c)
+        db.save(CLIENTS_DB_FILE)
+        print("Toegevoegd/bijgewerkt")
+        return 0
+    if args.action == "remove":
+        ok = db.remove(args.name)
+        db.save(CLIENTS_DB_FILE)
+        print("Verwijderd" if ok else "Niet gevonden")
+        return 0
+    if args.action == "fav":
+        ok = db.toggle_fav(args.name)
+        db.save(CLIENTS_DB_FILE)
+        print("Favoriet gewisseld" if ok else "Niet gevonden")
+        return 0
+    print("Onbekende actie")
+    return 2
+
+
 def cli_bom_check(args):
     exts = parse_exts(args.exts)
     df = load_bom(args.bom)
@@ -183,6 +224,16 @@ def cli_copy_per_prod(args):
     df = load_bom(args.bom)
     db = SuppliersDB.load(SUPPLIERS_DB_FILE)
     override_map = dict(kv.split("=", 1) for kv in (args.supplier or []))
+    cdb = ClientsDB.load(CLIENTS_DB_FILE)
+    client = None
+    if args.client:
+        client = cdb.get(args.client)
+        if not client:
+            print("Client niet gevonden")
+            return 2
+    else:
+        cl = cdb.clients_sorted()
+        client = cl[0] if cl else None
     cnt, chosen = copy_per_production_and_orders(
         args.source,
         args.dest,
@@ -191,6 +242,7 @@ def cli_copy_per_prod(args):
         db,
         override_map,
         args.remember_defaults,
+        client=client,
         footer_note=args.note or DEFAULT_FOOTER_NOTE,
     )
     print("Gekopieerd:", cnt)
@@ -230,6 +282,19 @@ def build_parser() -> argparse.ArgumentParser:
     ip.add_argument("csv")
     ssp.add_parser("clear")
 
+    cp = sub.add_parser("clients", help="Beheer opdrachtgevers")
+    csp = cp.add_subparsers(dest="action", required=True)
+    csp.add_parser("list")
+    cap = csp.add_parser("add")
+    cap.add_argument("name")
+    cap.add_argument("--address")
+    cap.add_argument("--vat")
+    cap.add_argument("--email")
+    crp = csp.add_parser("remove")
+    crp.add_argument("name")
+    cfp = csp.add_parser("fav")
+    cfp.add_argument("name")
+
     bp = sub.add_parser("bom", help="BOM acties")
     bsp = bp.add_subparsers(dest="bact", required=True)
     bcp = bsp.add_parser("check")
@@ -259,6 +324,7 @@ def build_parser() -> argparse.ArgumentParser:
     cpp.add_argument(
         "--note", help="Optioneel voetnootje op de bestelbon", default=""
     )
+    cpp.add_argument("--client", help="Gebruik opdrachtgever met deze naam")
 
     return p
 

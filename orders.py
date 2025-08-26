@@ -46,7 +46,7 @@ from helpers import (
     _build_file_index,
     _unique_path,
 )
-from models import Supplier
+from models import Supplier, Client
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from bom import load_bom  # noqa: F401 - imported for module dependency
 
@@ -94,6 +94,7 @@ def generate_pdf_order_platypus(
         f"<b>{company_info.get('name','')}</b>",
         f"{company_info.get('address','')}",
         f"BTW: {company_info.get('vat','')}",
+        f"E-mail: {company_info.get('email','')}",
     ]
 
     supp_lines = [f"<b>Besteld bij:</b> {supplier.supplier}"]
@@ -123,7 +124,7 @@ def generate_pdf_order_platypus(
     story.append(Spacer(0, 10))
 
     # Headers and data
-    head = ["PartNumber", "Omschrijving", "Materiaal", "Aantal", "m²", "kg"]
+    head = ["PartNumber", "Omschrijving", "Materiaal", "St.", "m²", "kg"]
 
     def wrap_cell_html(val: str, small=False, align=None):
         style = ParagraphStyle(
@@ -172,6 +173,7 @@ def generate_pdf_order_platypus(
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                 ("FONTSIZE", (0, 0), (-1, 0), 10),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ALIGN", (3, 0), (5, 0), "RIGHT"),
                 ("ALIGN", (3, 1), (5, -1), "RIGHT"),
                 ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
@@ -222,6 +224,7 @@ def copy_per_production_and_orders(
     db: SuppliersDB,
     override_map: Dict[str, str],
     remember_defaults: bool,
+    client: Client | None = None,
     footer_note: str = "",
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents."""
@@ -272,9 +275,10 @@ def copy_per_production_and_orders(
 
         pdf_path = os.path.join(prod_folder, f"Bestelbon_{prod}_{today}.pdf")
         company = {
-            "name": "Manufact BV",
-            "address": "Industrieweg 10, 2000 Antwerpen",
-            "vat": "BE0123456789",
+            "name": client.name if client else "",
+            "address": client.address if client else "",
+            "vat": client.vat if client else "",
+            "email": client.email if client else "",
         }
         try:
             generate_pdf_order_platypus(

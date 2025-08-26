@@ -6,144 +6,137 @@ from typing import Dict, List, Optional
 import pandas as pd
 
 from helpers import _to_str, _build_file_index, _unique_path
-from models import Supplier
+from models import Supplier, Client
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
+from clients_db import ClientsDB, CLIENTS_DB_FILE
 from bom import read_csv_flex, load_bom
 from orders import copy_per_production_and_orders, DEFAULT_FOOTER_NOTE
 
 def start_gui():
     import tkinter as tk
     from tkinter import ttk, filedialog, messagebox, simpledialog
-    import sys
 
     TREE_ODD_BG = "#FFFFFF"
     TREE_EVEN_BG = "#F5F5F5"
 
-    style = ttk.Style()
-    if sys.platform == "darwin":
-        style.theme_use("aqua")
-    else:
-        style.theme_use("clam")
-
-    class SuppliersManagerWin(tk.Toplevel):
-        def __init__(self, master, db: SuppliersDB, on_change=None):
+    class ClientsManagerFrame(tk.Frame):
+        def __init__(self, master, db: ClientsDB, on_change=None):
             super().__init__(master)
-            self.title("Leveranciers Beheer")
             self.db = db
             self.on_change = on_change
-            self.minsize(960, 480)
-
-            # Bovenbalk: Zoek links, knoppen rechts
-            topbar = tk.Frame(self); topbar.pack(fill="x", padx=8, pady=(8,4))
-            left = tk.Frame(topbar); left.pack(side="left", fill="x", expand=True)
-            tk.Label(left, text="Zoek:").pack(side="left")
-            self.search_var = tk.StringVar()
-            se = tk.Entry(left, textvariable=self.search_var, width=32)
-            se.pack(side="left", padx=6)
-            se.bind("<KeyRelease>", lambda e: self.refresh())
-
-            btns = tk.Frame(topbar); btns.pack(side="right")
-            tk.Button(btns, text="Toevoegen", command=self.add_supplier).pack(side="left", padx=4)
+            self.list = tk.Listbox(self)
+            self.list.pack(fill="both", expand=True, padx=8, pady=8)
+            btns = tk.Frame(self)
+            btns.pack(fill="x")
+            tk.Button(btns, text="Toevoegen", command=self.add_client).pack(side="left", padx=4)
             tk.Button(btns, text="Verwijderen", command=self.remove_sel).pack(side="left", padx=4)
             tk.Button(btns, text="Favoriet ★", command=self.toggle_fav_sel).pack(side="left", padx=4)
-            tk.Button(btns, text="Update uit CSV (merge)", command=self.update_from_csv).pack(side="left", padx=4)
-            tk.Button(btns, text="Alles verwijderen", command=self.clear_all).pack(side="left", padx=4)
-            tk.Button(btns, text="Sluiten", command=self.destroy).pack(side="left", padx=4)
-
-            # Tabel: verberg postcode, gemeente, land
-            cols = ("★","Supplier","Description","BTW","E-mail","Tel","Adres_1","Adres_2")
-            self.tree = ttk.Treeview(self, columns=cols, show="headings")
-            widths = {"★":40,"Supplier":190,"Description":240,"BTW":120,"E-mail":200,"Tel":130,"Adres_1":220,"Adres_2":220}
-            for c in cols:
-                self.tree.heading(c, text=c)
-                self.tree.column(c, width=widths.get(c,120), anchor="w")
-            self.tree.pack(fill="both", expand=True, padx=8, pady=(4,8))
-
-            style = ttk.Style(self)
-            style.configure("Treeview", rowheight=22)
-            self.tree.tag_configure("oddrow", background=TREE_ODD_BG)
-            self.tree.tag_configure("evenrow", background=TREE_EVEN_BG)
-
             self.refresh()
 
         def refresh(self):
-            for i in self.tree.get_children():
-                self.tree.delete(i)
-            q = self.search_var.get()
-            rows = self.db.find(q) if q else self.db.suppliers_sorted()
-            for idx, s in enumerate(rows):
-                star = "★" if s.favorite else ""
-                vals = (star, s.supplier, s.description or "", s.btw or "", s.sales_email or "", s.phone or "",
-                        s.adres_1 or "", s.adres_2 or "")
-                self.tree.insert("", "end", values=vals, tags=("evenrow" if idx%2==0 else "oddrow",))
+            self.list.delete(0, "end")
+            for c in self.db.clients_sorted():
+                star = "★ " if c.favorite else ""
+                self.list.insert("end", star + c.name)
 
-        def _sel_name(self) -> Optional[str]:
-            it = self.tree.selection()
-            if not it: return None
-            vals = self.tree.item(it[0], "values")
-            return vals[1]
+        def _sel_name(self):
+            sel = self.list.curselection()
+            if not sel:
+                return None
+            val = self.list.get(sel[0])
+            return val.replace("★ ", "", 1)
 
-        def add_supplier(self):
-            name = simpledialog.askstring("Nieuwe leverancier","Naam (Supplier):", parent=self)
-            if not name: return
-            s = Supplier.from_any({"supplier":name})
-            self.db.upsert(s)
-            self.db.save(SUPPLIERS_DB_FILE)
+        def add_client(self):
+            name = simpledialog.askstring("Nieuwe opdrachtgever", "Naam:", parent=self)
+            if not name:
+                return
+            c = Client.from_any({"name": name})
+            self.db.upsert(c)
+            self.db.save(CLIENTS_DB_FILE)
             self.refresh()
-            if self.on_change: self.on_change()
+            if self.on_change:
+                self.on_change()
 
         def remove_sel(self):
             n = self._sel_name()
-            if not n: return
+            if not n:
+                return
             from tkinter import messagebox
-            if messagebox.askyesno("Bevestigen", f"Verwijder '{n}'?"):
+            if messagebox.askyesno("Bevestigen", f"Verwijder '{n}'?", parent=self):
                 if self.db.remove(n):
-                    self.db.save(SUPPLIERS_DB_FILE)
+                    self.db.save(CLIENTS_DB_FILE)
                     self.refresh()
-                    if self.on_change: self.on_change()
+                    if self.on_change:
+                        self.on_change()
 
         def toggle_fav_sel(self):
             n = self._sel_name()
-            if not n: return
+            if not n:
+                return
+            if self.db.toggle_fav(n):
+                self.db.save(CLIENTS_DB_FILE)
+                self.refresh()
+                if self.on_change:
+                    self.on_change()
+
+    class SuppliersManagerFrame(tk.Frame):
+        def __init__(self, master, db: SuppliersDB, on_change=None):
+            super().__init__(master)
+            self.db = db
+            self.on_change = on_change
+            self.list = tk.Listbox(self)
+            self.list.pack(fill="both", expand=True, padx=8, pady=8)
+            btns = tk.Frame(self)
+            btns.pack(fill="x")
+            tk.Button(btns, text="Toevoegen", command=self.add_supplier).pack(side="left", padx=4)
+            tk.Button(btns, text="Verwijderen", command=self.remove_sel).pack(side="left", padx=4)
+            tk.Button(btns, text="Favoriet ★", command=self.toggle_fav_sel).pack(side="left", padx=4)
+            self.refresh()
+
+        def refresh(self):
+            self.list.delete(0, "end")
+            for s in self.db.suppliers_sorted():
+                star = "★ " if s.favorite else ""
+                self.list.insert("end", star + s.supplier)
+
+        def _sel_name(self):
+            sel = self.list.curselection()
+            if not sel:
+                return None
+            return self.list.get(sel[0]).replace("★ ", "", 1)
+
+        def add_supplier(self):
+            name = simpledialog.askstring("Nieuwe leverancier", "Naam:", parent=self)
+            if not name:
+                return
+            s = Supplier.from_any({"supplier": name})
+            self.db.upsert(s)
+            self.db.save(SUPPLIERS_DB_FILE)
+            self.refresh()
+            if self.on_change:
+                self.on_change()
+
+        def remove_sel(self):
+            n = self._sel_name()
+            if not n:
+                return
+            from tkinter import messagebox
+            if messagebox.askyesno("Bevestigen", f"Verwijder '{n}'?", parent=self):
+                if self.db.remove(n):
+                    self.db.save(SUPPLIERS_DB_FILE)
+                    self.refresh()
+                    if self.on_change:
+                        self.on_change()
+
+        def toggle_fav_sel(self):
+            n = self._sel_name()
+            if not n:
+                return
             if self.db.toggle_fav(n):
                 self.db.save(SUPPLIERS_DB_FILE)
                 self.refresh()
-                if self.on_change: self.on_change()
-
-        def update_from_csv(self):
-            from tkinter import filedialog, messagebox
-            path = filedialog.askopenfilename(filetypes=[("CSV","*.csv"),("All","*.*")], initialdir=os.getcwd())
-            if not path: return
-            try:
-                try:
-                    df = pd.read_csv(path, encoding="latin1", sep=";")
-                except Exception:
-                    df = read_csv_flex(path)
-                changed = 0
-                for _, row in df.iterrows():
-                    raw_name = _to_str(row.get("Supplier")).strip()
-                    if not raw_name or raw_name == "-":
-                        continue
-                    try:
-                        s = Supplier.from_any({k:row[k] for k in df.columns if k in row})
-                        self.db.upsert(s)
-                        changed += 1
-                    except Exception:
-                        pass
-                self.db.save(SUPPLIERS_DB_FILE)
-                messagebox.showinfo("CSV update", f"{changed} records verwerkt (merge/upsert).")
-                self.refresh()
-                if self.on_change: self.on_change()
-            except Exception as e:
-                messagebox.showerror("Fout", f"Update mislukt:\n{e}")
-
-        def clear_all(self):
-            from tkinter import messagebox
-            if messagebox.askyesno("Bevestigen", "Wil je echt ALLE leveranciers verwijderen?"):
-                self.db.clear_all()
-                self.db.save(SUPPLIERS_DB_FILE)
-                self.refresh()
-                if self.on_change: self.on_change()
+                if self.on_change:
+                    self.on_change()
 
     class SupplierSelectionPopup(tk.Toplevel):
         """Per productie: type-to-filter of dropdown; rechts detailkaart (klik = selecteer).
@@ -340,17 +333,33 @@ def start_gui():
     class App(tk.Tk):
         def __init__(self):
             super().__init__()
+            import sys
+            style = ttk.Style(self)
+            if sys.platform == "darwin":
+                style.theme_use("aqua")
+            else:
+                style.theme_use("clam")
             self.title("File Hopper – Miami Vice Edition (Dual-mode)")
             self.minsize(1024, 720)
 
             self.db = SuppliersDB.load(SUPPLIERS_DB_FILE)
+            self.client_db = ClientsDB.load(CLIENTS_DB_FILE)
 
             self.source_folder = ""
             self.dest_folder = ""
             self.bom_df: Optional[pd.DataFrame] = None
 
+            self.nb = ttk.Notebook(self)
+            self.nb.pack(fill="both", expand=True)
+            main = tk.Frame(self.nb)
+            self.nb.add(main, text="Main")
+            self.clients_frame = ClientsManagerFrame(self.nb, self.client_db, on_change=self._refresh_clients_combo)
+            self.nb.add(self.clients_frame, text="Klant beheer")
+            self.suppliers_frame = SuppliersManagerFrame(self.nb, self.db, on_change=lambda: None)
+            self.nb.add(self.suppliers_frame, text="Leverancier beheer")
+
             # Top folders
-            top = tk.Frame(self); top.pack(fill="x", padx=8, pady=6)
+            top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
             tk.Label(top, text="Bronmap:").grid(row=0, column=0, sticky="w")
             self.src_entry = tk.Entry(top, width=60); self.src_entry.grid(row=0, column=1, padx=4)
             tk.Button(top, text="Bladeren", command=self._pick_src).grid(row=0, column=2, padx=4)
@@ -359,8 +368,15 @@ def start_gui():
             self.dst_entry = tk.Entry(top, width=60); self.dst_entry.grid(row=1, column=1, padx=4)
             tk.Button(top, text="Bladeren", command=self._pick_dst).grid(row=1, column=2, padx=4)
 
+            tk.Label(top, text="Opdrachtgever:").grid(row=2, column=0, sticky="w")
+            self.client_var = tk.StringVar()
+            self.client_combo = ttk.Combobox(top, textvariable=self.client_var, state="readonly", width=40)
+            self.client_combo.grid(row=2, column=1, padx=4)
+            tk.Button(top, text="Beheer", command=lambda: self.nb.select(self.clients_frame)).grid(row=2, column=2, padx=4)
+            self._refresh_clients_combo()
+
             # Filters
-            filt = tk.LabelFrame(self, text="Selecteer bestandstypen om te kopiëren", labelanchor="n"); filt.pack(fill="x", padx=8, pady=6)
+            filt = tk.LabelFrame(main, text="Selecteer bestandstypen om te kopiëren", labelanchor="n"); filt.pack(fill="x", padx=8, pady=6)
             self.pdf_var = tk.IntVar(); self.step_var = tk.IntVar(); self.dxf_var = tk.IntVar(); self.dwg_var = tk.IntVar()
             tk.Checkbutton(filt, text="PDF (.pdf)", variable=self.pdf_var).pack(anchor="w", padx=8)
             tk.Checkbutton(filt, text="STEP (.step, .stp)", variable=self.step_var).pack(anchor="w", padx=8)
@@ -368,15 +384,15 @@ def start_gui():
             tk.Checkbutton(filt, text="DWG (.dwg)", variable=self.dwg_var).pack(anchor="w", padx=8)
 
             # BOM controls
-            bf = tk.Frame(self); bf.pack(fill="x", padx=8, pady=6)
+            bf = tk.Frame(main); bf.pack(fill="x", padx=8, pady=6)
             tk.Button(bf, text="Laad BOM (CSV/Excel)", command=self._load_bom).pack(side="left", padx=6)
-            tk.Button(bf, text="Leveranciers Beheer", command=self._open_suppliers).pack(side="left", padx=6)
+            tk.Button(bf, text="Klant beheer", command=lambda: self.nb.select(self.clients_frame)).pack(side="left", padx=6)
+            tk.Button(bf, text="Leverancier beheer", command=lambda: self.nb.select(self.suppliers_frame)).pack(side="left", padx=6)
             tk.Button(bf, text="Controleer Bestanden", command=self._check_files).pack(side="left", padx=6)
 
             # Tree
-            style = ttk.Style(self)
             style.configure("Treeview", rowheight=24)
-            self.tree = ttk.Treeview(self, columns=("PartNumber","Description","Production","Bestanden gevonden","Status"), show="headings")
+            self.tree = ttk.Treeview(main, columns=("PartNumber","Description","Production","Bestanden gevonden","Status"), show="headings")
             for col in ("PartNumber","Description","Production","Bestanden gevonden","Status"):
                 self.tree.heading(col, text=col)
                 w = 140
@@ -387,16 +403,19 @@ def start_gui():
             self.tree.pack(fill="both", expand=True, padx=8, pady=6)
 
             # Actions
-            act = tk.Frame(self); act.pack(fill="x", padx=8, pady=8)
+            act = tk.Frame(main); act.pack(fill="x", padx=8, pady=8)
             tk.Button(act, text="Kopieer zonder submappen", command=self._copy_flat).pack(side="left", padx=6)
             tk.Button(act, text="Kopieer per productie + bestelbonnen", command=self._copy_per_prod).pack(side="left", padx=6)
 
             # Status
             self.status_var = tk.StringVar(value="Klaar")
-            tk.Label(self, textvariable=self.status_var, anchor="w").pack(fill="x", padx=8, pady=(0,8))
+            tk.Label(main, textvariable=self.status_var, anchor="w").pack(fill="x", padx=8, pady=(0,8))
 
-        def _open_suppliers(self):
-            SuppliersManagerWin(self, self.db, on_change=lambda: None)
+        def _refresh_clients_combo(self):
+            opts = [self.client_db.display_name(c) for c in self.client_db.clients_sorted()]
+            self.client_combo["values"] = opts
+            if opts:
+                self.client_combo.set(opts[0])
 
         def _pick_src(self):
             from tkinter import filedialog
@@ -496,8 +515,10 @@ def start_gui():
             def on_sel(sel_map: Dict[str,str], remember: bool):
                 def work():
                     self.status_var.set("Kopiëren & bestelbonnen maken...")
+                    client = self.client_db.get(self.client_var.get().replace("★ ", "", 1))
                     cnt, chosen = copy_per_production_and_orders(
                         self.source_folder, self.dest_folder, self.bom_df, exts, self.db, sel_map, remember,
+                        client=client,
                         footer_note=DEFAULT_FOOTER_NOTE
                     )
                     self.status_var.set(f"Klaar. Gekopieerd: {cnt}. Leveranciers: {chosen}")

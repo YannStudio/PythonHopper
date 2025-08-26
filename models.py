@@ -152,3 +152,49 @@ class Supplier:
             phone=_to_str(norm.get("phone")).strip() or None if ("phone" in norm) else None,
             favorite=bool(fav),
         )
+
+@dataclass
+class Client:
+    name: str
+    address: Optional[str] = None
+    vat: Optional[str] = None
+    email: Optional[str] = None
+    favorite: bool = False
+
+    @staticmethod
+    def from_any(d: dict) -> "Client":
+        key_map = {
+            "name": "name",
+            "client": "name",
+            "opdrachtgever": "name",
+            "address": "address",
+            "adres": "address",
+            "btw": "vat",
+            "vat": "vat",
+            "btw nummer": "vat",
+            "btw-nummer": "vat",
+            "email": "email",
+            "e-mail": "email",
+            "mail": "email",
+            "favorite": "favorite",
+            "favoriet": "favorite",
+            "fav": "favorite",
+        }
+        norm = {}
+        for k, v in d.items():
+            lk = str(k).strip().lower()
+            if lk in key_map:
+                norm[key_map[lk]] = v
+        name = str(norm.get("name") or d.get("name") or "").strip()
+        if not name:
+            raise ValueError("Client name is missing in record.")
+        fav = norm.get("favorite", d.get("favorite", False))
+        if isinstance(fav, str):
+            fav = fav.strip().lower() in ("1", "true", "yes", "y", "ja")
+        return Client(
+            name=name,
+            address=_to_str(norm.get("address")).strip() or None if ("address" in norm) else None,
+            vat=_to_str(norm.get("vat")).strip() or None if ("vat" in norm) else None,
+            email=_to_str(norm.get("email")).strip() or None if ("email" in norm) else None,
+            favorite=bool(fav),
+        )
