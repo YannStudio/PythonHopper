@@ -408,7 +408,9 @@ def start_gui():
 
         def _display_list(self) -> List[str]:
             sups = self.db.suppliers_sorted()
-            return [self.db.display_name(s) for s in sups]
+            opts = [self.db.display_name(s) for s in sups]
+            opts.insert(0, "(geen)")
+            return opts
 
         def _refresh_options(self, initial=False):
             self._base_options = self._display_list()
@@ -432,7 +434,7 @@ def start_gui():
                     if disp:
                         combo.set(disp)
                     elif self._base_options:
-                        combo.set(self._base_options[0])
+                        combo.set(self._base_options[1] if len(self._base_options) > 1 else self._base_options[0])
 
         def _on_combo_change(self, _evt=None):
             self._update_preview_from_any_combo()
@@ -521,10 +523,13 @@ def start_gui():
             """Collect selected suppliers per production and return via callback."""
             sel_map: Dict[str, str] = {}
             for prod, combo in self.rows:
-                typed = combo.get()
-                s = self._resolve_text_to_supplier(typed)
-                if s:
-                    sel_map[prod] = s.supplier
+                typed = combo.get().strip()
+                if typed.lower() in ("(geen)", "geen"):
+                    sel_map[prod] = ""
+                else:
+                    s = self._resolve_text_to_supplier(typed)
+                    if s:
+                        sel_map[prod] = s.supplier
             self.callback(sel_map, bool(self.remember_var.get()))
             self.destroy()
 
@@ -674,11 +679,20 @@ def start_gui():
             self.update_idletasks()
             idx = _build_file_index(self.source_folder, exts)
             found, status = [], []
+            groups = []
+            exts_set = set(e.lower() for e in exts)
+            if ".step" in exts_set or ".stp" in exts_set:
+                groups.append({".step", ".stp"})
+                exts_set -= {".step", ".stp"}
+            for e in exts_set:
+                groups.append({e})
             for _, row in self.bom_df.iterrows():
                 pn = row["PartNumber"]
                 hits = idx.get(pn, [])
-                found.append(", ".join(sorted({os.path.splitext(h)[1].lstrip('.') for h in hits})))
-                status.append("Gevonden" if hits else "Ontbrekend")
+                hit_exts = {os.path.splitext(h)[1].lower() for h in hits}
+                all_present = all(any(ext in hit_exts for ext in g) for g in groups)
+                found.append(", ".join(sorted(e.lstrip('.') for e in hit_exts)))
+                status.append("✅" if all_present else "❌")
             self.bom_df["Bestanden gevonden"] = found
             self.bom_df["Status"] = status
             self._refresh_tree()

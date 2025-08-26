@@ -193,13 +193,20 @@ def cli_bom_check(args):
         return 2
     file_index = _build_file_index(args.source, exts)
     found, status = [], []
+    groups = []
+    exts_set = set(e.lower() for e in exts)
+    if ".step" in exts_set or ".stp" in exts_set:
+        groups.append({".step", ".stp"})
+        exts_set -= {".step", ".stp"}
+    for e in exts_set:
+        groups.append({e})
     for _, row in df.iterrows():
         pn = row["PartNumber"]
         hits = file_index.get(pn, [])
-        found.append(
-            ", ".join(sorted({os.path.splitext(h)[1].lstrip('.') for h in hits}))
-        )
-        status.append("Gevonden" if hits else "Ontbrekend")
+        hit_exts = {os.path.splitext(h)[1].lower() for h in hits}
+        all_present = all(any(ext in hit_exts for ext in g) for g in groups)
+        found.append(", ".join(sorted(e.lstrip('.') for e in hit_exts)))
+        status.append("✅ Gevonden" if all_present else "❌ Ontbrekend")
     df["Bestanden gevonden"] = found
     df["Status"] = status
     if args.out:
