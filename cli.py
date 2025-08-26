@@ -119,6 +119,16 @@ def cli_suppliers(args):
                 continue
             try:
                 s = Supplier.from_any({k: row[k] for k in df.columns if k in row})
+                if args.btw and not s.btw:
+                    s.btw = args.btw
+                if args.adres_1 and not s.adres_1:
+                    s.adres_1 = args.adres_1
+                if args.adres_2 and not s.adres_2:
+                    s.adres_2 = args.adres_2
+                if args.email and not s.sales_email:
+                    s.sales_email = args.email
+                if args.phone and not s.phone:
+                    s.phone = args.phone
                 db.upsert(s)
                 changed += 1
             except Exception:
@@ -263,12 +273,12 @@ def build_parser() -> argparse.ArgumentParser:
     ssp.add_parser("list")
     ap = ssp.add_parser("add")
     ap.add_argument("name")
-    ap.add_argument("--description")
-    ap.add_argument("--btw")
-    ap.add_argument("--adres-1", dest="adres_1")
-    ap.add_argument("--adres-2", dest="adres_2")
-    ap.add_argument("--email")
-    ap.add_argument("--phone")
+    ap.add_argument("--description", help="Beschrijving van de leverancier")
+    ap.add_argument("--btw", help="BTW-nummer")
+    ap.add_argument("--adres-1", dest="adres_1", help="Adresregel 1")
+    ap.add_argument("--adres-2", dest="adres_2", help="Adresregel 2")
+    ap.add_argument("--email", help="E-mail adres voor verkoop")
+    ap.add_argument("--tel", dest="phone", help="Telefoonnummer")
     rp = ssp.add_parser("remove")
     rp.add_argument("name")
     fp = ssp.add_parser("fav")
@@ -279,7 +289,12 @@ def build_parser() -> argparse.ArgumentParser:
     gdp = ssp.add_parser("get-default")
     gdp.add_argument("production")
     ip = ssp.add_parser("import-csv")
-    ip.add_argument("csv")
+    ip.add_argument("csv", help="CSV-bestand met leveranciers")
+    ip.add_argument("--btw", help="Fallback BTW-nummer")
+    ip.add_argument("--adres-1", dest="adres_1", help="Fallback adresregel 1")
+    ip.add_argument("--adres-2", dest="adres_2", help="Fallback adresregel 2")
+    ip.add_argument("--email", help="Fallback e-mail adres voor verkoop")
+    ip.add_argument("--tel", dest="phone", help="Fallback telefoonnummer")
     ssp.add_parser("clear")
 
     cp = sub.add_parser("clients", help="Beheer opdrachtgevers")
@@ -287,9 +302,9 @@ def build_parser() -> argparse.ArgumentParser:
     csp.add_parser("list")
     cap = csp.add_parser("add")
     cap.add_argument("name")
-    cap.add_argument("--address")
-    cap.add_argument("--vat")
-    cap.add_argument("--email")
+    cap.add_argument("--address", help="Adres van de opdrachtgever")
+    cap.add_argument("--vat", help="BTW-nummer van de opdrachtgever")
+    cap.add_argument("--email", help="E-mail adres van de opdrachtgever")
     crp = csp.add_parser("remove")
     crp.add_argument("name")
     cfp = csp.add_parser("fav")
