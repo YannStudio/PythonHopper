@@ -321,13 +321,14 @@ def start_gui():
                     break
 
         def _confirm(self):
-            result = {}
+            """Collect selected suppliers per production and return via callback."""
+            sel_map: Dict[str, str] = {}
             for prod, combo in self.rows:
                 typed = combo.get()
                 s = self._resolve_text_to_supplier(typed)
                 if s:
-                    result[prod] = s.supplier
-            self.callback(result, True if self.remember_var.get() else False)
+                    sel_map[prod] = s.supplier
+            self.callback(sel_map, bool(self.remember_var.get()))
             self.destroy()
 
     class App(tk.Tk):

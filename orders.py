@@ -292,7 +292,8 @@ def copy_per_production_and_orders(
         except Exception as e:
             print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
 
-    if remember_defaults:
-        db.save(SUPPLIERS_DB_FILE)
+    # Persist any (possibly unchanged) supplier defaults so that callers can rely on
+    # the database reflecting the latest state on disk.
+    db.save(SUPPLIERS_DB_FILE)
 
     return count_copied, chosen
