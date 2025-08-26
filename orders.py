@@ -291,6 +291,8 @@ def pick_supplier_for_production(
             if s.supplier.lower() == name.lower():
                 return s
         return Supplier(supplier=name)
+    if prod.strip().lower() in {"dummy part", "nan", "spare part"}:
+        return Supplier(supplier="")
     default = db.get_default(prod)
     if default:
         for s in sups:

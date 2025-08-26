@@ -96,7 +96,7 @@ def load_bom(path: str) -> pd.DataFrame:
                 return low[n.lower()]
         return None
 
-    aantal_col = find_any(["Aantal", "Qty", "Quantity", "Stuks"])
+    aantal_col = find_any(["Aantal", "Qty", "Qty.", "Quantity", "Stuks"])
 
     opp_col = find_any(
         [
