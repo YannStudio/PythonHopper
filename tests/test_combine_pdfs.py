@@ -75,3 +75,32 @@ def test_combine_from_source_without_copy(tmp_path):
         "prod2_2023-01-01_combined.pdf",
     ]
 
+
+def test_combine_from_source_to_dest_without_copy(tmp_path):
+    source = tmp_path / "src"
+    dest = tmp_path / "out"
+    source.mkdir()
+    dest.mkdir()
+
+    for name in ["a.pdf", "b.pdf", "c.pdf", "d.pdf"]:
+        _blank_pdf(source / name)
+
+    bom_df = pd.DataFrame(
+        [
+            {"PartNumber": "a", "Production": "prod1"},
+            {"PartNumber": "b", "Production": "prod1"},
+            {"PartNumber": "c", "Production": "prod2"},
+            {"PartNumber": "d", "Production": "prod2"},
+        ]
+    )
+
+    count = combine_pdfs_from_source(str(source), bom_df, str(dest), "2023-01-01")
+    out_dir = dest / "Combined pdf"
+
+    assert count == 2
+    assert sorted(p.name for p in out_dir.glob("*.pdf")) == [
+        "prod1_2023-01-01_combined.pdf",
+        "prod2_2023-01-01_combined.pdf",
+    ]
+    assert sorted(p.name for p in dest.iterdir()) == ["Combined pdf"]
+
