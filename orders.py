@@ -426,7 +426,9 @@ def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
     Returns the number of combined PDF files created.
     """
     if PdfMerger is None:
-        return 0
+        raise ModuleNotFoundError(
+            "PyPDF2 must be installed to combine PDF files"
+        )
 
     date_str = date_str or datetime.date.today().strftime("%Y-%m-%d")
     out_dir = os.path.join(dest, "Combined pdf")
