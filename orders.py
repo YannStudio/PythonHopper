@@ -10,6 +10,7 @@ import shutil
 import datetime
 import re
 import zipfile
+import io
 from collections import defaultdict
 from typing import Dict, List, Tuple
 
@@ -409,7 +410,7 @@ def copy_per_production_and_orders(
 def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
     """Combine PDF drawing files per production folder into single PDFs.
 
-    The resulting files are written to a subdirectory ``combined pdf`` inside
+    The resulting files are written to a subdirectory ``Combined pdf`` inside
     ``dest``. Output filenames contain the production name and current date.
     Returns the number of combined PDF files created.
     """
@@ -417,20 +418,42 @@ def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
         return 0
 
     date_str = date_str or datetime.date.today().strftime("%Y-%m-%d")
-    out_dir = os.path.join(dest, "combined pdf")
+    out_dir = os.path.join(dest, "Combined pdf")
     os.makedirs(out_dir, exist_ok=True)
     count = 0
     for prod in sorted(os.listdir(dest)):
         prod_path = os.path.join(dest, prod)
         if not os.path.isdir(prod_path):
             continue
-        pdfs = [f for f in os.listdir(prod_path) if f.lower().endswith(".pdf") and not f.startswith("Bestelbon_")]
-        if not pdfs:
-            continue
-        pdfs.sort(key=lambda x: x.lower())
-        merger = PdfMerger()
-        for fname in pdfs:
-            merger.append(os.path.join(prod_path, fname))
+        pdfs = [
+            f
+            for f in os.listdir(prod_path)
+            if f.lower().endswith(".pdf") and not f.startswith("Bestelbon_")
+        ]
+        if pdfs:
+            merger = PdfMerger()
+            pdfs.sort(key=lambda x: x.lower())
+            for fname in pdfs:
+                merger.append(os.path.join(prod_path, fname))
+        else:
+            zip_path = os.path.join(prod_path, f"{prod}.zip")
+            if not os.path.isfile(zip_path):
+                continue
+            with zipfile.ZipFile(zip_path) as zf:
+                zip_pdfs = [
+                    name
+                    for name in zf.namelist()
+                    if name.lower().endswith(".pdf")
+                    and not os.path.basename(name).startswith("Bestelbon_")
+                ]
+                if not zip_pdfs:
+                    continue
+                merger = PdfMerger()
+                for name in sorted(
+                    zip_pdfs, key=lambda x: os.path.basename(x).lower()
+                ):
+                    with zf.open(name) as fh:
+                        merger.append(io.BytesIO(fh.read()))
         out_name = f"{prod}_{date_str}_combined.pdf"
         merger.write(os.path.join(out_dir, out_name))
         merger.close()
