@@ -327,7 +327,13 @@ def copy_per_production_and_orders(
     footer_note: str = "",
     zip_parts: bool = False,
 ) -> Tuple[int, Dict[str, str]]:
-    """Copy files per production and create accompanying order documents."""
+    """Copy files per production and create accompanying order documents.
+
+    If ``zip_parts`` is ``True``, all export files for a production are
+    collected into a single ``<production>.zip`` archive instead of individual
+    ``PartNumber`` files. Only the generated order Excel/PDF remain unzipped in
+    the production folder.
+    """
     os.makedirs(dest, exist_ok=True)
     file_index = _build_file_index(source, selected_exts)
     count_copied = 0
@@ -342,22 +348,27 @@ def copy_per_production_and_orders(
     for prod, rows in prod_to_rows.items():
         prod_folder = os.path.join(dest, prod)
         os.makedirs(prod_folder, exist_ok=True)
+        zf = None
+        if zip_parts:
+            zip_path = os.path.join(prod_folder, f"{prod}.zip")
+            zf = zipfile.ZipFile(zip_path, "w")
 
         for row in rows:
             pn = str(row["PartNumber"])
             files = file_index.get(pn, [])
             if zip_parts:
-                if files:
-                    zip_path = os.path.join(prod_folder, f"{pn}.zip")
-                    with zipfile.ZipFile(zip_path, "w") as zf:
-                        for src_file in files:
-                            zf.write(src_file, arcname=os.path.basename(src_file))
-                            count_copied += 1
+                for src_file in files:
+                    if zf is not None:
+                        zf.write(src_file, arcname=os.path.basename(src_file))
+                        count_copied += 1
             else:
                 for src_file in files:
                     dst = os.path.join(prod_folder, os.path.basename(src_file))
                     shutil.copy2(src_file, dst)
                     count_copied += 1
+
+        if zf is not None:
+            zf.close()
 
         supplier = pick_supplier_for_production(prod, db, override_map)
         chosen[prod] = supplier.supplier
