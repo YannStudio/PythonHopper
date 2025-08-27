@@ -183,13 +183,28 @@ def generate_pdf_order_platypus(
     desc_w = usable_w * col_fracs[1]
     mat_w = usable_w * col_fracs[2]
     try:
-        max_mat = (
-            max(stringWidth(_material_nowrap(it.get("Materiaal", "")), "Helvetica", 9) for it in items)
+        header_width = stringWidth("Materiaal", "Helvetica-Bold", 10) + 6
+        value_width = (
+            max(
+                stringWidth(
+                    _material_nowrap(it.get("Materiaal", "")), "Helvetica", 9
+                )
+                for it in items
+            )
             + 6
         )
+        max_mat = max(header_width, value_width)
         if max_mat < mat_w:
             desc_w += mat_w - max_mat
             mat_w = max_mat
+        elif max_mat > mat_w:
+            desc_w -= max_mat - mat_w
+            mat_w = max_mat
+        min_desc_w = 40 * mm
+        if desc_w < min_desc_w:
+            diff = min_desc_w - desc_w
+            desc_w = min_desc_w
+            mat_w = max(0, mat_w - diff)
     except Exception:
         pass
     col_widths = [
