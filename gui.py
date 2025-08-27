@@ -841,7 +841,15 @@ def start_gui():
                 messagebox.showwarning("Let op", "Selecteer bestemmingsmap."); return
             def work():
                 self.status_var.set("PDF's combineren...")
-                cnt = combine_pdfs_per_production(self.dest_folder)
+                try:
+                    cnt = combine_pdfs_per_production(self.dest_folder)
+                except ModuleNotFoundError:
+                    self.status_var.set("PyPDF2 ontbreekt")
+                    messagebox.showwarning(
+                        "PyPDF2 ontbreekt",
+                        "Installeer PyPDF2 om PDF's te combineren.",
+                    )
+                    return
                 self.status_var.set(f"Gecombineerde pdf's: {cnt}")
                 messagebox.showinfo("Klaar", "PDF's gecombineerd.")
             threading.Thread(target=work, daemon=True).start()
