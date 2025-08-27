@@ -1,0 +1,48 @@
+import zipfile
+from pathlib import Path
+
+from PyPDF2 import PdfWriter
+
+from orders import combine_pdfs_per_production
+
+
+def _blank_pdf(path: Path) -> None:
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    with path.open("wb") as fh:
+        writer.write(fh)
+
+
+def test_combine_handles_loose_files_and_zip(tmp_path):
+    dest = tmp_path
+    date = "2023-01-01"
+
+    # production with loose PDFs
+    prod1 = dest / "prod1"
+    prod1.mkdir()
+    _blank_pdf(prod1 / "a.pdf")
+    _blank_pdf(prod1 / "b.pdf")
+
+    # production with PDFs only inside a zip archive
+    prod2 = dest / "prod2"
+    prod2.mkdir()
+    zip_path = prod2 / "prod2.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        for name in ["c.pdf", "d.pdf"]:
+            tmp = prod2 / name
+            _blank_pdf(tmp)
+            zf.write(tmp, arcname=name)
+            tmp.unlink()
+
+    # empty production should be skipped
+    (dest / "empty").mkdir()
+
+    count = combine_pdfs_per_production(str(dest), date)
+    out_dir = dest / "Combined pdf"
+
+    assert count == 2
+    assert sorted(p.name for p in out_dir.glob("*.pdf")) == [
+        "prod1_2023-01-01_combined.pdf",
+        "prod2_2023-01-01_combined.pdf",
+    ]
+
