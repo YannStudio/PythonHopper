@@ -596,7 +596,7 @@ def start_gui():
             tk.Checkbutton(filt, text="STEP (.step, .stp)", variable=self.step_var).pack(anchor="w", padx=8)
             tk.Checkbutton(filt, text="DXF (.dxf)", variable=self.dxf_var).pack(anchor="w", padx=8)
             tk.Checkbutton(filt, text="DWG (.dwg)", variable=self.dwg_var).pack(anchor="w", padx=8)
-            tk.Checkbutton(filt, text="Zip per part", variable=self.zip_var).pack(anchor="w", padx=8)
+            tk.Checkbutton(filt, text="Zip per productie", variable=self.zip_var).pack(anchor="w", padx=8)
 
             # BOM controls
             bf = tk.Frame(main); bf.pack(fill="x", padx=8, pady=6)
