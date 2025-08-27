@@ -418,6 +418,51 @@ def copy_per_production_and_orders(
     return count_copied, chosen
 
 
+def combine_pdfs_from_source(
+    source: str,
+    bom_df: pd.DataFrame,
+    dest: str,
+    date_str: str | None = None,
+) -> int:
+    """Combine PDF drawing files per production directly from ``source``.
+
+    The BOM dataframe provides ``PartNumber`` to ``Production`` mappings.
+    PDFs matching the part numbers are searched in ``source`` using
+    :func:`_build_file_index` and merged per production. The resulting files
+    are written to ``dest/Combined pdf``. Output filenames contain the
+    production name and current date. Returns the number of combined PDF
+    files created.
+    """
+    if PdfMerger is None:
+        raise ModuleNotFoundError(
+            "PyPDF2 must be installed to combine PDF files"
+        )
+
+    date_str = date_str or datetime.date.today().strftime("%Y-%m-%d")
+    idx = _build_file_index(source, [".pdf"])
+
+    prod_to_files: Dict[str, List[str]] = defaultdict(list)
+    for _, row in bom_df.iterrows():
+        prod = (row.get("Production") or "").strip() or "_Onbekend"
+        pn = str(row.get("PartNumber", ""))
+        prod_to_files[prod].extend(idx.get(pn, []))
+
+    out_dir = os.path.join(dest, "Combined pdf")
+    os.makedirs(out_dir, exist_ok=True)
+    count = 0
+    for prod, files in prod_to_files.items():
+        if not files:
+            continue
+        merger = PdfMerger()
+        for path in sorted(files, key=lambda x: os.path.basename(x).lower()):
+            merger.append(path)
+        out_name = f"{prod}_{date_str}_combined.pdf"
+        merger.write(os.path.join(out_dir, out_name))
+        merger.close()
+        count += 1
+    return count
+
+
 def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
     """Combine PDF drawing files per production folder into single PDFs.
 

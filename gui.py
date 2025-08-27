@@ -16,6 +16,7 @@ from orders import (
     copy_per_production_and_orders,
     DEFAULT_FOOTER_NOTE,
     combine_pdfs_per_production,
+    combine_pdfs_from_source,
 )
 
 def start_gui():
@@ -837,22 +838,42 @@ def start_gui():
 
         def _combine_pdf(self):
             from tkinter import messagebox
-            if not self.dest_folder:
-                messagebox.showwarning("Let op", "Selecteer bestemmingsmap."); return
-            def work():
-                self.status_var.set("PDF's combineren...")
-                try:
-                    cnt = combine_pdfs_per_production(self.dest_folder)
-                except ModuleNotFoundError:
-                    self.status_var.set("PyPDF2 ontbreekt")
-                    messagebox.showwarning(
-                        "PyPDF2 ontbreekt",
-                        "Installeer PyPDF2 om PDF's te combineren.",
-                    )
-                    return
-                self.status_var.set(f"Gecombineerde pdf's: {cnt}")
-                messagebox.showinfo("Klaar", "PDF's gecombineerd.")
-            threading.Thread(target=work, daemon=True).start()
+            if self.dest_folder:
+                def work():
+                    self.status_var.set("PDF's combineren...")
+                    try:
+                        cnt = combine_pdfs_per_production(self.dest_folder)
+                    except ModuleNotFoundError:
+                        self.status_var.set("PyPDF2 ontbreekt")
+                        messagebox.showwarning(
+                            "PyPDF2 ontbreekt",
+                            "Installeer PyPDF2 om PDF's te combineren.",
+                        )
+                        return
+                    self.status_var.set(f"Gecombineerde pdf's: {cnt}")
+                    messagebox.showinfo("Klaar", "PDF's gecombineerd.")
+                threading.Thread(target=work, daemon=True).start()
+            elif self.source_folder and self.bom_df is not None:
+                def work():
+                    self.status_var.set("PDF's combineren...")
+                    try:
+                        cnt = combine_pdfs_from_source(
+                            self.source_folder, self.bom_df, self.source_folder
+                        )
+                    except ModuleNotFoundError:
+                        self.status_var.set("PyPDF2 ontbreekt")
+                        messagebox.showwarning(
+                            "PyPDF2 ontbreekt",
+                            "Installeer PyPDF2 om PDF's te combineren.",
+                        )
+                        return
+                    self.status_var.set(f"Gecombineerde pdf's: {cnt}")
+                    messagebox.showinfo("Klaar", "PDF's gecombineerd.")
+                threading.Thread(target=work, daemon=True).start()
+            else:
+                messagebox.showwarning(
+                    "Let op", "Selecteer bron + BOM of bestemmingsmap."
+                )
 
     App().mainloop()
 
