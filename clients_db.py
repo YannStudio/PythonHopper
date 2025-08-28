@@ -33,6 +33,8 @@ class ClientsDB:
                 except Exception as e:
                     print(f"Fout bij client record {idx}: {e}; data={rec}")
             return ClientsDB(clients)
+        except Exception as e:
+            raise RuntimeError(f"Fout bij laden van {path}") from e
 
 
     def save(self, path: str = CLIENTS_DB_FILE) -> None:

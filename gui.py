@@ -11,6 +11,7 @@ from helpers import _to_str, _build_file_index
 from models import Supplier, Client, DeliveryAddress
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from clients_db import ClientsDB, CLIENTS_DB_FILE
+from delivery_addresses_db import DeliveryAddressesDB, DELIVERY_ADDRESSES_DB_FILE
 
 from bom import read_csv_flex, load_bom
 from orders import (
@@ -178,7 +179,13 @@ def start_gui():
             self.db = db
             self.on_change = on_change
 
-
+            cols = ("Naam", "Adres", "Contact", "Tel", "E-mail")
+            self.tree = ttk.Treeview(self, columns=cols, show="headings", selectmode="browse")
+            for c in cols:
+                self.tree.heading(c, text=c)
+                self.tree.column(c, width=160, anchor="w")
+            self.tree.pack(fill="both", expand=True, padx=8, pady=8)
+            self.tree.bind("<Double-1>", lambda _e: self.edit_sel())
 
             btns = tk.Frame(self)
             btns.pack(fill="x")
@@ -191,7 +198,14 @@ def start_gui():
         def refresh(self):
             for it in self.tree.get_children():
                 self.tree.delete(it)
-
+            for idx, a in enumerate(self.db.addresses_sorted()):
+                vals = (
+                    a.name,
+                    a.address or "",
+                    a.contact or "",
+                    a.phone or "",
+                    a.email or "",
+                )
                 tag = "odd" if idx % 2 == 0 else "even"
                 self.tree.insert("", "end", values=vals, tags=(tag,))
             self.tree.tag_configure("odd", background=TREE_ODD_BG)
@@ -202,7 +216,18 @@ def start_gui():
             if not sel:
                 return None
             vals = self.tree.item(sel[0], "values")
+            return vals[0]
 
+        def _open_edit_dialog(self, addr: Optional[DeliveryAddress] = None):
+            win = tk.Toplevel(self)
+            win.title("Leveringsadres")
+            fields = [
+                ("Naam", "name"),
+                ("Adres", "address"),
+                ("Contact", "contact"),
+                ("Tel", "phone"),
+                ("E-mail", "email"),
+            ]
             entries = {}
             for i, (lbl, key) in enumerate(fields):
                 tk.Label(win, text=lbl + ":").grid(row=i, column=0, sticky="e", padx=4, pady=2)
@@ -212,6 +237,8 @@ def start_gui():
                     ent.insert(0, _to_str(getattr(addr, key)))
                 entries[key] = ent
 
+            def _save():
+                rec = {k: e.get().strip() for k, e in entries.items()}
                 if not rec["name"]:
                     messagebox.showwarning("Let op", "Naam is verplicht.", parent=win)
                     return
@@ -224,7 +251,7 @@ def start_gui():
                 win.destroy()
 
             btnf = tk.Frame(win)
-
+            btnf.grid(row=len(fields), column=0, columnspan=2, pady=6)
             tk.Button(btnf, text="Opslaan", command=_save).pack(side="left", padx=4)
             tk.Button(btnf, text="Annuleer", command=win.destroy).pack(side="left", padx=4)
             win.transient(self)
@@ -742,7 +769,6 @@ def start_gui():
             threading.Thread(target=work, daemon=True).start()
 
         def _copy_per_prod(self):
-
-
+            pass
     App().mainloop()
 

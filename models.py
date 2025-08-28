@@ -202,3 +202,55 @@ class Client:
 
 @dataclass
 class DeliveryAddress:
+    name: str
+    address: Optional[str] = None
+    contact: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    favorite: bool = False
+
+    @staticmethod
+    def from_any(d: dict) -> "DeliveryAddress":
+        key_map = {
+            "name": "name",
+            "adres": "address",
+            "address": "address",
+            "contact": "contact",
+            "contactpersoon": "contact",
+            "tel": "phone",
+            "phone": "phone",
+            "telefoon": "phone",
+            "email": "email",
+            "e-mail": "email",
+            "mail": "email",
+            "favorite": "favorite",
+            "favoriet": "favorite",
+            "fav": "favorite",
+        }
+        norm: dict = {}
+        for k, v in d.items():
+            lk = str(k).strip().lower()
+            if lk in key_map:
+                norm[key_map[lk]] = v
+        name = str(norm.get("name") or d.get("name") or "").strip()
+        if not name:
+            raise ValueError("Delivery address name is missing in record.")
+        fav = norm.get("favorite", d.get("favorite", False))
+        if isinstance(fav, str):
+            fav = fav.strip().lower() in ("1", "true", "yes", "y", "ja")
+        return DeliveryAddress(
+            name=name,
+            address=_to_str(norm.get("address")).strip() or None if ("address" in norm) else None,
+            contact=_to_str(norm.get("contact")).strip() or None if ("contact" in norm) else None,
+            phone=_to_str(norm.get("phone")).strip() or None if ("phone" in norm) else None,
+            email=_to_str(norm.get("email")).strip() or None if ("email" in norm) else None,
+            favorite=bool(fav),
+        )
+
+    def __str__(self) -> str:
+        parts = [self.name]
+        if self.address:
+            parts.append(self.address)
+        if self.contact:
+            parts.append(self.contact)
+        return ", ".join(parts)
