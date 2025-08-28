@@ -27,15 +27,6 @@ class DeliveryAddressesDB:
                 recs = data
             else:
                 recs = data.get("addresses", [])
-            for idx, rec in enumerate(recs):
-                try:
-                    addresses.append(DeliveryAddress.from_any(rec))
-                except Exception as e:
-                    print(f"Fout bij leveringsadres record {idx}: {e}; data={rec}")
-        except Exception:
-            logger.exception("Error loading delivery addresses DB")
-        finally:
-            return DeliveryAddressesDB(addresses)
 
 
     def save(self, path: str = DELIVERY_ADDRESSES_DB_FILE) -> None:
@@ -68,6 +59,7 @@ class DeliveryAddressesDB:
             self.addresses.pop(i)
             return True
         return False
+
 
     def get(self, name: str) -> Optional[DeliveryAddress]:
         i = self._idx_by_name(name)

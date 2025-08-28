@@ -37,6 +37,8 @@ class SuppliersDB:
                     )
             defaults = data.get("defaults_by_production", {}) or {}
             return SuppliersDB(sups, defaults)
+        except Exception as e:
+            raise RuntimeError(f"Fout bij laden van {path}") from e
 
     def save(self, path: str = SUPPLIERS_DB_FILE) -> None:
         data = {

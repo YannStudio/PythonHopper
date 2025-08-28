@@ -213,14 +213,7 @@ class DeliveryAddress:
     def from_any(d: dict) -> "DeliveryAddress":
         key_map = {
             "name": "name",
-            "naam": "name",
-            "address": "address",
-            "adres": "address",
-            "contact": "contact",
-            "contactpersoon": "contact",
-            "phone": "phone",
-            "telefoon": "phone",
-            "tel": "phone",
+
             "email": "email",
             "e-mail": "email",
             "mail": "email",
@@ -228,7 +221,7 @@ class DeliveryAddress:
             "favoriet": "favorite",
             "fav": "favorite",
         }
-        norm = {}
+
         for k, v in d.items():
             lk = str(k).strip().lower()
             if lk in key_map:
@@ -246,4 +239,4 @@ class DeliveryAddress:
             phone=_to_str(norm.get("phone")).strip() or None if ("phone" in norm) else None,
             email=_to_str(norm.get("email")).strip() or None if ("email" in norm) else None,
             favorite=bool(fav),
-        )
+
