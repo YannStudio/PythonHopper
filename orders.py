@@ -81,6 +81,7 @@ def generate_pdf_order_platypus(
     production: str,
     items: List[Dict[str, str]],
     footer_note: str = "",
+    doc_type: str = "bestelbon",
 ) -> None:
     """Generate a PDF order using ReportLab if available."""
     if not REPORTLAB_OK:
@@ -136,8 +137,11 @@ def generate_pdf_order_platypus(
     if supplier.phone:
         supp_lines.append(f"Tel: {supplier.phone}")
 
+    title = (
+        "Offerteaanvraag productie" if doc_type.lower() == "offerte" else "Bestelbon productie"
+    )
     story = []
-    story.append(Paragraph(f"Bestelbon productie: {production}", title_style))
+    story.append(Paragraph(f"{title}: {production}", title_style))
     story.append(Spacer(0, 6))
     story.append(Paragraph("<br/>".join(company_lines), text_style))
     story.append(Spacer(0, 6))
@@ -251,6 +255,8 @@ def write_order_excel(
     items: List[Dict[str, str]],
     company_info: Dict[str, str] | None = None,
     supplier: Supplier | None = None,
+    production: str = "",
+    doc_type: str = "bestelbon",
 ) -> None:
     """Write order information to an Excel file with header info."""
     df = pd.DataFrame(
@@ -258,7 +264,10 @@ def write_order_excel(
         columns=["PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht"],
     )
 
-    header_lines: List[Tuple[str, str]] = []
+    title = (
+        "Offerteaanvraag productie" if doc_type.lower() == "offerte" else "Bestelbon productie"
+    )
+    header_lines: List[Tuple[str, str]] = [(title, production), ("", "")]
     if company_info:
         header_lines.extend(
             [
@@ -341,6 +350,7 @@ def copy_per_production_and_orders(
     client: Client | None = None,
     footer_note: str = "",
     zip_parts: bool = False,
+    doc_type: str = "bestelbon",
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
 
@@ -410,10 +420,13 @@ def copy_per_production_and_orders(
             "email": client.email if client else "",
         }
         if supplier.supplier:
-            excel_path = os.path.join(prod_folder, f"Bestelbon_{prod}_{today}.xlsx")
-            write_order_excel(excel_path, items, company, supplier)
+            prefix = "Offerte" if doc_type.lower() == "offerte" else "Bestelbon"
+            excel_path = os.path.join(prod_folder, f"{prefix}_{prod}_{today}.xlsx")
+            write_order_excel(
+                excel_path, items, company, supplier, production=prod, doc_type=doc_type
+            )
 
-            pdf_path = os.path.join(prod_folder, f"Bestelbon_{prod}_{today}.pdf")
+            pdf_path = os.path.join(prod_folder, f"{prefix}_{prod}_{today}.pdf")
             try:
                 generate_pdf_order_platypus(
                     pdf_path,
@@ -422,6 +435,7 @@ def copy_per_production_and_orders(
                     prod,
                     items,
                     footer_note=footer_note or DEFAULT_FOOTER_NOTE,
+                    doc_type=doc_type,
                 )
             except Exception as e:
                 print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
@@ -501,7 +515,8 @@ def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
         pdfs = [
             f
             for f in os.listdir(prod_path)
-            if f.lower().endswith(".pdf") and not f.startswith("Bestelbon_")
+            if f.lower().endswith(".pdf")
+            and not (f.startswith("Bestelbon_") or f.startswith("Offerte_"))
         ]
         if pdfs:
             merger = PdfMerger()
@@ -517,7 +532,10 @@ def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
                     name
                     for name in zf.namelist()
                     if name.lower().endswith(".pdf")
-                    and not os.path.basename(name).startswith("Bestelbon_")
+                    and not (
+                        os.path.basename(name).startswith("Bestelbon_")
+                        or os.path.basename(name).startswith("Offerte_")
+                    )
                 ]
                 if not zip_pdfs:
                     continue
