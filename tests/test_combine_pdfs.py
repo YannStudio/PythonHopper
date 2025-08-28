@@ -2,7 +2,7 @@ import zipfile
 from pathlib import Path
 
 import pandas as pd
-from PyPDF2 import PdfWriter
+from PyPDF2 import PdfWriter, PdfReader
 
 from orders import combine_pdfs_per_production, combine_pdfs_from_source
 
@@ -103,4 +103,23 @@ def test_combine_from_source_to_dest_without_copy(tmp_path):
         "prod2_2023-01-01_combined.pdf",
     ]
     assert sorted(p.name for p in dest.iterdir()) == ["Combined pdf"]
+
+
+def test_combine_skips_order_documents(tmp_path):
+    dest = tmp_path
+    date = "2023-01-01"
+    prod1 = dest / "prod1"
+    prod1.mkdir()
+    _blank_pdf(prod1 / "a.pdf")
+    _blank_pdf(prod1 / "Bestelbon_x.pdf")
+    _blank_pdf(prod1 / "Offerte_x.pdf")
+    _blank_pdf(prod1 / "Offerteaanvraag_x.pdf")
+
+    count = combine_pdfs_per_production(str(dest), date)
+    out_dir = dest / "Combined pdf"
+    pdf_path = out_dir / "prod1_2023-01-01_combined.pdf"
+    reader = PdfReader(str(pdf_path))
+
+    assert count == 1
+    assert len(reader.pages) == 1
 

@@ -788,7 +788,7 @@ def start_gui():
             act = tk.Frame(main); act.pack(fill="x", padx=8, pady=8)
             tk.Button(act, text="Kopieer zonder submappen", command=self._copy_flat).pack(side="left", padx=6)
             tk.Button(act, text="Kopieer per productie + bestelbonnen", command=self._copy_per_prod).pack(side="left", padx=6)
-            ttk.Combobox(act, textvariable=self.doc_type_var, values=["bestelbon", "offerte", "offerteaanvraag"], state="readonly", width=16).pack(side="left", padx=6)
+
             tk.Checkbutton(act, text="Zip per productie", variable=self.zip_var).pack(side="left", padx=6)
             tk.Button(act, text="Combine pdf", command=self._combine_pdf).pack(side="left", padx=6)
 
@@ -997,7 +997,13 @@ def start_gui():
                         doc_type=self.doc_type_var.get(),
                     )
                     self.status_var.set(f"Klaar. Gekopieerd: {cnt}. Leveranciers: {chosen}")
-                    doc_name = "Offertes" if self.doc_type_var.get() == "offerte" else "Bestelbonnen"
+                    doc_type = self.doc_type_var.get()
+                    if doc_type == "offerte":
+                        doc_name = "Offertes"
+                    elif doc_type == "offerteaanvraag":
+                        doc_name = "Offerteaanvragen"
+                    else:
+                        doc_name = "Bestelbonnen"
                     messagebox.showinfo("Klaar", f"{doc_name} aangemaakt.")
                 threading.Thread(target=work, daemon=True).start()
             SupplierSelectionPopup(
