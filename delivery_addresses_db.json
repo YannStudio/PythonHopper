@@ -1,0 +1,19 @@
+{
+  "addresses": [
+    {
+      "name": "Atelier",
+      "address": "Industriepark 1, 1000 Brussel",
+      "contact": "Jan Peeters",
+      "phone": "012 34 56 78",
+      "email": "jan@example.com",
+      "favorite": true
+    },
+    {
+      "name": "Magazijn",
+      "address": "Havenlaan 2, 2000 Antwerpen",
+      "contact": "Piet Janssens",
+      "phone": "098 76 54 32",
+      "email": "piet@example.com"
+    }
+  ]
+}

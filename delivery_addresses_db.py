@@ -19,14 +19,7 @@ class DeliveryAddressesDB:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            recs = data.get("addresses", data if isinstance(data, list) else [])
-            addresses = []
-            for rec in recs:
-                try:
-                    addresses.append(DeliveryAddress.from_any(rec))
-                except Exception:
-                    pass
-            return DeliveryAddressesDB(addresses)
+
         except Exception:
             return DeliveryAddressesDB()
 
@@ -36,10 +29,6 @@ class DeliveryAddressesDB:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
     def addresses_sorted(self) -> List[DeliveryAddress]:
-        return sorted(self.addresses, key=lambda a: a.name.lower())
-
-    def display_name(self, addr: DeliveryAddress) -> str:
-        return addr.name
 
     def _idx_by_name(self, name: str) -> int:
         for i, a in enumerate(self.addresses):
@@ -50,7 +39,7 @@ class DeliveryAddressesDB:
     def upsert(self, addr: DeliveryAddress) -> None:
         i = self._idx_by_name(addr.name)
         if i >= 0:
-            self.addresses[i] = addr
+
         else:
             self.addresses.append(addr)
 
@@ -60,6 +49,7 @@ class DeliveryAddressesDB:
             self.addresses.pop(i)
             return True
         return False
+
 
     def get(self, name: str) -> Optional[DeliveryAddress]:
         i = self._idx_by_name(name)
