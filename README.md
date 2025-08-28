@@ -34,3 +34,12 @@ python cli.py clients add "Klant BV" \
     --email "info@klant.be"
 ```
 
+### Bestelbon, offerte of offerteaanvraag genereren
+
+
+
+```
+python cli.py copy-per-prod --source bron --dest doel --bom bom.csv --exts pdf \
+    --doc-type offerteaanvraag
+```
+

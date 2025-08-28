@@ -80,6 +80,7 @@ def run_tests() -> int:
             db,
             {},
             True,
+            {},
             client=client,
             footer_note=DEFAULT_FOOTER_NOTE,
         )
@@ -92,15 +93,16 @@ def run_tests() -> int:
         assert xlsx, "Excel bestelbon niet aangemaakt"
         wb = openpyxl.load_workbook(os.path.join(prod_folder, xlsx[0]))
         ws = wb.active
-        assert ws["A1"].value == "Bedrijf" and ws["B1"].value == client.name
-        assert ws["A6"].value == "Leverancier" and ws["B6"].value == "ACME"
-        assert ws["A7"].value == "Adres"
+        assert ws["A1"].value == "Bestelbon productie" and ws["B1"].value == "Laser"
+        assert ws["A3"].value == "Bedrijf" and ws["B3"].value == client.name
+        assert ws["A8"].value == "Leverancier" and ws["B8"].value == "ACME"
+        assert ws["A9"].value == "Adres"
         assert (
-            ws["B7"].value == "Teststraat 1 bus 2, BE-2000 Antwerpen, BE"
+            ws["B9"].value == "Teststraat 1 bus 2, BE-2000 Antwerpen, BE"
         )
-        assert ws["A8"].value == "BTW" and ws["B8"].value == "BE123"
-        assert ws["A9"].value == "E-mail" and ws["B9"].value == "x@y.z"
-        assert ws["A10"].value == "Tel" and ws["B10"].value == "+32 123"
+        assert ws["A10"].value == "BTW" and ws["B10"].value == "BE123"
+        assert ws["A11"].value == "E-mail" and ws["B11"].value == "x@y.z"
+        assert ws["A12"].value == "Tel" and ws["B12"].value == "+32 123"
         pdfs = [f for f in os.listdir(prod_folder) if f.lower().endswith(".pdf")]
         assert pdfs, "PDF bestelbon niet aangemaakt"
     print("All tests passed.")

@@ -1,11 +1,14 @@
-import os
 import json
+import logging
+import os
 from dataclasses import asdict
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 
 from models import Supplier
 
 SUPPLIERS_DB_FILE = "suppliers_db.json"
+
+logger = logging.getLogger(__name__)
 
 
 class SuppliersDB:
@@ -25,15 +28,15 @@ class SuppliersDB:
                 return SuppliersDB(sups, {})
             sups_raw = data.get("suppliers", [])
             sups = []
-            for rec in sups_raw:
+            for idx, rec in enumerate(sups_raw):
                 try:
                     sups.append(Supplier.from_any(rec))
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(
+                        f"Fout bij leverancier record {idx}: {e}; data={rec}"
+                    )
             defaults = data.get("defaults_by_production", {}) or {}
             return SuppliersDB(sups, defaults)
-        except Exception:
-            return SuppliersDB()
 
     def save(self, path: str = SUPPLIERS_DB_FILE) -> None:
         data = {

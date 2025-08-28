@@ -55,7 +55,7 @@ from helpers import (
     _material_nowrap,
     _build_file_index,
 )
-from models import Supplier, Client
+from models import Supplier, Client, DeliveryAddress
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from bom import load_bom  # noqa: F401 - imported for module dependency
 from delivery_addresses_db import DeliveryAddressesDB, DELIVERY_ADDRESSES_DB_FILE
@@ -79,6 +79,7 @@ def generate_pdf_order_platypus(
     path: str,
     company_info: Dict[str, str],
     supplier: Supplier,
+    delivery_address: DeliveryAddress | None,
     production: str,
     items: List[Dict[str, str]],
     footer_note: str = "",
@@ -127,8 +128,15 @@ def generate_pdf_order_platypus(
         addr_parts.append(supplier.land)
     full_addr = ", ".join(addr_parts)
 
-    doc_title = "Offerte" if doc_type == "offerte" else "Bestelbon"
-    supp_label = "Offerte bij:" if doc_type == "offerte" else "Besteld bij:"
+    if doc_type == "offerte":
+        doc_title = "Offerte"
+        supp_label = "Offerte bij:"
+    elif doc_type == "offerteaanvraag":
+        doc_title = "Offerteaanvraag"
+
+    else:
+        doc_title = "Bestelbon"
+        supp_label = "Besteld bij:"
     supp_lines = [f"<b>{supp_label}</b> {supplier.supplier}"]
     if full_addr:
         supp_lines.append(full_addr)
@@ -142,12 +150,30 @@ def generate_pdf_order_platypus(
     if delivery_address:
         supp_lines.append(f"Leveradres: {delivery_address}")
 
+    title = (
+        "Offerteaanvraag productie" if doc_type.lower() == "offerte" else "Bestelbon productie"
+    )
     story = []
-    story.append(Paragraph(f"{doc_title} productie: {production}", title_style))
+
     story.append(Spacer(0, 6))
+    if response_deadline:
+        story.append(Paragraph(f"Antwoord tegen: {response_deadline}", text_style))
+        story.append(Spacer(0, 6))
     story.append(Paragraph("<br/>".join(company_lines), text_style))
     story.append(Spacer(0, 6))
     story.append(Paragraph("<br/>".join(supp_lines), text_style))
+    if delivery_address:
+        addr_lines = [f"<b>Leveringsadres:</b> {delivery_address.name}"]
+        if delivery_address.address:
+            addr_lines.append(delivery_address.address)
+        if delivery_address.contact:
+            addr_lines.append(f"Contact: {delivery_address.contact}")
+        if delivery_address.phone:
+            addr_lines.append(f"Tel: {delivery_address.phone}")
+        if delivery_address.email:
+            addr_lines.append(f"E-mail: {delivery_address.email}")
+        story.append(Spacer(0, 6))
+        story.append(Paragraph("<br/>".join(addr_lines), text_style))
     story.append(Spacer(0, 10))
 
     # Headers and data
@@ -257,7 +283,7 @@ def write_order_excel(
     items: List[Dict[str, str]],
     company_info: Dict[str, str] | None = None,
     supplier: Supplier | None = None,
-    delivery_address: str = "",
+
 ) -> None:
     """Write order information to an Excel file with header info."""
     df = pd.DataFrame(
@@ -265,7 +291,7 @@ def write_order_excel(
         columns=["PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht"],
     )
 
-    header_lines: List[Tuple[str, str]] = []
+
     if company_info:
         header_lines.extend(
             [
@@ -298,9 +324,7 @@ def write_order_excel(
             ]
         )
     if delivery_address:
-        header_lines.append(("Leveradres", delivery_address))
-    if supplier or delivery_address:
-        header_lines.append(("", ""))
+
 
     startrow = len(header_lines)
     with pd.ExcelWriter(path, engine="openpyxl") as writer:
@@ -347,12 +371,12 @@ def copy_per_production_and_orders(
     selected_exts: List[str],
     db: SuppliersDB,
     override_map: Dict[str, str],
-    remember_defaults: bool,
-    delivery_map: Dict[str, str] | None = None,
+
     client: Client | None = None,
     footer_note: str = "",
     zip_parts: bool = False,
     doc_type: str = "bestelbon",
+    response_deadline: str = "",
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
 
@@ -402,6 +426,9 @@ def copy_per_production_and_orders(
         chosen[prod] = supplier.supplier
         if remember_defaults and supplier.supplier not in ("", "Onbekend"):
             db.set_default(prod, supplier.supplier)
+        delivery_addr = None
+        if addr_map:
+            delivery_addr = addr_map.get(prod)
 
         choice = (delivery_map or {}).get(prod, "").strip()
         lc = choice.lower()
@@ -437,12 +464,13 @@ def copy_per_production_and_orders(
         if supplier.supplier:
 
 
-            pdf_path = os.path.join(prod_folder, f"{doc_prefix}_{prod}_{today}.pdf")
+
             try:
                 generate_pdf_order_platypus(
                     pdf_path,
                     company,
                     supplier,
+                    delivery_addr,
                     prod,
                     items,
                     footer_note=footer_note or DEFAULT_FOOTER_NOTE,
@@ -526,7 +554,7 @@ def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
         pdfs = [
             f
             for f in os.listdir(prod_path)
-            if f.lower().endswith(".pdf") and not f.startswith(("Bestelbon_", "Offerte_"))
+
         ]
         if pdfs:
             merger = PdfMerger()
@@ -542,7 +570,7 @@ def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
                     name
                     for name in zf.namelist()
                     if name.lower().endswith(".pdf")
-                    and not os.path.basename(name).startswith(("Bestelbon_", "Offerte_"))
+
                 ]
                 if not zip_pdfs:
                     continue
