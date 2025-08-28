@@ -1,11 +1,14 @@
-import os
 import json
+import logging
+import os
 from dataclasses import asdict
 from typing import List, Optional
 
 from models import Client
 
 CLIENTS_DB_FILE = "clients_db.json"
+
+logger = logging.getLogger(__name__)
 
 
 class ClientsDB:
@@ -30,9 +33,7 @@ class ClientsDB:
                 except Exception as e:
                     print(f"Fout bij client record {idx}: {e}; data={rec}")
             return ClientsDB(clients)
-        except Exception as e:
-            print(f"Fout bij laden van opdrachtgevers: {e}")
-            return ClientsDB()
+
 
     def save(self, path: str = CLIENTS_DB_FILE) -> None:
         data = {"clients": [asdict(c) for c in self.clients]}

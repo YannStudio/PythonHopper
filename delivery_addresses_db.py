@@ -1,11 +1,14 @@
-import os
 import json
+import logging
+import os
 from dataclasses import asdict
 from typing import List, Optional
 
 from models import DeliveryAddress
 
 DELIVERY_ADDRESSES_DB_FILE = "delivery_addresses_db.json"
+
+logger = logging.getLogger(__name__)
 
 
 class DeliveryAddressesDB:
@@ -32,9 +35,7 @@ class DeliveryAddressesDB:
                         f"Fout bij leveradres record {idx}: {e}; data={rec}"
                     )
             return DeliveryAddressesDB(addrs)
-        except Exception as e:
-            print(f"Fout bij laden van leveradressen: {e}")
-            return DeliveryAddressesDB()
+
 
     def save(self, path: str = DELIVERY_ADDRESSES_DB_FILE) -> None:
         data = {"addresses": [asdict(a) for a in self.addresses]}
