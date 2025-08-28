@@ -670,14 +670,74 @@ def start_gui():
             self.dxf_var = tk.BooleanVar(value=False)
             self.dwg_var = tk.BooleanVar(value=False)
             self.status_var = tk.StringVar(value="")
-            self.src_entry = tk.Entry(self)
-            self.dst_entry = tk.Entry(self)
+            # Bronmap
+            srcf = tk.Frame(self)
+            srcf.pack(fill="x", padx=8, pady=(8, 4))
+            tk.Label(srcf, text="Bron:").pack(side="left")
+            self.src_entry = tk.Entry(srcf)
+            self.src_entry.pack(side="left", fill="x", expand=True, padx=(4, 0))
+            tk.Button(srcf, text="Kies...", command=self._pick_src).pack(
+                side="left", padx=4
+            )
+
+            # Bestemmingsmap
+            dstf = tk.Frame(self)
+            dstf.pack(fill="x", padx=8, pady=4)
+            tk.Label(dstf, text="Bestemming:").pack(side="left")
+            self.dst_entry = tk.Entry(dstf)
+            self.dst_entry.pack(side="left", fill="x", expand=True, padx=(4, 0))
+            tk.Button(dstf, text="Kies...", command=self._pick_dst).pack(
+                side="left", padx=4
+            )
+
+            # Extensie-opties en laadknoppen
+            optf = tk.Frame(self)
+            optf.pack(fill="x", padx=8, pady=4)
+            tk.Checkbutton(optf, text="PDF", variable=self.pdf_var).pack(side="left")
+            tk.Checkbutton(optf, text="STEP", variable=self.step_var).pack(side="left")
+            tk.Checkbutton(optf, text="DXF", variable=self.dxf_var).pack(side="left")
+            tk.Checkbutton(optf, text="DWG", variable=self.dwg_var).pack(side="left")
+            tk.Button(optf, text="Laad BOM", command=self._load_bom).pack(
+                side="left", padx=(20, 4)
+            )
+            tk.Button(optf, text="Laad PN's", command=self._load_manual_pns).pack(
+                side="left"
+            )
+
+            # Boom met resultaten
             self.tree = ttk.Treeview(
                 self,
                 columns=("PartNumber", "Bestanden gevonden", "Status"),
                 show="headings",
             )
-            self.pn_text = tk.Text(self)
+            for col, width in zip(
+                ("PartNumber", "Bestanden gevonden", "Status"), (180, 200, 80)
+            ):
+                self.tree.heading(col, text=col)
+                self.tree.column(col, width=width, anchor="w")
+            self.tree.pack(fill="both", expand=True, padx=8, pady=4)
+
+            # Handmatige partnummers
+            pnf = tk.Frame(self)
+            pnf.pack(fill="both", padx=8, pady=4)
+            tk.Label(pnf, text="Partnummers:").pack(anchor="w")
+            self.pn_text = tk.Text(pnf, height=4)
+            self.pn_text.pack(fill="x")
+
+            # Actieknoppen
+            btnf = tk.Frame(self)
+            btnf.pack(fill="x", padx=8, pady=4)
+            tk.Button(btnf, text="Kopieer vlak", command=self._copy_flat).pack(
+                side="left", padx=4
+            )
+            tk.Button(btnf, text="Kopieer per productie", command=self._copy_per_prod).pack(
+                side="left", padx=4
+            )
+
+            # Statusbalk
+            tk.Label(self, textvariable=self.status_var, anchor="w").pack(
+                fill="x", padx=8, pady=(0, 8)
+            )
 
         def _pick_src(self):
             p = filedialog.askdirectory()
