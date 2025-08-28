@@ -126,8 +126,15 @@ def generate_pdf_order_platypus(
         addr_parts.append(supplier.land)
     full_addr = ", ".join(addr_parts)
 
-    doc_title = "Offerte" if doc_type == "offerte" else "Bestelbon"
-    supp_label = "Offerte bij:" if doc_type == "offerte" else "Besteld bij:"
+    if doc_type == "offerte":
+        doc_title = "Offerte"
+        supp_label = "Offerte bij:"
+    elif doc_type == "offerteaanvraag":
+        doc_title = "Offerteaanvraag"
+        supp_label = "Offerte aangevraagd bij:"
+    else:
+        doc_title = "Bestelbon"
+        supp_label = "Besteld bij:"
     supp_lines = [f"<b>{supp_label}</b> {supplier.supplier}"]
     if full_addr:
         supp_lines.append(full_addr)
@@ -414,7 +421,12 @@ def copy_per_production_and_orders(
             "email": client.email if client else "",
         }
         if supplier.supplier:
-            doc_prefix = "Offerte" if doc_type == "offerte" else "Bestelbon"
+            if doc_type == "offerte":
+                doc_prefix = "Offerte"
+            elif doc_type == "offerteaanvraag":
+                doc_prefix = "Offerteaanvraag"
+            else:
+                doc_prefix = "Bestelbon"
             excel_path = os.path.join(prod_folder, f"{doc_prefix}_{prod}_{today}.xlsx")
             write_order_excel(excel_path, items, company, supplier)
 
@@ -507,7 +519,7 @@ def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
         pdfs = [
             f
             for f in os.listdir(prod_path)
-            if f.lower().endswith(".pdf") and not f.startswith(("Bestelbon_", "Offerte_"))
+            if f.lower().endswith(".pdf") and not f.startswith(("Bestelbon_", "Offerte_", "Offerteaanvraag_"))
         ]
         if pdfs:
             merger = PdfMerger()
@@ -523,7 +535,7 @@ def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
                     name
                     for name in zf.namelist()
                     if name.lower().endswith(".pdf")
-                    and not os.path.basename(name).startswith(("Bestelbon_", "Offerte_"))
+                    and not os.path.basename(name).startswith(("Bestelbon_", "Offerte_", "Offerteaanvraag_"))
                 ]
                 if not zip_pdfs:
                     continue
