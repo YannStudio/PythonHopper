@@ -27,7 +27,15 @@ class DeliveryAddressesDB:
                 recs = data
             else:
                 recs = data.get("addresses", [])
-
+            for idx, rec in enumerate(recs):
+                try:
+                    addr = DeliveryAddress.from_any(rec)
+                    addresses.append(addr)
+                except Exception as e:  # pragma: no cover - defensive
+                    logger.warning("Invalid delivery address record %s: %s", idx, e)
+        except Exception:
+            logger.exception("Error loading delivery addresses DB")
+        return DeliveryAddressesDB(addresses)
 
     def save(self, path: str = DELIVERY_ADDRESSES_DB_FILE) -> None:
         data = {"addresses": [asdict(a) for a in self.addresses]}
