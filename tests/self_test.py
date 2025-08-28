@@ -79,8 +79,8 @@ def run_tests() -> int:
             [".pdf", ".stp"],
             db,
             {},
-            {},
             True,
+            {},
             client=client,
             footer_note=DEFAULT_FOOTER_NOTE,
         )

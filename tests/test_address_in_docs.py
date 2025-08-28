@@ -34,8 +34,8 @@ def test_delivery_address_in_documents(tmp_path, monkeypatch):
         [".pdf"],
         db,
         overrides,
-        addr_map,
         False,
+        addr_map,
     )
     assert cnt == 1
     prod_dir = dst / "Laser"
