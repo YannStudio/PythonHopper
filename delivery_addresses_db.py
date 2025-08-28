@@ -22,7 +22,19 @@ class DeliveryAddressesDB:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-
+            if isinstance(data, list):
+                recs = data
+            else:
+                recs = data.get("addresses", [])
+            addrs: List[DeliveryAddress] = []
+            for idx, rec in enumerate(recs):
+                try:
+                    addrs.append(DeliveryAddress.from_any(rec))
+                except Exception as e:
+                    print(f"Fout bij adres record {idx}: {e}; data={rec}")
+            return DeliveryAddressesDB(addrs)
+        except Exception as e:
+            raise RuntimeError(f"Fout bij laden van {path}") from e
 
     def save(self, path: str = DELIVERY_ADDRESSES_DB_FILE) -> None:
         data = {"addresses": [asdict(a) for a in self.addresses]}
@@ -30,7 +42,7 @@ class DeliveryAddressesDB:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
     def addresses_sorted(self) -> List[DeliveryAddress]:
-
+        return sorted(self.addresses, key=lambda a: (not a.favorite, a.name.lower()))
     def _idx_by_name(self, name: str) -> int:
         for i, a in enumerate(self.addresses):
             if a.name.strip().lower() == str(name).strip().lower():
@@ -40,7 +52,11 @@ class DeliveryAddressesDB:
     def upsert(self, addr: DeliveryAddress) -> None:
         i = self._idx_by_name(addr.name)
         if i >= 0:
-
+            cur = self.addresses[i]
+            for f in asdict(addr):
+                val = getattr(addr, f)
+                if val not in (None, ""):
+                    setattr(cur, f, val)
         else:
             self.addresses.append(addr)
 
@@ -51,6 +67,13 @@ class DeliveryAddressesDB:
             return True
         return False
 
+
+    def toggle_fav(self, name: str) -> bool:
+        i = self._idx_by_name(name)
+        if i >= 0:
+            self.addresses[i].favorite = not self.addresses[i].favorite
+            return True
+        return False
 
     def get(self, name: str) -> Optional[DeliveryAddress]:
         i = self._idx_by_name(name)

@@ -209,26 +209,12 @@ class DeliveryAddress:
     email: Optional[str] = None
     favorite: bool = False
 
-    def __str__(self) -> str:
-        parts = [self.name]
-        if self.address:
-            parts.append(self.address)
-        return ", ".join(parts)
 
     @staticmethod
     def from_any(d: dict) -> "DeliveryAddress":
         key_map = {
             "name": "name",
-            "naam": "name",
-            "address": "address",
-            "adres": "address",
-            "leveradres": "address",
-            "leveringsadres": "address",
-            "contact": "contact",
-            "contactpersoon": "contact",
-            "phone": "phone",
-            "telefoon": "phone",
-            "tel": "phone",
+
             "email": "email",
             "e-mail": "email",
             "mail": "email",
@@ -236,19 +222,11 @@ class DeliveryAddress:
             "favoriet": "favorite",
             "fav": "favorite",
         }
-        norm = {}
+
         for k, v in d.items():
             lk = str(k).strip().lower()
             if lk in key_map:
                 norm[key_map[lk]] = v
-
-        name = str(norm.get("name") or d.get("name") or "").strip()
-        if not name:
-            raise ValueError("Delivery address name is missing in record.")
-
-        fav = norm.get("favorite", d.get("favorite", False))
-        if isinstance(fav, str):
-            fav = fav.strip().lower() in ("1", "true", "yes", "y", "ja")
 
         return DeliveryAddress(
             name=name,
