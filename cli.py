@@ -258,6 +258,7 @@ def cli_copy_per_prod(args):
         exts,
         db,
         override_map,
+        {},
         args.remember_defaults,
         client=client,
         footer_note=args.note or DEFAULT_FOOTER_NOTE,
