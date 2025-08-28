@@ -487,7 +487,6 @@ def copy_per_production_and_orders(
     override_map: Dict[str, str],
     remember_defaults: bool = False,
     addr_map: Dict[str, DeliveryAddress] | None = None,
-    delivery_map: Dict[str, str] | None = None,
     client: Client | None = None,
     footer_note: str = "",
     zip_parts: bool = False,
