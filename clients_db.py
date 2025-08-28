@@ -24,13 +24,14 @@ class ClientsDB:
             else:
                 recs = data.get("clients", [])
             clients = []
-            for rec in recs:
+            for idx, rec in enumerate(recs):
                 try:
                     clients.append(Client.from_any(rec))
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"Fout bij client record {idx}: {e}; data={rec}")
             return ClientsDB(clients)
-        except Exception:
+        except Exception as e:
+            print(f"Fout bij laden van opdrachtgevers: {e}")
             return ClientsDB()
 
     def save(self, path: str = CLIENTS_DB_FILE) -> None:
