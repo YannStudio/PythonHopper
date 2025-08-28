@@ -148,8 +148,11 @@ def generate_pdf_order_platypus(
     if supplier.phone:
         supp_lines.append(f"Tel: {supplier.phone}")
 
+    title = (
+        "Offerteaanvraag productie" if doc_type.lower() == "offerte" else "Bestelbon productie"
+    )
     story = []
-    story.append(Paragraph(f"{doc_title} productie: {production}", title_style))
+
     story.append(Spacer(0, 6))
     if response_deadline:
         story.append(Paragraph(f"Antwoord tegen: {response_deadline}", text_style))
@@ -286,10 +289,7 @@ def write_order_excel(
         columns=["PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht"],
     )
 
-    header_lines: List[Tuple[str, str]] = []
-    if response_deadline:
-        header_lines.append(("Antwoord tegen", response_deadline))
-        header_lines.append(("", ""))
+
     if company_info:
         header_lines.extend(
             [
@@ -458,16 +458,8 @@ def copy_per_production_and_orders(
             "email": client.email if client else "",
         }
         if supplier.supplier:
-            if doc_type == "offerte":
-                doc_prefix = "Offerte"
-            elif doc_type == "offerteaanvraag":
-                doc_prefix = "Offerteaanvraag"
-            else:
-                doc_prefix = "Bestelbon"
-            excel_path = os.path.join(prod_folder, f"{doc_prefix}_{prod}_{today}.xlsx")
 
 
-            pdf_path = os.path.join(prod_folder, f"{doc_prefix}_{prod}_{today}.pdf")
             try:
                 generate_pdf_order_platypus(
                     pdf_path,
@@ -558,7 +550,7 @@ def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
         pdfs = [
             f
             for f in os.listdir(prod_path)
-            if f.lower().endswith(".pdf") and not f.startswith(("Bestelbon_", "Offerte_", "Offerteaanvraag_"))
+
         ]
         if pdfs:
             merger = PdfMerger()
@@ -574,7 +566,7 @@ def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
                     name
                     for name in zf.namelist()
                     if name.lower().endswith(".pdf")
-                    and not os.path.basename(name).startswith(("Bestelbon_", "Offerte_", "Offerteaanvraag_"))
+
                 ]
                 if not zip_pdfs:
                     continue

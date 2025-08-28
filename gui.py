@@ -768,17 +768,7 @@ def start_gui():
                 pass
 
         def _check_files(self):
-            from tkinter import messagebox
-            if self.bom_df is None:
-                messagebox.showwarning("Let op", "Laad eerst een BOM.")
-                return
-            if not self.source_folder:
-                messagebox.showwarning("Let op", "Selecteer een bronmap.")
-                return
-            exts = self._selected_exts()
-            if not exts:
-                messagebox.showwarning("Let op", "Selecteer minstens één bestandstype.")
-                return
+
             self.status_var.set("Bezig met controleren...")
             self.update_idletasks()
             idx = _build_file_index(self.source_folder, exts)
@@ -839,16 +829,6 @@ def start_gui():
             threading.Thread(target=work, daemon=True).start()
 
         def _copy_per_prod(self):
-            from tkinter import messagebox
-            if self.bom_df is None:
-                messagebox.showwarning("Let op", "Laad eerst een BOM.")
-                return
-            exts = self._selected_exts()
-            if not exts or not self.source_folder or not self.dest_folder:
-                messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies.")
-                return
-
-
 
     App().mainloop()
 

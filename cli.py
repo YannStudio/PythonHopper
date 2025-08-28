@@ -361,9 +361,7 @@ def build_parser() -> argparse.ArgumentParser:
     cpp.add_argument("--client", help="Gebruik opdrachtgever met deze naam")
     cpp.add_argument(
         "--doc-type",
-        choices=["bestelbon", "offerte", "offerteaanvraag"],
-        default="bestelbon",
-        help="Documenttype voor bestelbonnen, offertes of offerteaanvragen",
+
     )
 
     return p
