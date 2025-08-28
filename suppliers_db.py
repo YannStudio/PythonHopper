@@ -1,11 +1,14 @@
-import os
 import json
+import logging
+import os
 from dataclasses import asdict
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 
 from models import Supplier
 
 SUPPLIERS_DB_FILE = "suppliers_db.json"
+
+logger = logging.getLogger(__name__)
 
 
 class SuppliersDB:
@@ -32,8 +35,10 @@ class SuppliersDB:
                     pass
             defaults = data.get("defaults_by_production", {}) or {}
             return SuppliersDB(sups, defaults)
-        except Exception:
-            return SuppliersDB()
+        except Exception as exc:
+            msg = f"Failed to load suppliers database from {path}: {exc}"
+            logger.error(msg)
+            raise RuntimeError(msg) from exc
 
     def save(self, path: str = SUPPLIERS_DB_FILE) -> None:
         data = {

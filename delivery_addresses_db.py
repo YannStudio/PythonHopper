@@ -1,11 +1,14 @@
-import os
 import json
+import logging
+import os
 from dataclasses import asdict
 from typing import List, Optional
 
 from models import DeliveryAddress
 
 DELIVERY_ADDRESSES_DB_FILE = "delivery_addresses_db.json"
+
+logger = logging.getLogger(__name__)
 
 
 class DeliveryAddressesDB:
@@ -30,8 +33,10 @@ class DeliveryAddressesDB:
                 except Exception:
                     pass
             return DeliveryAddressesDB(addrs)
-        except Exception:
-            return DeliveryAddressesDB()
+        except Exception as exc:
+            msg = f"Failed to load delivery addresses database from {path}: {exc}"
+            logger.error(msg)
+            raise RuntimeError(msg) from exc
 
     def save(self, path: str = DELIVERY_ADDRESSES_DB_FILE) -> None:
         data = {"addresses": [asdict(a) for a in self.addresses]}

@@ -1,11 +1,14 @@
-import os
 import json
+import logging
+import os
 from dataclasses import asdict
 from typing import List, Optional
 
 from models import Client
 
 CLIENTS_DB_FILE = "clients_db.json"
+
+logger = logging.getLogger(__name__)
 
 
 class ClientsDB:
@@ -30,8 +33,10 @@ class ClientsDB:
                 except Exception:
                     pass
             return ClientsDB(clients)
-        except Exception:
-            return ClientsDB()
+        except Exception as exc:
+            msg = f"Failed to load clients database from {path}: {exc}"
+            logger.error(msg)
+            raise RuntimeError(msg) from exc
 
     def save(self, path: str = CLIENTS_DB_FILE) -> None:
         data = {"clients": [asdict(c) for c in self.clients]}
