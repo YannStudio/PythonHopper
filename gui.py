@@ -715,6 +715,7 @@ def start_gui():
             filt = tk.LabelFrame(main, text="Selecteer bestandstypen om te kopiëren", labelanchor="n"); filt.pack(fill="x", padx=8, pady=6)
             self.pdf_var = tk.IntVar(); self.step_var = tk.IntVar(); self.dxf_var = tk.IntVar(); self.dwg_var = tk.IntVar()
             self.zip_var = tk.IntVar()
+            self.doc_type_var = tk.StringVar(value="bestelbon")
             tk.Checkbutton(filt, text="PDF (.pdf)", variable=self.pdf_var).pack(anchor="w", padx=8)
             tk.Checkbutton(filt, text="STEP (.step, .stp)", variable=self.step_var).pack(anchor="w", padx=8)
             tk.Checkbutton(filt, text="DXF (.dxf)", variable=self.dxf_var).pack(anchor="w", padx=8)
@@ -759,6 +760,7 @@ def start_gui():
             act = tk.Frame(main); act.pack(fill="x", padx=8, pady=8)
             tk.Button(act, text="Kopieer zonder submappen", command=self._copy_flat).pack(side="left", padx=6)
             tk.Button(act, text="Kopieer per productie + bestelbonnen", command=self._copy_per_prod).pack(side="left", padx=6)
+            ttk.Combobox(act, textvariable=self.doc_type_var, values=["bestelbon", "offerte"], state="readonly", width=10).pack(side="left", padx=6)
             tk.Checkbutton(act, text="Zip per productie", variable=self.zip_var).pack(side="left", padx=6)
             tk.Button(act, text="Combine pdf", command=self._combine_pdf).pack(side="left", padx=6)
 
@@ -945,16 +947,18 @@ def start_gui():
             prods = sorted(set((str(r.get("Production") or "").strip() or "_Onbekend") for _, r in self.bom_df.iterrows()))
             def on_sel(sel_map: Dict[str,str], remember: bool):
                 def work():
-                    self.status_var.set("Kopiëren & bestelbonnen maken...")
+                    self.status_var.set(f"Kopiëren & {self.doc_type_var.get()} maken...")
                     client = self.client_db.get(self.client_var.get().replace("★ ", "", 1))
                     cnt, chosen = copy_per_production_and_orders(
                         self.source_folder, self.dest_folder, self.bom_df, exts, self.db, sel_map, remember,
                         client=client,
                         footer_note=DEFAULT_FOOTER_NOTE,
-                        zip_parts=bool(self.zip_var.get())
+                        zip_parts=bool(self.zip_var.get()),
+                        doc_type=self.doc_type_var.get(),
                     )
                     self.status_var.set(f"Klaar. Gekopieerd: {cnt}. Leveranciers: {chosen}")
-                    messagebox.showinfo("Klaar", "Bestelbonnen aangemaakt.")
+                    doc_name = "Offertes" if self.doc_type_var.get() == "offerte" else "Bestelbonnen"
+                    messagebox.showinfo("Klaar", f"{doc_name} aangemaakt.")
                 threading.Thread(target=work, daemon=True).start()
             SupplierSelectionPopup(self, prods, self.db, on_sel)
 
