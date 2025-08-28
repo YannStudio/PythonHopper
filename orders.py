@@ -371,7 +371,8 @@ def copy_per_production_and_orders(
     selected_exts: List[str],
     db: SuppliersDB,
     override_map: Dict[str, str],
-
+    remember_defaults: bool = False,
+    addr_map: Dict[str, DeliveryAddress] | None = None,
     client: Client | None = None,
     footer_note: str = "",
     zip_parts: bool = False,
@@ -426,21 +427,39 @@ def copy_per_production_and_orders(
         chosen[prod] = supplier.supplier
         if remember_defaults and supplier.supplier not in ("", "Onbekend"):
             db.set_default(prod, supplier.supplier)
+
         delivery_addr = None
+        delivery_address = ""
         if addr_map:
             delivery_addr = addr_map.get(prod)
 
-        choice = (delivery_map or {}).get(prod, "").strip()
-        lc = choice.lower()
-        if lc in ("", "geen", "(geen)"):
-            delivery_address = ""
-        elif lc == "zelfde als klantadres":
-            delivery_address = client.address if client else ""
-        elif lc == "klant haalt zelf op":
-            delivery_address = "Klant haalt zelf op"
+        # ``addr_map`` values may either be DeliveryAddress instances or
+        # legacy string shortcuts (e.g. "Zelfde als klantadres").  The block
+        # below keeps backward compatibility with these string options while
+        # primarily working with DeliveryAddress objects.
+        if isinstance(delivery_addr, DeliveryAddress):
+            delivery_address = delivery_addr.address or ""
+        elif isinstance(delivery_addr, str):
+            choice = delivery_addr.strip()
+            lc = choice.lower()
+            if lc in ("", "geen", "(geen)"):
+                delivery_address = ""
+                delivery_addr = None
+            elif lc == "zelfde als klantadres":
+                delivery_address = client.address if client else ""
+                delivery_addr = None
+            elif lc == "klant haalt zelf op":
+                delivery_address = "Klant haalt zelf op"
+                delivery_addr = None
+            else:
+                rec = addr_db.get(choice)
+                if rec:
+                    delivery_addr = rec
+                    delivery_address = rec.address or ""
+                else:
+                    delivery_address = choice
         else:
-            rec = addr_db.get(choice)
-            delivery_address = rec.address if rec else choice
+            delivery_address = ""
 
         items = []
         for row in rows:
