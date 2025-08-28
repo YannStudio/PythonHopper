@@ -465,14 +465,25 @@ def start_gui():
         """Per productie: type-to-filter of dropdown; rechts detailkaart (klik = selecteer).
            Knoppen altijd zichtbaar onderaan.
         """
-        def __init__(self, master, productions: List[str], db: SuppliersDB, callback):
+        def __init__(
+            self,
+            master,
+            productions: List[str],
+            db: SuppliersDB,
+            addr_db: DeliveryAddressesDB,
+            callback,
+            doc_type: str = "bestelbon",
+        ):
             super().__init__(master)
             self.title("Selecteer leveranciers per productie")
             self.db = db
+            self.addr_db = addr_db
             self.callback = callback
+            self.doc_type = doc_type
             self._preview_supplier: Optional[Supplier] = None
             self._active_prod: Optional[str] = None  # laatst gefocuste rij
             self.sel_vars: Dict[str, tk.StringVar] = {}
+            self.addr_vars: Dict[str, tk.StringVar] = {}
 
             # Grid layout: content (row=0, weight=1), buttons (row=1)
             self.grid_columnconfigure(0, weight=1)
@@ -487,18 +498,28 @@ def start_gui():
             left = tk.Frame(content)
             left.grid(row=0, column=0, sticky="nw", padx=(0,8))
             self.rows = []
+            self.addr_rows = []
             for prod in productions:
                 row = tk.Frame(left)
                 row.pack(fill="x", pady=3)
                 tk.Label(row, text=prod, width=18, anchor="w").pack(side="left")
                 var = tk.StringVar()
                 self.sel_vars[prod] = var
-                combo = ttk.Combobox(row, textvariable=var, state="normal", width=50)
-                combo.pack(side="left", padx=6)
+                combo = ttk.Combobox(row, textvariable=var, state="normal", width=40)
+                combo.pack(side="left", padx=4)
                 combo.bind("<<ComboboxSelected>>", self._on_combo_change)
                 combo.bind("<FocusIn>", lambda _e, p=prod: self._on_focus_prod(p))
                 combo.bind("<KeyRelease>", lambda ev, p=prod, c=combo: self._on_combo_type(ev, p, c))
                 self.rows.append((prod, combo))
+                if doc_type != "offerteaanvraag":
+                    av = tk.StringVar()
+                    self.addr_vars[prod] = av
+                    addr_combo = ttk.Combobox(row, textvariable=av, state="readonly", width=40)
+                    opts = [addr_db.display_name(a) for a in addr_db.addresses_sorted()]
+                    addr_combo["values"] = ["(geen)"] + opts
+                    addr_combo.set("(geen)")
+                    addr_combo.pack(side="left", padx=4)
+                    self.addr_rows.append((prod, addr_combo))
 
             # Right: preview details (klikbaar) in LabelFrame met ondertitel
             right = tk.LabelFrame(content,
@@ -660,7 +681,14 @@ def start_gui():
                     s = self._resolve_text_to_supplier(typed)
                     if s:
                         sel_map[prod] = s.supplier
-            self.callback(sel_map, bool(self.remember_var.get()))
+            addr_map: Dict[str, str] = {}
+            for prod, combo in getattr(self, "addr_rows", []):
+                typed = combo.get().strip().replace("★ ", "", 1)
+                if not typed or typed.lower() in ("(geen)", "geen"):
+                    addr_map[prod] = ""
+                else:
+                    addr_map[prod] = typed
+            self.callback(sel_map, addr_map, bool(self.remember_var.get()))
             self.destroy()
 
     class App(tk.Tk):
@@ -760,7 +788,7 @@ def start_gui():
             act = tk.Frame(main); act.pack(fill="x", padx=8, pady=8)
             tk.Button(act, text="Kopieer zonder submappen", command=self._copy_flat).pack(side="left", padx=6)
             tk.Button(act, text="Kopieer per productie + bestelbonnen", command=self._copy_per_prod).pack(side="left", padx=6)
-            ttk.Combobox(act, textvariable=self.doc_type_var, values=["bestelbon", "offerte"], state="readonly", width=10).pack(side="left", padx=6)
+            ttk.Combobox(act, textvariable=self.doc_type_var, values=["bestelbon", "offerte", "offerteaanvraag"], state="readonly", width=16).pack(side="left", padx=6)
             tk.Checkbutton(act, text="Zip per productie", variable=self.zip_var).pack(side="left", padx=6)
             tk.Button(act, text="Combine pdf", command=self._combine_pdf).pack(side="left", padx=6)
 
@@ -945,12 +973,24 @@ def start_gui():
                 messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies."); return
 
             prods = sorted(set((str(r.get("Production") or "").strip() or "_Onbekend") for _, r in self.bom_df.iterrows()))
-            def on_sel(sel_map: Dict[str,str], remember: bool):
+            def on_sel(sel_map: Dict[str,str], addr_map: Dict[str,str], remember: bool):
                 def work():
                     self.status_var.set(f"Kopiëren & {self.doc_type_var.get()} maken...")
                     client = self.client_db.get(self.client_var.get().replace("★ ", "", 1))
+                    addr_objs = {}
+                    for prod, name in addr_map.items():
+                        addr = self.delivery_db.get(name)
+                        if addr:
+                            addr_objs[prod] = addr
                     cnt, chosen = copy_per_production_and_orders(
-                        self.source_folder, self.dest_folder, self.bom_df, exts, self.db, sel_map, remember,
+                        self.source_folder,
+                        self.dest_folder,
+                        self.bom_df,
+                        exts,
+                        self.db,
+                        sel_map,
+                        addr_objs,
+                        remember,
                         client=client,
                         footer_note=DEFAULT_FOOTER_NOTE,
                         zip_parts=bool(self.zip_var.get()),
@@ -960,7 +1000,14 @@ def start_gui():
                     doc_name = "Offertes" if self.doc_type_var.get() == "offerte" else "Bestelbonnen"
                     messagebox.showinfo("Klaar", f"{doc_name} aangemaakt.")
                 threading.Thread(target=work, daemon=True).start()
-            SupplierSelectionPopup(self, prods, self.db, on_sel)
+            SupplierSelectionPopup(
+                self,
+                prods,
+                self.db,
+                self.delivery_db,
+                on_sel,
+                doc_type=self.doc_type_var.get(),
+            )
 
         def _combine_pdf(self):
             from tkinter import messagebox
