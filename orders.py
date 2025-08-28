@@ -83,6 +83,7 @@ def generate_pdf_order_platypus(
     items: List[Dict[str, str]],
     footer_note: str = "",
     doc_type: str = "bestelbon",
+    response_deadline: str = "",
 ) -> None:
     """Generate a PDF order using ReportLab if available."""
     if not REPORTLAB_OK:
@@ -132,7 +133,7 @@ def generate_pdf_order_platypus(
         supp_label = "Offerte bij:"
     elif doc_type == "offerteaanvraag":
         doc_title = "Offerteaanvraag"
-        supp_label = "Offerte aangevraagd bij:"
+
     else:
         doc_title = "Bestelbon"
         supp_label = "Besteld bij:"
@@ -150,6 +151,9 @@ def generate_pdf_order_platypus(
     story = []
     story.append(Paragraph(f"{doc_title} productie: {production}", title_style))
     story.append(Spacer(0, 6))
+    if response_deadline:
+        story.append(Paragraph(f"Antwoord tegen: {response_deadline}", text_style))
+        story.append(Spacer(0, 6))
     story.append(Paragraph("<br/>".join(company_lines), text_style))
     story.append(Spacer(0, 6))
     story.append(Paragraph("<br/>".join(supp_lines), text_style))
@@ -274,7 +278,7 @@ def write_order_excel(
     items: List[Dict[str, str]],
     company_info: Dict[str, str] | None = None,
     supplier: Supplier | None = None,
-    delivery_address: DeliveryAddress | None = None,
+
 ) -> None:
     """Write order information to an Excel file with header info."""
     df = pd.DataFrame(
@@ -283,6 +287,9 @@ def write_order_excel(
     )
 
     header_lines: List[Tuple[str, str]] = []
+    if response_deadline:
+        header_lines.append(("Antwoord tegen", response_deadline))
+        header_lines.append(("", ""))
     if company_info:
         header_lines.extend(
             [
@@ -378,6 +385,7 @@ def copy_per_production_and_orders(
     footer_note: str = "",
     zip_parts: bool = False,
     doc_type: str = "bestelbon",
+    response_deadline: str = "",
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
 
@@ -457,7 +465,7 @@ def copy_per_production_and_orders(
             else:
                 doc_prefix = "Bestelbon"
             excel_path = os.path.join(prod_folder, f"{doc_prefix}_{prod}_{today}.xlsx")
-            write_order_excel(excel_path, items, company, supplier, delivery_addr)
+
 
             pdf_path = os.path.join(prod_folder, f"{doc_prefix}_{prod}_{today}.pdf")
             try:
@@ -470,6 +478,7 @@ def copy_per_production_and_orders(
                     items,
                     footer_note=footer_note or DEFAULT_FOOTER_NOTE,
                     doc_type=doc_type,
+                    response_deadline=response_deadline,
                 )
             except Exception as e:
                 print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
