@@ -34,3 +34,12 @@ python cli.py clients add "Klant BV" \
     --email "info@klant.be"
 ```
 
+### Bestelbon of offerte genereren
+
+Met het commando `copy-per-prod` worden bestanden per productie gekopieerd en wordt automatisch een document aangemaakt. Via de optie `--doc-type` bepaal je of er een **bestelbon** (standaard) of een **offerte** gemaakt wordt:
+
+```
+python cli.py copy-per-prod --source bron --dest doel --bom bom.csv --exts pdf \
+    --doc-type offerte
+```
+
