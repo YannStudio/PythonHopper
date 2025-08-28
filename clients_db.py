@@ -19,6 +19,7 @@ class ClientsDB:
     def load(path: str = CLIENTS_DB_FILE) -> "ClientsDB":
         if not os.path.exists(path):
             return ClientsDB()
+        clients: List[Client] = []
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -26,12 +27,14 @@ class ClientsDB:
                 recs = data
             else:
                 recs = data.get("clients", [])
-            clients = []
             for idx, rec in enumerate(recs):
                 try:
                     clients.append(Client.from_any(rec))
                 except Exception as e:
                     print(f"Fout bij client record {idx}: {e}; data={rec}")
+        except Exception:
+            logger.exception("Error loading clients DB")
+        finally:
             return ClientsDB(clients)
         except Exception as e:
             raise RuntimeError(f"Fout bij laden van {path}") from e

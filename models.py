@@ -235,4 +235,4 @@ class DeliveryAddress:
             phone=_to_str(norm.get("phone")).strip() or None if ("phone" in norm) else None,
             email=_to_str(norm.get("email")).strip() or None if ("email" in norm) else None,
             favorite=bool(fav),
-        )
+
