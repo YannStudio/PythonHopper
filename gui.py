@@ -8,9 +8,13 @@ from typing import Dict, List, Optional
 import pandas as pd
 
 from helpers import _to_str, _build_file_index
-from models import Supplier, Client
+from models import Supplier, Client, DeliveryAddress
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from clients_db import ClientsDB, CLIENTS_DB_FILE
+from delivery_addresses_db import (
+    DeliveryAddressesDB,
+    DELIVERY_ADDRESSES_DB_FILE,
+)
 from bom import read_csv_flex, load_bom
 from orders import (
     copy_per_production_and_orders,
@@ -170,6 +174,121 @@ def start_gui():
             if self.on_change:
                 self.on_change()
             messagebox.showinfo("Import", f"Verwerkt (upsert): {changed}")
+
+    class DeliveryAddressManagerFrame(tk.Frame):
+        def __init__(self, master, db: DeliveryAddressesDB, on_change=None):
+            super().__init__(master)
+            self.db = db
+            self.on_change = on_change
+
+            cols = ("Naam", "Adres", "Contact", "Tel", "E-mail")
+            self.tree = ttk.Treeview(self, columns=cols, show="headings", selectmode="browse")
+            for c in cols:
+                self.tree.heading(c, text=c)
+                self.tree.column(c, width=140, anchor="w")
+            self.tree.pack(fill="both", expand=True, padx=8, pady=8)
+            self.tree.bind("<Double-1>", lambda _e: self.edit_sel())
+
+            btns = tk.Frame(self)
+            btns.pack(fill="x")
+            tk.Button(btns, text="Toevoegen", command=self.add_addr).pack(side="left", padx=4)
+            tk.Button(btns, text="Bewerken", command=self.edit_sel).pack(side="left", padx=4)
+            tk.Button(btns, text="Verwijderen", command=self.remove_sel).pack(side="left", padx=4)
+            tk.Button(btns, text="Favoriet ★", command=self.toggle_fav_sel).pack(side="left", padx=4)
+            self.refresh()
+
+        def refresh(self):
+            for it in self.tree.get_children():
+                self.tree.delete(it)
+            for idx, a in enumerate(self.db.addresses_sorted()):
+                name = self.db.display_name(a)
+                vals = (name, a.address or "", a.contact or "", a.phone or "", a.email or "")
+                tag = "odd" if idx % 2 == 0 else "even"
+                self.tree.insert("", "end", values=vals, tags=(tag,))
+            self.tree.tag_configure("odd", background=TREE_ODD_BG)
+            self.tree.tag_configure("even", background=TREE_EVEN_BG)
+
+        def _sel_name(self):
+            sel = self.tree.selection()
+            if not sel:
+                return None
+            vals = self.tree.item(sel[0], "values")
+            return vals[0].replace("★ ", "", 1)
+
+        def _open_edit_dialog(self, addr: Optional[DeliveryAddress] = None):
+            win = tk.Toplevel(self)
+            win.title("Leveringsadres")
+            fields = [
+                ("Naam", "name"),
+                ("Adres", "address"),
+                ("Contact", "contact"),
+                ("Tel", "phone"),
+                ("E-mail", "email"),
+            ]
+            entries = {}
+            for i, (lbl, key) in enumerate(fields):
+                tk.Label(win, text=lbl + ":").grid(row=i, column=0, sticky="e", padx=4, pady=2)
+                ent = tk.Entry(win, width=40)
+                ent.grid(row=i, column=1, padx=4, pady=2)
+                if addr:
+                    ent.insert(0, _to_str(getattr(addr, key)))
+                entries[key] = ent
+            fav_var = tk.BooleanVar(value=addr.favorite if addr else False)
+            tk.Checkbutton(win, text="Favoriet", variable=fav_var).grid(row=len(fields), column=1, sticky="w", padx=4, pady=2)
+
+            def _save():
+                rec = {k: e.get().strip() for k, e in entries.items()}
+                rec["favorite"] = fav_var.get()
+                if not rec["name"]:
+                    messagebox.showwarning("Let op", "Naam is verplicht.", parent=win)
+                    return
+                a = DeliveryAddress.from_any(rec)
+                self.db.upsert(a)
+                self.db.save(DELIVERY_ADDRESSES_DB_FILE)
+                self.refresh()
+                if self.on_change:
+                    self.on_change()
+                win.destroy()
+
+            btnf = tk.Frame(win)
+            btnf.grid(row=len(fields)+1, column=0, columnspan=2, pady=6)
+            tk.Button(btnf, text="Opslaan", command=_save).pack(side="left", padx=4)
+            tk.Button(btnf, text="Annuleer", command=win.destroy).pack(side="left", padx=4)
+            win.transient(self)
+            win.grab_set()
+            entries["name"].focus_set()
+
+        def add_addr(self):
+            self._open_edit_dialog(None)
+
+        def edit_sel(self):
+            n = self._sel_name()
+            if not n:
+                return
+            a = self.db.get(n)
+            if a:
+                self._open_edit_dialog(a)
+
+        def remove_sel(self):
+            n = self._sel_name()
+            if not n:
+                return
+            if messagebox.askyesno("Bevestigen", f"Verwijder '{n}'?", parent=self):
+                if self.db.remove(n):
+                    self.db.save(DELIVERY_ADDRESSES_DB_FILE)
+                    self.refresh()
+                    if self.on_change:
+                        self.on_change()
+
+        def toggle_fav_sel(self):
+            n = self._sel_name()
+            if not n:
+                return
+            if self.db.toggle_fav(n):
+                self.db.save(DELIVERY_ADDRESSES_DB_FILE)
+                self.refresh()
+                if self.on_change:
+                    self.on_change()
 
     class SuppliersManagerFrame(tk.Frame):
         def __init__(self, master, db: SuppliersDB, on_change=None):
@@ -558,6 +677,7 @@ def start_gui():
 
             self.db = SuppliersDB.load(SUPPLIERS_DB_FILE)
             self.client_db = ClientsDB.load(CLIENTS_DB_FILE)
+            self.delivery_db = DeliveryAddressesDB.load(DELIVERY_ADDRESSES_DB_FILE)
 
             self.source_folder = ""
             self.dest_folder = ""
@@ -569,6 +689,8 @@ def start_gui():
             self.nb.add(main, text="Main")
             self.clients_frame = ClientsManagerFrame(self.nb, self.client_db, on_change=self._refresh_clients_combo)
             self.nb.add(self.clients_frame, text="Klant beheer")
+            self.delivery_frame = DeliveryAddressManagerFrame(self.nb, self.delivery_db, on_change=lambda: None)
+            self.nb.add(self.delivery_frame, text="Leveringsadres beheer")
             self.suppliers_frame = SuppliersManagerFrame(self.nb, self.db, on_change=lambda: None)
             self.nb.add(self.suppliers_frame, text="Leverancier beheer")
 
