@@ -669,6 +669,7 @@ def start_gui():
             self.step_var = tk.BooleanVar(value=False)
             self.dxf_var = tk.BooleanVar(value=False)
             self.dwg_var = tk.BooleanVar(value=False)
+            self.doc_type_var = tk.StringVar(value="bestelbon")
             self.status_var = tk.StringVar(value="")
             # Bronmap
             srcf = tk.Frame(self)
@@ -697,12 +698,17 @@ def start_gui():
             tk.Checkbutton(optf, text="STEP", variable=self.step_var).pack(side="left")
             tk.Checkbutton(optf, text="DXF", variable=self.dxf_var).pack(side="left")
             tk.Checkbutton(optf, text="DWG", variable=self.dwg_var).pack(side="left")
+            ttk.Combobox(
+                optf,
+                textvariable=self.doc_type_var,
+                values=("bestelbon", "offerte"),
+                state="readonly",
+                width=12,
+            ).pack(side="left", padx=(20, 4))
             tk.Button(optf, text="Laad BOM", command=self._load_bom).pack(
-                side="left", padx=(20, 4)
+                side="left", padx=4
             )
-            tk.Button(optf, text="Laad PN's", command=self._load_manual_pns).pack(
-                side="left"
-            )
+            tk.Button(optf, text="Laad PN's", command=self._load_manual_pns).pack(side="left")
 
             # Boom met resultaten
             self.tree = ttk.Treeview(
@@ -730,9 +736,10 @@ def start_gui():
             tk.Button(btnf, text="Kopieer vlak", command=self._copy_flat).pack(
                 side="left", padx=4
             )
-            tk.Button(btnf, text="Kopieer per productie", command=self._copy_per_prod).pack(
-                side="left", padx=4
-            )
+            self.copy_prod_btn = tk.Button(btnf, command=self._copy_per_prod)
+            self.copy_prod_btn.pack(side="left", padx=4)
+            self._update_doc_button()
+            self.doc_type_var.trace_add("write", self._update_doc_button)
 
             # Statusbalk
             tk.Label(self, textvariable=self.status_var, anchor="w").pack(
@@ -752,6 +759,11 @@ def start_gui():
                 self.dest_folder = p
                 self.dst_entry.delete(0, "end")
                 self.dst_entry.insert(0, p)
+
+        def _update_doc_button(self, *_):
+            doc = self.doc_type_var.get()
+            label = "Bestelbonnen" if doc == "bestelbon" else "Offertes"
+            self.copy_prod_btn.config(text=f"{label} genereren")
 
         def _selected_exts(self) -> Optional[List[str]]:
             exts = []
@@ -894,10 +906,12 @@ def start_gui():
                 return
 
             db = SuppliersDB.load(SUPPLIERS_DB_FILE)
+            doc = self.doc_type_var.get()
+            label = "Bestelbonnen" if doc == "bestelbon" else "Offertes"
 
             def work():
                 try:
-                    self.status_var.set("Kopiëren per productie...")
+                    self.status_var.set(f"{label} genereren...")
                     copy_per_production_and_orders(
                         self.source_folder,
                         self.dest_folder,
@@ -905,8 +919,9 @@ def start_gui():
                         exts,
                         db,
                         {},
+                        doc_type=doc,
                     )
-                    self.status_var.set("Klaar")
+                    self.status_var.set(f"{label} aangemaakt")
                 except Exception as e:
                     self.status_var.set("Fout")
                     messagebox.showerror("Fout", str(e))
