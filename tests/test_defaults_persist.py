@@ -39,8 +39,8 @@ def test_defaults_persist(tmp_path, monkeypatch):
         [".pdf"],
         db,
         overrides,
-        {},
         True,
+        {},
     )
 
     assert cnt == 2
