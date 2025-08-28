@@ -27,16 +27,15 @@ class DeliveryAddressesDB:
             else:
                 recs = data.get("addresses", [])
             addrs = []
-            for rec in recs:
+            for idx, rec in enumerate(recs):
                 try:
                     addrs.append(DeliveryAddress.from_any(rec))
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(
+                        f"Fout bij leveradres record {idx}: {e}; data={rec}"
+                    )
             return DeliveryAddressesDB(addrs)
-        except Exception as exc:
-            msg = f"Failed to load delivery addresses database from {path}: {exc}"
-            logger.error(msg)
-            raise RuntimeError(msg) from exc
+
 
     def save(self, path: str = DELIVERY_ADDRESSES_DB_FILE) -> None:
         data = {"addresses": [asdict(a) for a in self.addresses]}

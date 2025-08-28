@@ -27,16 +27,13 @@ class ClientsDB:
             else:
                 recs = data.get("clients", [])
             clients = []
-            for rec in recs:
+            for idx, rec in enumerate(recs):
                 try:
                     clients.append(Client.from_any(rec))
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"Fout bij client record {idx}: {e}; data={rec}")
             return ClientsDB(clients)
-        except Exception as exc:
-            msg = f"Failed to load clients database from {path}: {exc}"
-            logger.error(msg)
-            raise RuntimeError(msg) from exc
+
 
     def save(self, path: str = CLIENTS_DB_FILE) -> None:
         data = {"clients": [asdict(c) for c in self.clients]}

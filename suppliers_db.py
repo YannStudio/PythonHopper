@@ -28,17 +28,15 @@ class SuppliersDB:
                 return SuppliersDB(sups, {})
             sups_raw = data.get("suppliers", [])
             sups = []
-            for rec in sups_raw:
+            for idx, rec in enumerate(sups_raw):
                 try:
                     sups.append(Supplier.from_any(rec))
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(
+                        f"Fout bij leverancier record {idx}: {e}; data={rec}"
+                    )
             defaults = data.get("defaults_by_production", {}) or {}
             return SuppliersDB(sups, defaults)
-        except Exception as exc:
-            msg = f"Failed to load suppliers database from {path}: {exc}"
-            logger.error(msg)
-            raise RuntimeError(msg) from exc
 
     def save(self, path: str = SUPPLIERS_DB_FILE) -> None:
         data = {
