@@ -469,7 +469,6 @@ def start_gui():
             self.db = db
             self.addr_db = addr_db
             self.callback = callback
-            self.doc_type = doc_type
             self._preview_supplier: Optional[Supplier] = None
             self._active_prod: Optional[str] = None  # laatst gefocuste rij
             self.sel_vars: Dict[str, tk.StringVar] = {}
@@ -647,34 +646,79 @@ def start_gui():
                     combo.set(disp or self._preview_supplier.supplier)
                     break
 
+        def _confirm(self):
+            overrides: Dict[str, str] = {}
+            if hasattr(self, "_disp_to_name"):
+                for prod, var in self.sel_vars.items():
+                    disp = var.get().strip()
+                    if disp and disp != "(geen)":
+                        overrides[prod] = self._disp_to_name.get(disp, disp)
+            self.callback(overrides, self.remember_var.get())
+            self.destroy()
+
+
+    class App(tk.Tk):
+        def __init__(self):
+            super().__init__()
+            self.title("File Hopper")
+            self.source_folder = ""
+            self.dest_folder = ""
+            self.bom_df = pd.DataFrame()
+            self.item_links: Dict[str, str] = {}
+            self.pdf_var = tk.BooleanVar(value=True)
+            self.step_var = tk.BooleanVar(value=False)
+            self.dxf_var = tk.BooleanVar(value=False)
+            self.dwg_var = tk.BooleanVar(value=False)
+            self.status_var = tk.StringVar(value="")
+            self.src_entry = tk.Entry(self)
+            self.dst_entry = tk.Entry(self)
+            self.tree = ttk.Treeview(
+                self,
+                columns=("PartNumber", "Bestanden gevonden", "Status"),
+                show="headings",
+            )
+            self.pn_text = tk.Text(self)
 
         def _pick_src(self):
-            from tkinter import filedialog
             p = filedialog.askdirectory()
-            if p: self.source_folder = p; self.src_entry.delete(0, "end"); self.src_entry.insert(0, p)
+            if p:
+                self.source_folder = p
+                self.src_entry.delete(0, "end")
+                self.src_entry.insert(0, p)
 
         def _pick_dst(self):
-            from tkinter import filedialog
             p = filedialog.askdirectory()
-            if p: self.dest_folder = p; self.dst_entry.delete(0, "end"); self.dst_entry.insert(0, p)
+            if p:
+                self.dest_folder = p
+                self.dst_entry.delete(0, "end")
+                self.dst_entry.insert(0, p)
 
         def _selected_exts(self) -> Optional[List[str]]:
             exts = []
-            if self.pdf_var.get(): exts.append(".pdf")
-            if self.step_var.get(): exts += [".step",".stp"]
-            if self.dxf_var.get(): exts.append(".dxf")
-            if self.dwg_var.get(): exts.append(".dwg")
+            if self.pdf_var.get():
+                exts.append(".pdf")
+            if self.step_var.get():
+                exts += [".step", ".stp"]
+            if self.dxf_var.get():
+                exts.append(".dxf")
+            if self.dwg_var.get():
+                exts.append(".dwg")
             return exts or None
 
         def _load_bom(self):
-            from tkinter import filedialog, messagebox
             start_dir = self.source_folder if self.source_folder else os.getcwd()
-            path = filedialog.askopenfilename(filetypes=[("CSV","*.csv"),("Excel","*.xlsx;*.xls")], initialdir=start_dir)
-            if not path: return
+            path = filedialog.askopenfilename(
+                filetypes=[("CSV", "*.csv"), ("Excel", "*.xlsx;*.xls")],
+                initialdir=start_dir,
+            )
+            if not path:
+                return
             try:
                 self.bom_df = load_bom(path)
-                if "Bestanden gevonden" not in self.bom_df.columns: self.bom_df["Bestanden gevonden"]=""
-                if "Status" not in self.bom_df.columns: self.bom_df["Status"]=""
+                if "Bestanden gevonden" not in self.bom_df.columns:
+                    self.bom_df["Bestanden gevonden"] = ""
+                if "Status" not in self.bom_df.columns:
+                    self.bom_df["Status"] = ""
                 self._refresh_tree()
                 self.status_var.set(f"BOM geladen: {len(self.bom_df)} rijen")
             except Exception as e:
@@ -705,16 +749,21 @@ def start_gui():
             self.status_var.set(f"Partnummers geladen: {n} rijen")
 
         def _refresh_tree(self):
+            exts = self._selected_exts() or []
             self.item_links.clear()
             for it in self.tree.get_children():
                 self.tree.delete(it)
+
+            if not self.source_folder or self.bom_df.empty:
+                self.status_var.set("Controle klaar.")
+                return
 
             self.status_var.set("Bezig met controleren...")
             self.update_idletasks()
             idx = _build_file_index(self.source_folder, exts)
             sw_idx = _build_file_index(self.source_folder, [".sldprt", ".slddrw"])
             found, status, links = [], [], []
-            groups = []
+            groups: List[set[str]] = []
             exts_set = set(e.lower() for e in exts)
             if ".step" in exts_set or ".stp" in exts_set:
                 groups.append({".step", ".stp"})
@@ -747,15 +796,21 @@ def start_gui():
             self.bom_df["Bestanden gevonden"] = found
             self.bom_df["Status"] = status
             self.bom_df["Link"] = links
-            self._refresh_tree()
+            for i, row in self.bom_df.iterrows():
+                vals = (row["PartNumber"], row["Bestanden gevonden"], row["Status"])
+                tag = "odd" if i % 2 == 0 else "even"
+                it = self.tree.insert("", "end", values=vals, tags=(tag,))
+                self.item_links[it] = row["Link"]
+            self.tree.tag_configure("odd", background=TREE_ODD_BG)
+            self.tree.tag_configure("even", background=TREE_EVEN_BG)
             self.status_var.set("Controle klaar.")
 
         def _copy_flat(self):
-            from tkinter import messagebox
             exts = self._selected_exts()
             if not exts or not self.source_folder or not self.dest_folder:
                 messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies.")
                 return
+
             def work():
                 self.status_var.set("Kopiëren...")
                 idx = _build_file_index(self.source_folder, exts)
@@ -766,9 +821,37 @@ def start_gui():
                         shutil.copy2(p, dst)
                         cnt += 1
                 self.status_var.set(f"Gekopieerd: {cnt}")
+
             threading.Thread(target=work, daemon=True).start()
 
         def _copy_per_prod(self):
-            pass
+            exts = self._selected_exts()
+            if not exts or not self.source_folder or not self.dest_folder or self.bom_df.empty:
+                messagebox.showwarning(
+                    "Let op",
+                    "Selecteer bron, bestemming, extensies en laad een BOM.",
+                )
+                return
+
+            db = SuppliersDB.load(SUPPLIERS_DB_FILE)
+
+            def work():
+                try:
+                    self.status_var.set("Kopiëren per productie...")
+                    copy_per_production_and_orders(
+                        self.source_folder,
+                        self.dest_folder,
+                        self.bom_df,
+                        exts,
+                        db,
+                        {},
+                    )
+                    self.status_var.set("Klaar")
+                except Exception as e:
+                    self.status_var.set("Fout")
+                    messagebox.showerror("Fout", str(e))
+
+            threading.Thread(target=work, daemon=True).start()
+
     App().mainloop()
 
