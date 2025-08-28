@@ -82,6 +82,8 @@ def generate_pdf_order_platypus(
     delivery_address: DeliveryAddress | None,
     production: str,
     items: List[Dict[str, str]],
+    doc_type: str = "bestelbon",
+    response_deadline: str = "",
     footer_note: str = "",
 
 ) -> None:
@@ -128,12 +130,13 @@ def generate_pdf_order_platypus(
         addr_parts.append(supplier.land)
     full_addr = ", ".join(addr_parts)
 
-    if doc_type == "offerte":
+    doc_type_l = doc_type.lower()
+    if doc_type_l == "offerte":
         doc_title = "Offerte"
         supp_label = "Offerte bij:"
-    elif doc_type == "offerteaanvraag":
+    elif doc_type_l == "offerteaanvraag":
         doc_title = "Offerteaanvraag"
-
+        supp_label = "Offerte aangevraagd bij:"
     else:
         doc_title = "Bestelbon"
         supp_label = "Besteld bij:"
@@ -150,12 +153,9 @@ def generate_pdf_order_platypus(
     if delivery_address:
         supp_lines.append(f"Leveradres: {delivery_address}")
 
-    title = (
-        "Offerteaanvraag productie" if doc_type.lower() == "offerte" else "Bestelbon productie"
-    )
-    story = []
+    title = f"{doc_title} productie"
+    story = [Paragraph(title, title_style), Spacer(0, 6)]
 
-    story.append(Spacer(0, 6))
     if response_deadline:
         story.append(Paragraph(f"Antwoord tegen: {response_deadline}", text_style))
         story.append(Spacer(0, 6))
@@ -283,7 +283,8 @@ def write_order_excel(
     items: List[Dict[str, str]],
     company_info: Dict[str, str] | None = None,
     supplier: Supplier | None = None,
-
+    delivery_address: DeliveryAddress | None = None,
+    response_deadline: str = "",
 ) -> None:
     """Write order information to an Excel file with header info."""
     df = pd.DataFrame(
@@ -291,7 +292,10 @@ def write_order_excel(
         columns=["PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht"],
     )
 
-
+    header_lines: List[Tuple[str, str]] = []
+    if response_deadline:
+        header_lines.append(("Antwoord tegen", response_deadline))
+        header_lines.append(("", ""))
     if company_info:
         header_lines.extend(
             [
@@ -324,7 +328,15 @@ def write_order_excel(
             ]
         )
     if delivery_address:
-
+        header_lines.extend(
+            [
+                ("Leveringsadres", delivery_address.name),
+                ("", delivery_address.address or ""),
+                ("Contact", delivery_address.contact or ""),
+                ("Tel", delivery_address.phone or ""),
+                ("E-mail", delivery_address.email or ""),
+            ]
+        )
 
     startrow = len(header_lines)
     with pd.ExcelWriter(path, engine="openpyxl") as writer:
@@ -337,7 +349,7 @@ def write_order_excel(
         left_cols = {"PartNumber", "Description"}
         for col_idx, col_name in enumerate(df.columns, start=1):
             align = Alignment(horizontal="left" if col_name in left_cols else "right")
-            for row in range(startrow + 1, startrow + len(df) + 2):
+            for row in range(startrow + 1, startrow + len(df) + 1):
                 ws.cell(row=row, column=col_idx).alignment = align
 
 
@@ -364,126 +376,6 @@ def pick_supplier_for_production(
     return sups[0] if sups else Supplier(supplier="")
 
 
-def copy_per_production_and_orders(
-    source: str,
-    dest: str,
-    bom_df: pd.DataFrame,
-    selected_exts: List[str],
-    db: SuppliersDB,
-    override_map: Dict[str, str],
-
-    client: Client | None = None,
-    footer_note: str = "",
-    zip_parts: bool = False,
-    doc_type: str = "bestelbon",
-    response_deadline: str = "",
-) -> Tuple[int, Dict[str, str]]:
-    """Copy files per production and create accompanying order documents.
-
-    If ``zip_parts`` is ``True``, all export files for a production are
-    collected into a single ``<production>.zip`` archive instead of individual
-    ``PartNumber`` files. Only the generated order Excel/PDF remain unzipped in
-    the production folder.
-    """
-    os.makedirs(dest, exist_ok=True)
-    file_index = _build_file_index(source, selected_exts)
-    count_copied = 0
-    chosen: Dict[str, str] = {}
-    addr_db = DeliveryAddressesDB.load(DELIVERY_ADDRESSES_DB_FILE)
-
-    prod_to_rows: Dict[str, List[dict]] = defaultdict(list)
-    for _, row in bom_df.iterrows():
-        prod = (row.get("Production") or "").strip() or "_Onbekend"
-        prod_to_rows[prod].append(row)
-
-    today = datetime.date.today().strftime("%Y-%m-%d")
-    for prod, rows in prod_to_rows.items():
-        prod_folder = os.path.join(dest, prod)
-        os.makedirs(prod_folder, exist_ok=True)
-        zf = None
-        if zip_parts:
-            zip_path = os.path.join(prod_folder, f"{prod}.zip")
-            zf = zipfile.ZipFile(zip_path, "w")
-
-        for row in rows:
-            pn = str(row["PartNumber"])
-            files = file_index.get(pn, [])
-            if zip_parts:
-                for src_file in files:
-                    if zf is not None:
-                        zf.write(src_file, arcname=os.path.basename(src_file))
-                        count_copied += 1
-            else:
-                for src_file in files:
-                    dst = os.path.join(prod_folder, os.path.basename(src_file))
-                    shutil.copy2(src_file, dst)
-                    count_copied += 1
-
-        if zf is not None:
-            zf.close()
-
-        supplier = pick_supplier_for_production(prod, db, override_map)
-        chosen[prod] = supplier.supplier
-        if remember_defaults and supplier.supplier not in ("", "Onbekend"):
-            db.set_default(prod, supplier.supplier)
-        delivery_addr = None
-        if addr_map:
-            delivery_addr = addr_map.get(prod)
-
-        choice = (delivery_map or {}).get(prod, "").strip()
-        lc = choice.lower()
-        if lc in ("", "geen", "(geen)"):
-            delivery_address = ""
-        elif lc == "zelfde als klantadres":
-            delivery_address = client.address if client else ""
-        elif lc == "klant haalt zelf op":
-            delivery_address = "Klant haalt zelf op"
-        else:
-            rec = addr_db.get(choice)
-            delivery_address = rec.address if rec else choice
-
-        items = []
-        for row in rows:
-            items.append(
-                {
-                    "PartNumber": row.get("PartNumber", ""),
-                    "Description": row.get("Description", ""),
-                    "Materiaal": row.get("Materiaal", ""),
-                    "Aantal": _parse_qty(row.get("Aantal", "")),
-                    "Oppervlakte": row.get("Oppervlakte", ""),
-                    "Gewicht": row.get("Gewicht", ""),
-                }
-            )
-
-        company = {
-            "name": client.name if client else "",
-            "address": client.address if client else "",
-            "vat": client.vat if client else "",
-            "email": client.email if client else "",
-        }
-        if supplier.supplier:
-
-
-
-            try:
-                generate_pdf_order_platypus(
-                    pdf_path,
-                    company,
-                    supplier,
-                    delivery_addr,
-                    prod,
-                    items,
-                    footer_note=footer_note or DEFAULT_FOOTER_NOTE,
-
-                )
-            except Exception as e:
-                print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
-
-    # Persist any (possibly unchanged) supplier defaults so that callers can rely on
-    # the database reflecting the latest state on disk.
-    db.save(SUPPLIERS_DB_FILE)
-
-    return count_copied, chosen
 
 
 def combine_pdfs_from_source(
@@ -585,3 +477,118 @@ def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
         merger.close()
         count += 1
     return count
+
+def copy_per_production_and_orders(
+    source: str,
+    dest: str,
+    bom_df: pd.DataFrame,
+    selected_exts: List[str],
+    db: SuppliersDB,
+    override_map: Dict[str, str],
+    remember_defaults: bool = False,
+    addr_map: Dict[str, DeliveryAddress] | None = None,
+    delivery_map: Dict[str, str] | None = None,
+    client: Client | None = None,
+    footer_note: str = "",
+    zip_parts: bool = False,
+    doc_type: str = "bestelbon",
+    response_deadline: str = "",
+) -> Tuple[int, Dict[str, str]]:
+    """Copy files per production and create accompanying order documents."""
+
+    os.makedirs(dest, exist_ok=True)
+    file_index = _build_file_index(source, selected_exts)
+    count_copied = 0
+    chosen: Dict[str, str] = {}
+    addr_db = DeliveryAddressesDB.load(DELIVERY_ADDRESSES_DB_FILE)
+
+    prod_to_rows: Dict[str, List[dict]] = defaultdict(list)
+    for _, row in bom_df.iterrows():
+        prod = (row.get("Production") or "").strip() or "_Onbekend"
+        prod_to_rows[prod].append(row)
+
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    prefix_map = {"offerte": "Offerte", "offerteaanvraag": "Offerteaanvraag"}
+    prefix = prefix_map.get(doc_type.lower(), "Bestelbon")
+
+    for prod, rows in prod_to_rows.items():
+        prod_folder = os.path.join(dest, prod)
+        os.makedirs(prod_folder, exist_ok=True)
+        zf = None
+        if zip_parts:
+            zip_path = os.path.join(prod_folder, f"{prod}.zip")
+            zf = zipfile.ZipFile(zip_path, "w")
+
+        for row in rows:
+            pn = str(row["PartNumber"])
+            files = file_index.get(pn, [])
+            if zip_parts:
+                for src_file in files:
+                    if zf is not None:
+                        zf.write(src_file, arcname=os.path.basename(src_file))
+                        count_copied += 1
+            else:
+                for src_file in files:
+                    dst_file = os.path.join(prod_folder, os.path.basename(src_file))
+                    shutil.copy2(src_file, dst_file)
+                    count_copied += 1
+        if zf is not None:
+            zf.close()
+
+        supplier = pick_supplier_for_production(prod, db, override_map)
+        chosen[prod] = supplier.supplier
+        if remember_defaults and supplier.supplier not in ("", "Onbekend"):
+            db.set_default(prod, supplier.supplier)
+        delivery_addr = addr_map.get(prod) if addr_map else None
+
+        items = []
+        for row in rows:
+            items.append(
+                {
+                    "PartNumber": row.get("PartNumber", ""),
+                    "Description": row.get("Description", ""),
+                    "Materiaal": row.get("Materiaal", ""),
+                    "Aantal": _parse_qty(row.get("Aantal", "")),
+                    "Oppervlakte": row.get("Oppervlakte", ""),
+                    "Gewicht": row.get("Gewicht", ""),
+                }
+            )
+
+        company = {
+            "name": client.name if client else "",
+            "address": client.address if client else "",
+            "vat": client.vat if client else "",
+            "email": client.email if client else "",
+        }
+
+        prefix_full = f"{prefix}_{prod}_{today}"
+        pdf_path = os.path.join(prod_folder, f"{prefix_full}.pdf")
+        xlsx_path = os.path.join(prod_folder, f"{prefix_full}.xlsx")
+
+        write_order_excel(
+            xlsx_path,
+            items,
+            company_info=company,
+            supplier=supplier,
+            delivery_address=delivery_addr,
+            response_deadline=response_deadline,
+        )
+
+        if supplier.supplier:
+            try:
+                generate_pdf_order_platypus(
+                    pdf_path,
+                    company,
+                    supplier,
+                    delivery_addr,
+                    prod,
+                    items,
+                    doc_type=doc_type,
+                    response_deadline=response_deadline,
+                    footer_note=footer_note or DEFAULT_FOOTER_NOTE,
+                )
+            except Exception as e:
+                print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
+
+    db.save(SUPPLIERS_DB_FILE)
+    return count_copied, chosen
