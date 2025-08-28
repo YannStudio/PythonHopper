@@ -379,7 +379,7 @@ def copy_per_production_and_orders(
     selected_exts: List[str],
     db: SuppliersDB,
     override_map: Dict[str, str],
-    remember_defaults: bool,
+    remember_defaults: bool = False,
     addr_map: Dict[str, DeliveryAddress] | None = None,
     client: Client | None = None,
     footer_note: str = "",
