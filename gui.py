@@ -716,6 +716,7 @@ def start_gui():
             self.pdf_var = tk.IntVar(); self.step_var = tk.IntVar(); self.dxf_var = tk.IntVar(); self.dwg_var = tk.IntVar()
             self.zip_var = tk.IntVar()
             self.doc_type_var = tk.StringVar(value="bestelbon")
+            self.response_deadline_var = tk.StringVar()
             tk.Checkbutton(filt, text="PDF (.pdf)", variable=self.pdf_var).pack(anchor="w", padx=8)
             tk.Checkbutton(filt, text="STEP (.step, .stp)", variable=self.step_var).pack(anchor="w", padx=8)
             tk.Checkbutton(filt, text="DXF (.dxf)", variable=self.dxf_var).pack(anchor="w", padx=8)
@@ -760,13 +761,31 @@ def start_gui():
             act = tk.Frame(main); act.pack(fill="x", padx=8, pady=8)
             tk.Button(act, text="Kopieer zonder submappen", command=self._copy_flat).pack(side="left", padx=6)
             tk.Button(act, text="Kopieer per productie + bestelbonnen", command=self._copy_per_prod).pack(side="left", padx=6)
-            ttk.Combobox(act, textvariable=self.doc_type_var, values=["bestelbon", "offerte"], state="readonly", width=10).pack(side="left", padx=6)
+            self.doc_type_combo = ttk.Combobox(
+                act,
+                textvariable=self.doc_type_var,
+                values=["bestelbon", "offerte", "offerteaanvraag"],
+                state="readonly",
+                width=15,
+            )
+            self.doc_type_combo.pack(side="left", padx=6)
+            self.doc_type_combo.bind("<<ComboboxSelected>>", self._on_doc_type_change)
+            tk.Label(act, text="Antwoord tegen:").pack(side="left", padx=6)
+            self.response_deadline_entry = tk.Entry(
+                act, textvariable=self.response_deadline_var, width=12, state="disabled"
+            )
+            self.response_deadline_entry.pack(side="left", padx=6)
             tk.Checkbutton(act, text="Zip per productie", variable=self.zip_var).pack(side="left", padx=6)
             tk.Button(act, text="Combine pdf", command=self._combine_pdf).pack(side="left", padx=6)
+            self._on_doc_type_change()
 
             # Status
             self.status_var = tk.StringVar(value="Klaar")
             tk.Label(main, textvariable=self.status_var, anchor="w").pack(fill="x", padx=8, pady=(0,8))
+
+        def _on_doc_type_change(self, *_):
+            state = "normal" if self.doc_type_var.get() == "offerteaanvraag" else "disabled"
+            self.response_deadline_entry.configure(state=state)
 
         def _refresh_clients_combo(self):
             opts = [self.client_db.display_name(c) for c in self.client_db.clients_sorted()]
@@ -955,9 +974,15 @@ def start_gui():
                         footer_note=DEFAULT_FOOTER_NOTE,
                         zip_parts=bool(self.zip_var.get()),
                         doc_type=self.doc_type_var.get(),
+                        response_deadline=self.response_deadline_var.get(),
                     )
                     self.status_var.set(f"Klaar. Gekopieerd: {cnt}. Leveranciers: {chosen}")
-                    doc_name = "Offertes" if self.doc_type_var.get() == "offerte" else "Bestelbonnen"
+                    if self.doc_type_var.get() == "offerteaanvraag":
+                        doc_name = "Offerteaanvragen"
+                    elif self.doc_type_var.get() == "offerte":
+                        doc_name = "Offertes"
+                    else:
+                        doc_name = "Bestelbonnen"
                     messagebox.showinfo("Klaar", f"{doc_name} aangemaakt.")
                 threading.Thread(target=work, daemon=True).start()
             SupplierSelectionPopup(self, prods, self.db, on_sel)
