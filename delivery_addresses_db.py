@@ -19,6 +19,7 @@ class DeliveryAddressesDB:
     def load(path: str = DELIVERY_ADDRESSES_DB_FILE) -> "DeliveryAddressesDB":
         if not os.path.exists(path):
             return DeliveryAddressesDB()
+        addresses: List[DeliveryAddress] = []
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -26,15 +27,7 @@ class DeliveryAddressesDB:
                 recs = data
             else:
                 recs = data.get("addresses", [])
-            addrs: List[DeliveryAddress] = []
-            for idx, rec in enumerate(recs):
-                try:
-                    addrs.append(DeliveryAddress.from_any(rec))
-                except Exception as e:
-                    print(f"Fout bij adres record {idx}: {e}; data={rec}")
-            return DeliveryAddressesDB(addrs)
-        except Exception as e:
-            raise RuntimeError(f"Fout bij laden van {path}") from e
+
 
     def save(self, path: str = DELIVERY_ADDRESSES_DB_FILE) -> None:
         data = {"addresses": [asdict(a) for a in self.addresses]}
@@ -68,13 +61,13 @@ class DeliveryAddressesDB:
         return False
 
 
+    def get(self, name: str) -> Optional[DeliveryAddress]:
+        i = self._idx_by_name(name)
+        return self.addresses[i] if i >= 0 else None
+
     def toggle_fav(self, name: str) -> bool:
         i = self._idx_by_name(name)
         if i >= 0:
             self.addresses[i].favorite = not self.addresses[i].favorite
             return True
         return False
-
-    def get(self, name: str) -> Optional[DeliveryAddress]:
-        i = self._idx_by_name(name)
-        return self.addresses[i] if i >= 0 else None
