@@ -58,6 +58,7 @@ from helpers import (
 from models import Supplier, Client, DeliveryAddress
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from bom import load_bom  # noqa: F401 - imported for module dependency
+from delivery_addresses_db import DeliveryAddressesDB, DELIVERY_ADDRESSES_DB_FILE
 
 
 def _parse_qty(val: object) -> int:
@@ -82,8 +83,7 @@ def generate_pdf_order_platypus(
     production: str,
     items: List[Dict[str, str]],
     footer_note: str = "",
-    doc_type: str = "bestelbon",
-    response_deadline: str = "",
+
 ) -> None:
     """Generate a PDF order using ReportLab if available."""
     if not REPORTLAB_OK:
@@ -147,6 +147,8 @@ def generate_pdf_order_platypus(
         supp_lines.append(f"E-mail: {supplier.sales_email}")
     if supplier.phone:
         supp_lines.append(f"Tel: {supplier.phone}")
+    if delivery_address:
+        supp_lines.append(f"Leveradres: {delivery_address}")
 
     title = (
         "Offerteaanvraag productie" if doc_type.lower() == "offerte" else "Bestelbon productie"
@@ -319,20 +321,10 @@ def write_order_excel(
                 ("BTW", supplier.btw or ""),
                 ("E-mail", supplier.sales_email or ""),
                 ("Tel", supplier.phone or ""),
-                ("", ""),
             ]
         )
     if delivery_address:
-        header_lines.extend(
-            [
-                ("Leveringsadres", delivery_address.name),
-                ("Adres", delivery_address.address or ""),
-                ("Contact", delivery_address.contact or ""),
-                ("Tel", delivery_address.phone or ""),
-                ("E-mail", delivery_address.email or ""),
-                ("", ""),
-            ]
-        )
+
 
     startrow = len(header_lines)
     with pd.ExcelWriter(path, engine="openpyxl") as writer:
@@ -379,8 +371,7 @@ def copy_per_production_and_orders(
     selected_exts: List[str],
     db: SuppliersDB,
     override_map: Dict[str, str],
-    remember_defaults: bool = False,
-    addr_map: Dict[str, DeliveryAddress] | None = None,
+
     client: Client | None = None,
     footer_note: str = "",
     zip_parts: bool = False,
@@ -398,6 +389,7 @@ def copy_per_production_and_orders(
     file_index = _build_file_index(source, selected_exts)
     count_copied = 0
     chosen: Dict[str, str] = {}
+    addr_db = DeliveryAddressesDB.load(DELIVERY_ADDRESSES_DB_FILE)
 
     prod_to_rows: Dict[str, List[dict]] = defaultdict(list)
     for _, row in bom_df.iterrows():
@@ -438,6 +430,18 @@ def copy_per_production_and_orders(
         if addr_map:
             delivery_addr = addr_map.get(prod)
 
+        choice = (delivery_map or {}).get(prod, "").strip()
+        lc = choice.lower()
+        if lc in ("", "geen", "(geen)"):
+            delivery_address = ""
+        elif lc == "zelfde als klantadres":
+            delivery_address = client.address if client else ""
+        elif lc == "klant haalt zelf op":
+            delivery_address = "Klant haalt zelf op"
+        else:
+            rec = addr_db.get(choice)
+            delivery_address = rec.address if rec else choice
+
         items = []
         for row in rows:
             items.append(
@@ -460,6 +464,7 @@ def copy_per_production_and_orders(
         if supplier.supplier:
 
 
+
             try:
                 generate_pdf_order_platypus(
                     pdf_path,
@@ -469,8 +474,7 @@ def copy_per_production_and_orders(
                     prod,
                     items,
                     footer_note=footer_note or DEFAULT_FOOTER_NOTE,
-                    doc_type=doc_type,
-                    response_deadline=response_deadline,
+
                 )
             except Exception as e:
                 print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)

@@ -11,10 +11,7 @@ from helpers import _to_str, _build_file_index
 from models import Supplier, Client, DeliveryAddress
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from clients_db import ClientsDB, CLIENTS_DB_FILE
-from delivery_addresses_db import (
-    DeliveryAddressesDB,
-    DELIVERY_ADDRESSES_DB_FILE,
-)
+
 from bom import read_csv_flex, load_bom
 from orders import (
     copy_per_production_and_orders,
@@ -181,28 +178,20 @@ def start_gui():
             self.db = db
             self.on_change = on_change
 
-            cols = ("Naam", "Adres", "Contact", "Tel", "E-mail")
-            self.tree = ttk.Treeview(self, columns=cols, show="headings", selectmode="browse")
-            for c in cols:
-                self.tree.heading(c, text=c)
-                self.tree.column(c, width=140, anchor="w")
-            self.tree.pack(fill="both", expand=True, padx=8, pady=8)
-            self.tree.bind("<Double-1>", lambda _e: self.edit_sel())
+
 
             btns = tk.Frame(self)
             btns.pack(fill="x")
             tk.Button(btns, text="Toevoegen", command=self.add_addr).pack(side="left", padx=4)
             tk.Button(btns, text="Bewerken", command=self.edit_sel).pack(side="left", padx=4)
             tk.Button(btns, text="Verwijderen", command=self.remove_sel).pack(side="left", padx=4)
-            tk.Button(btns, text="Favoriet ★", command=self.toggle_fav_sel).pack(side="left", padx=4)
+
             self.refresh()
 
         def refresh(self):
             for it in self.tree.get_children():
                 self.tree.delete(it)
-            for idx, a in enumerate(self.db.addresses_sorted()):
-                name = self.db.display_name(a)
-                vals = (name, a.address or "", a.contact or "", a.phone or "", a.email or "")
+
                 tag = "odd" if idx % 2 == 0 else "even"
                 self.tree.insert("", "end", values=vals, tags=(tag,))
             self.tree.tag_configure("odd", background=TREE_ODD_BG)
@@ -213,18 +202,7 @@ def start_gui():
             if not sel:
                 return None
             vals = self.tree.item(sel[0], "values")
-            return vals[0].replace("★ ", "", 1)
 
-        def _open_edit_dialog(self, addr: Optional[DeliveryAddress] = None):
-            win = tk.Toplevel(self)
-            win.title("Leveringsadres")
-            fields = [
-                ("Naam", "name"),
-                ("Adres", "address"),
-                ("Contact", "contact"),
-                ("Tel", "phone"),
-                ("E-mail", "email"),
-            ]
             entries = {}
             for i, (lbl, key) in enumerate(fields):
                 tk.Label(win, text=lbl + ":").grid(row=i, column=0, sticky="e", padx=4, pady=2)
@@ -233,12 +211,7 @@ def start_gui():
                 if addr:
                     ent.insert(0, _to_str(getattr(addr, key)))
                 entries[key] = ent
-            fav_var = tk.BooleanVar(value=addr.favorite if addr else False)
-            tk.Checkbutton(win, text="Favoriet", variable=fav_var).grid(row=len(fields), column=1, sticky="w", padx=4, pady=2)
 
-            def _save():
-                rec = {k: e.get().strip() for k, e in entries.items()}
-                rec["favorite"] = fav_var.get()
                 if not rec["name"]:
                     messagebox.showwarning("Let op", "Naam is verplicht.", parent=win)
                     return
@@ -251,7 +224,7 @@ def start_gui():
                 win.destroy()
 
             btnf = tk.Frame(win)
-            btnf.grid(row=len(fields)+1, column=0, columnspan=2, pady=6)
+
             tk.Button(btnf, text="Opslaan", command=_save).pack(side="left", padx=4)
             tk.Button(btnf, text="Annuleer", command=win.destroy).pack(side="left", padx=4)
             win.transient(self)
@@ -280,15 +253,7 @@ def start_gui():
                     if self.on_change:
                         self.on_change()
 
-        def toggle_fav_sel(self):
-            n = self._sel_name()
-            if not n:
-                return
-            if self.db.toggle_fav(n):
-                self.db.save(DELIVERY_ADDRESSES_DB_FILE)
-                self.refresh()
-                if self.on_change:
-                    self.on_change()
+
 
     class SuppliersManagerFrame(tk.Frame):
         def __init__(self, master, db: SuppliersDB, on_change=None):
@@ -462,9 +427,7 @@ def start_gui():
                     self.on_change()
 
     class SupplierSelectionPopup(tk.Toplevel):
-        """Per productie: type-to-filter of dropdown; rechts detailkaart (klik = selecteer).
-           Knoppen altijd zichtbaar onderaan.
-        """
+
         def __init__(
             self,
             master,
@@ -472,7 +435,7 @@ def start_gui():
             db: SuppliersDB,
             addr_db: DeliveryAddressesDB,
             callback,
-            doc_type: str = "bestelbon",
+
         ):
             super().__init__(master)
             self.title("Selecteer leveranciers per productie")
@@ -483,7 +446,7 @@ def start_gui():
             self._preview_supplier: Optional[Supplier] = None
             self._active_prod: Optional[str] = None  # laatst gefocuste rij
             self.sel_vars: Dict[str, tk.StringVar] = {}
-            self.addr_vars: Dict[str, tk.StringVar] = {}
+
 
             # Grid layout: content (row=0, weight=1), buttons (row=1)
             self.grid_columnconfigure(0, weight=1)
@@ -506,20 +469,7 @@ def start_gui():
                 var = tk.StringVar()
                 self.sel_vars[prod] = var
                 combo = ttk.Combobox(row, textvariable=var, state="normal", width=40)
-                combo.pack(side="left", padx=4)
-                combo.bind("<<ComboboxSelected>>", self._on_combo_change)
-                combo.bind("<FocusIn>", lambda _e, p=prod: self._on_focus_prod(p))
-                combo.bind("<KeyRelease>", lambda ev, p=prod, c=combo: self._on_combo_type(ev, p, c))
-                self.rows.append((prod, combo))
-                if doc_type != "offerteaanvraag":
-                    av = tk.StringVar()
-                    self.addr_vars[prod] = av
-                    addr_combo = ttk.Combobox(row, textvariable=av, state="readonly", width=40)
-                    opts = [addr_db.display_name(a) for a in addr_db.addresses_sorted()]
-                    addr_combo["values"] = ["(geen)"] + opts
-                    addr_combo.set("(geen)")
-                    addr_combo.pack(side="left", padx=4)
-                    self.addr_rows.append((prod, addr_combo))
+
 
             # Right: preview details (klikbaar) in LabelFrame met ondertitel
             right = tk.LabelFrame(content,
@@ -566,7 +516,7 @@ def start_gui():
             for s in src:
                 self._disp_to_name[self.db.display_name(s)] = s.supplier
 
-            for prod, combo in self.rows:
+
                 typed = combo.get()
                 combo["values"] = self._base_options
                 lower_prod = prod.strip().lower()
@@ -646,7 +596,7 @@ def start_gui():
             self.preview.config(text="\n".join(lines))
 
         def _update_preview_from_any_combo(self):
-            for prod, combo in self.rows:
+            for prod, combo, _ in self.rows:
                 t = combo.get()
                 if t:
                     self._active_prod = prod
@@ -660,7 +610,7 @@ def start_gui():
                 return
             if not self._active_prod and self.rows:
                 self._active_prod = self.rows[0][0]
-            for prod, combo in self.rows:
+            for prod, combo, _ in self.rows:
                 if prod == self._active_prod:
                     disp = None
                     if not hasattr(self, "_disp_to_name"): self._refresh_options()
@@ -669,7 +619,6 @@ def start_gui():
                             disp = k; break
                     combo.set(disp or self._preview_supplier.supplier)
                     break
-
 
 
         def _pick_src(self):
@@ -732,42 +681,6 @@ def start_gui():
             self.item_links.clear()
             for it in self.tree.get_children():
                 self.tree.delete(it)
-            if self.bom_df is None:
-                return
-            for _, row in self.bom_df.iterrows():
-                vals = (
-                    row.get("PartNumber", ""),
-                    row.get("Description", ""),
-                    row.get("Production", ""),
-                    row.get("Bestanden gevonden", ""),
-                    row.get("Status", ""),
-                )
-                item = self.tree.insert("", "end", values=vals)
-                link = row.get("Link")
-                if link:
-                    self.item_links[item] = link
-
-        def _on_tree_click(self, event):
-            item = self.tree.identify_row(event.y)
-            col = self.tree.identify_column(event.x)
-            if col != "#5" or not item:
-                return
-            if self.tree.set(item, "Status") != "❌":
-                return
-            path = self.item_links.get(item)
-            if not path or not os.path.exists(path):
-                return
-            try:
-                if sys.platform.startswith("win"):
-                    os.startfile(path)
-                elif sys.platform == "darwin":
-                    subprocess.run(["open", path], check=False)
-                else:
-                    subprocess.run(["xdg-open", path], check=False)
-            except Exception:
-                pass
-
-        def _check_files(self):
 
             self.status_var.set("Bezig met controleren...")
             self.update_idletasks()
@@ -829,6 +742,7 @@ def start_gui():
             threading.Thread(target=work, daemon=True).start()
 
         def _copy_per_prod(self):
+
 
     App().mainloop()
 
