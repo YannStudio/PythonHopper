@@ -261,6 +261,7 @@ def cli_copy_per_prod(args):
         args.remember_defaults,
         client=client,
         footer_note=args.note or DEFAULT_FOOTER_NOTE,
+        doc_type=args.doc_type,
     )
     print("Gekopieerd:", cnt)
     for k, v in chosen.items():
@@ -347,6 +348,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--note", help="Optioneel voetnootje op de bestelbon", default=""
     )
     cpp.add_argument("--client", help="Gebruik opdrachtgever met deze naam")
+    cpp.add_argument(
+        "--doc-type",
+        choices=["bestelbon", "offerte"],
+        default="bestelbon",
+        help="Documenttype voor bestelbonnen of offertes",
+    )
 
     return p
 
