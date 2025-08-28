@@ -209,6 +209,7 @@ class DeliveryAddress:
     email: Optional[str] = None
     favorite: bool = False
 
+
     @staticmethod
     def from_any(d: dict) -> "DeliveryAddress":
         key_map = {
@@ -226,12 +227,7 @@ class DeliveryAddress:
             lk = str(k).strip().lower()
             if lk in key_map:
                 norm[key_map[lk]] = v
-        name = str(norm.get("name") or d.get("name") or "").strip()
-        if not name:
-            raise ValueError("Delivery address name is missing in record.")
-        fav = norm.get("favorite", d.get("favorite", False))
-        if isinstance(fav, str):
-            fav = fav.strip().lower() in ("1", "true", "yes", "y", "ja")
+
         return DeliveryAddress(
             name=name,
             address=_to_str(norm.get("address")).strip() or None if ("address" in norm) else None,
