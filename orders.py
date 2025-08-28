@@ -55,7 +55,7 @@ from helpers import (
     _material_nowrap,
     _build_file_index,
 )
-from models import Supplier, Client
+from models import Supplier, Client, DeliveryAddress
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from bom import load_bom  # noqa: F401 - imported for module dependency
 
@@ -78,6 +78,7 @@ def generate_pdf_order_platypus(
     path: str,
     company_info: Dict[str, str],
     supplier: Supplier,
+    delivery_address: DeliveryAddress | None,
     production: str,
     items: List[Dict[str, str]],
     footer_note: str = "",
@@ -152,6 +153,18 @@ def generate_pdf_order_platypus(
     story.append(Paragraph("<br/>".join(company_lines), text_style))
     story.append(Spacer(0, 6))
     story.append(Paragraph("<br/>".join(supp_lines), text_style))
+    if delivery_address:
+        addr_lines = [f"<b>Leveringsadres:</b> {delivery_address.name}"]
+        if delivery_address.address:
+            addr_lines.append(delivery_address.address)
+        if delivery_address.contact:
+            addr_lines.append(f"Contact: {delivery_address.contact}")
+        if delivery_address.phone:
+            addr_lines.append(f"Tel: {delivery_address.phone}")
+        if delivery_address.email:
+            addr_lines.append(f"E-mail: {delivery_address.email}")
+        story.append(Spacer(0, 6))
+        story.append(Paragraph("<br/>".join(addr_lines), text_style))
     story.append(Spacer(0, 10))
 
     # Headers and data
@@ -261,6 +274,7 @@ def write_order_excel(
     items: List[Dict[str, str]],
     company_info: Dict[str, str] | None = None,
     supplier: Supplier | None = None,
+    delivery_address: DeliveryAddress | None = None,
 ) -> None:
     """Write order information to an Excel file with header info."""
     df = pd.DataFrame(
@@ -298,6 +312,17 @@ def write_order_excel(
                 ("BTW", supplier.btw or ""),
                 ("E-mail", supplier.sales_email or ""),
                 ("Tel", supplier.phone or ""),
+                ("", ""),
+            ]
+        )
+    if delivery_address:
+        header_lines.extend(
+            [
+                ("Leveringsadres", delivery_address.name),
+                ("Adres", delivery_address.address or ""),
+                ("Contact", delivery_address.contact or ""),
+                ("Tel", delivery_address.phone or ""),
+                ("E-mail", delivery_address.email or ""),
                 ("", ""),
             ]
         )
@@ -347,6 +372,7 @@ def copy_per_production_and_orders(
     selected_exts: List[str],
     db: SuppliersDB,
     override_map: Dict[str, str],
+    addr_map: Dict[str, DeliveryAddress] | None = None,
     remember_defaults: bool,
     client: Client | None = None,
     footer_note: str = "",
@@ -400,6 +426,9 @@ def copy_per_production_and_orders(
         chosen[prod] = supplier.supplier
         if remember_defaults and supplier.supplier not in ("", "Onbekend"):
             db.set_default(prod, supplier.supplier)
+        delivery_addr = None
+        if addr_map:
+            delivery_addr = addr_map.get(prod)
 
         items = []
         for row in rows:
@@ -428,7 +457,7 @@ def copy_per_production_and_orders(
             else:
                 doc_prefix = "Bestelbon"
             excel_path = os.path.join(prod_folder, f"{doc_prefix}_{prod}_{today}.xlsx")
-            write_order_excel(excel_path, items, company, supplier)
+            write_order_excel(excel_path, items, company, supplier, delivery_addr)
 
             pdf_path = os.path.join(prod_folder, f"{doc_prefix}_{prod}_{today}.pdf")
             try:
@@ -436,6 +465,7 @@ def copy_per_production_and_orders(
                     pdf_path,
                     company,
                     supplier,
+                    delivery_addr,
                     prod,
                     items,
                     footer_note=footer_note or DEFAULT_FOOTER_NOTE,
