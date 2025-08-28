@@ -198,3 +198,21 @@ class Client:
             email=_to_str(norm.get("email")).strip() or None if ("email" in norm) else None,
             favorite=bool(fav),
         )
+
+
+@dataclass
+class DeliveryAddress:
+    """Simple record representing a delivery/shipping address."""
+
+    name: str
+    address: Optional[str] = None
+
+    @staticmethod
+    def from_any(d: dict) -> "DeliveryAddress":
+        """Create an instance from a loosely-typed dictionary."""
+
+        name = _to_str(d.get("name") or d.get("naam")).strip()
+        addr = _to_str(d.get("address") or d.get("adres")).strip()
+        if not name:
+            raise ValueError("Delivery address name is missing in record.")
+        return DeliveryAddress(name=name, address=addr or None)
