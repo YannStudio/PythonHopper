@@ -465,14 +465,25 @@ def start_gui():
         """Per productie: type-to-filter of dropdown; rechts detailkaart (klik = selecteer).
            Knoppen altijd zichtbaar onderaan.
         """
-        def __init__(self, master, productions: List[str], db: SuppliersDB, callback):
+        def __init__(
+            self,
+            master,
+            productions: List[str],
+            db: SuppliersDB,
+            addr_db: DeliveryAddressesDB,
+            callback,
+            doc_type: str = "bestelbon",
+        ):
             super().__init__(master)
             self.title("Selecteer leveranciers per productie")
             self.db = db
+            self.addr_db = addr_db
             self.callback = callback
+            self.doc_type = doc_type
             self._preview_supplier: Optional[Supplier] = None
             self._active_prod: Optional[str] = None  # laatst gefocuste rij
             self.sel_vars: Dict[str, tk.StringVar] = {}
+            self.addr_vars: Dict[str, tk.StringVar] = {}
 
             # Grid layout: content (row=0, weight=1), buttons (row=1)
             self.grid_columnconfigure(0, weight=1)
@@ -487,18 +498,28 @@ def start_gui():
             left = tk.Frame(content)
             left.grid(row=0, column=0, sticky="nw", padx=(0,8))
             self.rows = []
+            self.addr_rows = []
             for prod in productions:
                 row = tk.Frame(left)
                 row.pack(fill="x", pady=3)
                 tk.Label(row, text=prod, width=18, anchor="w").pack(side="left")
                 var = tk.StringVar()
                 self.sel_vars[prod] = var
-                combo = ttk.Combobox(row, textvariable=var, state="normal", width=50)
-                combo.pack(side="left", padx=6)
+                combo = ttk.Combobox(row, textvariable=var, state="normal", width=40)
+                combo.pack(side="left", padx=4)
                 combo.bind("<<ComboboxSelected>>", self._on_combo_change)
                 combo.bind("<FocusIn>", lambda _e, p=prod: self._on_focus_prod(p))
                 combo.bind("<KeyRelease>", lambda ev, p=prod, c=combo: self._on_combo_type(ev, p, c))
                 self.rows.append((prod, combo))
+                if doc_type != "offerteaanvraag":
+                    av = tk.StringVar()
+                    self.addr_vars[prod] = av
+                    addr_combo = ttk.Combobox(row, textvariable=av, state="readonly", width=40)
+                    opts = [addr_db.display_name(a) for a in addr_db.addresses_sorted()]
+                    addr_combo["values"] = ["(geen)"] + opts
+                    addr_combo.set("(geen)")
+                    addr_combo.pack(side="left", padx=4)
+                    self.addr_rows.append((prod, addr_combo))
 
             # Right: preview details (klikbaar) in LabelFrame met ondertitel
             right = tk.LabelFrame(content,
@@ -649,129 +670,7 @@ def start_gui():
                     combo.set(disp or self._preview_supplier.supplier)
                     break
 
-        def _confirm(self):
-            """Collect selected suppliers per production and return via callback."""
-            sel_map: Dict[str, str] = {}
-            for prod, combo in self.rows:
-                typed = combo.get().strip()
-                if not typed or typed.lower() in ("(geen)", "geen"):
-                    sel_map[prod] = ""
-                else:
-                    s = self._resolve_text_to_supplier(typed)
-                    if s:
-                        sel_map[prod] = s.supplier
-            self.callback(sel_map, bool(self.remember_var.get()))
-            self.destroy()
 
-    class App(tk.Tk):
-        def __init__(self):
-            super().__init__()
-            import sys
-            style = ttk.Style(self)
-            if sys.platform == "darwin":
-                style.theme_use("aqua")
-            else:
-                style.theme_use("clam")
-            self.title("File Hopper – Miami Vice Edition (Dual-mode)")
-            self.minsize(1024, 720)
-
-            self.db = SuppliersDB.load(SUPPLIERS_DB_FILE)
-            self.client_db = ClientsDB.load(CLIENTS_DB_FILE)
-            self.delivery_db = DeliveryAddressesDB.load(DELIVERY_ADDRESSES_DB_FILE)
-
-            self.source_folder = ""
-            self.dest_folder = ""
-            self.bom_df: Optional[pd.DataFrame] = None
-
-            self.nb = ttk.Notebook(self)
-            self.nb.pack(fill="both", expand=True)
-            main = tk.Frame(self.nb)
-            self.nb.add(main, text="Main")
-            self.clients_frame = ClientsManagerFrame(self.nb, self.client_db, on_change=self._refresh_clients_combo)
-            self.nb.add(self.clients_frame, text="Klant beheer")
-            self.delivery_frame = DeliveryAddressManagerFrame(self.nb, self.delivery_db, on_change=lambda: None)
-            self.nb.add(self.delivery_frame, text="Leveringsadres beheer")
-            self.suppliers_frame = SuppliersManagerFrame(self.nb, self.db, on_change=lambda: None)
-            self.nb.add(self.suppliers_frame, text="Leverancier beheer")
-
-            # Top folders
-            top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
-            tk.Label(top, text="Bronmap:").grid(row=0, column=0, sticky="w")
-            self.src_entry = tk.Entry(top, width=60); self.src_entry.grid(row=0, column=1, padx=4)
-            tk.Button(top, text="Bladeren", command=self._pick_src).grid(row=0, column=2, padx=4)
-
-            tk.Label(top, text="Bestemmingsmap:").grid(row=1, column=0, sticky="w")
-            self.dst_entry = tk.Entry(top, width=60); self.dst_entry.grid(row=1, column=1, padx=4)
-            tk.Button(top, text="Bladeren", command=self._pick_dst).grid(row=1, column=2, padx=4)
-
-            tk.Label(top, text="Opdrachtgever:").grid(row=2, column=0, sticky="w")
-            self.client_var = tk.StringVar()
-            self.client_combo = ttk.Combobox(top, textvariable=self.client_var, state="readonly", width=40)
-            self.client_combo.grid(row=2, column=1, padx=4)
-            tk.Button(top, text="Beheer", command=lambda: self.nb.select(self.clients_frame)).grid(row=2, column=2, padx=4)
-            self._refresh_clients_combo()
-
-            # Filters
-            filt = tk.LabelFrame(main, text="Selecteer bestandstypen om te kopiëren", labelanchor="n"); filt.pack(fill="x", padx=8, pady=6)
-            self.pdf_var = tk.IntVar(); self.step_var = tk.IntVar(); self.dxf_var = tk.IntVar(); self.dwg_var = tk.IntVar()
-            self.zip_var = tk.IntVar()
-            self.doc_type_var = tk.StringVar(value="bestelbon")
-            tk.Checkbutton(filt, text="PDF (.pdf)", variable=self.pdf_var).pack(anchor="w", padx=8)
-            tk.Checkbutton(filt, text="STEP (.step, .stp)", variable=self.step_var).pack(anchor="w", padx=8)
-            tk.Checkbutton(filt, text="DXF (.dxf)", variable=self.dxf_var).pack(anchor="w", padx=8)
-            tk.Checkbutton(filt, text="DWG (.dwg)", variable=self.dwg_var).pack(anchor="w", padx=8)
-
-            # BOM controls
-            bf = tk.Frame(main); bf.pack(fill="x", padx=8, pady=6)
-            tk.Button(bf, text="Laad BOM (CSV/Excel)", command=self._load_bom).pack(side="left", padx=6)
-            tk.Button(bf, text="Controleer Bestanden", command=self._check_files).pack(side="left", padx=6)
-
-            pnf = tk.Frame(main); pnf.pack(fill="x", padx=8, pady=(0,6))
-            tk.Label(pnf, text="PartNumbers (één per lijn):").pack(anchor="w")
-            txtf = tk.Frame(pnf); txtf.pack(fill="x")
-            self.pn_text = tk.Text(txtf, height=4)
-            pn_scroll = ttk.Scrollbar(txtf, orient="vertical", command=self.pn_text.yview)
-            self.pn_text.configure(yscrollcommand=pn_scroll.set)
-            self.pn_text.pack(side="left", fill="both", expand=True)
-            pn_scroll.pack(side="left", fill="y")
-            tk.Button(pnf, text="Gebruik PartNumbers", command=self._load_manual_pns).pack(anchor="w", pady=4)
-
-            # Tree
-            style.configure("Treeview", rowheight=24)
-            treef = tk.Frame(main)
-            treef.pack(fill="both", expand=True, padx=8, pady=6)
-            self.tree = ttk.Treeview(treef, columns=("PartNumber","Description","Production","Bestanden gevonden","Status"), show="headings")
-            for col in ("PartNumber","Description","Production","Bestanden gevonden","Status"):
-                w = 140
-                if col=="Description": w=320
-                if col=="Bestanden gevonden": w=180
-                if col=="Status": w=120
-                anchor = "center" if col=="Status" else "w"
-                self.tree.heading(col, text=col, anchor=anchor)
-                self.tree.column(col, width=w, anchor=anchor)
-            tree_scroll = ttk.Scrollbar(treef, orient="vertical", command=self.tree.yview)
-            self.tree.configure(yscrollcommand=tree_scroll.set)
-            self.tree.pack(side="left", fill="both", expand=True)
-            tree_scroll.pack(side="left", fill="y")
-            self.tree.bind("<Button-1>", self._on_tree_click)
-            self.item_links: Dict[str, str] = {}
-
-            # Actions
-            act = tk.Frame(main); act.pack(fill="x", padx=8, pady=8)
-            tk.Button(act, text="Kopieer zonder submappen", command=self._copy_flat).pack(side="left", padx=6)
-
-            tk.Checkbutton(act, text="Zip per productie", variable=self.zip_var).pack(side="left", padx=6)
-            tk.Button(act, text="Combine pdf", command=self._combine_pdf).pack(side="left", padx=6)
-
-            # Status
-            self.status_var = tk.StringVar(value="Klaar")
-            tk.Label(main, textvariable=self.status_var, anchor="w").pack(fill="x", padx=8, pady=(0,8))
-
-        def _refresh_clients_combo(self):
-            opts = [self.client_db.display_name(c) for c in self.client_db.clients_sorted()]
-            self.client_combo["values"] = opts
-            if opts:
-                self.client_combo.set(opts[0])
 
         def _pick_src(self):
             from tkinter import filedialog
@@ -869,14 +768,7 @@ def start_gui():
                 pass
 
         def _check_files(self):
-            from tkinter import messagebox
-            if self.bom_df is None:
-                messagebox.showwarning("Let op", "Laad eerst een BOM."); return
-            if not self.source_folder:
-                messagebox.showwarning("Let op", "Selecteer een bronmap."); return
-            exts = self._selected_exts()
-            if not exts:
-                messagebox.showwarning("Let op", "Selecteer minstens één bestandstype."); return
+
             self.status_var.set("Bezig met controleren...")
             self.update_idletasks()
             idx = _build_file_index(self.source_folder, exts)
@@ -922,7 +814,8 @@ def start_gui():
             from tkinter import messagebox
             exts = self._selected_exts()
             if not exts or not self.source_folder or not self.dest_folder:
-                messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies."); return
+                messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies.")
+                return
             def work():
                 self.status_var.set("Kopiëren...")
                 idx = _build_file_index(self.source_folder, exts)
@@ -936,66 +829,6 @@ def start_gui():
             threading.Thread(target=work, daemon=True).start()
 
         def _copy_per_prod(self):
-            from tkinter import messagebox
-            if self.bom_df is None:
-                messagebox.showwarning("Let op", "Laad eerst een BOM."); return
-            exts = self._selected_exts()
-            if not exts or not self.source_folder or not self.dest_folder:
-                messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies."); return
-
-            prods = sorted(set((str(r.get("Production") or "").strip() or "_Onbekend") for _, r in self.bom_df.iterrows()))
-            def on_sel(sel_map: Dict[str,str], remember: bool):
-                def work():
-
-                    client = self.client_db.get(self.client_var.get().replace("★ ", "", 1))
-                    cnt, chosen = copy_per_production_and_orders(
-                        self.source_folder, self.dest_folder, self.bom_df, exts, self.db, sel_map, remember,
-                        client=client,
-                        footer_note=DEFAULT_FOOTER_NOTE,
-                        zip_parts=bool(self.zip_var.get()),
-
-                threading.Thread(target=work, daemon=True).start()
-            SupplierSelectionPopup(self, prods, self.db, on_sel)
-
-        def _combine_pdf(self):
-            from tkinter import messagebox
-            if self.source_folder and self.bom_df is not None:
-                def work():
-                    self.status_var.set("PDF's combineren...")
-                    try:
-                        out_dir = self.dest_folder or self.source_folder
-                        cnt = combine_pdfs_from_source(
-                            self.source_folder, self.bom_df, out_dir
-                        )
-                    except ModuleNotFoundError:
-                        self.status_var.set("PyPDF2 ontbreekt")
-                        messagebox.showwarning(
-                            "PyPDF2 ontbreekt",
-                            "Installeer PyPDF2 om PDF's te combineren.",
-                        )
-                        return
-                    self.status_var.set(f"Gecombineerde pdf's: {cnt}")
-                    messagebox.showinfo("Klaar", "PDF's gecombineerd.")
-                threading.Thread(target=work, daemon=True).start()
-            elif self.dest_folder:
-                def work():
-                    self.status_var.set("PDF's combineren...")
-                    try:
-                        cnt = combine_pdfs_per_production(self.dest_folder)
-                    except ModuleNotFoundError:
-                        self.status_var.set("PyPDF2 ontbreekt")
-                        messagebox.showwarning(
-                            "PyPDF2 ontbreekt",
-                            "Installeer PyPDF2 om PDF's te combineren.",
-                        )
-                        return
-                    self.status_var.set(f"Gecombineerde pdf's: {cnt}")
-                    messagebox.showinfo("Klaar", "PDF's gecombineerd.")
-                threading.Thread(target=work, daemon=True).start()
-            else:
-                messagebox.showwarning(
-                    "Let op", "Selecteer bron + BOM of bestemmingsmap."
-                )
 
     App().mainloop()
 

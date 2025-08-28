@@ -113,7 +113,7 @@ def cli_suppliers(args):
         except Exception:
             df = read_csv_flex(path)
         changed = 0
-        for _, row in df.iterrows():
+        for idx, row in df.iterrows():
             raw_name = _to_str(row.get("Supplier")).strip()
             if not raw_name or raw_name == "-":
                 continue
@@ -131,8 +131,13 @@ def cli_suppliers(args):
                     s.phone = args.phone
                 db.upsert(s)
                 changed += 1
-            except Exception:
-                pass
+            except Exception as e:
+                print(
+                    f"Rij {idx}: fout bij importeren van {row.to_dict()} -> {e}"
+                )
+                if getattr(args, "strict", False):
+                    print("Import afgebroken wegens fout.")
+                    return 1
         db.save(SUPPLIERS_DB_FILE)
         print(f"Verwerkt (upsert): {changed}")
         return 0
@@ -259,6 +264,7 @@ def cli_copy_per_prod(args):
         db,
         override_map,
         args.remember_defaults,
+        {},
         client=client,
         footer_note=args.note or DEFAULT_FOOTER_NOTE,
         doc_type=args.doc_type,
@@ -303,6 +309,11 @@ def build_parser() -> argparse.ArgumentParser:
     ip.add_argument("--adres-2", dest="adres_2", help="Fallback adresregel 2")
     ip.add_argument("--email", help="Fallback e-mail adres voor verkoop")
     ip.add_argument("--tel", dest="phone", help="Fallback telefoonnummer")
+    ip.add_argument(
+        "--strict",
+        action="store_true",
+        help="Breek af bij fouten tijdens import",
+    )
     ssp.add_parser("clear")
 
     cp = sub.add_parser("clients", help="Beheer opdrachtgevers")
@@ -350,9 +361,7 @@ def build_parser() -> argparse.ArgumentParser:
     cpp.add_argument("--client", help="Gebruik opdrachtgever met deze naam")
     cpp.add_argument(
         "--doc-type",
-        choices=["bestelbon", "offerte"],
-        default="bestelbon",
-        help="Type document om te genereren",
+
     )
 
     return p
