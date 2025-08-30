@@ -660,6 +660,208 @@ def start_gui():
             self.callback(sel_map, bool(self.remember_var.get()))
             self.destroy()
 
+    class SupplierSelectionFrame(tk.Frame):
+        """Per productie selectie in een verborgen Notebook-tab."""
+        def __init__(self, master, productions: List[str], db: SuppliersDB, callback):
+            super().__init__(master)
+            self.db = db
+            self.callback = callback
+            self._preview_supplier: Optional[Supplier] = None
+            self._active_prod: Optional[str] = None
+            self.sel_vars: Dict[str, tk.StringVar] = {}
+
+            self.grid_columnconfigure(0, weight=1)
+            self.grid_rowconfigure(0, weight=1)
+
+            content = tk.Frame(self)
+            content.grid(row=0, column=0, sticky="nsew", padx=10, pady=6)
+            content.grid_columnconfigure(0, weight=1)
+            content.grid_columnconfigure(1, weight=0)
+
+            left = tk.Frame(content)
+            left.grid(row=0, column=0, sticky="nw", padx=(0,8))
+            self.rows = []
+            for prod in productions:
+                row = tk.Frame(left)
+                row.pack(fill="x", pady=3)
+                tk.Label(row, text=prod, width=18, anchor="w").pack(side="left")
+                var = tk.StringVar()
+                self.sel_vars[prod] = var
+                combo = ttk.Combobox(row, textvariable=var, state="normal", width=50)
+                combo.pack(side="left", padx=6)
+                combo.bind("<<ComboboxSelected>>", self._on_combo_change)
+                combo.bind("<FocusIn>", lambda _e, p=prod: self._on_focus_prod(p))
+                combo.bind("<KeyRelease>", lambda ev, p=prod, c=combo: self._on_combo_type(ev, p, c))
+                self.rows.append((prod, combo))
+
+            right = tk.LabelFrame(content,
+                                  text="Leverancier details\n(klik om te selecteren)",
+                                  labelanchor="n")
+            right.grid(row=0, column=1, sticky="ne", padx=(8,0))
+            self.preview = tk.Label(right, text="", justify="left", anchor="nw", cursor="hand2")
+            self.preview.pack(fill="both", expand=True, padx=8, pady=8)
+            self.preview.configure(wraplength=360)
+            self.preview.bind("<Button-1>", self._on_preview_click)
+
+            btns = tk.Frame(self)
+            btns.grid(row=1, column=0, sticky="ew", padx=10, pady=(6,10))
+            btns.grid_columnconfigure(0, weight=1)
+            self.remember_var = tk.BooleanVar(value=True)
+            tk.Checkbutton(btns, text="Onthoud keuze per productie", variable=self.remember_var).grid(row=0, column=0, sticky="w")
+            tk.Button(btns, text="Annuleer", command=self._cancel).grid(row=0, column=1, sticky="e", padx=(4,0))
+            tk.Button(btns, text="Bevestig", command=self._confirm).grid(row=0, column=2, sticky="e")
+
+            self._refresh_options(initial=True)
+            self._update_preview_from_any_combo()
+
+        def _cancel(self):
+            if isinstance(self.master, ttk.Notebook):
+                nb = self.master
+                try:
+                    nb.forget(self)
+                except Exception:
+                    pass
+                try:
+                    parent = nb.master
+                    if hasattr(parent, "main_frame"):
+                        nb.select(parent.main_frame)
+                except Exception:
+                    pass
+            self.destroy()
+
+        def _on_focus_prod(self, prod: str):
+            self._active_prod = prod
+
+        def _display_list(self) -> List[str]:
+            sups = self.db.suppliers_sorted()
+            opts = [self.db.display_name(s) for s in sups]
+            opts.insert(0, "(geen)")
+            return opts
+
+        def _refresh_options(self, initial=False):
+            self._base_options = self._display_list()
+            self._disp_to_name = {}
+            src = self.db.suppliers_sorted()
+            for s in src:
+                self._disp_to_name[self.db.display_name(s)] = s.supplier
+
+            for prod, combo in self.rows:
+                typed = combo.get()
+                combo["values"] = self._base_options
+                lower_prod = prod.strip().lower()
+                if lower_prod in ("dummy part", "nan", "spare part"):
+                    combo.set(self._base_options[0])
+                    continue
+                name = self.db.get_default(prod)
+                if not typed:
+                    if not name and initial:
+                        favs = [x for x in src if x.favorite]
+                        name = (favs[0].supplier if favs else (src[0].supplier if src else ""))
+                    disp = None
+                    for k, v in self._disp_to_name.items():
+                        if v and name and v.lower() == name.lower():
+                            disp = k; break
+                    if disp:
+                        combo.set(disp)
+                    elif self._base_options:
+                        combo.set(self._base_options[1] if len(self._base_options) > 1 else self._base_options[0])
+
+        def _on_combo_change(self, _evt=None):
+            self._update_preview_from_any_combo()
+
+        def _on_combo_type(self, evt, production: str, combo):
+            self._active_prod = production
+            text = combo.get().strip().lower()
+            if not hasattr(self, "_base_options"):
+                return
+            if evt.keysym in ("Up","Down","Return","Escape"):
+                return
+            if not text:
+                combo["values"] = self._base_options
+            else:
+                filtered = [opt for opt in self._base_options if text in opt.lower()]
+                combo["values"] = filtered or self._base_options
+            self._update_preview_for_text(combo.get())
+
+        def _resolve_text_to_supplier(self, text: str) -> Optional[Supplier]:
+            if not text:
+                return None
+            if hasattr(self, "_disp_to_name") and text in self._disp_to_name:
+                target = self._disp_to_name[text]
+                for s in self.db.suppliers:
+                    if s.supplier.lower() == target.lower():
+                        return s
+            for s in self.db.suppliers:
+                if s.supplier.lower() == text.lower():
+                    return s
+            cand = [s for s in self.db.suppliers if s.supplier.lower().startswith(text.lower())]
+            if cand:
+                return sorted(cand, key=lambda x: (not x.favorite, x.supplier.lower()))[0]
+            cand = [s for s in self.db.suppliers if text.lower() in s.supplier.lower()]
+            if cand:
+                return sorted(cand, key=lambda x: (not x.favorite, x.supplier.lower()))[0]
+            return None
+
+        def _update_preview_for_text(self, text: str):
+            s = self._resolve_text_to_supplier(text)
+            self._preview_supplier = s
+            if not s:
+                self.preview.config(text="")
+                return
+            addr_line = None
+            if s.adres_1 or s.adres_2:
+                addr_line = f"{s.adres_1}, {s.adres_2}" if (s.adres_1 and s.adres_2) else (s.adres_1 or s.adres_2)
+            lines = [f"{s.supplier}"]
+            if s.description: lines.append(f"({s.description})")
+            if addr_line: lines.append(addr_line)
+            if not addr_line:
+                pc_gem = " ".join(x for x in [s.postcode, s.gemeente] if x)
+                if pc_gem: lines.append(pc_gem)
+                if s.land: lines.append(s.land)
+            if s.btw: lines.append(f"BTW: {s.btw}")
+            if s.contact_sales: lines.append(f"Contact sales: {s.contact_sales}")
+            if s.sales_email: lines.append(f"E-mail: {s.sales_email}")
+            if s.phone: lines.append(f"Tel: {s.phone}")
+            self.preview.config(text="\n".join(lines))
+
+        def _update_preview_from_any_combo(self):
+            for prod, combo in self.rows:
+                t = combo.get()
+                if t:
+                    self._active_prod = prod
+                    self._update_preview_for_text(t)
+                    return
+            self.preview.config(text="")
+            self._preview_supplier = None
+
+        def _on_preview_click(self, _evt=None):
+            if not self._preview_supplier:
+                return
+            if not self._active_prod and self.rows:
+                self._active_prod = self.rows[0][0]
+            for prod, combo in self.rows:
+                if prod == self._active_prod:
+                    disp = None
+                    if not hasattr(self, "_disp_to_name"): self._refresh_options()
+                    for k, v in self._disp_to_name.items():
+                        if v.lower() == self._preview_supplier.supplier.lower():
+                            disp = k; break
+                    combo.set(disp or self._preview_supplier.supplier)
+                    break
+
+        def _confirm(self):
+            """Collect selected suppliers per production and return via callback."""
+            sel_map: Dict[str, str] = {}
+            for prod, combo in self.rows:
+                typed = combo.get().strip()
+                if not typed or typed.lower() in ("(geen)", "geen"):
+                    sel_map[prod] = ""
+                else:
+                    s = self._resolve_text_to_supplier(typed)
+                    if s:
+                        sel_map[prod] = s.supplier
+            self.callback(sel_map, bool(self.remember_var.get()))
+
     class App(tk.Tk):
         def __init__(self):
             super().__init__()
@@ -683,6 +885,7 @@ def start_gui():
             self.nb = ttk.Notebook(self)
             self.nb.pack(fill="both", expand=True)
             main = tk.Frame(self.nb)
+            self.main_frame = main
             self.nb.add(main, text="Main")
             self.clients_frame = ClientsManagerFrame(self.nb, self.client_db, on_change=self._refresh_clients_combo)
             self.nb.add(self.clients_frame, text="Klant beheer")
@@ -943,6 +1146,7 @@ def start_gui():
                 messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies."); return
 
             prods = sorted(set((str(r.get("Production") or "").strip() or "_Onbekend") for _, r in self.bom_df.iterrows()))
+            sel_frame = None
             def on_sel(sel_map: Dict[str,str], remember: bool):
                 def work():
                     self.status_var.set("Kopiëren & bestelbonnen maken...")
@@ -956,7 +1160,12 @@ def start_gui():
                     self.status_var.set(f"Klaar. Gekopieerd: {cnt}. Leveranciers: {chosen}")
                     messagebox.showinfo("Klaar", "Bestelbonnen aangemaakt.")
                 threading.Thread(target=work, daemon=True).start()
-            SupplierSelectionPopup(self, prods, self.db, on_sel)
+                self.nb.forget(sel_frame)
+                sel_frame.destroy()
+                self.nb.select(self.main_frame)
+            sel_frame = SupplierSelectionFrame(self.nb, prods, self.db, on_sel)
+            self.nb.add(sel_frame, state='hidden')
+            self.nb.select(sel_frame)
 
         def _combine_pdf(self):
             from tkinter import messagebox
