@@ -87,9 +87,11 @@ class DeliveryAddressesDB:
         if i >= 0:
             cur = self.addresses[i]
             for f in asdict(addr):
-                val = getattr(addr, f)
-                if val not in (None, ""):
-                    setattr(cur, f, val)
+                # Renaming addresses is not supported; skip updating the name
+                if f == "name":
+                    continue
+                # Always overwrite existing values, even with None/"" to clear fields
+                setattr(cur, f, getattr(addr, f))
         else:
             self.addresses.append(addr)
 

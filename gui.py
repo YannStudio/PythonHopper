@@ -232,7 +232,8 @@ def start_gui():
             tk.Checkbutton(win, text="Favoriet", variable=fav_var).grid(row=len(fields), column=1, sticky="w", padx=4, pady=2)
 
             def _save():
-                rec = {k: e.get().strip() for k, e in entries.items()}
+                # Convert blank strings to None so cleared fields overwrite old data
+                rec = {k: (e.get().strip() or None) for k, e in entries.items()}
                 rec["favorite"] = fav_var.get()
                 if not rec["name"]:
                     messagebox.showwarning("Let op", "Naam is verplicht.", parent=win)
