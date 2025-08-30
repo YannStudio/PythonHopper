@@ -1,6 +1,7 @@
 from typing import Any, List, Dict
 import os
 from collections import defaultdict
+from decimal import Decimal, InvalidOperation
 
 
 def _to_str(x: Any) -> str:
@@ -15,9 +16,9 @@ def _num_to_2dec(val: Any) -> str:
     if "," in s and "." not in s:
         s = s.replace(",", ".")
     try:
-        f = float(s)
-        return f"{f:.2f}"
-    except Exception:
+        f = Decimal(s)
+        return str(f.quantize(Decimal("0.01")))
+    except InvalidOperation:
         return _to_str(val)
 
 
