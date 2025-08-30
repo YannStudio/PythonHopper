@@ -366,7 +366,13 @@ def copy_per_production_and_orders(
         zf = None
         if zip_parts:
             zip_path = os.path.join(prod_folder, f"{prod}.zip")
-            zf = zipfile.ZipFile(zip_path, "w")
+            try:
+                zf = zipfile.ZipFile(
+                    zip_path, "w", compression=zipfile.ZIP_DEFLATED
+                )
+            except (RuntimeError, ValueError, AttributeError):
+                # ZIP_DEFLATED not supported; fall back to no compression
+                zf = zipfile.ZipFile(zip_path, "w")
 
         for row in rows:
             pn = str(row["PartNumber"])
