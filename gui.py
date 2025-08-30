@@ -682,8 +682,8 @@ def start_gui():
 
             self.nb = ttk.Notebook(self)
             self.nb.pack(fill="both", expand=True)
-            main = tk.Frame(self.nb)
-            self.nb.add(main, text="Main")
+            self.main_frame = tk.Frame(self.nb)
+            self.nb.add(self.main_frame, text="Main")
             self.clients_frame = ClientsManagerFrame(self.nb, self.client_db, on_change=self._refresh_clients_combo)
             self.nb.add(self.clients_frame, text="Klant beheer")
             self.delivery_frame = DeliveryAddressesManagerFrame(self.nb, self.delivery_db, on_change=self._refresh_delivery_addresses)
@@ -692,7 +692,7 @@ def start_gui():
             self.nb.add(self.suppliers_frame, text="Leverancier beheer")
 
             # Top folders
-            top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
+            top = tk.Frame(self.main_frame); top.pack(fill="x", padx=8, pady=6)
             tk.Label(top, text="Bronmap:").grid(row=0, column=0, sticky="w")
             self.src_entry = tk.Entry(top, width=60); self.src_entry.grid(row=0, column=1, padx=4)
             tk.Button(top, text="Bladeren", command=self._pick_src).grid(row=0, column=2, padx=4)
@@ -709,7 +709,7 @@ def start_gui():
             self._refresh_clients_combo()
 
             # Filters
-            filt = tk.LabelFrame(main, text="Selecteer bestandstypen om te kopiëren", labelanchor="n"); filt.pack(fill="x", padx=8, pady=6)
+            filt = tk.LabelFrame(self.main_frame, text="Selecteer bestandstypen om te kopiëren", labelanchor="n"); filt.pack(fill="x", padx=8, pady=6)
             self.pdf_var = tk.IntVar(); self.step_var = tk.IntVar(); self.dxf_var = tk.IntVar(); self.dwg_var = tk.IntVar()
             self.zip_var = tk.IntVar()
             tk.Checkbutton(filt, text="PDF (.pdf)", variable=self.pdf_var).pack(anchor="w", padx=8)
@@ -718,11 +718,11 @@ def start_gui():
             tk.Checkbutton(filt, text="DWG (.dwg)", variable=self.dwg_var).pack(anchor="w", padx=8)
 
             # BOM controls
-            bf = tk.Frame(main); bf.pack(fill="x", padx=8, pady=6)
+            bf = tk.Frame(self.main_frame); bf.pack(fill="x", padx=8, pady=6)
             tk.Button(bf, text="Laad BOM (CSV/Excel)", command=self._load_bom).pack(side="left", padx=6)
             tk.Button(bf, text="Controleer Bestanden", command=self._check_files).pack(side="left", padx=6)
 
-            pnf = tk.Frame(main); pnf.pack(fill="x", padx=8, pady=(0,6))
+            pnf = tk.Frame(self.main_frame); pnf.pack(fill="x", padx=8, pady=(0,6))
             tk.Label(pnf, text="PartNumbers (één per lijn):").pack(anchor="w")
             txtf = tk.Frame(pnf); txtf.pack(fill="x")
             self.pn_text = tk.Text(txtf, height=4)
@@ -734,7 +734,7 @@ def start_gui():
 
             # Tree
             style.configure("Treeview", rowheight=24)
-            treef = tk.Frame(main)
+            treef = tk.Frame(self.main_frame)
             treef.pack(fill="both", expand=True, padx=8, pady=6)
             self.tree = ttk.Treeview(treef, columns=("PartNumber","Description","Production","Bestanden gevonden","Status"), show="headings")
             for col in ("PartNumber","Description","Production","Bestanden gevonden","Status"):
@@ -753,7 +753,7 @@ def start_gui():
             self.item_links: Dict[str, str] = {}
 
             # Actions
-            act = tk.Frame(main); act.pack(fill="x", padx=8, pady=8)
+            act = tk.Frame(self.main_frame); act.pack(fill="x", padx=8, pady=8)
             tk.Button(act, text="Kopieer zonder submappen", command=self._copy_flat).pack(side="left", padx=6)
             tk.Button(act, text="Kopieer per productie + bestelbonnen", command=self._copy_per_prod).pack(side="left", padx=6)
             tk.Checkbutton(act, text="Zip per productie", variable=self.zip_var).pack(side="left", padx=6)
@@ -761,7 +761,7 @@ def start_gui():
 
             # Status
             self.status_var = tk.StringVar(value="Klaar")
-            tk.Label(main, textvariable=self.status_var, anchor="w").pack(fill="x", padx=8, pady=(0,8))
+            tk.Label(self.main_frame, textvariable=self.status_var, anchor="w").pack(fill="x", padx=8, pady=(0,8))
 
         def _refresh_clients_combo(self):
             opts = [self.client_db.display_name(c) for c in self.client_db.clients_sorted()]
@@ -943,9 +943,12 @@ def start_gui():
                 messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies."); return
 
             prods = sorted(set((str(r.get("Production") or "").strip() or "_Onbekend") for _, r in self.bom_df.iterrows()))
+            sel_frame = tk.Frame(self.nb)
+            self.nb.add(sel_frame, text="Leveranciers selectie")
+            self.nb.select(sel_frame)
             def on_sel(sel_map: Dict[str,str], remember: bool):
+                self.status_var.set("Kopiëren & bestelbonnen maken...")
                 def work():
-                    self.status_var.set("Kopiëren & bestelbonnen maken...")
                     client = self.client_db.get(self.client_var.get().replace("★ ", "", 1))
                     cnt, chosen = copy_per_production_and_orders(
                         self.source_folder, self.dest_folder, self.bom_df, exts, self.db, sel_map, remember,
@@ -953,8 +956,18 @@ def start_gui():
                         footer_note=DEFAULT_FOOTER_NOTE,
                         zip_parts=bool(self.zip_var.get())
                     )
-                    self.status_var.set(f"Klaar. Gekopieerd: {cnt}. Leveranciers: {chosen}")
-                    messagebox.showinfo("Klaar", "Bestelbonnen aangemaakt.")
+                    def finish():
+                        self.status_var.set("Opruimen...")
+                        if sys.platform.startswith("win"):
+                            try:
+                                os.startfile(self.dest_folder)
+                            except Exception:
+                                pass
+                        self.nb.forget(sel_frame)
+                        self.nb.select(self.main_frame)
+                        self.status_var.set(f"Klaar. Gekopieerd: {cnt}. Leveranciers: {chosen}")
+                        messagebox.showinfo("Klaar", "Bestelbonnen aangemaakt.")
+                    self.after(0, finish)
                 threading.Thread(target=work, daemon=True).start()
             SupplierSelectionPopup(self, prods, self.db, on_sel)
 
