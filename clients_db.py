@@ -1,11 +1,14 @@
 import os
 import json
+import logging
 from dataclasses import asdict
 from typing import List, Optional
 
 from models import Client
 
 CLIENTS_DB_FILE = "clients_db.json"
+
+logger = logging.getLogger(__name__)
 
 
 class ClientsDB:
@@ -30,7 +33,8 @@ class ClientsDB:
                 except Exception:
                     pass
             return ClientsDB(clients)
-        except Exception:
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.error("Error loading clients DB: %s", exc)
             return ClientsDB()
 
     def save(self, path: str = CLIENTS_DB_FILE) -> None:

@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 from dataclasses import asdict
 from typing import List, Optional
 
@@ -7,6 +8,8 @@ from models import DeliveryAddress
 from clients_db import ClientsDB, CLIENTS_DB_FILE
 
 DELIVERY_DB_FILE = "delivery_addresses_db.json"
+
+logger = logging.getLogger(__name__)
 
 
 class DeliveryAddressesDB:
@@ -50,7 +53,8 @@ class DeliveryAddressesDB:
             if not addresses:
                 addresses = DeliveryAddressesDB._copy_from_clients()
             return DeliveryAddressesDB(addresses)
-        except Exception:
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.error("Error loading delivery addresses DB: %s", exc)
             return DeliveryAddressesDB(DeliveryAddressesDB._copy_from_clients())
 
     def save(self, path: str = DELIVERY_DB_FILE) -> None:
