@@ -8,6 +8,7 @@ import shutil
 import argparse
 from typing import List
 
+import logging
 import pandas as pd
 
 from helpers import _to_str, _build_file_index, _unique_path
@@ -16,6 +17,8 @@ from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from clients_db import ClientsDB, CLIENTS_DB_FILE
 from bom import read_csv_flex, load_bom
 from orders import copy_per_production_and_orders, DEFAULT_FOOTER_NOTE
+
+logger = logging.getLogger(__name__)
 
 
 def parse_exts(s: str) -> List[str]:
@@ -113,7 +116,8 @@ def cli_suppliers(args):
         except Exception:
             df = read_csv_flex(path)
         changed = 0
-        for _, row in df.iterrows():
+        skipped = 0
+        for idx, (_, row) in enumerate(df.iterrows(), start=1):
             raw_name = _to_str(row.get("Supplier")).strip()
             if not raw_name or raw_name == "-":
                 continue
@@ -131,10 +135,13 @@ def cli_suppliers(args):
                     s.phone = args.phone
                 db.upsert(s)
                 changed += 1
-            except Exception:
-                pass
+            except Exception as e:
+                skipped += 1
+                logger.error("Record %s: %s", idx, e)
         db.save(SUPPLIERS_DB_FILE)
         print(f"Verwerkt (upsert): {changed}")
+        if skipped:
+            print(f"Overgeslagen: {skipped}")
         return 0
     if args.action == "clear":
         db.clear_all()
