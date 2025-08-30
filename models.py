@@ -204,7 +204,7 @@ class Client:
 class DeliveryAddress:
     name: str
     address: Optional[str] = None
-    client: Optional[str] = None
+    remarks: Optional[str] = None
     favorite: bool = False
 
     @staticmethod
@@ -214,8 +214,9 @@ class DeliveryAddress:
             "naam": "name",
             "address": "address",
             "adres": "address",
-            "client": "client",
-            "klant": "client",
+            "remarks": "remarks",
+            "opmerking": "remarks",
+            "opmerkingen": "remarks",
             "favorite": "favorite",
             "favoriet": "favorite",
             "fav": "favorite",
@@ -234,6 +235,6 @@ class DeliveryAddress:
         return DeliveryAddress(
             name=name,
             address=_to_str(norm.get("address")).strip() or None if ("address" in norm) else None,
-            client=_to_str(norm.get("client")).strip() or None if ("client" in norm) else None,
+            remarks=_to_str(norm.get("remarks")).strip() or None if ("remarks" in norm) else None,
             favorite=bool(fav),
         )

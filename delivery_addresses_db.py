@@ -23,7 +23,6 @@ class DeliveryAddressesDB:
                     DeliveryAddress(
                         name=c.name,
                         address=c.address,
-                        client=c.name,
                         favorite=c.favorite,
                     )
                 )
@@ -43,6 +42,8 @@ class DeliveryAddressesDB:
             addresses = []
             for rec in recs:
                 try:
+                    if isinstance(rec, dict) and "client" in rec:
+                        rec = {k: v for k, v in rec.items() if k != "client"}
                     addresses.append(DeliveryAddress.from_any(rec))
                 except Exception:
                     pass
@@ -66,7 +67,7 @@ class DeliveryAddressesDB:
             return self.addresses_sorted()
         res = []
         for a in self.addresses:
-            hay = " ".join([a.name or "", a.address or "", a.client or ""]).lower()
+            hay = " ".join([a.name or "", a.address or "", a.remarks or ""]).lower()
             if q in hay:
                 res.append(a)
         res.sort(key=lambda a: (not a.favorite, a.name.lower()))
