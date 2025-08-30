@@ -953,8 +953,33 @@ def start_gui():
                         footer_note=DEFAULT_FOOTER_NOTE,
                         zip_parts=bool(self.zip_var.get())
                     )
-                    self.status_var.set(f"Klaar. Gekopieerd: {cnt}. Leveranciers: {chosen}")
-                    messagebox.showinfo("Klaar", "Bestelbonnen aangemaakt.")
+                    def _post_ui():
+                        try:
+                            if self.dest_folder:
+                                if sys.platform.startswith("win"):
+                                    os.startfile(self.dest_folder)
+                                elif sys.platform == "darwin":
+                                    subprocess.run(["open", self.dest_folder], check=False)
+                                else:
+                                    subprocess.run(["xdg-open", self.dest_folder], check=False)
+                        except Exception:
+                            pass
+                        self.status_var.set(f"Klaar. Gekopieerd: {cnt}. Leveranciers: {chosen}")
+                        sel_frame = getattr(self, "selection_frame", None)
+                        if sel_frame:
+                            for m in ("forget", "pack_forget", "grid_forget"):
+                                fn = getattr(sel_frame, m, None)
+                                if fn:
+                                    try:
+                                        fn()
+                                    except Exception:
+                                        pass
+                        try:
+                            self.nb.select(self.nb.tabs()[0])
+                        except Exception:
+                            pass
+                        messagebox.showinfo("Klaar", "Bestelbonnen aangemaakt.")
+                    self.after(0, _post_ui)
                 threading.Thread(target=work, daemon=True).start()
             SupplierSelectionPopup(self, prods, self.db, on_sel)
 
