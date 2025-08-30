@@ -458,13 +458,12 @@ def start_gui():
                 if self.on_change:
                     self.on_change()
 
-    class SupplierSelectionPopup(tk.Toplevel):
+    class SupplierSelectionFrame(tk.Frame):
         """Per productie: type-to-filter of dropdown; rechts detailkaart (klik = selecteer).
            Knoppen altijd zichtbaar onderaan.
         """
         def __init__(self, master, productions: List[str], db: SuppliersDB, callback):
             super().__init__(master)
-            self.title("Selecteer leveranciers per productie")
             self.db = db
             self.callback = callback
             self._preview_supplier: Optional[Supplier] = None
@@ -513,18 +512,12 @@ def start_gui():
             btns.grid_columnconfigure(0, weight=1)
             self.remember_var = tk.BooleanVar(value=True)
             tk.Checkbutton(btns, text="Onthoud keuze per productie", variable=self.remember_var).grid(row=0, column=0, sticky="w")
-            tk.Button(btns, text="Annuleer", command=self.destroy).grid(row=0, column=1, sticky="e", padx=(4,0))
+            tk.Button(btns, text="Annuleer", command=self._cancel).grid(row=0, column=1, sticky="e", padx=(4,0))
             tk.Button(btns, text="Bevestig", command=self._confirm).grid(row=0, column=2, sticky="e")
 
             # Init
             self._refresh_options(initial=True)
             self._update_preview_from_any_combo()
-
-            # Compact formaat
-            self.update_idletasks()
-            w = min(920, self.winfo_reqwidth()+40)
-            h = min(600, self.winfo_reqheight()+20)
-            self.geometry(f"{w}x{h}")
 
         def _on_focus_prod(self, prod: str):
             self._active_prod = prod
@@ -646,6 +639,16 @@ def start_gui():
                     combo.set(disp or self._preview_supplier.supplier)
                     break
 
+        def _cancel(self):
+            if self.master:
+                try:
+                    self.master.forget(self)
+                except Exception:
+                    pass
+                if hasattr(self.master, "select") and hasattr(self.master.master, "main_frame"):
+                    self.master.select(self.master.master.main_frame)
+            self.destroy()
+
         def _confirm(self):
             """Collect selected suppliers per production and return via callback."""
             sel_map: Dict[str, str] = {}
@@ -658,7 +661,6 @@ def start_gui():
                     if s:
                         sel_map[prod] = s.supplier
             self.callback(sel_map, bool(self.remember_var.get()))
-            self.destroy()
 
     class App(tk.Tk):
         def __init__(self):
@@ -682,8 +684,9 @@ def start_gui():
 
             self.nb = ttk.Notebook(self)
             self.nb.pack(fill="both", expand=True)
-            self.main_frame = tk.Frame(self.nb)
-            self.nb.add(self.main_frame, text="Main")
+            main = tk.Frame(self.nb)
+            self.nb.add(main, text="Main")
+            self.main_frame = main
             self.clients_frame = ClientsManagerFrame(self.nb, self.client_db, on_change=self._refresh_clients_combo)
             self.nb.add(self.clients_frame, text="Klant beheer")
             self.delivery_frame = DeliveryAddressesManagerFrame(self.nb, self.delivery_db, on_change=self._refresh_delivery_addresses)
@@ -943,33 +946,51 @@ def start_gui():
                 messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies."); return
 
             prods = sorted(set((str(r.get("Production") or "").strip() or "_Onbekend") for _, r in self.bom_df.iterrows()))
-            sel_frame = tk.Frame(self.nb)
-            self.nb.add(sel_frame, text="Leveranciers selectie")
-            self.nb.select(sel_frame)
-            def on_sel(sel_map: Dict[str,str], remember: bool):
-                self.status_var.set("Kopiëren & bestelbonnen maken...")
+            sel_frame = None
+
+            def on_sel(sel_map: Dict[str, str], remember: bool):
                 def work():
+                    self.status_var.set("Kopiëren & bestelbonnen maken...")
                     client = self.client_db.get(self.client_var.get().replace("★ ", "", 1))
                     cnt, chosen = copy_per_production_and_orders(
-                        self.source_folder, self.dest_folder, self.bom_df, exts, self.db, sel_map, remember,
+                        self.source_folder,
+                        self.dest_folder,
+                        self.bom_df,
+                        exts,
+                        self.db,
+                        sel_map,
+                        remember,
                         client=client,
                         footer_note=DEFAULT_FOOTER_NOTE,
-                        zip_parts=bool(self.zip_var.get())
+                        zip_parts=bool(self.zip_var.get()),
                     )
-                    def finish():
+
+                    def on_done():
                         self.status_var.set("Opruimen...")
                         if sys.platform.startswith("win"):
                             try:
                                 os.startfile(self.dest_folder)
                             except Exception:
                                 pass
-                        self.nb.forget(sel_frame)
+                        if sel_frame:
+                            try:
+                                self.nb.forget(sel_frame)
+                                sel_frame.destroy()
+                            except Exception:
+                                pass
                         self.nb.select(self.main_frame)
-                        self.status_var.set(f"Klaar. Gekopieerd: {cnt}. Leveranciers: {chosen}")
+                        self.status_var.set(
+                            f"Klaar. Gekopieerd: {cnt}. Leveranciers: {chosen}"
+                        )
                         messagebox.showinfo("Klaar", "Bestelbonnen aangemaakt.")
-                    self.after(0, finish)
+
+                    self.after(0, on_done)
+
                 threading.Thread(target=work, daemon=True).start()
-            SupplierSelectionPopup(self, prods, self.db, on_sel)
+
+            sel_frame = SupplierSelectionFrame(self.nb, prods, self.db, on_sel)
+            self.nb.add(sel_frame, state="hidden")
+            self.nb.select(sel_frame)
 
         def _combine_pdf(self):
             from tkinter import messagebox
