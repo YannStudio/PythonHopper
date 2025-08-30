@@ -178,7 +178,7 @@ def start_gui():
             self.db = db
             self.on_change = on_change
 
-            cols = ("Naam", "Adres", "Klant")
+            cols = ("Naam", "Adres", "Opmerkingen")
             self.tree = ttk.Treeview(self, columns=cols, show="headings", selectmode="browse")
             for c in cols:
                 self.tree.heading(c, text=c)
@@ -199,7 +199,7 @@ def start_gui():
                 self.tree.delete(it)
             for idx, a in enumerate(self.db.addresses_sorted()):
                 name = self.db.display_name(a)
-                vals = (name, a.address or "", a.client or "")
+                vals = (name, a.address or "", a.remarks or "")
                 tag = "odd" if idx % 2 == 0 else "even"
                 self.tree.insert("", "end", values=vals, tags=(tag,))
             self.tree.tag_configure("odd", background=TREE_ODD_BG)
@@ -218,7 +218,7 @@ def start_gui():
             fields = [
                 ("Naam", "name"),
                 ("Adres", "address"),
-                ("Klant", "client"),
+                ("Opmerkingen", "remarks"),
             ]
             entries = {}
             for i, (lbl, key) in enumerate(fields):
