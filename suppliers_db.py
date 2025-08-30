@@ -1,11 +1,14 @@
 import os
 import json
+import logging
 from dataclasses import asdict
 from typing import List, Dict, Optional
 
 from models import Supplier
 
 SUPPLIERS_DB_FILE = "suppliers_db.json"
+
+logger = logging.getLogger(__name__)
 
 
 class SuppliersDB:
@@ -32,7 +35,8 @@ class SuppliersDB:
                     pass
             defaults = data.get("defaults_by_production", {}) or {}
             return SuppliersDB(sups, defaults)
-        except Exception:
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.error("Error loading suppliers DB: %s", exc)
             return SuppliersDB()
 
     def save(self, path: str = SUPPLIERS_DB_FILE) -> None:
