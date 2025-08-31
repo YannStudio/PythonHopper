@@ -47,13 +47,14 @@ def test_delivery_address_used_in_order(tmp_path, monkeypatch):
 
     assert cnt == 1
 
-    # verify that the generated Excel order contains the chosen delivery address
+    # verify that the generated Excel order contains invoice and delivery address
     prod_dir = dst / "Laser"
     excel_files = list(prod_dir.glob("Bestelbon_Laser_*.xlsx"))
     assert excel_files, "Order Excel file not created"
 
     wb = load_workbook(excel_files[0])
     ws = wb.active
-    # Address is the second header row, second column
-    assert ws.cell(row=2, column=2).value == "Custom Street 5"
+    # row 2 should contain the invoice address, row 3 the chosen delivery address
+    assert ws.cell(row=2, column=2).value == "Base Addr"
+    assert ws.cell(row=3, column=2).value == "Custom Street 5"
 

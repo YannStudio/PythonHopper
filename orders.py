@@ -105,10 +105,13 @@ def generate_pdf_order_platypus(
     text_style.leading = 13
     small_style = ParagraphStyle("small", parent=text_style, fontSize=8.5, leading=10.5)
 
-    company_lines = [
-        f"<b>{company_info.get('name','')}</b>",
-        f"{company_info.get('address','')}",
-    ]
+    company_lines = [f"<b>{company_info.get('name','')}</b>"]
+    addr = company_info.get("address", "")
+    if addr:
+        company_lines.append(f"Adres: {addr}")
+    deliv = company_info.get("delivery", "")
+    if deliv:
+        company_lines.append(f"Leveradres: {deliv}")
     note = company_info.get("note")
     if note:
         company_lines.append(note)
@@ -271,6 +274,7 @@ def write_order_excel(
             [
                 ("Bedrijf", company_info.get("name", "")),
                 ("Adres", company_info.get("address", "")),
+                ("Leveradres", company_info.get("delivery", "")),
             ]
         )
         note = company_info.get("note")
@@ -424,20 +428,22 @@ def copy_per_production_and_orders(
                 }
             )
 
-        base_addr = client.address if client else ""
+        invoice_addr = client.address if client else ""
+        delivery_addr = invoice_addr
         note = ""
         override_addr = delivery_map.get(prod)
         if override_addr:
             if override_addr == "Zelf afhalen":
-                base_addr = ""
+                delivery_addr = "Zelf afhalen"
                 note = "Afhalen door klant"
             elif override_addr == "Adres volgt":
-                base_addr = "Adres volgt"
+                delivery_addr = "Adres volgt"
             else:
-                base_addr = override_addr
+                delivery_addr = override_addr
         company = {
             "name": client.name if client else "",
-            "address": base_addr,
+            "address": invoice_addr,
+            "delivery": delivery_addr,
             "vat": client.vat if client else "",
             "email": client.email if client else "",
             "note": note,
