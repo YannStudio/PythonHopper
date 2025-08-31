@@ -147,12 +147,11 @@ def generate_pdf_order_platypus(
 
     right_lines: List[str] = []
     if delivery:
-        dl = [f"<b>Leveradres:</b> {delivery.name}"]
+        right_lines.append(f"<b>Leveradres:</b> {delivery.name}")
         if delivery.address:
-            dl.append(delivery.address)
+            right_lines.extend(delivery.address.splitlines())
         if delivery.remarks:
-            dl.append(delivery.remarks)
-        right_lines = dl
+            right_lines.append(delivery.remarks)
 
     story = []
     story.append(Paragraph(f"{doc_type} productie: {production}", title_style))
