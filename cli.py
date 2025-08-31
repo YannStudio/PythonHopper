@@ -248,6 +248,7 @@ def cli_copy_per_prod(args):
     df = load_bom(args.bom)
     db = SuppliersDB.load(SUPPLIERS_DB_FILE)
     override_map = dict(kv.split("=", 1) for kv in (args.supplier or []))
+    delivery_map = dict(kv.split("=", 1) for kv in (args.delivery or []))
     cdb = ClientsDB.load(CLIENTS_DB_FILE)
     client = None
     if args.client:
@@ -265,6 +266,7 @@ def cli_copy_per_prod(args):
         exts,
         db,
         override_map,
+        delivery_map,
         args.remember_defaults,
         client=client,
         footer_note=args.note or DEFAULT_FOOTER_NOTE,
@@ -348,6 +350,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--supplier",
         action="append",
         help="Override: Production=Supplier (meerdere keren mogelijk)",
+    )
+    cpp.add_argument(
+        "--delivery",
+        action="append",
+        help="Override leveradres: Production=Adres (meerdere keren mogelijk)",
     )
     cpp.add_argument("--remember-defaults", action="store_true")
     cpp.add_argument(

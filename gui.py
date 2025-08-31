@@ -1256,10 +1256,17 @@ def start_gui():
                     self.status_var.set("Kopiëren & bestelbonnen maken...")
                     client = self.client_db.get(self.client_var.get().replace("★ ", "", 1))
                     cnt, chosen = copy_per_production_and_orders(
-                        self.source_folder, self.dest_folder, self.bom_df, exts, self.db, sel_map, remember,
+                        self.source_folder,
+                        self.dest_folder,
+                        self.bom_df,
+                        exts,
+                        self.db,
+                        sel_map,
+                        {},
+                        remember,
                         client=client,
                         footer_note=DEFAULT_FOOTER_NOTE,
-                        zip_parts=bool(self.zip_var.get())
+                        zip_parts=bool(self.zip_var.get()),
                     )
                     def _post_ui():
                         try:
