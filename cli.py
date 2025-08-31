@@ -279,6 +279,14 @@ def cli_copy_per_prod(args):
                     print("Leveradres niet gevonden")
                     return 2
                 delivery_map[prod] = addr
+    doc_num_map = {}
+    if args.doc_number:
+        for kv in args.doc_number:
+            if "=" not in kv:
+                print("Doc-number optie moet PROD=NUM zijn")
+                return 2
+            prod, num = kv.split("=", 1)
+            doc_num_map[prod.strip()] = num.strip()
     cnt, chosen = copy_per_production_and_orders(
         args.source,
         args.dest,
@@ -287,6 +295,7 @@ def cli_copy_per_prod(args):
         db,
         override_map,
         {},
+        doc_num_map,
         args.remember_defaults,
         client=client,
         delivery_map=delivery_map,
@@ -385,6 +394,13 @@ def build_parser() -> argparse.ArgumentParser:
             "Leveradres voor productie: PROD=NAAM. Speciale waarden: "
             "none, pickup, tbd (meerdere keren mogelijk)"
         ),
+    )
+
+    cpp.add_argument(
+        "--doc-number",
+        action="append",
+        metavar="PROD=NUM",
+        help="Documentnummer per productie (meerdere keren mogelijk)",
     )
 
     return p

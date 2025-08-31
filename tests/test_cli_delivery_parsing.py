@@ -17,6 +17,8 @@ def test_cli_delivery_parsing(monkeypatch, tmp_path):
         "--exts", "pdf",
         "--delivery", "Laser=Addr1",
         "--delivery", "Plasma=Addr2",
+        "--doc-number", "Laser=BB-001",
+        "--doc-number", "Plasma=OFF-2",
     ])
 
     # minimal environment
@@ -48,6 +50,7 @@ def test_cli_delivery_parsing(monkeypatch, tmp_path):
     assert set(captured["delivery_map"]) == {"Laser", "Plasma"}
     assert captured["delivery_map"]["Laser"].name == "Addr1"
     assert captured["delivery_map"]["Plasma"].name == "Addr2"
+    assert captured["doc_num_map"] == {"Laser": "BB-001", "Plasma": "OFF-2"}
 
 
 def test_cli_delivery_special_tokens(monkeypatch, tmp_path):

@@ -40,6 +40,7 @@ def test_defaults_persist(tmp_path, monkeypatch):
         db,
         overrides,
         {},
+        {},
         True,
         client=None,
         delivery_map={},

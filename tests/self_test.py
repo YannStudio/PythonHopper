@@ -80,6 +80,7 @@ def run_tests() -> int:
             db,
             {},
             {},
+            {},
             True,
             client=client,
             delivery_map={},
