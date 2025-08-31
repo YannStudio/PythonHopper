@@ -104,23 +104,26 @@ def generate_pdf_order_platypus(
     text_style = styles["Normal"]
     text_style.leading = 13
     small_style = ParagraphStyle("small", parent=text_style, fontSize=8.5, leading=10.5)
+    usable_w = width - 2 * margin
 
-    company_lines = [f"<b>{company_info.get('name','')}</b>"]
+    invoice_lines = [f"<b>{company_info.get('name','')}</b>"]
     addr = company_info.get("address", "")
     if addr:
-        company_lines.append(f"Adres: {addr}")
-    deliv = company_info.get("delivery", "")
-    if deliv:
-        company_lines.append(f"Leveradres: {deliv}")
+        invoice_lines.append(f"Adres: {addr}")
     note = company_info.get("note")
     if note:
-        company_lines.append(note)
-    company_lines.extend(
+        invoice_lines.append(note)
+    invoice_lines.extend(
         [
             f"BTW: {company_info.get('vat','')}",
             f"E-mail: {company_info.get('email','')}",
         ]
     )
+
+    deliv = company_info.get("delivery", "")
+    delivery_lines = ["<b>Leveradres</b>"]
+    if deliv:
+        delivery_lines.append(deliv)
 
     # Supplier info with full address and contact details
     addr_parts = []
@@ -149,7 +152,28 @@ def generate_pdf_order_platypus(
     story = []
     story.append(Paragraph(f"Bestelbon productie: {production}", title_style))
     story.append(Spacer(0, 6))
-    story.append(Paragraph("<br/>".join(company_lines), text_style))
+    company_tbl = LongTable(
+        [
+            [
+                Paragraph("<br/>".join(invoice_lines), text_style),
+                Paragraph("<br/>".join(delivery_lines), text_style),
+            ]
+        ],
+        colWidths=[usable_w / 2, usable_w / 2],
+    )
+    company_tbl.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("BACKGROUND", (1, 0), (1, -1), colors.whitesmoke),
+                ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+            ]
+        )
+    )
+    story.append(company_tbl)
     story.append(Spacer(0, 6))
     story.append(Paragraph("<br/>".join(supp_lines), text_style))
     story.append(Spacer(0, 10))
@@ -188,7 +212,6 @@ def generate_pdf_order_platypus(
             ]
         )
 
-    usable_w = width - 2 * margin
     col_fracs = [0.22, 0.40, 0.14, 0.06, 0.09, 0.09]
     desc_w = usable_w * col_fracs[1]
     mat_w = usable_w * col_fracs[2]

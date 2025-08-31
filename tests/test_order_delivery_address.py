@@ -1,5 +1,6 @@
 import pandas as pd
 from openpyxl import load_workbook
+import pytest
 
 from models import Supplier, Client
 from suppliers_db import SuppliersDB
@@ -57,4 +58,62 @@ def test_delivery_address_used_in_order(tmp_path, monkeypatch):
     # row 2 should contain the invoice address and the chosen delivery address in column 6
     assert ws.cell(row=2, column=2).value == "Base Addr"
     assert ws.cell(row=2, column=6).value == "Custom Street 5"
+
+
+def test_pdf_delivery_address_in_right_column(tmp_path, monkeypatch):
+    reportlab = pytest.importorskip("reportlab")
+    from PyPDF2 import PdfReader
+
+    monkeypatch.chdir(tmp_path)
+
+    db = SuppliersDB([Supplier.from_any({"supplier": "ACME"})])
+
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+
+    (src / "PN1.pdf").write_text("dummy")
+
+    bom_df = pd.DataFrame([
+        {"PartNumber": "PN1", "Description": "", "Production": "Laser", "Aantal": 1},
+    ])
+
+    supplier_map = {"Laser": "ACME"}
+    delivery_map = {"Laser": "Custom Street 5"}
+
+    client = Client.from_any({"name": "Client", "address": "Base Addr"})
+
+    copy_per_production_and_orders(
+        str(src),
+        str(dst),
+        bom_df,
+        [".pdf"],
+        db,
+        supplier_map,
+        delivery_map,
+        False,
+        client=client,
+    )
+
+    prod_dir = dst / "Laser"
+    pdf_files = list(prod_dir.glob("Bestelbon_Laser_*.pdf"))
+    assert pdf_files, "Order PDF file not created"
+
+    reader = PdfReader(str(pdf_files[0]))
+    page = reader.pages[0]
+    positions = {}
+
+    def visitor(text, cm, tm, *_):
+        text = text.strip()
+        if not text:
+            return
+        x = cm[0] * tm[4] + cm[2] * tm[5] + cm[4]
+        positions.setdefault(text, []).append(x)
+
+    page.extract_text(visitor_text=visitor)
+
+    inv_x = positions["Base Addr"][0]
+    del_x = positions["Custom Street 5"][0]
+    assert del_x > inv_x
 
