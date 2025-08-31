@@ -478,6 +478,7 @@ def start_gui():
             self._active_prod: Optional[str] = None  # laatst gefocuste rij
             self.sel_vars: Dict[str, tk.StringVar] = {}
             self.doc_vars: Dict[str, tk.StringVar] = {}
+            self.doc_num_vars: Dict[str, tk.StringVar] = {}
             self.delivery_vars: Dict[str, tk.StringVar] = {}
 
             # Grid layout: content (row=0, weight=1), buttons (row=1)
@@ -525,6 +526,10 @@ def start_gui():
                     width=18,
                 )
                 doc_combo.pack(side="left", padx=6)
+
+                doc_num_var = tk.StringVar()
+                self.doc_num_vars[prod] = doc_num_var
+                tk.Entry(row, textvariable=doc_num_var, width=8).pack(side="left", padx=6)
 
                 dvar = tk.StringVar(value="Geen")
                 self.delivery_vars[prod] = dvar
@@ -706,11 +711,19 @@ def start_gui():
                         sel_map[prod] = s.supplier
                 doc_map[prod] = self.doc_vars.get(prod, tk.StringVar(value="Bestelbon")).get()
 
+            doc_num_map: Dict[str, str] = {}
             delivery_map: Dict[str, str] = {}
             for prod, _combo in self.rows:
+                doc_num_map[prod] = self.doc_num_vars[prod].get().strip()
                 delivery_map[prod] = self.delivery_vars.get(prod, tk.StringVar(value="Geen")).get()
 
-            self.callback(sel_map, doc_map, delivery_map, bool(self.remember_var.get()))
+            self.callback(
+                sel_map,
+                doc_map,
+                doc_num_map,
+                delivery_map,
+                bool(self.remember_var.get()),
+            )
 
     class App(tk.Tk):
         def __init__(self):
@@ -1009,6 +1022,7 @@ def start_gui():
             def on_sel(
                 sel_map: Dict[str, str],
                 doc_map: Dict[str, str],
+                doc_num_map: Dict[str, str],
                 delivery_map_raw: Dict[str, str],
                 remember: bool,
             ):
@@ -1038,7 +1052,7 @@ def start_gui():
                         self.db,
                         sel_map,
                         doc_map,
-                        {},
+                        doc_num_map,
                         remember,
                         client=client,
                         delivery_map=resolved_delivery_map,
