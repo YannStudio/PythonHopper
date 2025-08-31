@@ -726,6 +726,13 @@ def start_gui():
             tk.Button(top, text="Beheer", command=lambda: self.nb.select(self.clients_frame)).grid(row=2, column=2, padx=4)
             self._refresh_clients_combo()
 
+            tk.Label(top, text="Leveradres:").grid(row=3, column=0, sticky="w")
+            self.delivery_var = tk.StringVar()
+            self.delivery_combo = ttk.Combobox(top, textvariable=self.delivery_var, state="readonly", width=40)
+            self.delivery_combo.grid(row=3, column=1, padx=4)
+            tk.Button(top, text="Beheer", command=lambda: self.nb.select(self.delivery_frame)).grid(row=3, column=2, padx=4)
+            self._refresh_delivery_addresses()
+
             # Filters
             filt = tk.LabelFrame(main, text="Selecteer bestandstypen om te kopiëren", labelanchor="n"); filt.pack(fill="x", padx=8, pady=6)
             self.pdf_var = tk.IntVar(); self.step_var = tk.IntVar(); self.dxf_var = tk.IntVar(); self.dwg_var = tk.IntVar()
@@ -788,7 +795,12 @@ def start_gui():
                 self.client_combo.set(opts[0])
 
         def _refresh_delivery_addresses(self):
-            pass
+            opts = [
+                self.delivery_db.display_name(a) for a in self.delivery_db.addresses_sorted()
+            ]
+            self.delivery_combo["values"] = opts
+            if opts:
+                self.delivery_combo.set(opts[0])
 
         def _pick_src(self):
             from tkinter import filedialog
@@ -967,6 +979,7 @@ def start_gui():
                 def work():
                     self.status_var.set("Kopiëren & bestelbonnen maken...")
                     client = self.client_db.get(self.client_var.get().replace("★ ", "", 1))
+                    delivery = self.delivery_db.get(self.delivery_var.get().replace("★ ", "", 1))
                     cnt, chosen = copy_per_production_and_orders(
                         self.source_folder,
                         self.dest_folder,
@@ -977,6 +990,7 @@ def start_gui():
                         doc_map,
                         remember,
                         client=client,
+                        delivery=delivery,
                         footer_note=DEFAULT_FOOTER_NOTE,
                         zip_parts=bool(self.zip_var.get()),
                     )

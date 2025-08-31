@@ -11,9 +11,10 @@ from typing import List
 import pandas as pd
 
 from helpers import _to_str, _build_file_index, _unique_path
-from models import Supplier, Client
+from models import Supplier, Client, DeliveryAddress
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from clients_db import ClientsDB, CLIENTS_DB_FILE
+from delivery_addresses_db import DeliveryAddressesDB, DELIVERY_DB_FILE
 from bom import read_csv_flex, load_bom
 from orders import copy_per_production_and_orders, DEFAULT_FOOTER_NOTE
 
@@ -242,6 +243,7 @@ def cli_copy_per_prod(args):
     db = SuppliersDB.load(SUPPLIERS_DB_FILE)
     override_map = dict(kv.split("=", 1) for kv in (args.supplier or []))
     cdb = ClientsDB.load(CLIENTS_DB_FILE)
+    ddb = DeliveryAddressesDB.load(DELIVERY_DB_FILE)
     client = None
     if args.client:
         client = cdb.get(args.client)
@@ -251,6 +253,12 @@ def cli_copy_per_prod(args):
     else:
         cl = cdb.clients_sorted()
         client = cl[0] if cl else None
+    delivery = None
+    if args.delivery:
+        delivery = ddb.get(args.delivery)
+        if not delivery:
+            print("Leveradres niet gevonden")
+            return 2
     cnt, chosen = copy_per_production_and_orders(
         args.source,
         args.dest,
@@ -261,6 +269,7 @@ def cli_copy_per_prod(args):
         {},
         args.remember_defaults,
         client=client,
+        delivery=delivery,
         footer_note=args.note or DEFAULT_FOOTER_NOTE,
     )
     print("Gekopieerd:", cnt)
@@ -348,6 +357,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--note", help="Optioneel voetnootje op de bestelbon", default=""
     )
     cpp.add_argument("--client", help="Gebruik opdrachtgever met deze naam")
+    cpp.add_argument("--delivery", help="Gebruik leveradres met deze naam")
 
     return p
 

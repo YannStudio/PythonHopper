@@ -41,6 +41,8 @@ def test_defaults_persist(tmp_path, monkeypatch):
         overrides,
         {},
         True,
+        client=None,
+        delivery=None,
     )
 
     assert cnt == 2

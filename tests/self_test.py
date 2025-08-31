@@ -82,6 +82,7 @@ def run_tests() -> int:
             {},
             True,
             client=client,
+            delivery=None,
             footer_note=DEFAULT_FOOTER_NOTE,
         )
         assert cnt == 2
