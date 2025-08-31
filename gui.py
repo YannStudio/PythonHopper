@@ -1077,7 +1077,40 @@ def start_gui():
                 self.client_combo.set(opts[0])
 
         def _refresh_delivery_addresses(self):
-            pass
+            # Reload delivery addresses database from disk so that any
+            # modifications made through the management frame are reflected
+            # everywhere.
+            self.delivery_db = DeliveryAddressesDB.load(DELIVERY_DB_FILE)
+
+            # Update the delivery address manager frame itself to use the new
+            # database instance and refresh its tree view.
+            if hasattr(self, "delivery_frame"):
+                self.delivery_frame.db = self.delivery_db
+                try:
+                    self.delivery_frame.refresh()
+                except Exception:
+                    pass
+
+            # Any supplier selection widgets (either pop-up or notebook frame)
+            # might be open while the addresses are edited.  Their comboboxes
+            # need to be repopulated while preserving the current selections.
+            # SupplierSelectionFrame lives inside the notebook tabs.
+            for tab in getattr(self.nb, "tabs", lambda: [])():
+                try:
+                    w = self.nametowidget(tab)
+                except Exception:
+                    continue
+                if isinstance(w, SupplierSelectionFrame):
+                    w.delivery_db = self.delivery_db
+                    # `_refresh_options` updates combobox values without
+                    # altering current selections when `initial` is False.
+                    w._refresh_options()
+
+            # SupplierSelectionPopup windows are top-level children of the app.
+            for child in self.winfo_children():
+                if isinstance(child, SupplierSelectionPopup):
+                    child.delivery_db = self.delivery_db
+                    child._refresh_options()
 
         def _pick_src(self):
             from tkinter import filedialog
