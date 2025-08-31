@@ -1038,6 +1038,7 @@ def start_gui():
                         self.db,
                         sel_map,
                         doc_map,
+                        {},
                         remember,
                         client=client,
                         delivery_map=resolved_delivery_map,

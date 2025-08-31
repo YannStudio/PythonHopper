@@ -80,6 +80,7 @@ def run_tests() -> int:
             db,
             {},
             {},
+            {"Laser": "1"},
             True,
             client=client,
             delivery_map={},

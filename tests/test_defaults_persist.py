@@ -40,6 +40,7 @@ def test_defaults_persist(tmp_path, monkeypatch):
         db,
         overrides,
         {},
+        {"Laser": "1", "Plasma": "2"},
         True,
         client=None,
         delivery_map={},

@@ -287,6 +287,7 @@ def cli_copy_per_prod(args):
         db,
         override_map,
         {},
+        {},
         args.remember_defaults,
         client=client,
         delivery_map=delivery_map,
