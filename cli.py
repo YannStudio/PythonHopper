@@ -15,6 +15,7 @@ from helpers import _to_str, _build_file_index, _unique_path
 from models import Supplier, Client
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from clients_db import ClientsDB, CLIENTS_DB_FILE
+from delivery_addresses_db import DeliveryAddressesDB, DELIVERY_DB_FILE
 from bom import read_csv_flex, load_bom
 from orders import copy_per_production_and_orders, DEFAULT_FOOTER_NOTE
 
@@ -248,6 +249,15 @@ def cli_copy_per_prod(args):
     df = load_bom(args.bom)
     db = SuppliersDB.load(SUPPLIERS_DB_FILE)
     override_map = dict(kv.split("=", 1) for kv in (args.supplier or []))
+    delivery_override_map = dict(kv.split("=", 1) for kv in (args.delivery or []))
+    if delivery_override_map:
+        dadb = DeliveryAddressesDB.load(DELIVERY_DB_FILE)
+        for prod, name in list(delivery_override_map.items()):
+            addr = dadb.get(name)
+            if addr and addr.address:
+                delivery_override_map[prod] = addr.address
+            else:
+                delivery_override_map[prod] = name
     cdb = ClientsDB.load(CLIENTS_DB_FILE)
     client = None
     if args.client:
@@ -266,6 +276,7 @@ def cli_copy_per_prod(args):
         db,
         override_map,
         args.remember_defaults,
+        delivery_override_map=delivery_override_map,
         client=client,
         footer_note=args.note or DEFAULT_FOOTER_NOTE,
     )
@@ -348,6 +359,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--supplier",
         action="append",
         help="Override: Production=Supplier (meerdere keren mogelijk)",
+    )
+    cpp.add_argument(
+        "--delivery",
+        action="append",
+        help="Override: Production=Leveradres (meerdere keren mogelijk)",
     )
     cpp.add_argument("--remember-defaults", action="store_true")
     cpp.add_argument(

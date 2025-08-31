@@ -338,6 +338,7 @@ def copy_per_production_and_orders(
     db: SuppliersDB,
     override_map: Dict[str, str],
     remember_defaults: bool,
+    delivery_override_map: Dict[str, str] | None = None,
     client: Client | None = None,
     footer_note: str = "",
     zip_parts: bool = False,
@@ -353,6 +354,7 @@ def copy_per_production_and_orders(
     file_index = _build_file_index(source, selected_exts)
     count_copied = 0
     chosen: Dict[str, str] = {}
+    delivery_override_map = delivery_override_map or {}
 
     prod_to_rows: Dict[str, List[dict]] = defaultdict(list)
     for _, row in bom_df.iterrows():
@@ -391,6 +393,7 @@ def copy_per_production_and_orders(
         if zf is not None:
             zf.close()
 
+        _delivery_addr = delivery_override_map.get(prod)
         supplier = pick_supplier_for_production(prod, db, override_map)
         chosen[prod] = supplier.supplier
         if remember_defaults and supplier.supplier not in ("", "Onbekend"):
