@@ -253,12 +253,18 @@ def cli_copy_per_prod(args):
     else:
         cl = cdb.clients_sorted()
         client = cl[0] if cl else None
-    delivery = None
+    delivery_map = {}
     if args.delivery:
-        delivery = ddb.get(args.delivery)
-        if not delivery:
-            print("Leveradres niet gevonden")
-            return 2
+        for kv in args.delivery:
+            if "=" not in kv:
+                print("Leveradres optie moet PROD=NAAM zijn")
+                return 2
+            prod, name = kv.split("=", 1)
+            addr = ddb.get(name)
+            if not addr:
+                print("Leveradres niet gevonden")
+                return 2
+            delivery_map[prod] = addr
     cnt, chosen = copy_per_production_and_orders(
         args.source,
         args.dest,
@@ -269,7 +275,7 @@ def cli_copy_per_prod(args):
         {},
         args.remember_defaults,
         client=client,
-        delivery=delivery,
+        delivery_map=delivery_map,
         footer_note=args.note or DEFAULT_FOOTER_NOTE,
     )
     print("Gekopieerd:", cnt)
@@ -357,7 +363,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--note", help="Optioneel voetnootje op de bestelbon", default=""
     )
     cpp.add_argument("--client", help="Gebruik opdrachtgever met deze naam")
-    cpp.add_argument("--delivery", help="Gebruik leveradres met deze naam")
+    cpp.add_argument(
+        "--delivery",
+        action="append",
+        help="Leveradres voor productie: PROD=NAAM (meerdere keren mogelijk)",
+    )
 
     return p
 
