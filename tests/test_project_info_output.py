@@ -4,12 +4,15 @@ import openpyxl
 import pytest
 from PyPDF2 import PdfReader
 
+import cli
+from cli import build_parser, cli_copy_per_prod
 from models import Supplier
 from suppliers_db import SuppliersDB
-from orders import copy_per_production_and_orders
+from clients_db import ClientsDB
+from delivery_addresses_db import DeliveryAddressesDB
 
 
-def test_project_info_in_documents(tmp_path):
+def test_project_info_in_documents(tmp_path, monkeypatch):
     reportlab = pytest.importorskip("reportlab")
 
     db = SuppliersDB()
@@ -23,21 +26,31 @@ def test_project_info_in_documents(tmp_path):
     dst = tmp_path / "dst"
     dst.mkdir()
 
-    copy_per_production_and_orders(
+    parser = build_parser()
+    args = parser.parse_args([
+        "copy-per-prod",
+        "--source",
         str(src),
+        "--dest",
         str(dst),
-        bom_df,
-        [".pdf"],
-        db,
-        {},
-        {},
-        {},
-        False,
-        client=None,
-        delivery_map={},
-        project_number="PRJ123",
-        project_name="New Project",
+        "--bom",
+        str(tmp_path / "bom.xlsx"),
+        "--exts",
+        "pdf",
+        "--project-number",
+        "PRJ123",
+        "--project-name",
+        "New Project",
+    ])
+
+    monkeypatch.setattr(cli, "load_bom", lambda path: bom_df)
+    monkeypatch.setattr(SuppliersDB, "load", classmethod(lambda cls, path: db))
+    monkeypatch.setattr(ClientsDB, "load", classmethod(lambda cls, path: ClientsDB([])))
+    monkeypatch.setattr(
+        DeliveryAddressesDB, "load", classmethod(lambda cls, path: DeliveryAddressesDB([]))
     )
+
+    cli_copy_per_prod(args)
 
     prod_folder = dst / "Laser"
     today = datetime.date.today().strftime("%Y-%m-%d")
