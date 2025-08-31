@@ -99,6 +99,8 @@ def generate_pdf_order_platypus(
     doc_number: str | None = None,
     footer_note: str = "",
     delivery: DeliveryAddress | None = None,
+    project_number: str | None = None,
+    project_name: str | None = None,
 ) -> None:
     """Generate a PDF order using ReportLab if available.
 
@@ -134,6 +136,14 @@ def generate_pdf_order_platypus(
         f"E-mail: {company_info.get('email','')}",
     ]
 
+    proj_lines: List[str] = []
+    if project_number:
+        proj_lines.append(f"Projectnr.: {project_number}")
+    if project_name:
+        proj_lines.append(f"Projectnaam: {project_name}")
+    if proj_lines:
+        proj_lines.append("")
+
     # Supplier info with full address and contact details
     addr_parts = []
     if supplier.adres_1:
@@ -158,7 +168,8 @@ def generate_pdf_order_platypus(
     if supplier.phone:
         supp_lines.append(f"Tel: {supplier.phone}")
 
-    left_lines = company_lines + [""] + supp_lines
+    sep = [] if proj_lines else [""]
+    left_lines = company_lines + proj_lines + sep + supp_lines
 
     right_lines: List[str] = []
     if delivery:
@@ -299,6 +310,8 @@ def write_order_excel(
     delivery: DeliveryAddress | None = None,
     doc_type: str = "Bestelbon",
     doc_number: str | None = None,
+    project_number: str | None = None,
+    project_name: str | None = None,
 ) -> None:
     """Write order information to an Excel file with header info."""
     df = pd.DataFrame(
@@ -309,6 +322,12 @@ def write_order_excel(
     header_lines: List[Tuple[str, str]] = []
     if doc_number:
         header_lines.extend([(f"{doc_type} nr.", str(doc_number)), ("", "")])
+    if project_number or project_name:
+        if project_number:
+            header_lines.append(("Projectnr.", project_number))
+        if project_name:
+            header_lines.append(("Projectnaam", project_name))
+        header_lines.append(("", ""))
     if company_info:
         header_lines.extend(
             [
@@ -404,6 +423,8 @@ def copy_per_production_and_orders(
     delivery_map: Dict[str, DeliveryAddress] | None = None,
     footer_note: str = "",
     zip_parts: bool = False,
+    project_number: str | None = None,
+    project_name: str | None = None,
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
 
@@ -497,7 +518,15 @@ def copy_per_production_and_orders(
             )
             delivery = delivery_map.get(prod)
             write_order_excel(
-                excel_path, items, company, supplier, delivery, doc_type, doc_num or None
+                excel_path,
+                items,
+                company,
+                supplier,
+                delivery,
+                doc_type,
+                doc_num or None,
+                project_number=project_number,
+                project_name=project_name,
             )
 
             pdf_path = os.path.join(
@@ -514,6 +543,8 @@ def copy_per_production_and_orders(
                     doc_number=doc_num or None,
                     footer_note=footer_note or DEFAULT_FOOTER_NOTE,
                     delivery=delivery,
+                    project_number=project_number,
+                    project_name=project_name,
                 )
             except Exception as e:
                 print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
