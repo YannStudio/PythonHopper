@@ -32,6 +32,7 @@ try:
         SimpleDocTemplate,
         Paragraph,
         LongTable,
+        Table,
         TableStyle,
         Spacer,
     )
@@ -55,7 +56,7 @@ from helpers import (
     _material_nowrap,
     _build_file_index,
 )
-from models import Supplier, Client
+from models import Supplier, Client, DeliveryAddress
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from bom import load_bom  # noqa: F401 - imported for module dependency
 
@@ -82,6 +83,7 @@ def generate_pdf_order_platypus(
     items: List[Dict[str, str]],
     doc_type: str = "Bestelbon",
     footer_note: str = "",
+    delivery: DeliveryAddress | None = None,
 ) -> None:
     """Generate a PDF order using ReportLab if available.
 
@@ -141,12 +143,29 @@ def generate_pdf_order_platypus(
     if supplier.phone:
         supp_lines.append(f"Tel: {supplier.phone}")
 
+    right_lines = supp_lines[:]
+    if delivery:
+        dl = [f"<b>Leveradres:</b> {delivery.name}"]
+        if delivery.address:
+            dl.append(delivery.address)
+        if delivery.remarks:
+            dl.append(delivery.remarks)
+        right_lines += [""] + dl
+
     story = []
     story.append(Paragraph(f"{doc_type} productie: {production}", title_style))
     story.append(Spacer(0, 6))
-    story.append(Paragraph("<br/>".join(company_lines), text_style))
-    story.append(Spacer(0, 6))
-    story.append(Paragraph("<br/>".join(supp_lines), text_style))
+    header_tbl = LongTable(
+        [
+            [
+                Paragraph("<br/>".join(company_lines), text_style),
+                Paragraph("<br/>".join(right_lines), text_style),
+            ]
+        ],
+        colWidths=[(width - 2 * margin) / 2, (width - 2 * margin) / 2],
+    )
+    header_tbl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    story.append(header_tbl)
     story.append(Spacer(0, 10))
 
     # Headers and data
@@ -256,6 +275,7 @@ def write_order_excel(
     items: List[Dict[str, str]],
     company_info: Dict[str, str] | None = None,
     supplier: Supplier | None = None,
+    delivery: DeliveryAddress | None = None,
 ) -> None:
     """Write order information to an Excel file with header info."""
     df = pd.DataFrame(
@@ -293,6 +313,15 @@ def write_order_excel(
                 ("BTW", supplier.btw or ""),
                 ("E-mail", supplier.sales_email or ""),
                 ("Tel", supplier.phone or ""),
+                ("", ""),
+            ]
+        )
+    if delivery:
+        header_lines.extend(
+            [
+                ("Leveradres", delivery.name),
+                ("Adres", delivery.address or ""),
+                ("Opmerking", delivery.remarks or ""),
                 ("", ""),
             ]
         )
@@ -345,6 +374,7 @@ def copy_per_production_and_orders(
     doc_type_map: Dict[str, str] | None,
     remember_defaults: bool,
     client: Client | None = None,
+    delivery: DeliveryAddress | None = None,
     footer_note: str = "",
     zip_parts: bool = False,
 ) -> Tuple[int, Dict[str, str]]:
@@ -423,7 +453,7 @@ def copy_per_production_and_orders(
         if supplier.supplier:
             doc_type = doc_type_map.get(prod, "Bestelbon")
             excel_path = os.path.join(prod_folder, f"{doc_type}_{prod}_{today}.xlsx")
-            write_order_excel(excel_path, items, company, supplier)
+            write_order_excel(excel_path, items, company, supplier, delivery)
 
             pdf_path = os.path.join(prod_folder, f"{doc_type}_{prod}_{today}.pdf")
             try:
@@ -435,6 +465,7 @@ def copy_per_production_and_orders(
                     items,
                     doc_type=doc_type,
                     footer_note=footer_note or DEFAULT_FOOTER_NOTE,
+                    delivery=delivery,
                 )
             except Exception as e:
                 print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
