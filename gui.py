@@ -479,6 +479,7 @@ def start_gui():
             self._active_prod: Optional[str] = None  # laatst gefocuste rij
             self.sel_vars: Dict[str, tk.StringVar] = {}
             self.doc_vars: Dict[str, tk.StringVar] = {}
+            self.doc_num_vars: Dict[str, tk.StringVar] = {}
             self.delivery_vars: Dict[str, tk.StringVar] = {}
 
             # Grid layout: content (row=0, weight=1), buttons (row=1)
@@ -526,6 +527,10 @@ def start_gui():
                     width=18,
                 )
                 doc_combo.pack(side="left", padx=6)
+
+                doc_num_var = tk.StringVar()
+                self.doc_num_vars[prod] = doc_num_var
+                tk.Entry(row, textvariable=doc_num_var, width=8).pack(side="left", padx=6)
 
                 dvar = tk.StringVar(value="Geen")
                 self.delivery_vars[prod] = dvar
@@ -710,6 +715,7 @@ def start_gui():
             doc_num_map: Dict[str, str] = {}
             delivery_map: Dict[str, str] = {}
             for prod, _combo in self.rows:
+                doc_num_map[prod] = self.doc_num_vars[prod].get().strip()
                 delivery_map[prod] = self.delivery_vars.get(prod, tk.StringVar(value="Geen")).get()
 
             self.callback(
