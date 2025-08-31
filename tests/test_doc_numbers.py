@@ -47,14 +47,19 @@ def test_doc_number_in_name_and_header(tmp_path):
     assert xlsx_path.exists()
     wb = openpyxl.load_workbook(xlsx_path)
     ws = wb.active
-    assert ws["A1"].value == "Bestelbon nr."
+    assert ws["A1"].value == "Nummer"
     assert ws["B1"].value == "BB-123"
+    assert ws["A2"].value == "Datum"
+    assert ws["B2"].value == today
 
     pdf_path = prod_folder / f"Bestelbon_BB-123_Laser_{today}.pdf"
     assert pdf_path.exists()
     reader = PdfReader(pdf_path)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
-    assert "Bestelbon nr. BB-123" in text
+    lines = text.splitlines()
+    assert f"Nummer: BB-123" in text
+    assert f"Datum: {today}" in text
+    assert "BB-123" not in lines[0]
 
 
 def test_prefix_helper():
@@ -100,14 +105,19 @@ def test_offerte_prefix_in_output(tmp_path):
     assert xlsx_path.exists()
     wb = openpyxl.load_workbook(xlsx_path)
     ws = wb.active
-    assert ws["A1"].value == "Offerteaanvraag nr."
+    assert ws["A1"].value == "Nummer"
     assert ws["B1"].value == "OFF-42"
+    assert ws["A2"].value == "Datum"
+    assert ws["B2"].value == today
 
     pdf_path = prod_folder / f"Offerteaanvraag_OFF-42_Laser_{today}.pdf"
     assert pdf_path.exists()
     reader = PdfReader(pdf_path)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
-    assert "Offerteaanvraag nr. OFF-42" in text
+    lines = text.splitlines()
+    assert f"Nummer: OFF-42" in text
+    assert f"Datum: {today}" in text
+    assert "OFF-42" not in lines[0]
 
 
 def test_missing_doc_number_omits_prefix_and_header(tmp_path):
@@ -147,10 +157,13 @@ def test_missing_doc_number_omits_prefix_and_header(tmp_path):
     ws = wb.active
     # Without document number the first header line should be the supplier
     assert ws["A1"].value == "Leverancier"
+    rows = list(ws.iter_rows(min_row=1, max_row=10, max_col=2, values_only=True))
+    assert ("Datum", today) in rows
 
     pdf_path = prod_folder / f"Bestelbon_Laser_{today}.pdf"
     assert pdf_path.exists()
     reader = PdfReader(pdf_path)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
-    assert "Bestelbon nr." not in text
+    assert "Nummer:" not in text
+    assert f"Datum: {today}" in text
 
