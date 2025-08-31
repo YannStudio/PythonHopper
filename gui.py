@@ -478,7 +478,7 @@ def start_gui():
             self._active_prod: Optional[str] = None  # laatst gefocuste rij
             self.sel_vars: Dict[str, tk.StringVar] = {}
             self.doc_vars: Dict[str, tk.StringVar] = {}
-            self.delivery_var = tk.StringVar()
+            self.delivery_vars: Dict[str, tk.StringVar] = {}
 
             # Grid layout: content (row=0, weight=1), buttons (row=1)
             self.grid_columnconfigure(0, weight=1)
@@ -489,25 +489,18 @@ def start_gui():
             content.grid_columnconfigure(0, weight=1)  # left
             content.grid_columnconfigure(1, weight=0)  # right
 
-            # Left: leveradres + per productie comboboxen
+            # Left: per productie comboboxen
             left = tk.Frame(content)
             left.grid(row=0, column=0, sticky="nw", padx=(0,8))
 
-            # Delivery address selector
-            drow = tk.Frame(left)
-            drow.pack(fill="x", pady=3)
-            tk.Label(drow, text="Leveradres", width=18, anchor="w").pack(side="left")
-            self.delivery_combo = ttk.Combobox(
-                drow, textvariable=self.delivery_var, state="readonly", width=50
-            )
-            self.delivery_combo.pack(side="left", padx=6)
-            opts = [
+            delivery_opts = [
+                "Geen",
+                "Bestelling wordt opgehaald",
+                "Leveradres wordt nog meegedeeld",
+            ] + [
                 self.delivery_db.display_name(a)
                 for a in self.delivery_db.addresses_sorted()
             ]
-            self.delivery_combo["values"] = opts
-            if opts:
-                self.delivery_combo.set(opts[0])
 
             self.rows = []
             for prod in productions:
@@ -532,6 +525,17 @@ def start_gui():
                     width=18,
                 )
                 doc_combo.pack(side="left", padx=6)
+
+                dvar = tk.StringVar(value="Geen")
+                self.delivery_vars[prod] = dvar
+                dcombo = ttk.Combobox(
+                    row,
+                    textvariable=dvar,
+                    values=delivery_opts,
+                    state="readonly",
+                    width=50,
+                )
+                dcombo.pack(side="left", padx=6)
 
                 self.rows.append((prod, combo))
 
@@ -701,8 +705,12 @@ def start_gui():
                     if s:
                         sel_map[prod] = s.supplier
                 doc_map[prod] = self.doc_vars.get(prod, tk.StringVar(value="Bestelbon")).get()
-            delivery_id = self.delivery_var.get().replace("★ ", "", 1)
-            self.callback(sel_map, doc_map, bool(self.remember_var.get()), delivery_id)
+
+            delivery_map: Dict[str, str] = {}
+            for prod, _combo in self.rows:
+                delivery_map[prod] = self.delivery_vars.get(prod, tk.StringVar(value="Geen")).get()
+
+            self.callback(sel_map, doc_map, delivery_map, bool(self.remember_var.get()))
 
     class App(tk.Tk):
         def __init__(self):
@@ -1001,16 +1009,27 @@ def start_gui():
             def on_sel(
                 sel_map: Dict[str, str],
                 doc_map: Dict[str, str],
+                delivery_map_raw: Dict[str, str],
                 remember: bool,
-                delivery_id: str,
             ):
                 def work():
                     self.status_var.set("Kopiëren & bestelbonnen maken...")
                     client = self.client_db.get(
                         self.client_var.get().replace("★ ", "", 1)
                     )
-                    delivery = self.delivery_db.get(delivery_id) if delivery_id else None
-                    delivery_map = {prod: delivery for prod in sel_map} if delivery else {}
+                    resolved_delivery_map: Dict[str, DeliveryAddress | None] = {}
+                    for prod, name in delivery_map_raw.items():
+                        clean = name.replace("★ ", "", 1)
+                        if clean == "Geen":
+                            resolved_delivery_map[prod] = None
+                        elif clean in (
+                            "Bestelling wordt opgehaald",
+                            "Leveradres wordt nog meegedeeld",
+                        ):
+                            resolved_delivery_map[prod] = DeliveryAddress(name=clean)
+                        else:
+                            addr = self.delivery_db.get(clean)
+                            resolved_delivery_map[prod] = addr
                     cnt, chosen = copy_per_production_and_orders(
                         self.source_folder,
                         self.dest_folder,
@@ -1021,7 +1040,7 @@ def start_gui():
                         doc_map,
                         remember,
                         client=client,
-                        delivery_map=delivery_map,
+                        delivery_map=resolved_delivery_map,
                         footer_note=DEFAULT_FOOTER_NOTE,
                         zip_parts=bool(self.zip_var.get()),
                     )
