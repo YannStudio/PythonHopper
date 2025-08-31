@@ -136,14 +136,6 @@ def generate_pdf_order_platypus(
         f"E-mail: {company_info.get('email','')}",
     ]
 
-    proj_lines: List[str] = []
-    if project_number:
-        proj_lines.append(f"Projectnr.: {project_number}")
-    if project_name:
-        proj_lines.append(f"Projectnaam: {project_name}")
-    if proj_lines:
-        proj_lines.append("")
-
     # Supplier info with full address and contact details
     addr_parts = []
     if supplier.adres_1:
@@ -168,8 +160,7 @@ def generate_pdf_order_platypus(
     if supplier.phone:
         supp_lines.append(f"Tel: {supplier.phone}")
 
-    sep = [] if proj_lines else [""]
-    left_lines = company_lines + proj_lines + sep + supp_lines
+    left_lines = company_lines + [""] + supp_lines
 
     right_lines: List[str] = []
     if delivery:
@@ -181,11 +172,21 @@ def generate_pdf_order_platypus(
         if delivery.remarks:
             right_lines.append(delivery.remarks)
 
+    today = datetime.date.today().strftime("%Y-%m-%d")
     story = []
     title = f"{doc_type} productie: {production}"
-    if doc_number:
-        title = f"{doc_type} nr. {doc_number} productie: {production}"
     story.append(Paragraph(title, title_style))
+
+    subtitle_lines: List[str] = []
+    if doc_number:
+        subtitle_lines.append(f"Nummer: {doc_number}")
+    subtitle_lines.append(f"Datum: {today}")
+    if project_number:
+        subtitle_lines.append(f"Projectnummer: {project_number}")
+    if project_name:
+        subtitle_lines.append(f"Projectnaam: {project_name}")
+    for line in subtitle_lines:
+        story.append(Paragraph(line, text_style))
     story.append(Spacer(0, 6))
     header_tbl = LongTable(
         [
