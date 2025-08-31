@@ -129,20 +129,23 @@ def generate_pdf_order_platypus(
     text_style.leading = 13
     small_style = ParagraphStyle("small", parent=text_style, fontSize=8.5, leading=10.5)
 
+    doc_lines: List[str] = []
+    if doc_number:
+        doc_lines.append(f"Nummer: {doc_number}")
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    doc_lines.append(f"Datum: {today}")
+    if project_number:
+        doc_lines.append(f"Projectnummer: {project_number}")
+    if project_name:
+        doc_lines.append(f"Projectnaam: {project_name}")
+    doc_lines.append("")
+
     company_lines = [
         f"<b>{company_info.get('name','')}</b>",
         f"{company_info.get('address','')}",
         f"BTW: {company_info.get('vat','')}",
         f"E-mail: {company_info.get('email','')}",
     ]
-
-    proj_lines: List[str] = []
-    if project_number:
-        proj_lines.append(f"Projectnr.: {project_number}")
-    if project_name:
-        proj_lines.append(f"Projectnaam: {project_name}")
-    if proj_lines:
-        proj_lines.append("")
 
     # Supplier info with full address and contact details
     addr_parts = []
@@ -168,8 +171,7 @@ def generate_pdf_order_platypus(
     if supplier.phone:
         supp_lines.append(f"Tel: {supplier.phone}")
 
-    sep = [] if proj_lines else [""]
-    left_lines = company_lines + proj_lines + sep + supp_lines
+    left_lines = doc_lines + company_lines + [""] + supp_lines
 
     right_lines: List[str] = []
     if delivery:
@@ -183,8 +185,6 @@ def generate_pdf_order_platypus(
 
     story = []
     title = f"{doc_type} productie: {production}"
-    if doc_number:
-        title = f"{doc_type} nr. {doc_number} productie: {production}"
     story.append(Paragraph(title, title_style))
     story.append(Spacer(0, 6))
     header_tbl = LongTable(
@@ -320,14 +320,15 @@ def write_order_excel(
     )
 
     header_lines: List[Tuple[str, str]] = []
+    today = datetime.date.today().strftime("%Y-%m-%d")
     if doc_number:
-        header_lines.extend([(f"{doc_type} nr.", str(doc_number)), ("", "")])
-    if project_number or project_name:
-        if project_number:
-            header_lines.append(("Projectnr.", project_number))
-        if project_name:
-            header_lines.append(("Projectnaam", project_name))
-        header_lines.append(("", ""))
+        header_lines.append(("Nummer", str(doc_number)))
+    header_lines.append(("Datum", today))
+    if project_number:
+        header_lines.append(("Projectnummer", project_number))
+    if project_name:
+        header_lines.append(("Projectnaam", project_name))
+    header_lines.append(("", ""))
     if company_info:
         header_lines.extend(
             [

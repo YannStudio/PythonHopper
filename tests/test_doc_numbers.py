@@ -155,10 +155,11 @@ def test_missing_doc_number_omits_prefix_and_header(tmp_path):
     assert xlsx_path.exists()
     wb = openpyxl.load_workbook(xlsx_path)
     ws = wb.active
-    # Without document number the first header line should be the supplier
-    assert ws["A1"].value == "Leverancier"
+    # Without document number the header starts with the date
+    assert ws["A1"].value == "Datum"
+    assert ws["B1"].value == today
     rows = list(ws.iter_rows(min_row=1, max_row=10, max_col=2, values_only=True))
-    assert ("Datum", today) in rows
+    assert all(r[0] != "Nummer" for r in rows)
 
     pdf_path = prod_folder / f"Bestelbon_Laser_{today}.pdf"
     assert pdf_path.exists()
