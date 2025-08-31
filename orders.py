@@ -82,6 +82,7 @@ def generate_pdf_order_platypus(
     production: str,
     items: List[Dict[str, str]],
     doc_type: str = "Bestelbon",
+    doc_number: str | None = None,
     footer_note: str = "",
     delivery: DeliveryAddress | None = None,
 ) -> None:
@@ -154,7 +155,10 @@ def generate_pdf_order_platypus(
             right_lines.append(delivery.remarks)
 
     story = []
-    story.append(Paragraph(f"{doc_type} productie: {production}", title_style))
+    title = f"{doc_type} productie: {production}"
+    if doc_number:
+        title = f"{doc_type} nr. {doc_number} productie: {production}"
+    story.append(Paragraph(title, title_style))
     story.append(Spacer(0, 6))
     header_tbl = LongTable(
         [
@@ -277,6 +281,8 @@ def write_order_excel(
     company_info: Dict[str, str] | None = None,
     supplier: Supplier | None = None,
     delivery: DeliveryAddress | None = None,
+    doc_type: str = "Bestelbon",
+    doc_number: str | None = None,
 ) -> None:
     """Write order information to an Excel file with header info."""
     df = pd.DataFrame(
@@ -285,6 +291,8 @@ def write_order_excel(
     )
 
     header_lines: List[Tuple[str, str]] = []
+    if doc_number:
+        header_lines.extend([(f"{doc_type} nr.", str(doc_number)), ("", "")])
     if company_info:
         header_lines.extend(
             [
@@ -373,6 +381,7 @@ def copy_per_production_and_orders(
     db: SuppliersDB,
     override_map: Dict[str, str],
     doc_type_map: Dict[str, str] | None,
+    doc_num_map: Dict[str, str] | None,
     remember_defaults: bool,
     client: Client | None = None,
     delivery_map: Dict[str, DeliveryAddress] | None = None,
@@ -384,6 +393,9 @@ def copy_per_production_and_orders(
     ``doc_type_map`` may specify per production whether a *Bestelbon* or an
     *Offerteaanvraag* should be generated. Missing entries default to
     ``"Bestelbon"``.
+
+    ``doc_num_map`` provides document numbers per production which are used in
+    filenames and document headers.
 
     ``delivery_map`` can provide a :class:`DeliveryAddress` per production.
     
@@ -397,6 +409,7 @@ def copy_per_production_and_orders(
     count_copied = 0
     chosen: Dict[str, str] = {}
     doc_type_map = doc_type_map or {}
+    doc_num_map = doc_num_map or {}
 
     prod_to_rows: Dict[str, List[dict]] = defaultdict(list)
     for _, row in bom_df.iterrows():
@@ -456,11 +469,18 @@ def copy_per_production_and_orders(
         }
         if supplier.supplier:
             doc_type = doc_type_map.get(prod, "Bestelbon")
-            excel_path = os.path.join(prod_folder, f"{doc_type}_{prod}_{today}.xlsx")
+            doc_num = doc_num_map.get(prod, "")
+            excel_path = os.path.join(
+                prod_folder, f"{doc_type}_{doc_num}_{prod}_{today}.xlsx"
+            )
             delivery = delivery_map.get(prod)
-            write_order_excel(excel_path, items, company, supplier, delivery)
+            write_order_excel(
+                excel_path, items, company, supplier, delivery, doc_type, doc_num
+            )
 
-            pdf_path = os.path.join(prod_folder, f"{doc_type}_{prod}_{today}.pdf")
+            pdf_path = os.path.join(
+                prod_folder, f"{doc_type}_{doc_num}_{prod}_{today}.pdf"
+            )
             try:
                 generate_pdf_order_platypus(
                     pdf_path,
@@ -469,6 +489,7 @@ def copy_per_production_and_orders(
                     prod,
                     items,
                     doc_type=doc_type,
+                    doc_number=doc_num,
                     footer_note=footer_note or DEFAULT_FOOTER_NOTE,
                     delivery=delivery,
                 )
