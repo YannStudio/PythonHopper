@@ -973,7 +973,72 @@ def start_gui():
                 self.client_combo.set(opts[0])
 
         def _refresh_delivery_addresses(self):
-            pass
+            """Refresh comboboxes that list delivery addresses.
+
+            Whenever the delivery address database is changed (for example via
+            the manager frame), any open widgets that allow the user to select a
+            delivery address should reflect the updated options.  This method
+            rebuilds the list of display values from ``self.delivery_db`` and
+            updates any known comboboxes while trying to preserve the current
+            selection.
+            """
+
+            # Compute the list of display names for all addresses.  These are
+            # used as the ``values`` for comboboxes.
+            opts = [
+                self.delivery_db.display_name(a)
+                for a in self.delivery_db.addresses_sorted()
+            ]
+
+            def _update_combo(combo):
+                """Update a single ttk.Combobox with the new options."""
+                if not combo:
+                    return
+                try:
+                    current = combo.get()
+                    combo["values"] = opts
+                    if current in opts:
+                        combo.set(current)
+                    elif opts:
+                        combo.set(opts[0])
+                except Exception:
+                    # Combobox might be destroyed or not yet fully
+                    # initialised.  In that case just ignore it.
+                    pass
+
+            def _update_container(container):
+                """Update all known address-combos in a container."""
+                if not container:
+                    return
+                # The supplier-selection widgets (frame or popup) expose the
+                # address comboboxes in different attributes.  Check a few
+                # possible names to stay resilient to small refactors.
+                combos = []
+                for attr in (
+                    "addr_rows",
+                    "address_rows",
+                    "addr_combos",
+                    "address_combos",
+                ):
+                    rows = getattr(container, attr, None)
+                    if not rows:
+                        continue
+                    # ``rows`` may either be a list of comboboxes or a list of
+                    # tuples where the combobox is the last element.
+                    for item in rows:
+                        if isinstance(item, (tuple, list)):
+                            combo = item[-1]
+                        else:
+                            combo = item
+                        combos.append(combo)
+                for combo in combos:
+                    _update_combo(combo)
+
+            # Refresh address combos in any known selection widgets that might
+            # be open.
+            for attr in ("selection_frame", "selection_popup"):
+                _update_container(getattr(self, attr, None))
+
 
         def _pick_src(self):
             from tkinter import filedialog
@@ -1188,7 +1253,9 @@ def start_gui():
                 self.nb.forget(sel_frame)
                 sel_frame.destroy()
                 self.nb.select(self.main_frame)
+                self.selection_frame = None
             sel_frame = SupplierSelectionFrame(self.nb, prods, self.db, on_sel)
+            self.selection_frame = sel_frame
             self.nb.add(sel_frame, state='hidden')
             self.nb.select(sel_frame)
 
