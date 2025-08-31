@@ -18,7 +18,6 @@ from orders import (
     DEFAULT_FOOTER_NOTE,
     combine_pdfs_per_production,
     combine_pdfs_from_source,
-    _prefix_for_doc_type,
 )
 
 def start_gui():
@@ -1045,10 +1044,6 @@ def start_gui():
                         else:
                             addr = self.delivery_db.get(clean)
                             resolved_delivery_map[prod] = addr
-                    doc_num_map = {
-                        prod: _prefix_for_doc_type(doc_map.get(prod, ""))
-                        for prod in sel_map
-                    }
                     cnt, chosen = copy_per_production_and_orders(
                         self.source_folder,
                         self.dest_folder,
