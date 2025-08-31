@@ -462,14 +462,23 @@ def start_gui():
         """Per productie: type-to-filter of dropdown; rechts detailkaart (klik = selecteer).
            Knoppen altijd zichtbaar onderaan.
         """
-        def __init__(self, master, productions: List[str], db: SuppliersDB, callback):
+        def __init__(
+            self,
+            master,
+            productions: List[str],
+            db: SuppliersDB,
+            delivery_db: DeliveryAddressesDB,
+            callback,
+        ):
             super().__init__(master)
             self.db = db
+            self.delivery_db = delivery_db
             self.callback = callback
             self._preview_supplier: Optional[Supplier] = None
             self._active_prod: Optional[str] = None  # laatst gefocuste rij
             self.sel_vars: Dict[str, tk.StringVar] = {}
             self.doc_vars: Dict[str, tk.StringVar] = {}
+            self.delivery_var = tk.StringVar()
 
             # Grid layout: content (row=0, weight=1), buttons (row=1)
             self.grid_columnconfigure(0, weight=1)
@@ -480,9 +489,26 @@ def start_gui():
             content.grid_columnconfigure(0, weight=1)  # left
             content.grid_columnconfigure(1, weight=0)  # right
 
-            # Left: per productie comboboxen
+            # Left: leveradres + per productie comboboxen
             left = tk.Frame(content)
             left.grid(row=0, column=0, sticky="nw", padx=(0,8))
+
+            # Delivery address selector
+            drow = tk.Frame(left)
+            drow.pack(fill="x", pady=3)
+            tk.Label(drow, text="Leveradres", width=18, anchor="w").pack(side="left")
+            self.delivery_combo = ttk.Combobox(
+                drow, textvariable=self.delivery_var, state="readonly", width=50
+            )
+            self.delivery_combo.pack(side="left", padx=6)
+            opts = [
+                self.delivery_db.display_name(a)
+                for a in self.delivery_db.addresses_sorted()
+            ]
+            self.delivery_combo["values"] = opts
+            if opts:
+                self.delivery_combo.set(opts[0])
+
             self.rows = []
             for prod in productions:
                 row = tk.Frame(left)
@@ -675,7 +701,8 @@ def start_gui():
                     if s:
                         sel_map[prod] = s.supplier
                 doc_map[prod] = self.doc_vars.get(prod, tk.StringVar(value="Bestelbon")).get()
-            self.callback(sel_map, doc_map, bool(self.remember_var.get()))
+            delivery_id = self.delivery_var.get().replace("★ ", "", 1)
+            self.callback(sel_map, doc_map, bool(self.remember_var.get()), delivery_id)
 
     class App(tk.Tk):
         def __init__(self):
@@ -702,9 +729,13 @@ def start_gui():
             main = tk.Frame(self.nb)
             self.nb.add(main, text="Main")
             self.main_frame = main
-            self.clients_frame = ClientsManagerFrame(self.nb, self.client_db, on_change=self._refresh_clients_combo)
+            self.clients_frame = ClientsManagerFrame(
+                self.nb, self.client_db, on_change=self._refresh_clients_combo
+            )
             self.nb.add(self.clients_frame, text="Klant beheer")
-            self.delivery_frame = DeliveryAddressesManagerFrame(self.nb, self.delivery_db, on_change=self._refresh_delivery_addresses)
+            self.delivery_frame = DeliveryAddressesManagerFrame(
+                self.nb, self.delivery_db, on_change=lambda: None
+            )
             self.nb.add(self.delivery_frame, text="Leveradres beheer")
             self.suppliers_frame = SuppliersManagerFrame(self.nb, self.db, on_change=lambda: None)
             self.nb.add(self.suppliers_frame, text="Leverancier beheer")
@@ -726,12 +757,7 @@ def start_gui():
             tk.Button(top, text="Beheer", command=lambda: self.nb.select(self.clients_frame)).grid(row=2, column=2, padx=4)
             self._refresh_clients_combo()
 
-            tk.Label(top, text="Leveradres:").grid(row=3, column=0, sticky="w")
-            self.delivery_var = tk.StringVar()
-            self.delivery_combo = ttk.Combobox(top, textvariable=self.delivery_var, state="readonly", width=40)
-            self.delivery_combo.grid(row=3, column=1, padx=4)
-            tk.Button(top, text="Beheer", command=lambda: self.nb.select(self.delivery_frame)).grid(row=3, column=2, padx=4)
-            self._refresh_delivery_addresses()
+
 
             # Filters
             filt = tk.LabelFrame(main, text="Selecteer bestandstypen om te kopiëren", labelanchor="n"); filt.pack(fill="x", padx=8, pady=6)
@@ -793,14 +819,6 @@ def start_gui():
             self.client_combo["values"] = opts
             if opts:
                 self.client_combo.set(opts[0])
-
-        def _refresh_delivery_addresses(self):
-            opts = [
-                self.delivery_db.display_name(a) for a in self.delivery_db.addresses_sorted()
-            ]
-            self.delivery_combo["values"] = opts
-            if opts:
-                self.delivery_combo.set(opts[0])
 
         def _pick_src(self):
             from tkinter import filedialog
@@ -972,14 +990,26 @@ def start_gui():
             if not exts or not self.source_folder or not self.dest_folder:
                 messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies."); return
 
-            prods = sorted(set((str(r.get("Production") or "").strip() or "_Onbekend") for _, r in self.bom_df.iterrows()))
+            prods = sorted(
+                set(
+                    (str(r.get("Production") or "").strip() or "_Onbekend")
+                    for _, r in self.bom_df.iterrows()
+                )
+            )
             sel_frame = None
 
-            def on_sel(sel_map: Dict[str,str], doc_map: Dict[str,str], remember: bool):
+            def on_sel(
+                sel_map: Dict[str, str],
+                doc_map: Dict[str, str],
+                remember: bool,
+                delivery_id: str,
+            ):
                 def work():
                     self.status_var.set("Kopiëren & bestelbonnen maken...")
-                    client = self.client_db.get(self.client_var.get().replace("★ ", "", 1))
-                    delivery = self.delivery_db.get(self.delivery_var.get().replace("★ ", "", 1))
+                    client = self.client_db.get(
+                        self.client_var.get().replace("★ ", "", 1)
+                    )
+                    delivery = self.delivery_db.get(delivery_id)
                     cnt, chosen = copy_per_production_and_orders(
                         self.source_folder,
                         self.dest_folder,
@@ -994,8 +1024,11 @@ def start_gui():
                         footer_note=DEFAULT_FOOTER_NOTE,
                         zip_parts=bool(self.zip_var.get()),
                     )
+
                     def on_done():
-                        self.status_var.set(f"Klaar. Gekopieerd: {cnt}. Leveranciers: {chosen}")
+                        self.status_var.set(
+                            f"Klaar. Gekopieerd: {cnt}. Leveranciers: {chosen}"
+                        )
                         messagebox.showinfo("Klaar", "Bestelbonnen aangemaakt.")
                         if sys.platform.startswith("win"):
                             try:
@@ -1009,11 +1042,15 @@ def start_gui():
                             except Exception:
                                 pass
                         self.nb.select(self.main_frame)
+
                     self.after(0, on_done)
+
                 threading.Thread(target=work, daemon=True).start()
 
-            sel_frame = SupplierSelectionFrame(self.nb, prods, self.db, on_sel)
-            self.nb.add(sel_frame, state='hidden')
+            sel_frame = SupplierSelectionFrame(
+                self.nb, prods, self.db, self.delivery_db, on_sel
+            )
+            self.nb.add(sel_frame, state="hidden")
             self.nb.select(sel_frame)
 
         def _combine_pdf(self):
