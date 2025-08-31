@@ -59,17 +59,16 @@ def test_project_info_in_documents(tmp_path, monkeypatch):
     assert xlsx_path.exists()
     wb = openpyxl.load_workbook(xlsx_path)
     ws = wb.active
-    col_a = [ws[f"A{i}"].value for i in range(1, 20)]
-    assert "Projectnr." in col_a
-    assert "Projectnaam" in col_a
-    row_num = col_a.index("Projectnr.") + 1
-    row_name = col_a.index("Projectnaam") + 1
-    assert ws[f"B{row_num}"].value == "PRJ123"
-    assert ws[f"B{row_name}"].value == "New Project"
+    assert ws["A1"].value == "Datum"
+    assert ws["B1"].value == today
+    assert ws["A2"].value == "Projectnr."
+    assert ws["B2"].value == "PRJ123"
+    assert ws["A3"].value == "Projectnaam"
+    assert ws["B3"].value == "New Project"
 
     pdf_path = prod_folder / f"Bestelbon_Laser_{today}.pdf"
     assert pdf_path.exists()
     reader = PdfReader(pdf_path)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
-    assert "Projectnr.: PRJ123" in text
-    assert "Projectnaam: New Project" in text
+    lines = text.splitlines()
+    assert lines.index(f"Datum: {today}") < lines.index("Projectnr.: PRJ123") < lines.index("Projectnaam: New Project")
