@@ -373,6 +373,7 @@ def copy_per_production_and_orders(
     override_map: Dict[str, str],
     doc_type_map: Dict[str, str] | None,
     remember_defaults: bool,
+    delivery_map: Dict[str, DeliveryAddress] | None = None,
     client: Client | None = None,
     delivery: DeliveryAddress | None = None,
     footer_note: str = "",
@@ -394,6 +395,7 @@ def copy_per_production_and_orders(
     count_copied = 0
     chosen: Dict[str, str] = {}
     doc_type_map = doc_type_map or {}
+    delivery_map = delivery_map or {}
 
     prod_to_rows: Dict[str, List[dict]] = defaultdict(list)
     for _, row in bom_df.iterrows():
@@ -450,10 +452,12 @@ def copy_per_production_and_orders(
             "vat": client.vat if client else "",
             "email": client.email if client else "",
         }
+        prod_delivery = delivery_map.get(prod, delivery)
+
         if supplier.supplier:
             doc_type = doc_type_map.get(prod, "Bestelbon")
             excel_path = os.path.join(prod_folder, f"{doc_type}_{prod}_{today}.xlsx")
-            write_order_excel(excel_path, items, company, supplier, delivery)
+            write_order_excel(excel_path, items, company, supplier, prod_delivery)
 
             pdf_path = os.path.join(prod_folder, f"{doc_type}_{prod}_{today}.pdf")
             try:
@@ -465,7 +469,7 @@ def copy_per_production_and_orders(
                     items,
                     doc_type=doc_type,
                     footer_note=footer_note or DEFAULT_FOOTER_NOTE,
-                    delivery=delivery,
+                    delivery=prod_delivery,
                 )
             except Exception as e:
                 print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
