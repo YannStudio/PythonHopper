@@ -108,9 +108,16 @@ def generate_pdf_order_platypus(
     company_lines = [
         f"<b>{company_info.get('name','')}</b>",
         f"{company_info.get('address','')}",
-        f"BTW: {company_info.get('vat','')}",
-        f"E-mail: {company_info.get('email','')}",
     ]
+    note = company_info.get("note")
+    if note:
+        company_lines.append(note)
+    company_lines.extend(
+        [
+            f"BTW: {company_info.get('vat','')}",
+            f"E-mail: {company_info.get('email','')}",
+        ]
+    )
 
     # Supplier info with full address and contact details
     addr_parts = []
@@ -264,6 +271,13 @@ def write_order_excel(
             [
                 ("Bedrijf", company_info.get("name", "")),
                 ("Adres", company_info.get("address", "")),
+            ]
+        )
+        note = company_info.get("note")
+        if note:
+            header_lines.append(("Opmerking", note))
+        header_lines.extend(
+            [
                 ("BTW", company_info.get("vat", "")),
                 ("E-mail", company_info.get("email", "")),
                 ("", ""),
@@ -337,6 +351,7 @@ def copy_per_production_and_orders(
     selected_exts: List[str],
     db: SuppliersDB,
     override_map: Dict[str, str],
+    delivery_map: Dict[str, str],
     remember_defaults: bool,
     client: Client | None = None,
     footer_note: str = "",
@@ -409,11 +424,23 @@ def copy_per_production_and_orders(
                 }
             )
 
+        base_addr = client.address if client else ""
+        note = ""
+        override_addr = delivery_map.get(prod)
+        if override_addr:
+            if override_addr == "Zelf afhalen":
+                base_addr = ""
+                note = "Afhalen door klant"
+            elif override_addr == "Adres volgt":
+                base_addr = "Adres volgt"
+            else:
+                base_addr = override_addr
         company = {
             "name": client.name if client else "",
-            "address": client.address if client else "",
+            "address": base_addr,
             "vat": client.vat if client else "",
             "email": client.email if client else "",
+            "note": note,
         }
         if supplier.supplier:
             excel_path = os.path.join(prod_folder, f"Bestelbon_{prod}_{today}.xlsx")

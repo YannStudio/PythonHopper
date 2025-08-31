@@ -33,6 +33,7 @@ def test_zipfile_compression(tmp_path):
         [".txt"],
         db,
         {},
+        {},
         False,
         zip_parts=True,
     )
