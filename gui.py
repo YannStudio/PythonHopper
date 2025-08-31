@@ -1262,7 +1262,7 @@ def start_gui():
                         exts,
                         self.db,
                         sel_map,
-                        {},
+                        addr_map,
                         remember,
                         client=client,
                         footer_note=DEFAULT_FOOTER_NOTE,
