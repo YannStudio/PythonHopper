@@ -139,3 +139,61 @@ def test_delivery_address_per_production(tmp_path):
     reader2 = PdfReader(plasma / pdf2)
     text2 = "\n".join(page.extract_text() or "" for page in reader2.pages)
     assert "Leveradres: Depot" in text2
+
+
+def test_delivery_address_special_tokens(tmp_path):
+    reportlab = pytest.importorskip("reportlab")
+    db = SuppliersDB()
+    db.upsert(Supplier.from_any({"supplier": "ACME"}))
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "PN1.pdf").write_text("dummy")
+    (src / "PN2.pdf").write_text("dummy")
+    (src / "PN3.pdf").write_text("dummy")
+    bom_df = pd.DataFrame([
+        {"PartNumber": "PN1", "Description": "", "Production": "Laser", "Aantal": 1},
+        {"PartNumber": "PN2", "Description": "", "Production": "Plasma", "Aantal": 1},
+        {"PartNumber": "PN3", "Description": "", "Production": "Water", "Aantal": 1},
+    ])
+
+    d1 = DeliveryAddress(name="Magazijn", address="Straat 1", remarks="achterdeur")
+    d2 = DeliveryAddress(name="Bestelling wordt opgehaald", remarks="balie")
+    d3 = DeliveryAddress(name="Leveradres wordt nog meegedeeld")
+    dst = tmp_path / "dst"
+    dst.mkdir()
+    copy_per_production_and_orders(
+        str(src),
+        str(dst),
+        bom_df,
+        [".pdf"],
+        db,
+        {},
+        {},
+        False,
+        client=None,
+        delivery_map={"Laser": d1, "Plasma": d2, "Water": d3},
+    )
+
+    cases = {
+        "Laser": ("Magazijn", "Straat 1", "achterdeur"),
+        "Plasma": ("Bestelling wordt opgehaald", "", "balie"),
+        "Water": ("Leveradres wordt nog meegedeeld", "", ""),
+    }
+    for prod, (name, addr, remark) in cases.items():
+        folder = dst / prod
+        xlsx = next(f for f in os.listdir(folder) if f.endswith(".xlsx"))
+        wb = openpyxl.load_workbook(folder / xlsx)
+        ws = wb.active
+        col_a = [ws[f"A{i}"].value for i in range(1, 20)]
+        row = col_a.index("Leveradres") + 1
+        assert ws[f"B{row}"].value == name
+        assert (ws[f"B{row+1}"].value or "") == addr
+        assert (ws[f"B{row+2}"].value or "") == remark
+        pdf = next(f for f in os.listdir(folder) if f.endswith(".pdf"))
+        reader = PdfReader(folder / pdf)
+        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        assert f"Leveradres: {name}" in text
+        if addr:
+            assert addr in text
+        if remark:
+            assert remark in text

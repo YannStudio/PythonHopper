@@ -262,8 +262,15 @@ def cli_copy_per_prod(args):
             prod, name = kv.split("=", 1)
             addr = ddb.get(name)
             if not addr:
-                print("Leveradres niet gevonden")
-                return 2
+                special = [
+                    "Bestelling wordt opgehaald",
+                    "Leveradres wordt nog meegedeeld",
+                ]
+                if name in special:
+                    addr = DeliveryAddress(name=name)
+                else:
+                    print("Leveradres niet gevonden")
+                    return 2
             delivery_map[prod] = addr
     cnt, chosen = copy_per_production_and_orders(
         args.source,
