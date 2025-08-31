@@ -705,10 +705,10 @@ def start_gui():
                     if s:
                         sel_map[prod] = s.supplier
                 a_typed = addr_combo.get().strip()
-                if a_typed in ("Zelf afhalen", "Adres volgt", ""):
+                if not a_typed:
                     addr_map[prod] = ""
                 else:
-                    addr_map[prod] = self._addr_disp_to_addr.get(a_typed, "")
+                    addr_map[prod] = self._addr_disp_to_addr.get(a_typed, a_typed)
             self.callback(sel_map, addr_map, bool(self.remember_var.get()))
             self.destroy()
 
@@ -960,10 +960,10 @@ def start_gui():
                     if s:
                         sel_map[prod] = s.supplier
                 a_typed = addr_combo.get().strip()
-                if a_typed in ("Zelf afhalen", "Adres volgt", ""):
+                if not a_typed:
                     addr_map[prod] = ""
                 else:
-                    addr_map[prod] = self._addr_disp_to_addr.get(a_typed, "")
+                    addr_map[prod] = self._addr_disp_to_addr.get(a_typed, a_typed)
             self.callback(sel_map, addr_map, bool(self.remember_var.get()))
 
     class App(tk.Tk):

@@ -7,7 +7,8 @@ from suppliers_db import SuppliersDB
 from orders import copy_per_production_and_orders
 
 
-def test_delivery_address_used_in_order(tmp_path, monkeypatch):
+@pytest.mark.parametrize("delivery_address", ["Custom Street 5", "Zelf afhalen", "Adres volgt"])
+def test_delivery_address_used_in_order(delivery_address, tmp_path, monkeypatch):
     """The selected delivery address should appear in the order document."""
     # operate within temporary directory to avoid side effects
     monkeypatch.chdir(tmp_path)
@@ -30,7 +31,7 @@ def test_delivery_address_used_in_order(tmp_path, monkeypatch):
     ])
 
     supplier_map = {"Laser": "ACME"}
-    delivery_map = {"Laser": "Custom Street 5"}
+    delivery_map = {"Laser": delivery_address}
 
     client = Client.from_any({"name": "Client", "address": "Base Addr"})
 
@@ -57,10 +58,11 @@ def test_delivery_address_used_in_order(tmp_path, monkeypatch):
     ws = wb.active
     # row 2 should contain the invoice address and the chosen delivery address in column 6
     assert ws.cell(row=2, column=2).value == "Base Addr"
-    assert ws.cell(row=2, column=6).value == "Custom Street 5"
+    assert ws.cell(row=2, column=6).value == delivery_address
 
 
-def test_pdf_delivery_address_in_right_column(tmp_path, monkeypatch):
+@pytest.mark.parametrize("delivery_address", ["Custom Street 5", "Zelf afhalen", "Adres volgt"])
+def test_pdf_delivery_address_in_right_column(delivery_address, tmp_path, monkeypatch):
     reportlab = pytest.importorskip("reportlab")
     from PyPDF2 import PdfReader
 
@@ -80,7 +82,7 @@ def test_pdf_delivery_address_in_right_column(tmp_path, monkeypatch):
     ])
 
     supplier_map = {"Laser": "ACME"}
-    delivery_map = {"Laser": "Custom Street 5"}
+    delivery_map = {"Laser": delivery_address}
 
     client = Client.from_any({"name": "Client", "address": "Base Addr"})
 
@@ -114,6 +116,6 @@ def test_pdf_delivery_address_in_right_column(tmp_path, monkeypatch):
     page.extract_text(visitor_text=visitor)
 
     inv_x = positions["Base Addr"][0]
-    del_x = positions["Custom Street 5"][0]
+    del_x = positions[delivery_address][0]
     assert del_x > inv_x
 
