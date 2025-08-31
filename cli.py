@@ -279,6 +279,22 @@ def cli_copy_per_prod(args):
                     print("Leveradres niet gevonden")
                     return 2
                 delivery_map[prod] = addr
+    doc_type_map = {}
+    if args.doc_type:
+        for kv in args.doc_type:
+            if "=" not in kv:
+                print("Documenttype optie moet PROD=TYPE zijn")
+                return 2
+            prod, dtyp = kv.split("=", 1)
+            doc_type_map[prod.strip()] = dtyp.strip()
+    doc_num_map = {}
+    if args.doc_number:
+        for kv in args.doc_number:
+            if "=" not in kv:
+                print("Documentnummer optie moet PROD=NUM zijn")
+                return 2
+            prod, num = kv.split("=", 1)
+            doc_num_map[prod.strip()] = num.strip()
     cnt, chosen = copy_per_production_and_orders(
         args.source,
         args.dest,
@@ -286,8 +302,8 @@ def cli_copy_per_prod(args):
         exts,
         db,
         override_map,
-        {},
-        {},
+        doc_type_map,
+        doc_num_map,
         args.remember_defaults,
         client=client,
         delivery_map=delivery_map,
@@ -387,6 +403,19 @@ def build_parser() -> argparse.ArgumentParser:
             "none, pickup, tbd (meerdere keren mogelijk)"
         ),
     )
+    cpp.add_argument(
+        "--doc-type",
+        action="append",
+        metavar="PROD=TYPE",
+        help="Documenttype per productie (meerdere keren mogelijk)",
+    )
+    cpp.add_argument(
+        "--doc-number",
+        action="append",
+        metavar="PROD=NUM",
+        help="Documentnummer per productie (meerdere keren mogelijk)",
+    )
+
 
     return p
 
