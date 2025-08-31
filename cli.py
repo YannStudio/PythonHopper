@@ -308,6 +308,8 @@ def cli_copy_per_prod(args):
         client=client,
         delivery_map=delivery_map,
         footer_note=args.note or DEFAULT_FOOTER_NOTE,
+        project_number=args.project_number,
+        project_name=args.project_name,
     )
     print("Gekopieerd:", cnt)
     for k, v in chosen.items():
@@ -414,6 +416,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         metavar="PROD=NUM",
         help="Documentnummer per productie (meerdere keren mogelijk)",
+    )
+    cpp.add_argument(
+        "--project-number",
+        dest="project_number",
+        help="Projectnummer voor documentkoppen",
+    )
+    cpp.add_argument(
+        "--project-name",
+        dest="project_name",
+        help="Projectnaam voor documentkoppen",
     )
 
 

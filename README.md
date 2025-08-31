@@ -41,3 +41,14 @@ offerteaanvragen `OFF-` gebruiken. De helperfunctie
 `_prefix_for_doc_type("Bestelbon")` geeft bijvoorbeeld `BB-` terug zodat deze
 prefix automatisch kan worden ingevuld.
 
+### Projectinformatie toevoegen
+
+Gebruik `--project-number` en `--project-name` om projectgegevens op te nemen
+in de gegenereerde bestelbonnen of offerteaanvragen:
+
+```
+python cli.py copy-per-prod \
+    --source src --dest out --bom bom.xlsx --exts pdf \
+    --project-number PRJ123 --project-name "Nieuw project"
+```
+
