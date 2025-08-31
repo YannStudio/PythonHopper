@@ -15,7 +15,7 @@ from collections import defaultdict
 from typing import Dict, List, Tuple
 
 import pandas as pd
-from openpyxl.styles import Alignment
+from openpyxl.styles import Alignment, Font, PatternFill
 
 try:
     from PyPDF2 import PdfMerger
@@ -269,12 +269,13 @@ def write_order_excel(
     )
 
     header_lines: List[Tuple[str, str]] = []
+    delivery_addr = ""
     if company_info:
+        delivery_addr = company_info.get("delivery", "")
         header_lines.extend(
             [
                 ("Bedrijf", company_info.get("name", "")),
                 ("Adres", company_info.get("address", "")),
-                ("Leveradres", company_info.get("delivery", "")),
             ]
         )
         note = company_info.get("note")
@@ -316,7 +317,15 @@ def write_order_excel(
         ws = writer.sheets[list(writer.sheets.keys())[0]]
         for r, (label, value) in enumerate(header_lines, start=1):
             ws.cell(row=r, column=1, value=label)
-            ws.cell(row=r, column=2, value=value)
+            cell = ws.cell(row=r, column=2, value=value)
+            if label == "Adres":
+                cell.alignment = Alignment(horizontal="left")
+                if delivery_addr:
+                    ws.cell(row=r, column=5, value="Leveradres")
+                    dcell = ws.cell(row=r, column=6, value=delivery_addr)
+                    dcell.alignment = Alignment(horizontal="left")
+                    dcell.font = Font(bold=True)
+                    dcell.fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
 
         left_cols = {"PartNumber", "Description"}
         for col_idx, col_name in enumerate(df.columns, start=1):

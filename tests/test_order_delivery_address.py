@@ -54,7 +54,7 @@ def test_delivery_address_used_in_order(tmp_path, monkeypatch):
 
     wb = load_workbook(excel_files[0])
     ws = wb.active
-    # row 2 should contain the invoice address, row 3 the chosen delivery address
+    # row 2 should contain the invoice address and the chosen delivery address in column 6
     assert ws.cell(row=2, column=2).value == "Base Addr"
-    assert ws.cell(row=3, column=2).value == "Custom Street 5"
+    assert ws.cell(row=2, column=6).value == "Custom Street 5"
 
