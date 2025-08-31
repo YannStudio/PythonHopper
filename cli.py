@@ -253,12 +253,19 @@ def cli_copy_per_prod(args):
     else:
         cl = cdb.clients_sorted()
         client = cl[0] if cl else None
-    delivery = None
+    delivery_map = None
     if args.delivery:
         delivery = ddb.get(args.delivery)
         if not delivery:
             print("Leveradres niet gevonden")
             return 2
+        prods = sorted(
+            set(
+                (str(r.get("Production") or "").strip() or "_Onbekend")
+                for _, r in df.iterrows()
+            )
+        )
+        delivery_map = {p: delivery for p in prods}
     cnt, chosen = copy_per_production_and_orders(
         args.source,
         args.dest,
@@ -269,7 +276,7 @@ def cli_copy_per_prod(args):
         {},
         args.remember_defaults,
         client=client,
-        delivery=delivery,
+        delivery_map=delivery_map,
         footer_note=args.note or DEFAULT_FOOTER_NOTE,
     )
     print("Gekopieerd:", cnt)

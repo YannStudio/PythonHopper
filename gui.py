@@ -478,7 +478,7 @@ def start_gui():
             self._active_prod: Optional[str] = None  # laatst gefocuste rij
             self.sel_vars: Dict[str, tk.StringVar] = {}
             self.doc_vars: Dict[str, tk.StringVar] = {}
-            self.delivery_var = tk.StringVar()
+            self.delivery_vars: Dict[str, tk.StringVar] = {}
 
             # Grid layout: content (row=0, weight=1), buttons (row=1)
             self.grid_columnconfigure(0, weight=1)
@@ -489,34 +489,24 @@ def start_gui():
             content.grid_columnconfigure(0, weight=1)  # left
             content.grid_columnconfigure(1, weight=0)  # right
 
-            # Left: leveradres + per productie comboboxen
+            # Left: per productie comboboxen
             left = tk.Frame(content)
             left.grid(row=0, column=0, sticky="nw", padx=(0,8))
 
-            # Delivery address selector
-            drow = tk.Frame(left)
-            drow.pack(fill="x", pady=3)
-            tk.Label(drow, text="Leveradres", width=18, anchor="w").pack(side="left")
-            self.delivery_combo = ttk.Combobox(
-                drow, textvariable=self.delivery_var, state="readonly", width=50
-            )
-            self.delivery_combo.pack(side="left", padx=6)
-            opts = [
+            delivery_opts = ["(geen)"] + [
                 self.delivery_db.display_name(a)
                 for a in self.delivery_db.addresses_sorted()
             ]
-            self.delivery_combo["values"] = opts
-            if opts:
-                self.delivery_combo.set(opts[0])
 
             self.rows = []
             for prod in productions:
                 row = tk.Frame(left)
                 row.pack(fill="x", pady=3)
                 tk.Label(row, text=prod, width=18, anchor="w").pack(side="left")
+
                 var = tk.StringVar()
                 self.sel_vars[prod] = var
-                combo = ttk.Combobox(row, textvariable=var, state="normal", width=50)
+                combo = ttk.Combobox(row, textvariable=var, state="normal", width=35)
                 combo.pack(side="left", padx=6)
                 combo.bind("<<ComboboxSelected>>", self._on_combo_change)
                 combo.bind("<FocusIn>", lambda _e, p=prod: self._on_focus_prod(p))
@@ -532,6 +522,17 @@ def start_gui():
                     width=18,
                 )
                 doc_combo.pack(side="left", padx=6)
+
+                d_var = tk.StringVar(value=delivery_opts[0] if delivery_opts else "")
+                self.delivery_vars[prod] = d_var
+                d_combo = ttk.Combobox(
+                    row,
+                    textvariable=d_var,
+                    values=delivery_opts,
+                    state="readonly",
+                    width=40,
+                )
+                d_combo.pack(side="left", padx=6)
 
                 self.rows.append((prod, combo))
 
@@ -692,6 +693,7 @@ def start_gui():
             """Collect selected suppliers per production and return via callback."""
             sel_map: Dict[str, str] = {}
             doc_map: Dict[str, str] = {}
+            delivery_map: Dict[str, str] = {}
             for prod, combo in self.rows:
                 typed = combo.get().strip()
                 if not typed or typed.lower() in ("(geen)", "geen"):
@@ -701,8 +703,12 @@ def start_gui():
                     if s:
                         sel_map[prod] = s.supplier
                 doc_map[prod] = self.doc_vars.get(prod, tk.StringVar(value="Bestelbon")).get()
-            delivery_id = self.delivery_var.get().replace("★ ", "", 1)
-            self.callback(sel_map, doc_map, bool(self.remember_var.get()), delivery_id)
+                d_name = self.delivery_vars.get(prod, tk.StringVar()).get().replace("★ ", "", 1)
+                if not d_name or d_name.lower() in ("(geen)", "geen"):
+                    delivery_map[prod] = ""
+                else:
+                    delivery_map[prod] = d_name
+            self.callback(sel_map, doc_map, delivery_map, bool(self.remember_var.get()))
 
     class App(tk.Tk):
         def __init__(self):
@@ -1001,15 +1007,19 @@ def start_gui():
             def on_sel(
                 sel_map: Dict[str, str],
                 doc_map: Dict[str, str],
+                delivery_map: Dict[str, str],
                 remember: bool,
-                delivery_id: str,
             ):
                 def work():
                     self.status_var.set("Kopiëren & bestelbonnen maken...")
                     client = self.client_db.get(
                         self.client_var.get().replace("★ ", "", 1)
                     )
-                    delivery = self.delivery_db.get(delivery_id)
+                    deliveries = {
+                        prod: self.delivery_db.get(name)
+                        for prod, name in delivery_map.items()
+                        if name
+                    }
                     cnt, chosen = copy_per_production_and_orders(
                         self.source_folder,
                         self.dest_folder,
@@ -1020,7 +1030,7 @@ def start_gui():
                         doc_map,
                         remember,
                         client=client,
-                        delivery=delivery,
+                        delivery_map=deliveries,
                         footer_note=DEFAULT_FOOTER_NOTE,
                         zip_parts=bool(self.zip_var.get()),
                     )
