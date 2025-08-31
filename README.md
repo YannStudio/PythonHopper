@@ -34,3 +34,10 @@ python cli.py clients add "Klant BV" \
     --email "info@klant.be"
 ```
 
+### Documentnummer prefixen
+
+Bestelbonnen gebruiken doorgaans een nummer dat begint met `BB-`, terwijl
+offerteaanvragen `OFF-` gebruiken. De helperfunctie
+`_prefix_for_doc_type("Bestelbon")` geeft bijvoorbeeld `BB-` terug zodat deze
+prefix automatisch kan worden ingevuld.
+
