@@ -707,11 +707,18 @@ def start_gui():
                         sel_map[prod] = s.supplier
                 doc_map[prod] = self.doc_vars.get(prod, tk.StringVar(value="Bestelbon")).get()
 
+            doc_num_map: Dict[str, str] = {}
             delivery_map: Dict[str, str] = {}
             for prod, _combo in self.rows:
                 delivery_map[prod] = self.delivery_vars.get(prod, tk.StringVar(value="Geen")).get()
 
-            self.callback(sel_map, doc_map, delivery_map, bool(self.remember_var.get()))
+            self.callback(
+                sel_map,
+                doc_map,
+                doc_num_map,
+                delivery_map,
+                bool(self.remember_var.get()),
+            )
 
     class App(tk.Tk):
         def __init__(self):
@@ -1010,6 +1017,7 @@ def start_gui():
             def on_sel(
                 sel_map: Dict[str, str],
                 doc_map: Dict[str, str],
+                doc_num_map: Dict[str, str],
                 delivery_map_raw: Dict[str, str],
                 remember: bool,
             ):
