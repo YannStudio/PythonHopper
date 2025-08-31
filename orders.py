@@ -75,6 +75,20 @@ def _parse_qty(val: object) -> int:
     return max(1, min(999, q))
 
 
+def _prefix_for_doc_type(doc_type: str) -> str:
+    """Return standard document number prefix for a ``doc_type``.
+
+    ``"Bestelbon"`` uses ``"BB-"`` while ``"Offerteaanvraag"`` uses ``"OFF-"``.
+    Unknown types return an empty prefix.
+    """
+    t = (doc_type or "").strip().lower()
+    if t.startswith("bestel"):
+        return "BB-"
+    if t.startswith("offerte"):
+        return "OFF-"
+    return ""
+
+
 def generate_pdf_order_platypus(
     path: str,
     company_info: Dict[str, str],
@@ -472,7 +486,13 @@ def copy_per_production_and_orders(
         }
         if supplier.supplier:
             doc_type = doc_type_map.get(prod, "Bestelbon")
-            doc_num = doc_num_map.get(prod, "")
+            doc_num = _to_str(doc_num_map.get(prod, "")).strip()
+            prefix = _prefix_for_doc_type(doc_type)
+            if doc_num:
+                if prefix and not doc_num.upper().startswith(prefix.upper()):
+                    doc_num = f"{prefix}{doc_num}"
+            else:
+                doc_num = prefix
             excel_path = os.path.join(
                 prod_folder, f"{doc_type}_{doc_num}_{prod}_{today}.xlsx"
             )
