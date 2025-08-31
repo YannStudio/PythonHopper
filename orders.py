@@ -80,9 +80,14 @@ def generate_pdf_order_platypus(
     supplier: Supplier,
     production: str,
     items: List[Dict[str, str]],
+    doc_type: str = "Bestelbon",
     footer_note: str = "",
 ) -> None:
-    """Generate a PDF order using ReportLab if available."""
+    """Generate a PDF order using ReportLab if available.
+
+    ``doc_type`` determines the document title, e.g. ``"Bestelbon"`` or
+    ``"Offerteaanvraag"``.
+    """
     if not REPORTLAB_OK:
         return
 
@@ -137,7 +142,7 @@ def generate_pdf_order_platypus(
         supp_lines.append(f"Tel: {supplier.phone}")
 
     story = []
-    story.append(Paragraph(f"Bestelbon productie: {production}", title_style))
+    story.append(Paragraph(f"{doc_type} productie: {production}", title_style))
     story.append(Spacer(0, 6))
     story.append(Paragraph("<br/>".join(company_lines), text_style))
     story.append(Spacer(0, 6))
@@ -337,12 +342,17 @@ def copy_per_production_and_orders(
     selected_exts: List[str],
     db: SuppliersDB,
     override_map: Dict[str, str],
+    doc_type_map: Dict[str, str] | None,
     remember_defaults: bool,
     client: Client | None = None,
     footer_note: str = "",
     zip_parts: bool = False,
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
+
+    ``doc_type_map`` may specify per production whether a *Bestelbon* or an
+    *Offerteaanvraag* should be generated. Missing entries default to
+    ``"Bestelbon"``.
 
     If ``zip_parts`` is ``True``, all export files for a production are
     collected into a single ``<production>.zip`` archive instead of individual
@@ -353,6 +363,7 @@ def copy_per_production_and_orders(
     file_index = _build_file_index(source, selected_exts)
     count_copied = 0
     chosen: Dict[str, str] = {}
+    doc_type_map = doc_type_map or {}
 
     prod_to_rows: Dict[str, List[dict]] = defaultdict(list)
     for _, row in bom_df.iterrows():
@@ -410,10 +421,11 @@ def copy_per_production_and_orders(
             "email": client.email if client else "",
         }
         if supplier.supplier:
-            excel_path = os.path.join(prod_folder, f"Bestelbon_{prod}_{today}.xlsx")
+            doc_type = doc_type_map.get(prod, "Bestelbon")
+            excel_path = os.path.join(prod_folder, f"{doc_type}_{prod}_{today}.xlsx")
             write_order_excel(excel_path, items, company, supplier)
 
-            pdf_path = os.path.join(prod_folder, f"Bestelbon_{prod}_{today}.pdf")
+            pdf_path = os.path.join(prod_folder, f"{doc_type}_{prod}_{today}.pdf")
             try:
                 generate_pdf_order_platypus(
                     pdf_path,
@@ -421,6 +433,7 @@ def copy_per_production_and_orders(
                     supplier,
                     prod,
                     items,
+                    doc_type=doc_type,
                     footer_note=footer_note or DEFAULT_FOOTER_NOTE,
                 )
             except Exception as e:
@@ -501,7 +514,7 @@ def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
         pdfs = [
             f
             for f in os.listdir(prod_path)
-            if f.lower().endswith(".pdf") and not f.startswith("Bestelbon_")
+            if f.lower().endswith(".pdf") and not f.startswith(("Bestelbon_", "Offerteaanvraag_"))
         ]
         if pdfs:
             merger = PdfMerger()
@@ -517,7 +530,7 @@ def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
                     name
                     for name in zf.namelist()
                     if name.lower().endswith(".pdf")
-                    and not os.path.basename(name).startswith("Bestelbon_")
+                    and not os.path.basename(name).startswith(("Bestelbon_", "Offerteaanvraag_"))
                 ]
                 if not zip_pdfs:
                     continue
