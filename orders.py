@@ -148,7 +148,9 @@ def generate_pdf_order_platypus(
 
     right_lines: List[str] = []
     if delivery:
-        right_lines.append(f"<b>Leveradres:</b> {delivery.name}")
+        # Delivery address block with each piece of information on its own line
+        right_lines.append("<b>Leveradres:</b>")
+        right_lines.append(delivery.name)
         if delivery.address:
             right_lines.extend(delivery.address.splitlines())
         if delivery.remarks:
@@ -328,7 +330,8 @@ def write_order_excel(
     if delivery:
         header_lines.extend(
             [
-                ("Leveradres", delivery.name),
+                ("Leveradres", ""),
+                ("", delivery.name),
                 ("Adres", delivery.address or ""),
                 ("Opmerking", delivery.remarks or ""),
                 ("", ""),
