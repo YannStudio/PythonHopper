@@ -143,14 +143,16 @@ def generate_pdf_order_platypus(
     if supplier.phone:
         supp_lines.append(f"Tel: {supplier.phone}")
 
-    right_lines = supp_lines[:]
+    left_lines = company_lines + [""] + supp_lines
+
+    right_lines: List[str] = []
     if delivery:
         dl = [f"<b>Leveradres:</b> {delivery.name}"]
         if delivery.address:
             dl.append(delivery.address)
         if delivery.remarks:
             dl.append(delivery.remarks)
-        right_lines += [""] + dl
+        right_lines = dl
 
     story = []
     story.append(Paragraph(f"{doc_type} productie: {production}", title_style))
@@ -158,7 +160,7 @@ def generate_pdf_order_platypus(
     header_tbl = LongTable(
         [
             [
-                Paragraph("<br/>".join(company_lines), text_style),
+                Paragraph("<br/>".join(left_lines), text_style),
                 Paragraph("<br/>".join(right_lines), text_style),
             ]
         ],
