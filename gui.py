@@ -18,6 +18,7 @@ from orders import (
     DEFAULT_FOOTER_NOTE,
     combine_pdfs_per_production,
     combine_pdfs_from_source,
+    _prefix_for_doc_type,
 )
 
 def start_gui():
