@@ -139,3 +139,32 @@ def test_delivery_address_per_production(tmp_path):
     reader2 = PdfReader(plasma / pdf2)
     text2 = "\n".join(page.extract_text() or "" for page in reader2.pages)
     assert "Leveradres: Depot" in text2
+
+
+def test_delivery_address_placeholder_prints(tmp_path):
+    reportlab = pytest.importorskip("reportlab")
+    db, src, bom_df = _setup_basic(tmp_path)
+
+    # Placeholder address should still render in the delivery block
+    delivery = DeliveryAddress(name="Magazijn", address="Bestelling wordt opgehaald")
+
+    dst = tmp_path / "dst_placeholder"
+    dst.mkdir()
+    copy_per_production_and_orders(
+        str(src),
+        str(dst),
+        bom_df,
+        [".pdf"],
+        db,
+        {},
+        {},
+        False,
+        client=None,
+        delivery_map={"Laser": delivery},
+    )
+
+    prod_folder = dst / "Laser"
+    pdf = next(f for f in os.listdir(prod_folder) if f.endswith(".pdf"))
+    reader = PdfReader(prod_folder / pdf)
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    assert "Bestelling wordt opgehaald" in text
