@@ -503,6 +503,11 @@ def start_gui():
                 for a in self.delivery_db.addresses_sorted()
             ]
 
+            doc_type_opts = ["Bestelbon", "Offerteaanvraag"]
+            self._doc_type_prefixes = {
+                _prefix_for_doc_type(t) for t in doc_type_opts
+            }
+
             self.rows = []
             for prod in productions:
                 row = tk.Frame(left)
@@ -521,11 +526,15 @@ def start_gui():
                 doc_combo = ttk.Combobox(
                     row,
                     textvariable=doc_var,
-                    values=["Bestelbon", "Offerteaanvraag"],
+                    values=doc_type_opts,
                     state="readonly",
                     width=18,
                 )
                 doc_combo.pack(side="left", padx=6)
+                doc_combo.bind(
+                    "<<ComboboxSelected>>",
+                    lambda _e, p=prod: self._on_doc_type_change(p),
+                )
 
                 doc_num_var = tk.StringVar()
                 self.doc_num_vars[prod] = doc_num_var
@@ -606,6 +615,17 @@ def start_gui():
 
         def _on_combo_change(self, _evt=None):
             self._update_preview_from_any_combo()
+
+        def _on_doc_type_change(self, prod: str):
+            doc_var = self.doc_vars.get(prod)
+            doc_num_var = self.doc_num_vars.get(prod)
+            if not doc_var or not doc_num_var:
+                return
+            cur = doc_num_var.get()
+            prefix = _prefix_for_doc_type(doc_var.get())
+            prefixes = getattr(self, "_doc_type_prefixes", {prefix})
+            if not cur or cur in prefixes:
+                doc_num_var.set(prefix)
 
         def _on_combo_type(self, evt, production: str, combo):
             self._active_prod = production
