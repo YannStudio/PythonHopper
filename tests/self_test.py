@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import datetime
 
 import pandas as pd
 import openpyxl
@@ -95,15 +96,18 @@ def run_tests() -> int:
         assert xlsx, "Excel bestelbon niet aangemaakt"
         wb = openpyxl.load_workbook(os.path.join(prod_folder, xlsx[0]))
         ws = wb.active
-        assert ws["A1"].value == "Bedrijf" and ws["B1"].value == client.name
-        assert ws["A6"].value == "Leverancier" and ws["B6"].value == "ACME"
-        assert ws["A7"].value == "Adres"
+        today = datetime.date.today().strftime("%Y-%m-%d")
+        assert ws["A1"].value == "Nummer" and ws["B1"].value == "BB-1"
+        assert ws["A2"].value == "Datum" and ws["B2"].value == today
+        assert ws["A4"].value == "Bedrijf" and ws["B4"].value == client.name
+        assert ws["A9"].value == "Leverancier" and ws["B9"].value == "ACME"
+        assert ws["A10"].value == "Adres"
         assert (
-            ws["B7"].value == "Teststraat 1 bus 2, BE-2000 Antwerpen, BE"
+            ws["B10"].value == "Teststraat 1 bus 2, BE-2000 Antwerpen, BE"
         )
-        assert ws["A8"].value == "BTW" and ws["B8"].value == "BE123"
-        assert ws["A9"].value == "E-mail" and ws["B9"].value == "x@y.z"
-        assert ws["A10"].value == "Tel" and ws["B10"].value == "+32 123"
+        assert ws["A11"].value == "BTW" and ws["B11"].value == "BE123"
+        assert ws["A12"].value == "E-mail" and ws["B12"].value == "x@y.z"
+        assert ws["A13"].value == "Tel" and ws["B13"].value == "+32 123"
         pdfs = [f for f in os.listdir(prod_folder) if f.lower().endswith(".pdf")]
         assert pdfs, "PDF bestelbon niet aangemaakt"
     print("All tests passed.")
