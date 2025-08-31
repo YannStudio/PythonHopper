@@ -469,6 +469,7 @@ def start_gui():
             self._preview_supplier: Optional[Supplier] = None
             self._active_prod: Optional[str] = None  # laatst gefocuste rij
             self.sel_vars: Dict[str, tk.StringVar] = {}
+            self.doc_vars: Dict[str, tk.StringVar] = {}
 
             # Grid layout: content (row=0, weight=1), buttons (row=1)
             self.grid_columnconfigure(0, weight=1)
@@ -494,6 +495,18 @@ def start_gui():
                 combo.bind("<<ComboboxSelected>>", self._on_combo_change)
                 combo.bind("<FocusIn>", lambda _e, p=prod: self._on_focus_prod(p))
                 combo.bind("<KeyRelease>", lambda ev, p=prod, c=combo: self._on_combo_type(ev, p, c))
+
+                doc_var = tk.StringVar(value="Bestelbon")
+                self.doc_vars[prod] = doc_var
+                doc_combo = ttk.Combobox(
+                    row,
+                    textvariable=doc_var,
+                    values=["Bestelbon", "Offerteaanvraag"],
+                    state="readonly",
+                    width=18,
+                )
+                doc_combo.pack(side="left", padx=6)
+
                 self.rows.append((prod, combo))
 
             # Right: preview details (klikbaar) in LabelFrame met ondertitel
@@ -652,6 +665,7 @@ def start_gui():
         def _confirm(self):
             """Collect selected suppliers per production and return via callback."""
             sel_map: Dict[str, str] = {}
+            doc_map: Dict[str, str] = {}
             for prod, combo in self.rows:
                 typed = combo.get().strip()
                 if not typed or typed.lower() in ("(geen)", "geen"):
@@ -660,7 +674,8 @@ def start_gui():
                     s = self._resolve_text_to_supplier(typed)
                     if s:
                         sel_map[prod] = s.supplier
-            self.callback(sel_map, bool(self.remember_var.get()))
+                doc_map[prod] = self.doc_vars.get(prod, tk.StringVar(value="Bestelbon")).get()
+            self.callback(sel_map, doc_map, bool(self.remember_var.get()))
 
     class App(tk.Tk):
         def __init__(self):
@@ -948,15 +963,22 @@ def start_gui():
             prods = sorted(set((str(r.get("Production") or "").strip() or "_Onbekend") for _, r in self.bom_df.iterrows()))
             sel_frame = None
 
-            def on_sel(sel_map: Dict[str,str], remember: bool):
+            def on_sel(sel_map: Dict[str,str], doc_map: Dict[str,str], remember: bool):
                 def work():
                     self.status_var.set("Kopiëren & bestelbonnen maken...")
                     client = self.client_db.get(self.client_var.get().replace("★ ", "", 1))
                     cnt, chosen = copy_per_production_and_orders(
-                        self.source_folder, self.dest_folder, self.bom_df, exts, self.db, sel_map, remember,
+                        self.source_folder,
+                        self.dest_folder,
+                        self.bom_df,
+                        exts,
+                        self.db,
+                        sel_map,
+                        doc_map,
+                        remember,
                         client=client,
                         footer_note=DEFAULT_FOOTER_NOTE,
-                        zip_parts=bool(self.zip_var.get())
+                        zip_parts=bool(self.zip_var.get()),
                     )
                     def on_done():
                         self.status_var.set(f"Klaar. Gekopieerd: {cnt}. Leveranciers: {chosen}")
