@@ -260,11 +260,25 @@ def cli_copy_per_prod(args):
                 print("Leveradres optie moet PROD=NAAM zijn")
                 return 2
             prod, name = kv.split("=", 1)
-            addr = ddb.get(name)
-            if not addr:
-                print("Leveradres niet gevonden")
-                return 2
-            delivery_map[prod] = addr
+            prod = prod.strip()
+            name = name.strip()
+            lname = name.lower()
+            if lname == "none":
+                delivery_map[prod] = None
+            elif lname == "pickup":
+                delivery_map[prod] = DeliveryAddress(
+                    name="Bestelling wordt opgehaald"
+                )
+            elif lname == "tbd":
+                delivery_map[prod] = DeliveryAddress(
+                    name="Leveradres wordt nog meegedeeld"
+                )
+            else:
+                addr = ddb.get(name)
+                if not addr:
+                    print("Leveradres niet gevonden")
+                    return 2
+                delivery_map[prod] = addr
     cnt, chosen = copy_per_production_and_orders(
         args.source,
         args.dest,
@@ -366,7 +380,11 @@ def build_parser() -> argparse.ArgumentParser:
     cpp.add_argument(
         "--delivery",
         action="append",
-        help="Leveradres voor productie: PROD=NAAM (meerdere keren mogelijk)",
+        metavar="PROD=NAME",
+        help=(
+            "Leveradres voor productie: PROD=NAAM. Speciale waarden: "
+            "none, pickup, tbd (meerdere keren mogelijk)"
+        ),
     )
 
     return p
