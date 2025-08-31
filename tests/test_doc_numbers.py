@@ -109,3 +109,48 @@ def test_offerte_prefix_in_output(tmp_path):
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
     assert "Offerteaanvraag nr. OFF-42" in text
 
+
+def test_missing_doc_number_omits_prefix_and_header(tmp_path):
+    reportlab = pytest.importorskip("reportlab")
+
+    db = SuppliersDB()
+    db.upsert(Supplier.from_any({"supplier": "ACME"}))
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "PN1.pdf").write_text("dummy")
+    bom_df = pd.DataFrame([
+        {"PartNumber": "PN1", "Description": "", "Production": "Laser", "Aantal": 1}
+    ])
+    dst = tmp_path / "dst"
+    dst.mkdir()
+
+    copy_per_production_and_orders(
+        str(src),
+        str(dst),
+        bom_df,
+        [".pdf"],
+        db,
+        {},
+        {},
+        {},
+        False,
+        client=None,
+        delivery_map={},
+    )
+
+    prod_folder = dst / "Laser"
+    today = datetime.date.today().strftime("%Y-%m-%d")
+
+    xlsx_path = prod_folder / f"Bestelbon_Laser_{today}.xlsx"
+    assert xlsx_path.exists()
+    wb = openpyxl.load_workbook(xlsx_path)
+    ws = wb.active
+    # Without document number the first header line should be the supplier
+    assert ws["A1"].value == "Leverancier"
+
+    pdf_path = prod_folder / f"Bestelbon_Laser_{today}.pdf"
+    assert pdf_path.exists()
+    reader = PdfReader(pdf_path)
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    assert "Bestelbon nr." not in text
+

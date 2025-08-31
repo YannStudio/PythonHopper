@@ -491,18 +491,17 @@ def copy_per_production_and_orders(
             if doc_num:
                 if prefix and not doc_num.upper().startswith(prefix.upper()):
                     doc_num = f"{prefix}{doc_num}"
-            else:
-                doc_num = prefix
+            num_part = f"_{doc_num}" if doc_num else ""
             excel_path = os.path.join(
-                prod_folder, f"{doc_type}_{doc_num}_{prod}_{today}.xlsx"
+                prod_folder, f"{doc_type}{num_part}_{prod}_{today}.xlsx"
             )
             delivery = delivery_map.get(prod)
             write_order_excel(
-                excel_path, items, company, supplier, delivery, doc_type, doc_num
+                excel_path, items, company, supplier, delivery, doc_type, doc_num or None
             )
 
             pdf_path = os.path.join(
-                prod_folder, f"{doc_type}_{doc_num}_{prod}_{today}.pdf"
+                prod_folder, f"{doc_type}{num_part}_{prod}_{today}.pdf"
             )
             try:
                 generate_pdf_order_platypus(
@@ -512,7 +511,7 @@ def copy_per_production_and_orders(
                     prod,
                     items,
                     doc_type=doc_type,
-                    doc_number=doc_num,
+                    doc_number=doc_num or None,
                     footer_note=footer_note or DEFAULT_FOOTER_NOTE,
                     delivery=delivery,
                 )
