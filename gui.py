@@ -495,6 +495,19 @@ def start_gui():
             left = tk.Frame(content)
             left.grid(row=0, column=0, sticky="nw", padx=(0,8))
 
+            # Project info entries above production rows
+            pn_row = tk.Frame(left)
+            pn_row.pack(fill="x", pady=3)
+            tk.Label(pn_row, text="Projectnr.", width=18, anchor="w").pack(side="left")
+            self.project_number_var = tk.StringVar()
+            tk.Entry(pn_row, textvariable=self.project_number_var, width=50).pack(side="left", padx=6)
+
+            name_row = tk.Frame(left)
+            name_row.pack(fill="x", pady=3)
+            tk.Label(name_row, text="Projectnaam", width=18, anchor="w").pack(side="left")
+            self.project_name_var = tk.StringVar()
+            tk.Entry(name_row, textvariable=self.project_name_var, width=50).pack(side="left", padx=6)
+
             delivery_opts = [
                 "Geen",
                 "Bestelling wordt opgehaald",
@@ -738,11 +751,16 @@ def start_gui():
                 doc_num_map[prod] = self.doc_num_vars[prod].get().strip()
                 delivery_map[prod] = self.delivery_vars.get(prod, tk.StringVar(value="Geen")).get()
 
+            project_number = self.project_number_var.get().strip()
+            project_name = self.project_name_var.get().strip()
+
             self.callback(
                 sel_map,
                 doc_map,
                 doc_num_map,
                 delivery_map,
+                project_number,
+                project_name,
                 bool(self.remember_var.get()),
             )
 
@@ -1045,6 +1063,8 @@ def start_gui():
                 doc_map: Dict[str, str],
                 doc_num_map: Dict[str, str],
                 delivery_map_raw: Dict[str, str],
+                project_number: str,
+                project_name: str,
                 remember: bool,
             ):
                 def work():
@@ -1079,6 +1099,8 @@ def start_gui():
                         delivery_map=resolved_delivery_map,
                         footer_note=DEFAULT_FOOTER_NOTE,
                         zip_parts=bool(self.zip_var.get()),
+                        project_number=project_number,
+                        project_name=project_name,
                     )
 
                     def on_done():
