@@ -404,6 +404,8 @@ def copy_per_production_and_orders(
     delivery_map: Dict[str, DeliveryAddress] | None = None,
     footer_note: str = "",
     zip_parts: bool = False,
+    project_nr: str = "",
+    project_name: str = "",
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
 

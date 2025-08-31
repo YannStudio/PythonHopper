@@ -509,6 +509,20 @@ def start_gui():
                 _prefix_for_doc_type(t) for t in doc_type_opts
             }
 
+            self.project_nr_var = tk.StringVar()
+            self.project_name_var = tk.StringVar()
+
+            top = tk.Frame(left)
+            top.pack(fill="x", pady=(0, 6))
+            pn_row = tk.Frame(top)
+            pn_row.pack(fill="x", pady=3)
+            tk.Label(pn_row, text="Projectnummer", width=18, anchor="w").pack(side="left")
+            tk.Entry(pn_row, textvariable=self.project_nr_var, width=50).pack(side="left", padx=6)
+            name_row = tk.Frame(top)
+            name_row.pack(fill="x", pady=3)
+            tk.Label(name_row, text="Projectnaam", width=18, anchor="w").pack(side="left")
+            tk.Entry(name_row, textvariable=self.project_name_var, width=50).pack(side="left", padx=6)
+
             self.rows = []
             for prod in productions:
                 row = tk.Frame(left)
@@ -744,6 +758,8 @@ def start_gui():
                 doc_num_map,
                 delivery_map,
                 bool(self.remember_var.get()),
+                self.project_nr_var.get().strip(),
+                self.project_name_var.get().strip(),
             )
 
     class App(tk.Tk):
@@ -1046,6 +1062,8 @@ def start_gui():
                 doc_num_map: Dict[str, str],
                 delivery_map_raw: Dict[str, str],
                 remember: bool,
+                project_nr: str,
+                project_name: str,
             ):
                 def work():
                     self.status_var.set("Kopiëren & bestelbonnen maken...")
@@ -1079,6 +1097,8 @@ def start_gui():
                         delivery_map=resolved_delivery_map,
                         footer_note=DEFAULT_FOOTER_NOTE,
                         zip_parts=bool(self.zip_var.get()),
+                        project_nr=project_nr,
+                        project_name=project_name,
                     )
 
                     def on_done():
