@@ -97,6 +97,8 @@ def generate_pdf_order_platypus(
     items: List[Dict[str, str]],
     doc_type: str = "Bestelbon",
     doc_number: str | None = None,
+    project_number: str | None = None,
+    project_name: str | None = None,
     footer_note: str = "",
     delivery: DeliveryAddress | None = None,
 ) -> None:
@@ -170,11 +172,20 @@ def generate_pdf_order_platypus(
         if delivery.remarks:
             right_lines.append(delivery.remarks)
 
+    today = datetime.date.today().strftime("%Y-%m-%d")
     story = []
     title = f"{doc_type} productie: {production}"
-    if doc_number:
-        title = f"{doc_type} nr. {doc_number} productie: {production}"
     story.append(Paragraph(title, title_style))
+    info_lines: List[str] = []
+    if doc_number:
+        info_lines.append(f"Nummer: {doc_number}")
+    info_lines.append(f"Datum: {today}")
+    if project_number:
+        info_lines.append(f"Projectnummer: {project_number}")
+    if project_name:
+        info_lines.append(f"Projectnaam: {project_name}")
+    for line in info_lines:
+        story.append(Paragraph(line, text_style))
     story.append(Spacer(0, 6))
     header_tbl = LongTable(
         [
@@ -299,6 +310,8 @@ def write_order_excel(
     delivery: DeliveryAddress | None = None,
     doc_type: str = "Bestelbon",
     doc_number: str | None = None,
+    project_number: str | None = None,
+    project_name: str | None = None,
 ) -> None:
     """Write order information to an Excel file with header info."""
     df = pd.DataFrame(
@@ -306,9 +319,16 @@ def write_order_excel(
         columns=["PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht"],
     )
 
+    today = datetime.date.today().strftime("%Y-%m-%d")
     header_lines: List[Tuple[str, str]] = []
+    if project_number:
+        header_lines.append(("Projectnummer", project_number))
+    if project_name:
+        header_lines.append(("Projectnaam", project_name))
     if doc_number:
-        header_lines.extend([(f"{doc_type} nr.", str(doc_number)), ("", "")])
+        header_lines.append(("Nummer", str(doc_number)))
+    header_lines.append(("Datum", today))
+    header_lines.append(("", ""))
     if company_info:
         header_lines.extend(
             [
