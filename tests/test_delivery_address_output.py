@@ -40,7 +40,7 @@ def test_delivery_address_present_absent(tmp_path):
         {},
         False,
         client=None,
-        delivery=delivery,
+        delivery_map={"Laser": delivery},
     )
     prod_folder = dst1 / "Laser"
     xlsx = next(f for f in os.listdir(prod_folder) if f.endswith(".xlsx"))
@@ -70,7 +70,7 @@ def test_delivery_address_present_absent(tmp_path):
         {},
         False,
         client=None,
-        delivery=None,
+        delivery_map={"Laser": None},
     )
     prod_folder2 = dst2 / "Laser"
     xlsx2 = next(f for f in os.listdir(prod_folder2) if f.endswith(".xlsx"))

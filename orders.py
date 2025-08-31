@@ -374,7 +374,7 @@ def copy_per_production_and_orders(
     doc_type_map: Dict[str, str] | None,
     remember_defaults: bool,
     client: Client | None = None,
-    delivery: DeliveryAddress | None = None,
+    delivery_map: Dict[str, DeliveryAddress | None] | None = None,
     footer_note: str = "",
     zip_parts: bool = False,
 ) -> Tuple[int, Dict[str, str]]:
@@ -453,6 +453,7 @@ def copy_per_production_and_orders(
         if supplier.supplier:
             doc_type = doc_type_map.get(prod, "Bestelbon")
             excel_path = os.path.join(prod_folder, f"{doc_type}_{prod}_{today}.xlsx")
+            delivery = delivery_map.get(prod) if delivery_map else None
             write_order_excel(excel_path, items, company, supplier, delivery)
 
             pdf_path = os.path.join(prod_folder, f"{doc_type}_{prod}_{today}.pdf")

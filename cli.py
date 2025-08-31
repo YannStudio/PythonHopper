@@ -259,6 +259,11 @@ def cli_copy_per_prod(args):
         if not delivery:
             print("Leveradres niet gevonden")
             return 2
+    prods = set(
+        (str(r.get("Production") or "").strip() or "_Onbekend")
+        for _, r in df.iterrows()
+    )
+    delivery_map = {p: delivery for p in prods}
     cnt, chosen = copy_per_production_and_orders(
         args.source,
         args.dest,
@@ -269,7 +274,7 @@ def cli_copy_per_prod(args):
         {},
         args.remember_defaults,
         client=client,
-        delivery=delivery,
+        delivery_map=delivery_map,
         footer_note=args.note or DEFAULT_FOOTER_NOTE,
     )
     print("Gekopieerd:", cnt)

@@ -42,7 +42,7 @@ def test_defaults_persist(tmp_path, monkeypatch):
         {},
         True,
         client=None,
-        delivery=None,
+        delivery_map={"Laser": None, "Plasma": None},
     )
 
     assert cnt == 2
