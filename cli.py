@@ -15,6 +15,7 @@ from helpers import _to_str, _build_file_index, _unique_path
 from models import Supplier, Client
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from clients_db import ClientsDB, CLIENTS_DB_FILE
+from delivery_addresses_db import DeliveryAddressesDB, DELIVERY_DB_FILE
 from bom import read_csv_flex, load_bom
 from orders import copy_per_production_and_orders, DEFAULT_FOOTER_NOTE
 
@@ -249,6 +250,13 @@ def cli_copy_per_prod(args):
     db = SuppliersDB.load(SUPPLIERS_DB_FILE)
     override_map = dict(kv.split("=", 1) for kv in (args.supplier or []))
     delivery_map = dict(kv.split("=", 1) for kv in (args.delivery or []))
+    if delivery_map:
+        ddb = DeliveryAddressesDB.load(DELIVERY_DB_FILE)
+        resolved = {}
+        for prod, addr_name in delivery_map.items():
+            rec = ddb.get(addr_name)
+            resolved[prod] = rec.address if (rec and rec.address) else addr_name
+        delivery_map = resolved
     cdb = ClientsDB.load(CLIENTS_DB_FILE)
     client = None
     if args.client:
