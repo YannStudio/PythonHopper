@@ -55,7 +55,7 @@ from helpers import (
     _material_nowrap,
     _build_file_index,
 )
-from models import Supplier, Client
+from models import Supplier, Client, DeliveryAddress
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from bom import load_bom  # noqa: F401 - imported for module dependency
 
@@ -82,6 +82,7 @@ def generate_pdf_order_platypus(
     items: List[Dict[str, str]],
     doc_type: str = "Bestelbon",
     footer_note: str = "",
+    delivery_addr: DeliveryAddress | None = None,
 ) -> None:
     """Generate a PDF order using ReportLab if available.
 
@@ -116,6 +117,15 @@ def generate_pdf_order_platypus(
         f"BTW: {company_info.get('vat','')}",
         f"E-mail: {company_info.get('email','')}",
     ]
+    if delivery_addr:
+        company_lines.extend(
+            [
+                "",  # spacer
+                f"Leveradres: {delivery_addr.name}",
+                delivery_addr.address or "",
+                delivery_addr.remarks or "",
+            ]
+        )
 
     # Supplier info with full address and contact details
     addr_parts = []
@@ -256,6 +266,7 @@ def write_order_excel(
     items: List[Dict[str, str]],
     company_info: Dict[str, str] | None = None,
     supplier: Supplier | None = None,
+    delivery_addr: DeliveryAddress | None = None,
 ) -> None:
     """Write order information to an Excel file with header info."""
     df = pd.DataFrame(
@@ -271,6 +282,15 @@ def write_order_excel(
                 ("Adres", company_info.get("address", "")),
                 ("BTW", company_info.get("vat", "")),
                 ("E-mail", company_info.get("email", "")),
+                ("", ""),
+            ]
+        )
+    if delivery_addr:
+        header_lines.extend(
+            [
+                ("Leveradres", delivery_addr.name),
+                ("Adres", delivery_addr.address or ""),
+                ("Opmerkingen", delivery_addr.remarks or ""),
                 ("", ""),
             ]
         )
@@ -345,6 +365,7 @@ def copy_per_production_and_orders(
     doc_type_map: Dict[str, str] | None,
     remember_defaults: bool,
     client: Client | None = None,
+    delivery_addr: DeliveryAddress | None = None,
     footer_note: str = "",
     zip_parts: bool = False,
 ) -> Tuple[int, Dict[str, str]]:
@@ -423,7 +444,7 @@ def copy_per_production_and_orders(
         if supplier.supplier:
             doc_type = doc_type_map.get(prod, "Bestelbon")
             excel_path = os.path.join(prod_folder, f"{doc_type}_{prod}_{today}.xlsx")
-            write_order_excel(excel_path, items, company, supplier)
+            write_order_excel(excel_path, items, company, supplier, delivery_addr)
 
             pdf_path = os.path.join(prod_folder, f"{doc_type}_{prod}_{today}.pdf")
             try:
@@ -435,6 +456,7 @@ def copy_per_production_and_orders(
                     items,
                     doc_type=doc_type,
                     footer_note=footer_note or DEFAULT_FOOTER_NOTE,
+                    delivery_addr=delivery_addr,
                 )
             except Exception as e:
                 print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
