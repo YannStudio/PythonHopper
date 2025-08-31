@@ -462,14 +462,25 @@ def start_gui():
         """Per productie: type-to-filter of dropdown; rechts detailkaart (klik = selecteer).
            Knoppen altijd zichtbaar onderaan.
         """
-        def __init__(self, master, productions: List[str], db: SuppliersDB, callback):
+        def __init__(
+            self,
+            master,
+            productions: List[str],
+            db: SuppliersDB,
+            delivery_db: DeliveryAddressesDB,
+            client: Client | None,
+            callback,
+        ):
             super().__init__(master)
             self.title("Selecteer leveranciers per productie")
             self.db = db
+            self.delivery_db = delivery_db
+            self.client = client
             self.callback = callback
             self._preview_supplier: Optional[Supplier] = None
             self._active_prod: Optional[str] = None  # laatst gefocuste rij
             self.sel_vars: Dict[str, tk.StringVar] = {}
+            self.addr_vars: Dict[str, tk.StringVar] = {}
 
             # Grid layout: content (row=0, weight=1), buttons (row=1)
             self.grid_columnconfigure(0, weight=1)
@@ -490,12 +501,19 @@ def start_gui():
                 tk.Label(row, text=prod, width=18, anchor="w").pack(side="left")
                 var = tk.StringVar()
                 self.sel_vars[prod] = var
-                combo = ttk.Combobox(row, textvariable=var, state="normal", width=50)
+                combo = ttk.Combobox(row, textvariable=var, state="normal", width=30)
                 combo.pack(side="left", padx=6)
                 combo.bind("<<ComboboxSelected>>", self._on_combo_change)
                 combo.bind("<FocusIn>", lambda _e, p=prod: self._on_focus_prod(p))
                 combo.bind("<KeyRelease>", lambda ev, p=prod, c=combo: self._on_combo_type(ev, p, c))
-                self.rows.append((prod, combo))
+
+                addr_var = tk.StringVar()
+                self.addr_vars[prod] = addr_var
+                addr_combo = ttk.Combobox(row, textvariable=addr_var, state="normal", width=30)
+                addr_combo.pack(side="left", padx=6)
+                addr_combo.bind("<FocusIn>", lambda _e, p=prod: self._on_focus_prod(p))
+
+                self.rows.append((prod, combo, addr_combo))
 
             # Right: preview details (klikbaar) in LabelFrame met ondertitel
             right = tk.LabelFrame(content,
@@ -535,6 +553,11 @@ def start_gui():
             opts.insert(0, "(geen)")
             return opts
 
+        def _display_addresses(self) -> List[str]:
+            addrs = [self.delivery_db.display_name(a) for a in self.delivery_db.addresses_sorted()]
+            opts = ["Zelf afhalen", "Adres volgt"] + addrs
+            return opts
+
         def _refresh_options(self, initial=False):
             self._base_options = self._display_list()
             self._disp_to_name = {}
@@ -542,12 +565,25 @@ def start_gui():
             for s in src:
                 self._disp_to_name[self.db.display_name(s)] = s.supplier
 
-            for prod, combo in self.rows:
+            self._addr_base_options = self._display_addresses()
+            self._addr_disp_to_addr = {}
+            for a in self.delivery_db.addresses_sorted():
+                self._addr_disp_to_addr[self.delivery_db.display_name(a)] = a.address or ""
+            client_disp = None
+            if self.client:
+                a = self.delivery_db.get(self.client.name)
+                if a:
+                    client_disp = self.delivery_db.display_name(a)
+
+            for prod, combo, addr_combo in self.rows:
                 typed = combo.get()
                 combo["values"] = self._base_options
                 lower_prod = prod.strip().lower()
                 if lower_prod in ("dummy part", "nan", "spare part"):
                     combo.set(self._base_options[0])
+                    addr_combo["values"] = self._addr_base_options
+                    if initial and client_disp:
+                        addr_combo.set(client_disp)
                     continue
                 name = self.db.get_default(prod)
                 if not typed:
@@ -557,11 +593,19 @@ def start_gui():
                     disp = None
                     for k, v in self._disp_to_name.items():
                         if v and name and v.lower() == name.lower():
-                            disp = k; break
+                            disp = k
+                            break
                     if disp:
                         combo.set(disp)
                     elif self._base_options:
                         combo.set(self._base_options[1] if len(self._base_options) > 1 else self._base_options[0])
+
+                addr_combo["values"] = self._addr_base_options
+                if initial:
+                    if client_disp:
+                        addr_combo.set(client_disp)
+                    elif self._addr_base_options:
+                        addr_combo.set(self._addr_base_options[0])
 
         def _on_combo_change(self, _evt=None):
             self._update_preview_from_any_combo()
@@ -622,7 +666,7 @@ def start_gui():
             self.preview.config(text="\n".join(lines))
 
         def _update_preview_from_any_combo(self):
-            for prod, combo in self.rows:
+            for prod, combo, _addr in self.rows:
                 t = combo.get()
                 if t:
                     self._active_prod = prod
@@ -636,20 +680,23 @@ def start_gui():
                 return
             if not self._active_prod and self.rows:
                 self._active_prod = self.rows[0][0]
-            for prod, combo in self.rows:
+            for prod, combo, _addr in self.rows:
                 if prod == self._active_prod:
                     disp = None
-                    if not hasattr(self, "_disp_to_name"): self._refresh_options()
+                    if not hasattr(self, "_disp_to_name"):
+                        self._refresh_options()
                     for k, v in self._disp_to_name.items():
                         if v.lower() == self._preview_supplier.supplier.lower():
-                            disp = k; break
+                            disp = k
+                            break
                     combo.set(disp or self._preview_supplier.supplier)
                     break
 
         def _confirm(self):
-            """Collect selected suppliers per production and return via callback."""
+            """Collect selected suppliers and delivery addresses per production."""
             sel_map: Dict[str, str] = {}
-            for prod, combo in self.rows:
+            addr_map: Dict[str, str] = {}
+            for prod, combo, addr_combo in self.rows:
                 typed = combo.get().strip()
                 if not typed or typed.lower() in ("(geen)", "geen"):
                     sel_map[prod] = ""
@@ -657,18 +704,34 @@ def start_gui():
                     s = self._resolve_text_to_supplier(typed)
                     if s:
                         sel_map[prod] = s.supplier
-            self.callback(sel_map, bool(self.remember_var.get()))
+                a_typed = addr_combo.get().strip()
+                if a_typed in ("Zelf afhalen", "Adres volgt", ""):
+                    addr_map[prod] = ""
+                else:
+                    addr_map[prod] = self._addr_disp_to_addr.get(a_typed, "")
+            self.callback(sel_map, addr_map, bool(self.remember_var.get()))
             self.destroy()
 
     class SupplierSelectionFrame(tk.Frame):
         """Per productie selectie in een verborgen Notebook-tab."""
-        def __init__(self, master, productions: List[str], db: SuppliersDB, callback):
+        def __init__(
+            self,
+            master,
+            productions: List[str],
+            db: SuppliersDB,
+            delivery_db: DeliveryAddressesDB,
+            client: Client | None,
+            callback,
+        ):
             super().__init__(master)
             self.db = db
+            self.delivery_db = delivery_db
+            self.client = client
             self.callback = callback
             self._preview_supplier: Optional[Supplier] = None
             self._active_prod: Optional[str] = None
             self.sel_vars: Dict[str, tk.StringVar] = {}
+            self.addr_vars: Dict[str, tk.StringVar] = {}
 
             self.grid_columnconfigure(0, weight=1)
             self.grid_rowconfigure(0, weight=1)
@@ -687,12 +750,19 @@ def start_gui():
                 tk.Label(row, text=prod, width=18, anchor="w").pack(side="left")
                 var = tk.StringVar()
                 self.sel_vars[prod] = var
-                combo = ttk.Combobox(row, textvariable=var, state="normal", width=50)
+                combo = ttk.Combobox(row, textvariable=var, state="normal", width=30)
                 combo.pack(side="left", padx=6)
                 combo.bind("<<ComboboxSelected>>", self._on_combo_change)
                 combo.bind("<FocusIn>", lambda _e, p=prod: self._on_focus_prod(p))
                 combo.bind("<KeyRelease>", lambda ev, p=prod, c=combo: self._on_combo_type(ev, p, c))
-                self.rows.append((prod, combo))
+
+                addr_var = tk.StringVar()
+                self.addr_vars[prod] = addr_var
+                addr_combo = ttk.Combobox(row, textvariable=addr_var, state="normal", width=30)
+                addr_combo.pack(side="left", padx=6)
+                addr_combo.bind("<FocusIn>", lambda _e, p=prod: self._on_focus_prod(p))
+
+                self.rows.append((prod, combo, addr_combo))
 
             right = tk.LabelFrame(content,
                                   text="Leverancier details\n(klik om te selecteren)",
@@ -738,6 +808,11 @@ def start_gui():
             opts.insert(0, "(geen)")
             return opts
 
+        def _display_addresses(self) -> List[str]:
+            addrs = [self.delivery_db.display_name(a) for a in self.delivery_db.addresses_sorted()]
+            opts = ["Zelf afhalen", "Adres volgt"] + addrs
+            return opts
+
         def _refresh_options(self, initial=False):
             self._base_options = self._display_list()
             self._disp_to_name = {}
@@ -745,12 +820,25 @@ def start_gui():
             for s in src:
                 self._disp_to_name[self.db.display_name(s)] = s.supplier
 
-            for prod, combo in self.rows:
+            self._addr_base_options = self._display_addresses()
+            self._addr_disp_to_addr = {}
+            for a in self.delivery_db.addresses_sorted():
+                self._addr_disp_to_addr[self.delivery_db.display_name(a)] = a.address or ""
+            client_disp = None
+            if self.client:
+                a = self.delivery_db.get(self.client.name)
+                if a:
+                    client_disp = self.delivery_db.display_name(a)
+
+            for prod, combo, addr_combo in self.rows:
                 typed = combo.get()
                 combo["values"] = self._base_options
                 lower_prod = prod.strip().lower()
                 if lower_prod in ("dummy part", "nan", "spare part"):
                     combo.set(self._base_options[0])
+                    addr_combo["values"] = self._addr_base_options
+                    if initial and client_disp:
+                        addr_combo.set(client_disp)
                     continue
                 name = self.db.get_default(prod)
                 if not typed:
@@ -760,11 +848,19 @@ def start_gui():
                     disp = None
                     for k, v in self._disp_to_name.items():
                         if v and name and v.lower() == name.lower():
-                            disp = k; break
+                            disp = k
+                            break
                     if disp:
                         combo.set(disp)
                     elif self._base_options:
                         combo.set(self._base_options[1] if len(self._base_options) > 1 else self._base_options[0])
+
+                addr_combo["values"] = self._addr_base_options
+                if initial:
+                    if client_disp:
+                        addr_combo.set(client_disp)
+                    elif self._addr_base_options:
+                        addr_combo.set(self._addr_base_options[0])
 
         def _on_combo_change(self, _evt=None):
             self._update_preview_from_any_combo()
@@ -825,7 +921,7 @@ def start_gui():
             self.preview.config(text="\n".join(lines))
 
         def _update_preview_from_any_combo(self):
-            for prod, combo in self.rows:
+            for prod, combo, _addr in self.rows:
                 t = combo.get()
                 if t:
                     self._active_prod = prod
@@ -839,20 +935,23 @@ def start_gui():
                 return
             if not self._active_prod and self.rows:
                 self._active_prod = self.rows[0][0]
-            for prod, combo in self.rows:
+            for prod, combo, _addr in self.rows:
                 if prod == self._active_prod:
                     disp = None
-                    if not hasattr(self, "_disp_to_name"): self._refresh_options()
+                    if not hasattr(self, "_disp_to_name"):
+                        self._refresh_options()
                     for k, v in self._disp_to_name.items():
                         if v.lower() == self._preview_supplier.supplier.lower():
-                            disp = k; break
+                            disp = k
+                            break
                     combo.set(disp or self._preview_supplier.supplier)
                     break
 
         def _confirm(self):
-            """Collect selected suppliers per production and return via callback."""
+            """Collect selected suppliers and delivery addresses per production."""
             sel_map: Dict[str, str] = {}
-            for prod, combo in self.rows:
+            addr_map: Dict[str, str] = {}
+            for prod, combo, addr_combo in self.rows:
                 typed = combo.get().strip()
                 if not typed or typed.lower() in ("(geen)", "geen"):
                     sel_map[prod] = ""
@@ -860,7 +959,12 @@ def start_gui():
                     s = self._resolve_text_to_supplier(typed)
                     if s:
                         sel_map[prod] = s.supplier
-            self.callback(sel_map, bool(self.remember_var.get()))
+                a_typed = addr_combo.get().strip()
+                if a_typed in ("Zelf afhalen", "Adres volgt", ""):
+                    addr_map[prod] = ""
+                else:
+                    addr_map[prod] = self._addr_disp_to_addr.get(a_typed, "")
+            self.callback(sel_map, addr_map, bool(self.remember_var.get()))
 
     class App(tk.Tk):
         def __init__(self):
@@ -1147,7 +1251,7 @@ def start_gui():
 
             prods = sorted(set((str(r.get("Production") or "").strip() or "_Onbekend") for _, r in self.bom_df.iterrows()))
             sel_frame = None
-            def on_sel(sel_map: Dict[str,str], remember: bool):
+            def on_sel(sel_map: Dict[str,str], addr_map: Dict[str, str], remember: bool):
                 def work():
                     self.status_var.set("Kopiëren & bestelbonnen maken...")
                     client = self.client_db.get(self.client_var.get().replace("★ ", "", 1))
@@ -1188,7 +1292,8 @@ def start_gui():
                 self.nb.forget(sel_frame)
                 sel_frame.destroy()
                 self.nb.select(self.main_frame)
-            sel_frame = SupplierSelectionFrame(self.nb, prods, self.db, on_sel)
+            client = self.client_db.get(self.client_var.get().replace("★ ", "", 1))
+            sel_frame = SupplierSelectionFrame(self.nb, prods, self.db, self.delivery_db, client, on_sel)
             self.nb.add(sel_frame, state='hidden')
             self.nb.select(sel_frame)
 
