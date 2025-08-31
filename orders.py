@@ -374,7 +374,7 @@ def copy_per_production_and_orders(
     doc_type_map: Dict[str, str] | None,
     remember_defaults: bool,
     client: Client | None = None,
-    delivery: DeliveryAddress | None = None,
+    delivery_map: Dict[str, DeliveryAddress] | None = None,
     footer_note: str = "",
     zip_parts: bool = False,
 ) -> Tuple[int, Dict[str, str]]:
@@ -384,6 +384,8 @@ def copy_per_production_and_orders(
     *Offerteaanvraag* should be generated. Missing entries default to
     ``"Bestelbon"``.
 
+    ``delivery_map`` can provide a :class:`DeliveryAddress` per production.
+    
     If ``zip_parts`` is ``True``, all export files for a production are
     collected into a single ``<production>.zip`` archive instead of individual
     ``PartNumber`` files. Only the generated order Excel/PDF remain unzipped in
@@ -401,6 +403,7 @@ def copy_per_production_and_orders(
         prod_to_rows[prod].append(row)
 
     today = datetime.date.today().strftime("%Y-%m-%d")
+    delivery_map = delivery_map or {}
     for prod, rows in prod_to_rows.items():
         prod_folder = os.path.join(dest, prod)
         os.makedirs(prod_folder, exist_ok=True)
@@ -453,6 +456,7 @@ def copy_per_production_and_orders(
         if supplier.supplier:
             doc_type = doc_type_map.get(prod, "Bestelbon")
             excel_path = os.path.join(prod_folder, f"{doc_type}_{prod}_{today}.xlsx")
+            delivery = delivery_map.get(prod)
             write_order_excel(excel_path, items, company, supplier, delivery)
 
             pdf_path = os.path.join(prod_folder, f"{doc_type}_{prod}_{today}.pdf")

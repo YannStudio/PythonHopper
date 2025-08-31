@@ -1009,7 +1009,8 @@ def start_gui():
                     client = self.client_db.get(
                         self.client_var.get().replace("★ ", "", 1)
                     )
-                    delivery = self.delivery_db.get(delivery_id)
+                    delivery = self.delivery_db.get(delivery_id) if delivery_id else None
+                    delivery_map = {prod: delivery for prod in sel_map} if delivery else {}
                     cnt, chosen = copy_per_production_and_orders(
                         self.source_folder,
                         self.dest_folder,
@@ -1020,7 +1021,7 @@ def start_gui():
                         doc_map,
                         remember,
                         client=client,
-                        delivery=delivery,
+                        delivery_map=delivery_map,
                         footer_note=DEFAULT_FOOTER_NOTE,
                         zip_parts=bool(self.zip_var.get()),
                     )
