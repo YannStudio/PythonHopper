@@ -478,6 +478,8 @@ def start_gui():
             self._active_prod: Optional[str] = None  # laatst gefocuste rij
             self.sel_vars: Dict[str, tk.StringVar] = {}
             self.doc_vars: Dict[str, tk.StringVar] = {}
+            self.doc_num_vars: Dict[str, tk.StringVar] = {}
+            self.doc_num_autofill: Dict[str, bool] = {}
             self.delivery_vars: Dict[str, tk.StringVar] = {}
 
             # Grid layout: content (row=0, weight=1), buttons (row=1)
@@ -525,6 +527,14 @@ def start_gui():
                     width=18,
                 )
                 doc_combo.pack(side="left", padx=6)
+                doc_combo.bind("<<ComboboxSelected>>", lambda _e, p=prod: self._on_doc_type_change(p))
+
+                doc_num_var = tk.StringVar(value="BB-")
+                self.doc_num_vars[prod] = doc_num_var
+                self.doc_num_autofill[prod] = True
+                doc_num_entry = tk.Entry(row, textvariable=doc_num_var, width=12)
+                doc_num_entry.pack(side="left", padx=6)
+                doc_num_entry.bind("<KeyRelease>", lambda _e, p=prod: self._on_doc_num_change(p))
 
                 dvar = tk.StringVar(value="Geen")
                 self.delivery_vars[prod] = dvar
@@ -616,6 +626,19 @@ def start_gui():
                 combo["values"] = filtered or self._base_options
             self._update_preview_for_text(combo.get())
 
+        def _on_doc_type_change(self, prod: str):
+            doc_type = self.doc_vars.get(prod, tk.StringVar(value="Bestelbon")).get()
+            var = self.doc_num_vars.get(prod)
+            if var is None:
+                return
+            if self.doc_num_autofill.get(prod, True) or not var.get():
+                prefix = "BB-" if doc_type == "Bestelbon" else "OFF-"
+                var.set(prefix)
+                self.doc_num_autofill[prod] = True
+
+        def _on_doc_num_change(self, prod: str, _evt=None):
+            self.doc_num_autofill[prod] = False
+
         def _resolve_text_to_supplier(self, text: str) -> Optional[Supplier]:
             if not text:
                 return None
@@ -696,6 +719,7 @@ def start_gui():
             """Collect selected suppliers per production and return via callback."""
             sel_map: Dict[str, str] = {}
             doc_map: Dict[str, str] = {}
+            doc_num_map: Dict[str, str] = {}
             for prod, combo in self.rows:
                 typed = combo.get().strip()
                 if not typed or typed.lower() in ("(geen)", "geen"):
@@ -705,12 +729,13 @@ def start_gui():
                     if s:
                         sel_map[prod] = s.supplier
                 doc_map[prod] = self.doc_vars.get(prod, tk.StringVar(value="Bestelbon")).get()
+                doc_num_map[prod] = self.doc_num_vars.get(prod, tk.StringVar(value="")).get()
 
             delivery_map: Dict[str, str] = {}
             for prod, _combo in self.rows:
                 delivery_map[prod] = self.delivery_vars.get(prod, tk.StringVar(value="Geen")).get()
 
-            self.callback(sel_map, doc_map, delivery_map, bool(self.remember_var.get()))
+            self.callback(sel_map, doc_map, doc_num_map, delivery_map, bool(self.remember_var.get()))
 
     class App(tk.Tk):
         def __init__(self):
@@ -1009,6 +1034,7 @@ def start_gui():
             def on_sel(
                 sel_map: Dict[str, str],
                 doc_map: Dict[str, str],
+                doc_num_map: Dict[str, str],
                 delivery_map_raw: Dict[str, str],
                 remember: bool,
             ):
@@ -1038,7 +1064,7 @@ def start_gui():
                         self.db,
                         sel_map,
                         doc_map,
-                        {},
+                        doc_num_map,
                         remember,
                         client=client,
                         delivery_map=resolved_delivery_map,
