@@ -473,8 +473,9 @@ def copy_per_production_and_orders(
         if supplier.supplier:
             doc_type = doc_type_map.get(prod, "Bestelbon")
             doc_num = doc_num_map.get(prod, "")
+            num_part = f"_{doc_num}" if doc_num else ""
             excel_path = os.path.join(
-                prod_folder, f"{doc_type}_{doc_num}_{prod}_{today}.xlsx"
+                prod_folder, f"{doc_type}{num_part}_{prod}_{today}.xlsx"
             )
             delivery = delivery_map.get(prod)
             write_order_excel(
@@ -482,7 +483,7 @@ def copy_per_production_and_orders(
             )
 
             pdf_path = os.path.join(
-                prod_folder, f"{doc_type}_{doc_num}_{prod}_{today}.pdf"
+                prod_folder, f"{doc_type}{num_part}_{prod}_{today}.pdf"
             )
             try:
                 generate_pdf_order_platypus(
