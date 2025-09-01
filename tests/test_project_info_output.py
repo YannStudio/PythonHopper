@@ -1,6 +1,7 @@
 import datetime
 import pandas as pd
-import openpyxl
+import pytest
+pytest.importorskip("openpyxl")
 import pytest
 from PyPDF2 import PdfReader
 
