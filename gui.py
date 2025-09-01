@@ -798,7 +798,8 @@ def start_gui():
                 self.cards_frame.grid_rowconfigure(r, weight=1)
                 card = tk.Frame(
                     self.cards_frame,
-                    highlightbackground="red",
+                    highlightbackground="black",
+                    highlightcolor="black",
                     highlightthickness=2,
                     cursor="hand2",
                 )
