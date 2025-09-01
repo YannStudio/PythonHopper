@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import unicodedata
 from typing import Dict, List, Optional
 
 import pandas as pd
@@ -22,6 +23,15 @@ from orders import (
 )
 
 
+def _norm(text: str) -> str:
+    return (
+        unicodedata.normalize("NFKD", text)
+        .encode("ASCII", "ignore")
+        .decode("ASCII")
+        .lower()
+    )
+
+
 def sort_supplier_options(
     options: List[str],
     suppliers: List[Supplier],
@@ -36,11 +46,12 @@ def sort_supplier_options(
     disp_to_name: mapping from display string to supplier name
     """
 
-    fav_map = {s.supplier.lower(): s.favorite for s in suppliers}
+    fav_map = {_norm(s.supplier): s.favorite for s in suppliers}
 
     def sort_key(opt: str):
         name = disp_to_name.get(opt, opt)
-        return (not fav_map.get(name.lower(), False), name.lower())
+        n = _norm(name)
+        return (not fav_map.get(n, False), n)
 
     return sorted(options, key=sort_key)
 
@@ -698,7 +709,7 @@ def start_gui():
 
         def _on_combo_type(self, evt, production: str, combo):
             self._active_prod = production
-            text = combo.get().strip().lower()
+            text = _norm(combo.get().strip())
             if not hasattr(self, "_base_options"):
                 return
             if evt.keysym in ("Up", "Down", "Escape"):
@@ -706,7 +717,9 @@ def start_gui():
             if not text:
                 filtered = self._base_options
             else:
-                filtered = [opt for opt in self._base_options if text in opt.lower()]
+                filtered = [
+                    opt for opt in self._base_options if text in _norm(opt)
+                ]
                 filtered = sort_supplier_options(
                     filtered, self.db.suppliers, getattr(self, "_disp_to_name", {})
                 )
@@ -720,21 +733,26 @@ def start_gui():
         def _resolve_text_to_supplier(self, text: str) -> Optional[Supplier]:
             if not text:
                 return None
+            norm_text = _norm(text)
             if hasattr(self, "_disp_to_name"):
                 for disp, name in self._disp_to_name.items():
-                    if disp.lower() == text.lower():
+                    if _norm(disp) == norm_text:
                         for s in self.db.suppliers:
-                            if s.supplier.lower() == name.lower():
+                            if _norm(s.supplier) == _norm(name):
                                 return s
             for s in self.db.suppliers:
-                if s.supplier.lower() == text.lower():
+                if _norm(s.supplier) == norm_text:
                     return s
-            cand = [s for s in self.db.suppliers if s.supplier.lower().startswith(text.lower())]
+            cand = [
+                s for s in self.db.suppliers if _norm(s.supplier).startswith(norm_text)
+            ]
             if cand:
-                return sorted(cand, key=lambda x: (not x.favorite, x.supplier.lower()))[0]
-            cand = [s for s in self.db.suppliers if text.lower() in s.supplier.lower()]
+                return sorted(cand, key=lambda x: (not x.favorite, _norm(x.supplier)))[0]
+            cand = [
+                s for s in self.db.suppliers if norm_text in _norm(s.supplier)
+            ]
             if cand:
-                return sorted(cand, key=lambda x: (not x.favorite, x.supplier.lower()))[0]
+                return sorted(cand, key=lambda x: (not x.favorite, _norm(x.supplier)))[0]
             return None
 
         def _update_preview_for_text(self, text: str):
