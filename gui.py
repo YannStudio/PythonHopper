@@ -718,17 +718,17 @@ def start_gui():
                 return
             if not text:
                 combo["values"] = self._base_options
-                self._populate_cards([], production)
+                for ch in self.cards_frame.winfo_children():
+                    ch.destroy()
                 self._update_preview_for_text("")
                 return
-            else:
-                filtered = [
-                    opt for opt in self._base_options if _norm(opt).startswith(text)
-                ]
-                filtered = sort_supplier_options(
-                    filtered, self.db.suppliers, getattr(self, "_disp_to_name", {})
-                )
-                combo["values"] = filtered
+            filtered = [
+                opt for opt in self._base_options if _norm(opt).startswith(text)
+            ]
+            filtered = sort_supplier_options(
+                filtered, self.db.suppliers, getattr(self, "_disp_to_name", {})
+            )
+            combo["values"] = filtered
             self._populate_cards(filtered, production)
             if evt.keysym == "Return" and len(filtered) == 1:
                 combo.set(filtered[0])
@@ -791,36 +791,51 @@ def start_gui():
                 return
             cols = 3
             for i in range(cols):
-                self.cards_frame.grid_columnconfigure(i, weight=1)
+                self.cards_frame.grid_columnconfigure(i, weight=0)
             for idx, opt in enumerate(options):
                 s = self._resolve_text_to_supplier(opt)
                 if not s:
                     continue
                 r, c = divmod(idx, cols)
-                self.cards_frame.grid_rowconfigure(r, weight=1)
+                self.cards_frame.grid_rowconfigure(r, weight=0)
+                border = "#444444"
                 card = tk.Frame(
                     self.cards_frame,
-                    highlightbackground="black",
-                    highlightcolor="black",
+                    highlightbackground=border,
+                    highlightcolor=border,
                     highlightthickness=2,
                     cursor="hand2",
                 )
-                card.grid(row=r, column=c, padx=4, pady=4, sticky="nsew")
-                lines = [s.supplier]
+                card.grid(row=r, column=c, padx=4, pady=4, sticky="w")
+                widgets = []
+                name_lbl = tk.Label(
+                    card,
+                    text=s.supplier,
+                    justify="left",
+                    anchor="w",
+                    font=("TkDefaultFont", 10, "bold"),
+                )
+                name_lbl.pack(anchor="w", padx=4, pady=(4, 0))
+                widgets.append(name_lbl)
                 if s.description:
-                    lines.append(f"({s.description})")
+                    desc_lbl = tk.Label(
+                        card, text=s.description, justify="left", anchor="w"
+                    )
+                    desc_lbl.pack(anchor="w", padx=4)
+                    widgets.append(desc_lbl)
                 if s.adres_1 or s.adres_2:
                     addr_line = (
                         f"{s.adres_1}, {s.adres_2}"
                         if (s.adres_1 and s.adres_2)
                         else (s.adres_1 or s.adres_2)
                     )
-                    lines.append(addr_line)
-                lbl = tk.Label(card, text="\n".join(lines), justify="left", anchor="nw")
-                lbl.pack(fill="both", expand=True, padx=4, pady=4)
+                    addr_lbl = tk.Label(card, text=addr_line, justify="left", anchor="w")
+                    addr_lbl.pack(anchor="w", padx=4, pady=(0, 4))
+                    widgets.append(addr_lbl)
                 handler = lambda _e, o=opt, p=production: self._on_card_click(o, p)
                 card.bind("<Button-1>", handler)
-                lbl.bind("<Button-1>", handler)
+                for w in widgets:
+                    w.bind("<Button-1>", handler)
 
         def _cancel(self):
             if self.master:
