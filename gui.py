@@ -481,6 +481,7 @@ def start_gui():
             self.doc_vars: Dict[str, tk.StringVar] = {}
             self.doc_num_vars: Dict[str, tk.StringVar] = {}
             self.delivery_vars: Dict[str, tk.StringVar] = {}
+            self.delivery_combos: Dict[str, ttk.Combobox] = {}
 
             # Grid layout: content (row=0, weight=1), buttons (row=1)
             self.grid_columnconfigure(0, weight=1)
@@ -565,6 +566,7 @@ def start_gui():
                     width=50,
                 )
                 dcombo.pack(side="left", padx=6)
+                self.delivery_combos[prod] = dcombo
 
                 self.rows.append((prod, combo))
 
@@ -618,19 +620,44 @@ def start_gui():
                 if lower_prod in ("dummy part", "nan", "spare part"):
                     combo.set(self._base_options[0])
                     continue
+                if typed:
+                    combo.set(typed)
+                    continue
                 name = self.db.get_default(prod)
-                if not typed:
-                    if not name and initial:
-                        favs = [x for x in src if x.favorite]
-                        name = (favs[0].supplier if favs else (src[0].supplier if src else ""))
-                    disp = None
-                    for k, v in self._disp_to_name.items():
-                        if v and name and v.lower() == name.lower():
-                            disp = k; break
-                    if disp:
-                        combo.set(disp)
-                    elif self._base_options:
-                        combo.set(self._base_options[1] if len(self._base_options) > 1 else self._base_options[0])
+                if not name and initial:
+                    favs = [x for x in src if x.favorite]
+                    name = (
+                        favs[0].supplier
+                        if favs
+                        else (src[0].supplier if src else "")
+                    )
+                disp = None
+                for k, v in self._disp_to_name.items():
+                    if v and name and v.lower() == name.lower():
+                        disp = k
+                        break
+                if disp:
+                    combo.set(disp)
+                elif self._base_options:
+                    combo.set(
+                        self._base_options[1]
+                        if len(self._base_options) > 1
+                        else self._base_options[0]
+                    )
+
+            delivery_opts = [
+                "Geen",
+                "Bestelling wordt opgehaald",
+                "Leveradres wordt nog meegedeeld",
+            ] + [
+                self.delivery_db.display_name(a)
+                for a in self.delivery_db.addresses_sorted()
+            ]
+            for prod, dcombo in self.delivery_combos.items():
+                cur = dcombo.get()
+                dcombo["values"] = delivery_opts
+                if cur:
+                    dcombo.set(cur)
 
         def _on_combo_change(self, _evt=None):
             self._update_preview_from_any_combo()
@@ -739,6 +766,8 @@ def start_gui():
                     pass
                 if hasattr(self.master, "select") and hasattr(self.master.master, "main_frame"):
                     self.master.select(self.master.master.main_frame)
+                if hasattr(self.master.master, "sel_frame"):
+                    self.master.master.sel_frame = None
             self.destroy()
 
         def _confirm(self):
@@ -800,14 +829,16 @@ def start_gui():
             self.nb.add(main, text="Main")
             self.main_frame = main
             self.clients_frame = ClientsManagerFrame(
-                self.nb, self.client_db, on_change=self._refresh_clients_combo
+                self.nb, self.client_db, on_change=self._on_db_change
             )
             self.nb.add(self.clients_frame, text="Klant beheer")
             self.delivery_frame = DeliveryAddressesManagerFrame(
-                self.nb, self.delivery_db, on_change=lambda: None
+                self.nb, self.delivery_db, on_change=self._on_db_change
             )
             self.nb.add(self.delivery_frame, text="Leveradres beheer")
-            self.suppliers_frame = SuppliersManagerFrame(self.nb, self.db, on_change=lambda: None)
+            self.suppliers_frame = SuppliersManagerFrame(
+                self.nb, self.db, on_change=self._on_db_change
+            )
             self.nb.add(self.suppliers_frame, text="Leverancier beheer")
 
             # Top folders
@@ -884,10 +915,25 @@ def start_gui():
             self.status_var = tk.StringVar(value="Klaar")
             tk.Label(main, textvariable=self.status_var, anchor="w").pack(fill="x", padx=8, pady=(0,8))
 
+        def _on_db_change(self):
+            self._refresh_clients_combo()
+            sel = getattr(self, "sel_frame", None)
+            if sel is not None:
+                try:
+                    if sel.winfo_exists():
+                        sel._refresh_options()
+                    else:
+                        self.sel_frame = None
+                except Exception:
+                    self.sel_frame = None
+
         def _refresh_clients_combo(self):
+            cur = self.client_combo.get()
             opts = [self.client_db.display_name(c) for c in self.client_db.clients_sorted()]
             self.client_combo["values"] = opts
-            if opts:
+            if cur in opts:
+                self.client_combo.set(cur)
+            elif opts:
                 self.client_combo.set(opts[0])
 
         def _pick_src(self):
@@ -1123,12 +1169,13 @@ def start_gui():
                                 os.startfile(self.dest_folder)
                             except Exception:
                                 pass
-                        if sel_frame:
+                        if getattr(self, "sel_frame", None):
                             try:
-                                self.nb.forget(sel_frame)
-                                sel_frame.destroy()
+                                self.nb.forget(self.sel_frame)
+                                self.sel_frame.destroy()
                             except Exception:
                                 pass
+                            self.sel_frame = None
                         self.nb.select(self.main_frame)
 
                     self.after(0, on_done)
@@ -1138,6 +1185,7 @@ def start_gui():
             sel_frame = SupplierSelectionFrame(
                 self.nb, prods, self.db, self.delivery_db, on_sel
             )
+            self.sel_frame = sel_frame
             self.nb.add(sel_frame, state="hidden")
             self.nb.select(sel_frame)
 
