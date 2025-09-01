@@ -488,12 +488,13 @@ def start_gui():
 
             content = tk.Frame(self)
             content.grid(row=0, column=0, sticky="nsew", padx=10, pady=6)
-            content.grid_columnconfigure(0, weight=1)  # left
-            content.grid_columnconfigure(1, weight=0)  # right
+            content.grid_columnconfigure(0, weight=1)
+            content.grid_rowconfigure(0, weight=0)
+            content.grid_rowconfigure(1, weight=1)
 
             # Left: per productie comboboxen
             left = tk.Frame(content)
-            left.grid(row=0, column=0, sticky="nw", padx=(0,8))
+            left.grid(row=0, column=0, sticky="nw")
 
             # Project info entries above production rows
             pn_row = tk.Frame(left)
@@ -567,14 +568,18 @@ def start_gui():
 
                 self.rows.append((prod, combo))
 
-            # Right: preview details (klikbaar) in LabelFrame met ondertitel
-            right = tk.LabelFrame(content,
-                                  text="Leverancier details\n(klik om te selecteren)",
-                                  labelanchor="n")
-            right.grid(row=0, column=1, sticky="ne", padx=(8,0))
-            self.preview = tk.Label(right, text="", justify="left", anchor="nw", cursor="hand2")
+            # Preview details (klikbaar) onderaan in LabelFrame met ondertitel
+            preview_frame = tk.LabelFrame(
+                content,
+                text="Leverancier details\n(klik om te selecteren)",
+                labelanchor="n",
+            )
+            preview_frame.grid(row=1, column=0, sticky="ew")
+            self.preview = tk.Label(
+                preview_frame, text="", justify="left", anchor="nw", cursor="hand2"
+            )
             self.preview.pack(fill="both", expand=True, padx=8, pady=8)
-            self.preview.configure(wraplength=360)
+            self.preview.configure(wraplength=800)
             self.preview.bind("<Button-1>", self._on_preview_click)
 
             # Buttons bar (altijd zichtbaar)
