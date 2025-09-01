@@ -646,13 +646,19 @@ def start_gui():
             text = combo.get().strip().lower()
             if not hasattr(self, "_base_options"):
                 return
-            if evt.keysym in ("Up","Down","Return","Escape"):
+            if evt.keysym == "Return":
+                s = self._resolve_text_to_supplier(combo.get().strip())
+                if s:
+                    combo.set(self._disp_to_name.get(s.supplier, s.supplier))
+                return
+            if evt.keysym in ("Up","Down","Escape"):
                 return
             if not text:
                 combo["values"] = self._base_options
             else:
-                filtered = [opt for opt in self._base_options if text in opt.lower()]
+                filtered = [opt for opt in self._base_options if opt.lower().startswith(text)]
                 combo["values"] = filtered or self._base_options
+                combo.event_generate("<Down>")
             self._update_preview_for_text(combo.get())
 
         def _resolve_text_to_supplier(self, text: str) -> Optional[Supplier]:
