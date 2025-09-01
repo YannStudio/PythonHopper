@@ -60,16 +60,54 @@ def _load_supplier_frame():
     )
     module_ast = ast.Module(body=[frame_cls], type_ignores=[])
     code = compile(module_ast, "<gui_extract>", "exec")
+    class Widget:
+        def __init__(self, master=None, **kwargs):
+            self.master = master
+            self.kwargs = kwargs
+            self.children = []
+            self.bindings = {}
+            self.grid_kwargs = {}
+            self.pack_kwargs = {}
+            if master is not None:
+                master.children.append(self)
+
+        def grid(self, **kwargs):
+            self.grid_kwargs = kwargs
+
+        def pack(self, **kwargs):
+            self.pack_kwargs = kwargs
+
+        def bind(self, event, handler):
+            self.bindings[event] = handler
+
+        def destroy(self):
+            pass
+
+        def winfo_children(self):
+            return list(self.children)
+
+        def grid_columnconfigure(self, *_args, **_kwargs):
+            pass
+
+        def grid_rowconfigure(self, *_args, **_kwargs):
+            pass
+
+    class Frame(Widget):
+        pass
+
+    class Label(Widget):
+        pass
+
     tk_stub = types.SimpleNamespace(
-        Frame=type("Frame", (), {}),
-        Toplevel=type("Toplevel", (), {}),
+        Frame=Frame,
+        Toplevel=Frame,
         BooleanVar=lambda value=None: None,
         StringVar=lambda value=None: None,
-        Label=type("Label", (), {}),
-        Entry=type("Entry", (), {}),
-        Checkbutton=type("Checkbutton", (), {}),
-        Button=type("Button", (), {}),
-        LabelFrame=type("LabelFrame", (), {}),
+        Label=Label,
+        Entry=Frame,
+        Checkbutton=Frame,
+        Button=Frame,
+        LabelFrame=Frame,
     )
     ttk_stub = types.SimpleNamespace(Combobox=type("Combobox", (), {}))
     ns = {
@@ -86,7 +124,9 @@ def _load_supplier_frame():
         "_norm": _norm,
     }
     exec(code, ns)
-    return ns["SupplierSelectionFrame"]
+    cls = ns["SupplierSelectionFrame"]
+    cls._Frame = Frame
+    return cls
 
 
 SupplierSelectionFrame = _load_supplier_frame()
@@ -97,6 +137,7 @@ class DummySel:
     _refresh_options = SupplierSelectionFrame._refresh_options
     _on_combo_type = SupplierSelectionFrame._on_combo_type
     _resolve_text_to_supplier = SupplierSelectionFrame._resolve_text_to_supplier
+    _populate_cards = SupplierSelectionFrame._populate_cards
 
     def __init__(self, sdb):
         self.db = sdb
@@ -104,12 +145,13 @@ class DummySel:
         self.rows = [("Prod", DummyCombo())]
         self.delivery_combos = {}
         self._preview_supplier = None
+        self.cards_frame = SupplierSelectionFrame._Frame(None)
 
     def _update_preview_for_text(self, text):
         self._preview_supplier = self._resolve_text_to_supplier(text)
 
-    def _populate_cards(self, options, prod):
-        self.last_populate = (options, prod)
+    def _on_card_click(self, option, production):
+        pass
 
 
 def test_unaccented_filter_and_selects_supplier():
@@ -137,4 +179,20 @@ def test_populate_cards_not_called_for_empty_text():
 
     sel._populate_cards = fake_populate
     sel._on_combo_type(types.SimpleNamespace(keysym="a"), "Prod", combo)
-    assert calls == [[]]
+    assert calls == []
+
+
+def test_populate_cards_card_format():
+    sdb = SuppliersDB([Supplier(supplier="Alpha", description="Desc", adres_1="Addr")])
+    sel = DummySel(sdb)
+    sel._populate_cards(["Alpha"], "Prod")
+    cards = sel.cards_frame.children
+    assert len(cards) == 1
+    card = cards[0]
+    assert card.kwargs.get("highlightbackground") == "#444444"
+    assert card.grid_kwargs.get("sticky") == "w"
+    name_lbl = card.children[0]
+    assert "bold" in name_lbl.kwargs.get("font", ("", "", ""))
+    desc_lbl = card.children[1]
+    assert desc_lbl.kwargs.get("text") == "Desc"
+    assert "(" not in desc_lbl.kwargs.get("text")
