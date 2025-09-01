@@ -3,9 +3,8 @@ import shutil
 import subprocess
 import sys
 import threading
+import unicodedata
 from typing import Dict, List, Optional
-
-import pandas as pd
 
 from helpers import _to_str, _build_file_index
 from models import Supplier, Client, DeliveryAddress
@@ -21,9 +20,35 @@ from orders import (
     _prefix_for_doc_type,
 )
 
+
+def _normalize_text(text: str) -> str:
+    """Return a lowercase representation of *text* without diacritics."""
+    normalized = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in normalized if not unicodedata.combining(c)).lower()
+
+
+def _filter_options(text: str, options: List[str]) -> List[str]:
+    """Filter *options* to those containing all tokens from *text*.
+
+    Both the user input and option strings are normalized (case-insensitive and
+    stripped of accents) before matching. If *text* is empty, *options* are
+    returned unchanged.
+    """
+
+    if not text:
+        return options
+    tokens = _normalize_text(text).split()
+    filtered: List[str] = []
+    for opt in options:
+        norm_opt = _normalize_text(opt)
+        if all(tok in norm_opt for tok in tokens):
+            filtered.append(opt)
+    return filtered
+
 def start_gui():
     import tkinter as tk
     from tkinter import ttk, filedialog, messagebox, simpledialog
+    import pandas as pd
 
     TREE_ODD_BG = "#FFFFFF"
     TREE_EVEN_BG = "#F5F5F5"
@@ -648,7 +673,7 @@ def start_gui():
 
         def _on_combo_type(self, evt, production: str, combo):
             self._active_prod = production
-            text = combo.get().strip().lower()
+            text = combo.get().strip()
             if not hasattr(self, "_base_options"):
                 return
             if evt.keysym in ("Up", "Down", "Escape"):
@@ -656,7 +681,7 @@ def start_gui():
             if not text:
                 filtered = self._base_options
             else:
-                filtered = [opt for opt in self._base_options if text in opt.lower()]
+                filtered = _filter_options(text, self._base_options)
             combo["values"] = filtered or self._base_options
             if evt.keysym == "Return" and len(filtered) == 1:
                 combo.set(filtered[0])
