@@ -21,6 +21,29 @@ from orders import (
     _prefix_for_doc_type,
 )
 
+
+def sort_supplier_options(
+    options: List[str],
+    suppliers: List[Supplier],
+    disp_to_name: Dict[str, str],
+) -> List[str]:
+    """Return options sorted with favorites first and then alphabetically.
+
+    Parameters
+    ----------
+    options: list of display strings
+    suppliers: list of Supplier objects from the DB
+    disp_to_name: mapping from display string to supplier name
+    """
+
+    fav_map = {s.supplier.lower(): s.favorite for s in suppliers}
+
+    def sort_key(opt: str):
+        name = disp_to_name.get(opt, opt)
+        return (not fav_map.get(name.lower(), False), name.lower())
+
+    return sorted(options, key=sort_key)
+
 def start_gui():
     import tkinter as tk
     from tkinter import ttk, filedialog, messagebox, simpledialog
@@ -657,6 +680,9 @@ def start_gui():
                 filtered = self._base_options
             else:
                 filtered = [opt for opt in self._base_options if text in opt.lower()]
+                filtered = sort_supplier_options(
+                    filtered, self.db.suppliers, getattr(self, "_disp_to_name", {})
+                )
             combo["values"] = filtered or self._base_options
             if evt.keysym == "Return" and len(filtered) == 1:
                 combo.set(filtered[0])
