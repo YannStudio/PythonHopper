@@ -718,14 +718,15 @@ def start_gui():
                 return
             if not text:
                 filtered = self._base_options
+                combo["values"] = self._base_options
             else:
                 filtered = [
-                    opt for opt in self._base_options if text in _norm(opt)
+                    opt for opt in self._base_options if _norm(opt).startswith(text)
                 ]
                 filtered = sort_supplier_options(
                     filtered, self.db.suppliers, getattr(self, "_disp_to_name", {})
                 )
-            combo["values"] = filtered or self._base_options
+                combo["values"] = filtered
             self._populate_cards(filtered, production)
             if evt.keysym == "Return" and len(filtered) == 1:
                 combo.set(filtered[0])
