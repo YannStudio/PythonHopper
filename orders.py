@@ -15,7 +15,10 @@ from collections import defaultdict
 from typing import Dict, List, Tuple
 
 import pandas as pd
-from openpyxl.styles import Alignment
+try:
+    from openpyxl.styles import Alignment
+except Exception:  # pragma: no cover - optional dependency
+    Alignment = None
 
 try:
     from PyPDF2 import PdfMerger
@@ -374,18 +377,19 @@ def write_order_excel(
         )
 
     startrow = len(header_lines)
-    with pd.ExcelWriter(path, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, startrow=startrow)
-        ws = writer.sheets[list(writer.sheets.keys())[0]]
-        for r, (label, value) in enumerate(header_lines, start=1):
-            ws.cell(row=r, column=1, value=label)
-            ws.cell(row=r, column=2, value=value)
+    if Alignment is not None and hasattr(pd, "ExcelWriter"):
+        with pd.ExcelWriter(path, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, startrow=startrow)
+            ws = writer.sheets[list(writer.sheets.keys())[0]]
+            for r, (label, value) in enumerate(header_lines, start=1):
+                ws.cell(row=r, column=1, value=label)
+                ws.cell(row=r, column=2, value=value)
 
-        left_cols = {"PartNumber", "Description"}
-        for col_idx, col_name in enumerate(df.columns, start=1):
-            align = Alignment(horizontal="left" if col_name in left_cols else "right")
-            for row in range(startrow + 1, startrow + len(df) + 2):
-                ws.cell(row=row, column=col_idx).alignment = align
+            left_cols = {"PartNumber", "Description"}
+            for col_idx, col_name in enumerate(df.columns, start=1):
+                align = Alignment(horizontal="left" if col_name in left_cols else "right")
+                for row in range(startrow + 1, startrow + len(df) + 2):
+                    ws.cell(row=row, column=col_idx).alignment = align
 
 
 def pick_supplier_for_production(

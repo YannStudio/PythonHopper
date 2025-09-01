@@ -5,7 +5,8 @@ import tempfile
 import datetime
 
 import pandas as pd
-import openpyxl
+import pytest
+pytest.importorskip("openpyxl")
 
 from models import Supplier, Client
 from suppliers_db import SuppliersDB
