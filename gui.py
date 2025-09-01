@@ -717,8 +717,10 @@ def start_gui():
             if evt.keysym in ("Up", "Down", "Escape"):
                 return
             if not text:
-                filtered = self._base_options
                 combo["values"] = self._base_options
+                self._populate_cards([], production)
+                self._update_preview_for_text("")
+                return
             else:
                 filtered = [
                     opt for opt in self._base_options if _norm(opt).startswith(text)

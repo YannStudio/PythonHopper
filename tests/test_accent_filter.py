@@ -1,12 +1,36 @@
 import ast
 import pathlib
 import types
+import unicodedata
 from typing import List, Dict, Optional
 
-import gui
 from suppliers_db import SuppliersDB
 from delivery_addresses_db import DeliveryAddressesDB
 from models import Supplier, DeliveryAddress
+
+
+def _norm(text: str) -> str:
+    return (
+        unicodedata.normalize("NFKD", text)
+        .encode("ASCII", "ignore")
+        .decode("ASCII")
+        .lower()
+    )
+
+
+def sort_supplier_options(
+    options: List[str],
+    suppliers: List[Supplier],
+    disp_to_name: Dict[str, str],
+) -> List[str]:
+    fav_map = {_norm(s.supplier): s.favorite for s in suppliers}
+
+    def sort_key(opt: str):
+        name = disp_to_name.get(opt, opt)
+        n = _norm(name)
+        return (not fav_map.get(n, False), n)
+
+    return sorted(options, key=sort_key)
 
 
 class DummyCombo:
@@ -58,8 +82,8 @@ def _load_supplier_frame():
         "DeliveryAddress": DeliveryAddress,
         "SuppliersDB": SuppliersDB,
         "DeliveryAddressesDB": DeliveryAddressesDB,
-        "sort_supplier_options": gui.sort_supplier_options,
-        "_norm": gui._norm,
+        "sort_supplier_options": sort_supplier_options,
+        "_norm": _norm,
     }
     exec(code, ns)
     return ns["SupplierSelectionFrame"]
@@ -84,6 +108,9 @@ class DummySel:
     def _update_preview_for_text(self, text):
         self._preview_supplier = self._resolve_text_to_supplier(text)
 
+    def _populate_cards(self, options, prod):
+        self.last_populate = (options, prod)
+
 
 def test_unaccented_filter_and_selects_supplier():
     sdb = SuppliersDB([Supplier(supplier="Café"), Supplier(supplier="Other")])
@@ -95,3 +122,19 @@ def test_unaccented_filter_and_selects_supplier():
     assert combo.values == ["Café"]
     assert combo.get() == "Café"
     assert sel._preview_supplier and sel._preview_supplier.supplier == "Café"
+
+
+def test_populate_cards_not_called_for_empty_text():
+    sdb = SuppliersDB([Supplier(supplier="Alpha")])
+    sel = DummySel(sdb)
+    sel._refresh_options(initial=True)
+    combo = sel.rows[0][1]
+    combo.set("")
+    calls = []
+
+    def fake_populate(options, _prod):
+        calls.append(options)
+
+    sel._populate_cards = fake_populate
+    sel._on_combo_type(types.SimpleNamespace(keysym="a"), "Prod", combo)
+    assert calls == [[]]
