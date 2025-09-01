@@ -717,8 +717,10 @@ def start_gui():
             if evt.keysym in ("Up", "Down", "Escape"):
                 return
             if not text:
-                filtered = self._base_options
                 combo["values"] = self._base_options
+                self._populate_cards([], production)
+                self._update_preview_for_text("")
+                return
             else:
                 filtered = [
                     opt for opt in self._base_options if _norm(opt).startswith(text)
@@ -788,25 +790,32 @@ def start_gui():
             if not options:
                 return
             cols = 3
-            for i in range(cols):
-                self.cards_frame.grid_columnconfigure(i, weight=1)
             for idx, opt in enumerate(options):
                 s = self._resolve_text_to_supplier(opt)
                 if not s:
                     continue
                 r, c = divmod(idx, cols)
-                self.cards_frame.grid_rowconfigure(r, weight=1)
                 card = tk.Frame(
                     self.cards_frame,
-                    highlightbackground="black",
-                    highlightcolor="black",
+                    highlightbackground="#444444",
+                    highlightcolor="#444444",
                     highlightthickness=2,
                     cursor="hand2",
                 )
-                card.grid(row=r, column=c, padx=4, pady=4, sticky="nsew")
-                lines = [s.supplier]
+                card.grid(row=r, column=c, padx=4, pady=4, sticky="nw")
+
+                name_lbl = tk.Label(
+                    card,
+                    text=s.supplier,
+                    justify="left",
+                    anchor="w",
+                    font=("TkDefaultFont", 10, "bold"),
+                )
+                name_lbl.pack(anchor="w", padx=4, pady=(4, 0))
+
+                lines = []
                 if s.description:
-                    lines.append(f"({s.description})")
+                    lines.append(s.description)
                 if s.adres_1 or s.adres_2:
                     addr_line = (
                         f"{s.adres_1}, {s.adres_2}"
@@ -814,11 +823,18 @@ def start_gui():
                         else (s.adres_1 or s.adres_2)
                     )
                     lines.append(addr_line)
-                lbl = tk.Label(card, text="\n".join(lines), justify="left", anchor="nw")
-                lbl.pack(fill="both", expand=True, padx=4, pady=4)
+                if lines:
+                    info_lbl = tk.Label(
+                        card, text="\n".join(lines), justify="left", anchor="w"
+                    )
+                    info_lbl.pack(anchor="w", padx=4, pady=(0, 4))
+                else:
+                    info_lbl = None
                 handler = lambda _e, o=opt, p=production: self._on_card_click(o, p)
                 card.bind("<Button-1>", handler)
-                lbl.bind("<Button-1>", handler)
+                name_lbl.bind("<Button-1>", handler)
+                if info_lbl:
+                    info_lbl.bind("<Button-1>", handler)
 
         def _cancel(self):
             if self.master:
