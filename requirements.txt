@@ -1,1 +1,4 @@
 PyPDF2
+
+# Data analysis library
+pandas
