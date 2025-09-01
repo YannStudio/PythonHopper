@@ -604,19 +604,21 @@ def start_gui():
 
                 self.rows.append((prod, combo))
 
-            # Preview details (klikbaar) onderaan in LabelFrame met ondertitel
+            # Container voor kaarten
             preview_frame = tk.LabelFrame(
                 content,
                 text="Leverancier details\n(klik om te selecteren)",
                 labelanchor="n",
             )
-            preview_frame.grid(row=1, column=0, sticky="ew")
-            self.preview = tk.Label(
-                preview_frame, text="", justify="left", anchor="nw", cursor="hand2"
-            )
-            self.preview.pack(fill="both", expand=True, padx=8, pady=8)
-            self.preview.configure(wraplength=800)
-            self.preview.bind("<Button-1>", self._on_preview_click)
+            preview_frame.grid(row=1, column=0, sticky="nsew")
+            preview_frame.grid_rowconfigure(0, weight=1)
+            preview_frame.grid_columnconfigure(0, weight=1)
+
+            self.cards_frame = tk.Frame(preview_frame)
+            self.cards_frame.grid(row=0, column=0, sticky="nsew")
+
+            # Mapping voor combobox per productie
+            self.combo_by_prod = {prod: combo for prod, combo in self.rows}
 
             # Buttons bar (altijd zichtbaar)
             btns = tk.Frame(self)
@@ -724,6 +726,7 @@ def start_gui():
                     filtered, self.db.suppliers, getattr(self, "_disp_to_name", {})
                 )
             combo["values"] = filtered or self._base_options
+            self._populate_cards(filtered, production)
             if evt.keysym == "Return" and len(filtered) == 1:
                 combo.set(filtered[0])
                 self._update_preview_for_text(filtered[0])
@@ -758,24 +761,6 @@ def start_gui():
         def _update_preview_for_text(self, text: str):
             s = self._resolve_text_to_supplier(text)
             self._preview_supplier = s
-            if not s:
-                self.preview.config(text="")
-                return
-            addr_line = None
-            if s.adres_1 or s.adres_2:
-                addr_line = f"{s.adres_1}, {s.adres_2}" if (s.adres_1 and s.adres_2) else (s.adres_1 or s.adres_2)
-            lines = [f"{s.supplier}"]
-            if s.description: lines.append(f"({s.description})")
-            if addr_line: lines.append(addr_line)
-            if not addr_line:
-                pc_gem = " ".join(x for x in [s.postcode, s.gemeente] if x)
-                if pc_gem: lines.append(pc_gem)
-                if s.land: lines.append(s.land)
-            if s.btw: lines.append(f"BTW: {s.btw}")
-            if s.contact_sales: lines.append(f"Contact sales: {s.contact_sales}")
-            if s.sales_email: lines.append(f"E-mail: {s.sales_email}")
-            if s.phone: lines.append(f"Tel: {s.phone}")
-            self.preview.config(text="\n".join(lines))
 
         def _update_preview_from_any_combo(self):
             for prod, combo in self.rows:
@@ -783,24 +768,55 @@ def start_gui():
                 if t:
                     self._active_prod = prod
                     self._update_preview_for_text(t)
+                    self._populate_cards([t], prod)
                     return
-            self.preview.config(text="")
             self._preview_supplier = None
+            self._populate_cards([], self._active_prod if self._active_prod else None)
 
-        def _on_preview_click(self, _evt=None):
-            if not self._preview_supplier:
+        def _on_card_click(self, option: str, production: str):
+            combo = self.combo_by_prod.get(production)
+            if combo:
+                combo.set(option)
+            self._active_prod = production
+            self._update_preview_for_text(option)
+            self._populate_cards([option], production)
+
+        def _populate_cards(self, options, production):
+            for ch in self.cards_frame.winfo_children():
+                ch.destroy()
+            if not options:
                 return
-            if not self._active_prod and self.rows:
-                self._active_prod = self.rows[0][0]
-            for prod, combo in self.rows:
-                if prod == self._active_prod:
-                    disp = None
-                    if not hasattr(self, "_disp_to_name"): self._refresh_options()
-                    for k, v in self._disp_to_name.items():
-                        if v.lower() == self._preview_supplier.supplier.lower():
-                            disp = k; break
-                    combo.set(disp or self._preview_supplier.supplier)
-                    break
+            cols = 3
+            for i in range(cols):
+                self.cards_frame.grid_columnconfigure(i, weight=1)
+            for idx, opt in enumerate(options):
+                s = self._resolve_text_to_supplier(opt)
+                if not s:
+                    continue
+                r, c = divmod(idx, cols)
+                self.cards_frame.grid_rowconfigure(r, weight=1)
+                card = tk.Frame(
+                    self.cards_frame,
+                    highlightbackground="red",
+                    highlightthickness=2,
+                    cursor="hand2",
+                )
+                card.grid(row=r, column=c, padx=4, pady=4, sticky="nsew")
+                lines = [s.supplier]
+                if s.description:
+                    lines.append(f"({s.description})")
+                if s.adres_1 or s.adres_2:
+                    addr_line = (
+                        f"{s.adres_1}, {s.adres_2}"
+                        if (s.adres_1 and s.adres_2)
+                        else (s.adres_1 or s.adres_2)
+                    )
+                    lines.append(addr_line)
+                lbl = tk.Label(card, text="\n".join(lines), justify="left", anchor="nw")
+                lbl.pack(fill="both", expand=True, padx=4, pady=4)
+                handler = lambda _e, o=opt, p=production: self._on_card_click(o, p)
+                card.bind("<Button-1>", handler)
+                lbl.bind("<Button-1>", handler)
 
         def _cancel(self):
             if self.master:
