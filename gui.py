@@ -646,23 +646,28 @@ def start_gui():
             text = combo.get().strip().lower()
             if not hasattr(self, "_base_options"):
                 return
-            if evt.keysym in ("Up","Down","Return","Escape"):
+            if evt.keysym in ("Up", "Down", "Escape"):
                 return
             if not text:
-                combo["values"] = self._base_options
+                filtered = self._base_options
             else:
                 filtered = [opt for opt in self._base_options if text in opt.lower()]
-                combo["values"] = filtered or self._base_options
-            self._update_preview_for_text(combo.get())
+            combo["values"] = filtered or self._base_options
+            if evt.keysym == "Return" and len(filtered) == 1:
+                combo.set(filtered[0])
+                self._update_preview_for_text(filtered[0])
+            else:
+                self._update_preview_for_text(combo.get())
 
         def _resolve_text_to_supplier(self, text: str) -> Optional[Supplier]:
             if not text:
                 return None
-            if hasattr(self, "_disp_to_name") and text in self._disp_to_name:
-                target = self._disp_to_name[text]
-                for s in self.db.suppliers:
-                    if s.supplier.lower() == target.lower():
-                        return s
+            if hasattr(self, "_disp_to_name"):
+                for disp, name in self._disp_to_name.items():
+                    if disp.lower() == text.lower():
+                        for s in self.db.suppliers:
+                            if s.supplier.lower() == name.lower():
+                                return s
             for s in self.db.suppliers:
                 if s.supplier.lower() == text.lower():
                     return s
