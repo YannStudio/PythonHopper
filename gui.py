@@ -973,6 +973,7 @@ def start_gui():
                 self.tree.heading(col, text=col, anchor=anchor)
                 self.tree.column(col, width=w, anchor=anchor)
             self.tree.pack(fill="both", expand=True, padx=8, pady=8)
+            self.tree.tag_configure("paste_target", background="lightblue")
             self.tree.bind("<Button-1>", self._remember_cell)
             self.tree.bind("<Control-v>", self._on_paste)
 
@@ -992,16 +993,31 @@ def start_gui():
         def _remember_cell(self, event):
             col = self.tree.identify_column(event.x)
             row = self.tree.identify_row(event.y)
+
+            # Remove existing paste target highlighting
+            for item in self.tree.get_children():
+                tags = list(self.tree.item(item, "tags"))
+                if "paste_target" in tags:
+                    tags.remove("paste_target")
+                    self.tree.item(item, tags=tags)
+
             try:
                 col_idx = int(col.lstrip("#")) - 1
             except Exception:
                 self._paste_cell = None
                 return
+
             items = list(self.tree.get_children())
             if row and row in items:
                 row_idx = items.index(row)
+                # Highlight the selected row as the paste target
+                tags = list(self.tree.item(row, "tags"))
+                if "paste_target" not in tags:
+                    tags.append("paste_target")
+                self.tree.item(row, tags=tags)
             else:
                 row_idx = None
+
             if row_idx is None:
                 self._paste_cell = None
             else:
