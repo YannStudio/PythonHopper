@@ -963,6 +963,7 @@ def start_gui():
             self.on_save = on_save
 
             self._paste_cell = None
+            self._sel_cells = []
 
             self.tree = ttk.Treeview(self, columns=self.COLS, show="headings")
             for col in self.COLS:
@@ -976,6 +977,11 @@ def start_gui():
             self.tree.tag_configure("paste_target", background="lightblue")
             self.tree.bind("<Button-1>", self._remember_cell)
             self.tree.bind("<Control-v>", self._on_paste)
+            self.tree.bind("<Delete>", self._clear_selection)
+
+            # Canvas used to draw selection rectangles
+            self.sel_canvas = tk.Canvas(self.tree, highlightthickness=0)
+            self.sel_canvas.place(relx=0, rely=0, relwidth=1, relheight=1)
 
             btnf = tk.Frame(self)
             btnf.pack(fill="x", padx=8, pady=4)
@@ -989,6 +995,13 @@ def start_gui():
         def _del_row(self):
             for it in self.tree.selection():
                 self.tree.delete(it)
+
+        def _clear_selection(self, _event=None):
+            """Clear the contents of the currently selected cells."""
+            for item_id, col_name in list(self._sel_cells):
+                self.tree.set(item_id, col_name, "")
+            self.sel_canvas.delete("all")
+            self._sel_cells = []
 
         def _remember_cell(self, event):
             col = self.tree.identify_column(event.x)
