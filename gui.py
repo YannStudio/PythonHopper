@@ -950,7 +950,7 @@ def start_gui():
 
         COLS = ("PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht")
 
-        def __init__(self, master, on_save):
+        def __init__(self, master, on_save=None):
             super().__init__(master)
             self.on_save = on_save
 
@@ -1040,6 +1040,10 @@ def start_gui():
                 self.nb, self.db, on_change=self._on_db_change
             )
             self.nb.add(self.suppliers_frame, text="Leverancier beheer")
+            self.custom_bom_frame = CustomBOMFrame(
+                self.nb, on_save=self._apply_custom_bom
+            )
+            self.nb.add(self.custom_bom_frame, text="Custom BOM")
 
             # Top folders
             top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
@@ -1072,7 +1076,11 @@ def start_gui():
             # BOM controls
             bf = tk.Frame(main); bf.pack(fill="x", padx=8, pady=6)
             tk.Button(bf, text="Laad BOM (CSV/Excel)", command=self._load_bom).pack(side="left", padx=6)
-            tk.Button(bf, text="Custom BOM", command=self._open_custom_bom).pack(side="left", padx=6)
+            tk.Button(
+                bf,
+                text="Custom BOM",
+                command=lambda: self.nb.select(self.custom_bom_frame),
+            ).pack(side="left", padx=6)
             tk.Button(bf, text="Controleer Bestanden", command=self._check_files).pack(side="left", padx=6)
             self.bom_controls_frame = bf
 
@@ -1157,16 +1165,7 @@ def start_gui():
             if self.dwg_var.get(): exts.append(".dwg")
             return exts or None
 
-        def _open_custom_bom(self):
-            if not getattr(self, "custom_bom_frame", None):
-                self.custom_bom_frame = CustomBOMFrame(
-                    self.main_frame, on_save=self._on_custom_bom_save
-                )
-            self.custom_bom_frame.pack(
-                fill="both", padx=8, pady=6, before=self.partnumbers_frame
-            )
-
-        def _on_custom_bom_save(self, df):
+        def _apply_custom_bom(self, df):
             if "Bestanden gevonden" not in df.columns:
                 df["Bestanden gevonden"] = ""
             if "Status" not in df.columns:
@@ -1174,8 +1173,10 @@ def start_gui():
             self.bom_df = df
             self._refresh_tree()
             self.status_var.set(f"BOM geladen: {len(df)} rijen")
-            if getattr(self, "custom_bom_frame", None):
-                self.custom_bom_frame.pack_forget()
+            try:
+                self.nb.select(self.main_frame)
+            except Exception:
+                pass
 
         def _load_bom(self):
             from tkinter import filedialog, messagebox
