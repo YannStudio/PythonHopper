@@ -1,10 +1,29 @@
 from typing import Any, List, Dict
 import os
+import re
 from collections import defaultdict
 
 
 def _to_str(x: Any) -> str:
     return "" if x is None else str(x)
+
+
+_VAT_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{2,12}$")
+
+
+def validate_vat(vat: str) -> str:
+    """Validate and normalize a VAT number.
+
+    Returns the normalized VAT number (uppercase) when the input matches the
+    basic pattern of two letters followed by 2-12 alphanumeric characters.
+    Otherwise an empty string is returned.
+    """
+    v = _to_str(vat).strip().upper()
+    if not _VAT_RE.fullmatch(v):
+        return ""
+    if not any(ch.isdigit() for ch in v[2:]):
+        return ""
+    return v
 
 
 def _num_to_2dec(val: Any) -> str:

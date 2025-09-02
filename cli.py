@@ -10,7 +10,7 @@ from typing import List
 
 import pandas as pd
 
-from helpers import _to_str, _build_file_index, _unique_path
+from helpers import _to_str, _build_file_index, _unique_path, validate_vat
 from models import Supplier, Client, DeliveryAddress
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from clients_db import ClientsDB, CLIENTS_DB_FILE
@@ -72,7 +72,11 @@ def cli_suppliers(args):
         if args.description:
             rec["description"] = args.description
         if args.btw:
-            rec["btw"] = args.btw
+            vat = validate_vat(args.btw)
+            if not vat:
+                print("Ongeldig BTW-nummer")
+                return 2
+            rec["btw"] = vat
         if args.adres_1:
             rec["adres_1"] = args.adres_1
         if args.adres_2:
@@ -164,7 +168,11 @@ def cli_clients(args):
         if args.address:
             rec["address"] = args.address
         if args.vat:
-            rec["vat"] = args.vat
+            vat = validate_vat(args.vat)
+            if not vat:
+                print("Ongeldig BTW-nummer")
+                return 2
+            rec["vat"] = vat
         if args.email:
             rec["email"] = args.email
         c = Client.from_any(rec)
