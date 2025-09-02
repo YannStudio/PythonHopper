@@ -940,6 +940,59 @@ def start_gui():
                 bool(self.remember_var.get()),
             )
 
+    class CustomBOMFrame(tk.Toplevel):
+        """Window to manually compose a BOM.
+
+        Clipboard paste expects tab separated columns in the following order:
+        PartNumber, Description, Materiaal, Aantal, Oppervlakte, Gewicht.
+        """
+
+        COLS = ("PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht")
+
+        def __init__(self, master):
+            super().__init__(master)
+            self.title("Custom BOM")
+            self.result_df: Optional[pd.DataFrame] = None
+
+            self.tree = ttk.Treeview(self, columns=self.COLS, show="headings")
+            for col in self.COLS:
+                w = 120
+                anchor = "center" if col == "Aantal" else "w"
+                if col == "Description":
+                    w = 200
+                self.tree.heading(col, text=col, anchor=anchor)
+                self.tree.column(col, width=w, anchor=anchor)
+            self.tree.pack(fill="both", expand=True, padx=8, pady=8)
+            self.tree.bind("<Control-v>", self._on_paste)
+
+            btnf = tk.Frame(self)
+            btnf.pack(fill="x", padx=8, pady=4)
+            tk.Button(btnf, text="Rij toevoegen", command=self._add_row).pack(side="left")
+            tk.Button(btnf, text="Rij verwijderen", command=self._del_row).pack(side="left", padx=4)
+            tk.Button(btnf, text="Gebruik BOM", command=self._save).pack(side="right")
+
+        def _add_row(self):
+            self.tree.insert("", "end", values=("", "", "", 1, "", ""))
+
+        def _del_row(self):
+            for it in self.tree.selection():
+                self.tree.delete(it)
+
+        def _on_paste(self, _event=None):
+            try:
+                df = pd.read_clipboard(sep="\t")
+            except Exception:
+                return "break"
+            for _, row in df.iterrows():
+                vals = [row.get(c, "") for c in self.COLS]
+                self.tree.insert("", "end", values=vals)
+            return "break"
+
+        def _save(self):
+            rows = [self.tree.item(it, "values") for it in self.tree.get_children()]
+            self.result_df = pd.DataFrame(rows, columns=self.COLS)
+            self.destroy()
+
     class App(tk.Tk):
         def __init__(self):
             super().__init__()
@@ -1009,6 +1062,7 @@ def start_gui():
             # BOM controls
             bf = tk.Frame(main); bf.pack(fill="x", padx=8, pady=6)
             tk.Button(bf, text="Laad BOM (CSV/Excel)", command=self._load_bom).pack(side="left", padx=6)
+            tk.Button(bf, text="Custom BOM", command=self._open_custom_bom).pack(side="left", padx=6)
             tk.Button(bf, text="Controleer Bestanden", command=self._check_files).pack(side="left", padx=6)
 
             pnf = tk.Frame(main); pnf.pack(fill="x", padx=8, pady=(0,6))
@@ -1091,6 +1145,20 @@ def start_gui():
             if self.dwg_var.get(): exts.append(".dwg")
             return exts or None
 
+        def _open_custom_bom(self):
+            win = CustomBOMFrame(self)
+            self.wait_window(win)
+            if getattr(win, "result_df", None) is None:
+                return
+            df = win.result_df
+            if "Bestanden gevonden" not in df.columns:
+                df["Bestanden gevonden"] = ""
+            if "Status" not in df.columns:
+                df["Status"] = ""
+            self.bom_df = df
+            self._refresh_tree()
+            self.status_var.set(f"BOM geladen: {len(df)} rijen")
+
         def _load_bom(self):
             from tkinter import filedialog, messagebox
             start_dir = self.source_folder if self.source_folder else os.getcwd()
@@ -1135,14 +1203,28 @@ def start_gui():
                 self.tree.delete(it)
             if self.bom_df is None:
                 return
+
+            cols = ["PartNumber", "Description"]
+            for c in ["Materiaal", "Aantal", "Oppervlakte", "Gewicht", "Production"]:
+                if c in self.bom_df.columns:
+                    cols.append(c)
+            cols += ["Bestanden gevonden", "Status"]
+            self.tree["columns"] = cols
+
+            for col in cols:
+                w = 140
+                if col == "Description":
+                    w = 320
+                if col == "Bestanden gevonden":
+                    w = 180
+                if col == "Status":
+                    w = 120
+                anchor = "center" if col in ("Status", "Aantal") else "w"
+                self.tree.heading(col, text=col, anchor=anchor)
+                self.tree.column(col, width=w, anchor=anchor)
+
             for _, row in self.bom_df.iterrows():
-                vals = (
-                    row.get("PartNumber", ""),
-                    row.get("Description", ""),
-                    row.get("Production", ""),
-                    row.get("Bestanden gevonden", ""),
-                    row.get("Status", ""),
-                )
+                vals = [row.get(c, "") for c in cols]
                 item = self.tree.insert("", "end", values=vals)
                 link = row.get("Link")
                 if link:
@@ -1151,7 +1233,11 @@ def start_gui():
         def _on_tree_click(self, event):
             item = self.tree.identify_row(event.y)
             col = self.tree.identify_column(event.x)
-            if col != "#5" or not item:
+            try:
+                col_name = self.tree["columns"][int(col[1:]) - 1]
+            except Exception:
+                col_name = ""
+            if col_name != "Status" or not item:
                 return
             if self.tree.set(item, "Status") != "❌":
                 return
