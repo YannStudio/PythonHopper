@@ -943,9 +943,15 @@ def start_gui():
     class CustomBOMFrame(tk.Frame):
         """Frame to manually compose a BOM.
 
-        Clipboard paste expects columns in the following order:
-        PartNumber, Description, Materiaal, Aantal, Oppervlakte, Gewicht.
-        Locale-dependent separators (tab or semicolon) are supported.
+        Clipboard paste supports two workflows:
+
+        * **Full-row paste** – the clipboard contains columns in the
+          following order: PartNumber, Description, Materiaal, Aantal,
+          Oppervlakte, Gewicht. Locale-dependent separators (tab or
+          semicolon) are supported.
+        * **Single-column paste** – click a column first and then paste
+          a single column of values. The data are inserted into the
+          selected column and the table grows as needed.
         """
 
         COLS = ("PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht")
@@ -953,6 +959,8 @@ def start_gui():
         def __init__(self, master, on_save):
             super().__init__(master)
             self.on_save = on_save
+
+            self._target_col = None
 
             self.tree = ttk.Treeview(self, columns=self.COLS, show="headings")
             for col in self.COLS:
@@ -963,6 +971,7 @@ def start_gui():
                 self.tree.heading(col, text=col, anchor=anchor)
                 self.tree.column(col, width=w, anchor=anchor)
             self.tree.pack(fill="both", expand=True, padx=8, pady=8)
+            self.tree.bind("<Button-1>", self._remember_column)
             self.tree.bind("<Control-v>", self._on_paste)
 
             btnf = tk.Frame(self)
@@ -978,10 +987,31 @@ def start_gui():
             for it in self.tree.selection():
                 self.tree.delete(it)
 
+        def _remember_column(self, event):
+            col = self.tree.identify_column(event.x)
+            try:
+                idx = int(col.lstrip("#")) - 1
+            except Exception:
+                idx = None
+            self._target_col = idx
+
         def _on_paste(self, _event=None):
             try:
                 df = pd.read_clipboard(sep=None, engine="python")
             except Exception:
+                return "break"
+
+            if df.shape[1] == 1 and self._target_col is not None:
+                values = df.iloc[:, 0].tolist()
+                items = list(self.tree.get_children())
+                for i, val in enumerate(values):
+                    if i >= len(items):
+                        self._add_row()
+                        items = list(self.tree.get_children())
+                    item = items[i]
+                    row_vals = list(self.tree.item(item, "values"))
+                    row_vals[self._target_col] = val
+                    self.tree.item(item, values=row_vals)
                 return "break"
 
             if df.shape[1] > len(self.COLS):
