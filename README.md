@@ -1,6 +1,12 @@
 # PythonHopper
 Filehopper in Python
 
+## Custom BOM
+De GUI bevat een tab "Custom BOM" waarmee je handmatig een stuklijst kunt opbouwen.
+Gebruik de knop **Custom BOM** naast "Laad BOM" om de tab te openen. Plak kolommen
+uit Excel (Ctrl+V) of vul `PartNumber`, `Description` en `Production` handmatig in.
+Klik daarna op "Gebruik BOM" om de lijst toe te passen in de hoofdtab.
+
 ## Voorbeelden
 
 ### Leverancier toevoegen

@@ -497,6 +497,13 @@ def start_gui():
         def __init__(self, master, app):
             super().__init__(master)
             self.app = app
+            info = (
+                "Voer PartNumber, Description en Production in of plak "
+                "kolommen vanuit Excel (Ctrl+V)."
+            )
+            tk.Label(self, text=info, anchor="w", justify="left").pack(
+                fill="x", padx=8, pady=(8, 0)
+            )
             cols = ("PartNumber", "Description", "Production")
             self.tree = ttk.Treeview(self, columns=cols, show="headings")
             for c in cols:
@@ -1040,6 +1047,7 @@ def start_gui():
 
             self.custom_bom_frame = CustomBOMFrame(self.nb, self)
             self.nb.add(self.custom_bom_frame, text="Custom BOM")
+            self.nb.bind("<<NotebookTabChanged>>", self._on_tab_change)
 
             # Top folders
             top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
@@ -1072,6 +1080,11 @@ def start_gui():
             # BOM controls
             bf = tk.Frame(main); bf.pack(fill="x", padx=8, pady=6)
             tk.Button(bf, text="Laad BOM (CSV/Excel)", command=self._load_bom).pack(side="left", padx=6)
+            tk.Button(
+                bf,
+                text="Custom BOM",
+                command=lambda: self.nb.select(self.custom_bom_frame),
+            ).pack(side="left", padx=6)
             tk.Button(bf, text="Controleer Bestanden", command=self._check_files).pack(side="left", padx=6)
 
             pnf = tk.Frame(main); pnf.pack(fill="x", padx=8, pady=(0,6))
@@ -1135,6 +1148,13 @@ def start_gui():
                 self.client_combo.set(cur)
             elif opts:
                 self.client_combo.set(opts[0])
+
+        def _on_tab_change(self, event):
+            widget = event.widget.nametowidget(event.widget.select())
+            if widget is self.custom_bom_frame:
+                self.status_var.set("")
+                self.custom_bom_frame.clear()
+                self.custom_bom_frame.tree.focus_set()
 
         def _pick_src(self):
             from tkinter import filedialog
