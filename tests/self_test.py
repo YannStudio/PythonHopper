@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import tempfile
 import datetime
+import logging
 
 import pandas as pd
 import pytest
@@ -16,7 +17,7 @@ from orders import copy_per_production_and_orders, DEFAULT_FOOTER_NOTE
 
 
 def run_tests() -> int:
-    print("Running self-tests...")
+    logging.info("Running self-tests...")
     db = SuppliersDB()
     db.upsert(Supplier.from_any({
         "supplier": "ACME",
@@ -111,7 +112,7 @@ def run_tests() -> int:
         assert ws["A13"].value == "Tel" and ws["B13"].value == "+32 123"
         pdfs = [f for f in os.listdir(prod_folder) if f.lower().endswith(".pdf")]
         assert pdfs, "PDF bestelbon niet aangemaakt"
-    print("All tests passed.")
+    logging.info("All tests passed.")
     return 0
 
 

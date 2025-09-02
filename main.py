@@ -1,5 +1,6 @@
 from __future__ import annotations
 import sys
+import logging
 from typing import List, Optional
 
 from cli import (
@@ -18,6 +19,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
     parser = build_parser()
     args = parser.parse_args(argv)
+    logging.basicConfig(
+        level=logging.DEBUG if getattr(args, "verbose", False) else logging.INFO,
+        format="%(levelname)s:%(message)s",
+        force=True,
+    )
 
     if getattr(args, "run_tests", False):
         from tests.self_test import run_tests

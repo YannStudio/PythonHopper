@@ -11,6 +11,7 @@ import datetime
 import re
 import zipfile
 import io
+import logging
 from collections import defaultdict
 from typing import Dict, List, Tuple
 
@@ -553,7 +554,7 @@ def copy_per_production_and_orders(
                     project_name=project_name,
                 )
             except Exception as e:
-                print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
+                logging.warning("PDF mislukt voor %s: %s", prod, e)
 
     # Persist any (possibly unchanged) supplier defaults so that callers can rely on
     # the database reflecting the latest state on disk.

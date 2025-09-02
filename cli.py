@@ -6,6 +6,7 @@
 import os
 import shutil
 import argparse
+import logging
 from typing import List
 
 import pandas as pd
@@ -42,7 +43,7 @@ def cli_suppliers(args):
     if args.action == "list":
         rows = db.suppliers_sorted()
         if not rows:
-            print("(geen leveranciers)")
+            logging.info("(geen leveranciers)")
             return 0
         for s in rows:
             star = "★" if s.favorite else " "
@@ -63,8 +64,15 @@ def cli_suppliers(args):
                         if x
                     ]
                 )
-            print(
-                f"{star} {s.supplier}  | Desc: {s.description or '-'} | BTW: {s.btw or '-'} | {addr or '-'} | Mail: {s.sales_email or '-'} | Tel: {s.phone or '-'}"
+            logging.info(
+                "%s %s  | Desc: %s | BTW: %s | %s | Mail: %s | Tel: %s",
+                star,
+                s.supplier,
+                s.description or "-",
+                s.btw or "-",
+                addr or "-",
+                s.sales_email or "-",
+                s.phone or "-",
             )
         return 0
     if args.action == "add":
@@ -84,30 +92,36 @@ def cli_suppliers(args):
         s = Supplier.from_any(rec)
         db.upsert(s)
         db.save(SUPPLIERS_DB_FILE)
-        print("Toegevoegd/bijgewerkt")
+        logging.info("Toegevoegd/bijgewerkt")
         return 0
     if args.action == "remove":
         ok = db.remove(args.name)
         db.save(SUPPLIERS_DB_FILE)
-        print("Verwijderd" if ok else "Niet gevonden")
+        if ok:
+            logging.info("Verwijderd")
+        else:
+            logging.warning("Niet gevonden")
         return 0
     if args.action == "fav":
         ok = db.toggle_fav(args.name)
         db.save(SUPPLIERS_DB_FILE)
-        print("Favoriet gewisseld" if ok else "Niet gevonden")
+        if ok:
+            logging.info("Favoriet gewisseld")
+        else:
+            logging.warning("Niet gevonden")
         return 0
     if args.action == "set-default":
         db.set_default(args.production, args.name)
         db.save(SUPPLIERS_DB_FILE)
-        print(f"Default voor {args.production}: {args.name}")
+        logging.info("Default voor %s: %s", args.production, args.name)
         return 0
     if args.action == "get-default":
-        print(db.get_default(args.production) or "(geen)")
+        logging.info("%s", db.get_default(args.production) or "(geen)")
         return 0
     if args.action == "import-csv":
         path = args.csv
         if not os.path.exists(path):
-            print("CSV niet gevonden.")
+            logging.error("CSV niet gevonden.")
             return 2
         try:
             df = pd.read_csv(path, encoding="latin1", sep=";")
@@ -135,14 +149,14 @@ def cli_suppliers(args):
             except Exception:
                 pass
         db.save(SUPPLIERS_DB_FILE)
-        print(f"Verwerkt (upsert): {changed}")
+        logging.info("Verwerkt (upsert): %s", changed)
         return 0
     if args.action == "clear":
         db.clear_all()
         db.save(SUPPLIERS_DB_FILE)
-        print("Alle leveranciers verwijderd.")
+        logging.info("Alle leveranciers verwijderd.")
         return 0
-    print("Onbekende actie")
+    logging.error("Onbekende actie")
     return 2
 
 
@@ -151,12 +165,17 @@ def cli_clients(args):
     if args.action == "list":
         rows = db.clients_sorted()
         if not rows:
-            print("(geen opdrachtgevers)")
+            logging.info("(geen opdrachtgevers)")
             return 0
         for c in rows:
             star = "★" if c.favorite else " "
-            print(
-                f"{star} {c.name} | {c.address or '-'} | BTW: {c.vat or '-'} | Mail: {c.email or '-'}"
+            logging.info(
+                "%s %s | %s | BTW: %s | Mail: %s",
+                star,
+                c.name,
+                c.address or "-",
+                c.vat or "-",
+                c.email or "-",
             )
         return 0
     if args.action == "add":
@@ -170,19 +189,25 @@ def cli_clients(args):
         c = Client.from_any(rec)
         db.upsert(c)
         db.save(CLIENTS_DB_FILE)
-        print("Toegevoegd/bijgewerkt")
+        logging.info("Toegevoegd/bijgewerkt")
         return 0
     if args.action == "remove":
         ok = db.remove(args.name)
         db.save(CLIENTS_DB_FILE)
-        print("Verwijderd" if ok else "Niet gevonden")
+        if ok:
+            logging.info("Verwijderd")
+        else:
+            logging.warning("Niet gevonden")
         return 0
     if args.action == "fav":
         ok = db.toggle_fav(args.name)
         db.save(CLIENTS_DB_FILE)
-        print("Favoriet gewisseld" if ok else "Niet gevonden")
+        if ok:
+            logging.info("Favoriet gewisseld")
+        else:
+            logging.warning("Niet gevonden")
         return 0
-    print("Onbekende actie")
+    logging.error("Onbekende actie")
     return 2
 
 
@@ -190,7 +215,7 @@ def cli_bom_check(args):
     exts = parse_exts(args.exts)
     df = load_bom(args.bom)
     if not os.path.isdir(args.source):
-        print("Bronmap ongeldig")
+        logging.error("Bronmap ongeldig")
         return 2
     file_index = _build_file_index(args.source, exts)
     found, status = [], []
@@ -215,16 +240,16 @@ def cli_bom_check(args):
             df.to_excel(args.out, index=False, engine="openpyxl")
         else:
             df.to_csv(args.out, index=False)
-        print("Weergegeven naar", args.out)
+        logging.info("Weergegeven naar %s", args.out)
     else:
-        print(df.head(20).to_string(index=False))
+        logging.info("%s", df.head(20).to_string(index=False))
     return 0
 
 
 def cli_copy(args):
     exts = parse_exts(args.exts)
     if not os.path.isdir(args.source) or not os.path.isdir(args.dest):
-        print("Bron of bestemming ongeldig")
+        logging.error("Bron of bestemming ongeldig")
         return 2
     idx = _build_file_index(args.source, exts)
     cnt = 0
@@ -233,7 +258,7 @@ def cli_copy(args):
             dst = _unique_path(os.path.join(args.dest, os.path.basename(p)))
             shutil.copy2(p, dst)
             cnt += 1
-    print("Gekopieerd:", cnt)
+    logging.info("Gekopieerd: %s", cnt)
     return 0
 
 
@@ -248,7 +273,7 @@ def cli_copy_per_prod(args):
     if args.client:
         client = cdb.get(args.client)
         if not client:
-            print("Client niet gevonden")
+            logging.error("Client niet gevonden")
             return 2
     else:
         cl = cdb.clients_sorted()
@@ -257,7 +282,7 @@ def cli_copy_per_prod(args):
     if args.delivery:
         for kv in args.delivery:
             if "=" not in kv:
-                print("Leveradres optie moet PROD=NAAM zijn")
+                logging.error("Leveradres optie moet PROD=NAAM zijn")
                 return 2
             prod, name = kv.split("=", 1)
             prod = prod.strip()
@@ -276,14 +301,14 @@ def cli_copy_per_prod(args):
             else:
                 addr = ddb.get(name)
                 if not addr:
-                    print("Leveradres niet gevonden")
+                    logging.error("Leveradres niet gevonden")
                     return 2
                 delivery_map[prod] = addr
     doc_type_map = {}
     if args.doc_type:
         for kv in args.doc_type:
             if "=" not in kv:
-                print("Documenttype optie moet PROD=TYPE zijn")
+                logging.error("Documenttype optie moet PROD=TYPE zijn")
                 return 2
             prod, dtyp = kv.split("=", 1)
             doc_type_map[prod.strip()] = dtyp.strip()
@@ -291,7 +316,7 @@ def cli_copy_per_prod(args):
     if args.doc_number:
         for kv in args.doc_number:
             if "=" not in kv:
-                print("Documentnummer optie moet PROD=NUM zijn")
+                logging.error("Documentnummer optie moet PROD=NUM zijn")
                 return 2
             prod, num = kv.split("=", 1)
             doc_num_map[prod.strip()] = num.strip()
@@ -311,9 +336,9 @@ def cli_copy_per_prod(args):
         project_number=args.project_number,
         project_name=args.project_name,
     )
-    print("Gekopieerd:", cnt)
+    logging.info("Gekopieerd: %s", cnt)
     for k, v in chosen.items():
-        print(f"  {k} → {v}")
+        logging.info("  %s → %s", k, v)
     return 0
 
 
@@ -321,6 +346,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="File Hopper dual-mode")
     p.add_argument(
         "--run-tests", action="store_true", help="Run basic self-tests and exit"
+    )
+    p.add_argument(
+        "--verbose", action="store_true", help="Enable debug logging"
     )
     sub = p.add_subparsers(dest="cmd")
 

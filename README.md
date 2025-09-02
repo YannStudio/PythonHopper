@@ -3,6 +3,15 @@ Filehopper in Python
 
 ## Voorbeelden
 
+### Logging
+
+Standaard logt de applicatie op INFO-niveau. Gebruik `--verbose` om
+debug-berichten te tonen:
+
+```
+python cli.py --verbose suppliers list
+```
+
 ### Leverancier toevoegen
 
 ```
