@@ -940,8 +940,8 @@ def start_gui():
                 bool(self.remember_var.get()),
             )
 
-    class CustomBOMFrame(tk.Toplevel):
-        """Window to manually compose a BOM.
+    class CustomBOMFrame(tk.Frame):
+        """Frame to manually compose a BOM.
 
         Clipboard paste expects columns in the following order:
         PartNumber, Description, Materiaal, Aantal, Oppervlakte, Gewicht.
@@ -950,10 +950,9 @@ def start_gui():
 
         COLS = ("PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht")
 
-        def __init__(self, master):
+        def __init__(self, master, on_save):
             super().__init__(master)
-            self.title("Custom BOM")
-            self.result_df: Optional[pd.DataFrame] = None
+            self.on_save = on_save
 
             self.tree = ttk.Treeview(self, columns=self.COLS, show="headings")
             for col in self.COLS:
@@ -970,7 +969,7 @@ def start_gui():
             btnf.pack(fill="x", padx=8, pady=4)
             tk.Button(btnf, text="Rij toevoegen", command=self._add_row).pack(side="left")
             tk.Button(btnf, text="Rij verwijderen", command=self._del_row).pack(side="left", padx=4)
-            tk.Button(btnf, text="Gebruik BOM", command=self._save).pack(side="right")
+            tk.Button(btnf, text="Gebruik BOM/Opslaan", command=self._save).pack(side="right")
 
         def _add_row(self):
             self.tree.insert("", "end", values=("", "", "", 1, "", ""))
@@ -1000,8 +999,9 @@ def start_gui():
 
         def _save(self):
             rows = [self.tree.item(it, "values") for it in self.tree.get_children()]
-            self.result_df = pd.DataFrame(rows, columns=self.COLS)
-            self.destroy()
+            df = pd.DataFrame(rows, columns=self.COLS)
+            if self.on_save:
+                self.on_save(df)
 
     class App(tk.Tk):
         def __init__(self):
@@ -1074,6 +1074,7 @@ def start_gui():
             tk.Button(bf, text="Laad BOM (CSV/Excel)", command=self._load_bom).pack(side="left", padx=6)
             tk.Button(bf, text="Custom BOM", command=self._open_custom_bom).pack(side="left", padx=6)
             tk.Button(bf, text="Controleer Bestanden", command=self._check_files).pack(side="left", padx=6)
+            self.bom_controls_frame = bf
 
             pnf = tk.Frame(main); pnf.pack(fill="x", padx=8, pady=(0,6))
             tk.Label(pnf, text="PartNumbers (één per lijn):").pack(anchor="w")
@@ -1084,6 +1085,7 @@ def start_gui():
             self.pn_text.pack(side="left", fill="both", expand=True)
             pn_scroll.pack(side="left", fill="y")
             tk.Button(pnf, text="Gebruik PartNumbers", command=self._load_manual_pns).pack(anchor="w", pady=4)
+            self.partnumbers_frame = pnf
 
             # Tree
             style.configure("Treeview", rowheight=24)
@@ -1156,11 +1158,15 @@ def start_gui():
             return exts or None
 
         def _open_custom_bom(self):
-            win = CustomBOMFrame(self)
-            self.wait_window(win)
-            if getattr(win, "result_df", None) is None:
-                return
-            df = win.result_df
+            if not getattr(self, "custom_bom_frame", None):
+                self.custom_bom_frame = CustomBOMFrame(
+                    self.main_frame, on_save=self._on_custom_bom_save
+                )
+            self.custom_bom_frame.pack(
+                fill="both", padx=8, pady=6, before=self.partnumbers_frame
+            )
+
+        def _on_custom_bom_save(self, df):
             if "Bestanden gevonden" not in df.columns:
                 df["Bestanden gevonden"] = ""
             if "Status" not in df.columns:
@@ -1168,6 +1174,8 @@ def start_gui():
             self.bom_df = df
             self._refresh_tree()
             self.status_var.set(f"BOM geladen: {len(df)} rijen")
+            if getattr(self, "custom_bom_frame", None):
+                self.custom_bom_frame.pack_forget()
 
         def _load_bom(self):
             from tkinter import filedialog, messagebox
