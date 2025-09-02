@@ -557,7 +557,7 @@ def start_gui():
                 for a in self.delivery_db.addresses_sorted()
             ]
 
-            doc_type_opts = ["Bestelbon", "Offerteaanvraag"]
+            doc_type_opts = ["Geen", "Bestelbon", "Offerteaanvraag"]
             self._doc_type_prefixes = {
                 _prefix_for_doc_type(t) for t in doc_type_opts
             }
@@ -743,6 +743,16 @@ def start_gui():
                     dcombo.set(cur)
 
         def _on_combo_change(self, _evt=None):
+            for prod, combo in self.rows:
+                doc_var = self.doc_vars.get(prod)
+                if not doc_var:
+                    continue
+                val = combo.get().strip().lower()
+                if val in ("(geen)", "geen"):
+                    doc_var.set("Geen")
+                else:
+                    doc_var.set("Bestelbon")
+                self._on_doc_type_change(prod)
             self._update_preview_from_any_combo()
 
         def _on_doc_type_change(self, prod: str):
@@ -908,7 +918,8 @@ def start_gui():
                     s = self._resolve_text_to_supplier(typed)
                     if s:
                         sel_map[prod] = s.supplier
-                doc_map[prod] = self.doc_vars.get(prod, tk.StringVar(value="Bestelbon")).get()
+                doc_var = self.doc_vars.get(prod)
+                doc_map[prod] = doc_var.get() if doc_var else "Bestelbon"
 
             doc_num_map: Dict[str, str] = {}
             delivery_map: Dict[str, str] = {}
