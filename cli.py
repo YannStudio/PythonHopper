@@ -186,6 +186,27 @@ def cli_clients(args):
     return 2
 
 
+def cli_delivery_addresses(args):
+    db = DeliveryAddressesDB.load(DELIVERY_DB_FILE)
+    if args.action == "rename":
+        addr = db.get(args.old_name)
+        if not addr:
+            print("Niet gevonden")
+            return 2
+        new_addr = DeliveryAddress(
+            name=args.new_name,
+            address=addr.address,
+            remarks=addr.remarks,
+            favorite=addr.favorite,
+        )
+        db.upsert(new_addr, old_name=args.old_name)
+        db.save(DELIVERY_DB_FILE)
+        print("Hernoemd")
+        return 0
+    print("Onbekende actie")
+    return 2
+
+
 def cli_bom_check(args):
     exts = parse_exts(args.exts)
     df = load_bom(args.bom)
@@ -365,6 +386,12 @@ def build_parser() -> argparse.ArgumentParser:
     crp.add_argument("name")
     cfp = csp.add_parser("fav")
     cfp.add_argument("name")
+
+    dp = sub.add_parser("delivery-addresses", help="Beheer leveradressen")
+    ddsp = dp.add_subparsers(dest="action", required=True)
+    rnp = ddsp.add_parser("rename")
+    rnp.add_argument("old_name")
+    rnp.add_argument("new_name")
 
     bp = sub.add_parser("bom", help="BOM acties")
     bsp = bp.add_subparsers(dest="bact", required=True)

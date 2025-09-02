@@ -9,6 +9,7 @@ from cli import (
     cli_bom_check,
     cli_copy,
     cli_copy_per_prod,
+    cli_delivery_addresses,
 )
 from gui import start_gui
 
@@ -36,6 +37,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cli_suppliers(args)
     if args.cmd == "clients":
         return cli_clients(args)
+    if args.cmd == "delivery-addresses":
+        return cli_delivery_addresses(args)
     if args.cmd == "bom":
         return cli_bom_check(args)
     if args.cmd == "copy":
