@@ -975,7 +975,7 @@ def start_gui():
                 self.tree.column(col, width=w, anchor=anchor)
             self.tree.pack(fill="both", expand=True, padx=8, pady=8)
             self.tree.tag_configure("paste_target", background="lightblue")
-            self.tree.bind("<Button-1>", self._start_select)
+            self.tree.bind("<Button-1>", self._remember_cell)
             self.tree.bind("<B1-Motion>", self._update_selection)
             self.tree.bind("<ButtonRelease-1>", self._finalize_selection)
             self.tree.bind("<Control-v>", self._on_paste)
@@ -984,8 +984,10 @@ def start_gui():
             for ev in ("<MouseWheel>", "<Button-4>", "<Button-5>", "<Shift-MouseWheel>"):
                 self.tree.bind(ev, lambda e: self.after_idle(self._redraw_selection()))
 
-            # Canvas used to draw selection rectangles
-            self.sel_canvas = tk.Canvas(self.tree, highlightthickness=0)
+            # Canvas used to draw selection rectangles.  It sits on top of the
+            # ``Treeview`` and has no background so the underlying widget
+            # remains visible.
+            self.sel_canvas = tk.Canvas(self.tree, highlightthickness=0, bg="")
             self.sel_canvas.place(relx=0, rely=0, relwidth=1, relheight=1)
 
             btnf = tk.Frame(self)
@@ -1008,25 +1010,44 @@ def start_gui():
             self.sel_canvas.delete("sel_rect")
             self._sel_cells.clear()
 
-        def _start_select(self, event):
-            """Begin a new selection at the clicked cell."""
+        def _remember_cell(self, event):
+            """Remember and highlight the clicked cell."""
             col = self.tree.identify_column(event.x)
             row = self.tree.identify_row(event.y)
             try:
                 col_idx = int(col.lstrip("#")) - 1
             except Exception:
+                # Clicked outside of any column
+                self._paste_cell = None
                 return
+
             items = list(self.tree.get_children())
             if row and row in items:
                 row_idx = items.index(row)
                 self._paste_cell = (row_idx, col_idx)
                 self._sel_anchor = (row_idx, col_idx)
+                self.sel_canvas.delete("sel_rect")
+                self._sel_cells.clear()
+                col_name = self.COLS[col_idx]
+                bbox = self.tree.bbox(row, col_name)
+                if bbox:
+                    x, y, w, h = bbox
+                    self.sel_canvas.create_rectangle(
+                        x,
+                        y,
+                        x + w,
+                        y + h,
+                        outline="black",
+                        width=1,
+                        tags="sel_rect",
+                    )
+                    self._sel_cells.add((row, col_name))
             else:
+                # Clicked below/next to the last row
                 self._paste_cell = None
+                self.sel_canvas.delete("sel_rect")
+                self._sel_cells.clear()
                 self._sel_anchor = None
-            self.sel_canvas.delete("sel_rect")
-            self._sel_cells.clear()
-            self._update_selection(event)
 
         def _update_selection(self, event):
             if self._sel_anchor is None:
@@ -1106,6 +1127,11 @@ def start_gui():
                     if col_idx < len(row_vals):
                         row_vals[col_idx] = val
                     self.tree.item(item, values=row_vals)
+                # Clear selection highlight after a successful paste
+                self.sel_canvas.delete("sel_rect")
+                self._sel_cells.clear()
+                self._sel_anchor = None
+                self._paste_cell = None
                 return "break"
 
             if df.shape[1] > len(self.COLS):
@@ -1123,6 +1149,11 @@ def start_gui():
                     self.tree.item(items[row_idx], values=vals)
                 else:
                     self.tree.insert("", "end", values=vals)
+            # Clear highlight once the paste operation completes
+            self.sel_canvas.delete("sel_rect")
+            self._sel_cells.clear()
+            self._sel_anchor = None
+            self._paste_cell = None
             return "break"
 
         def _save(self):
