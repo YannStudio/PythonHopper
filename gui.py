@@ -949,9 +949,10 @@ def start_gui():
           following order: PartNumber, Description, Materiaal, Aantal,
           Oppervlakte, Gewicht. Locale-dependent separators (tab or
           semicolon) are supported.
-        * **Single-column paste** – click a column first and then paste
-          a single column of values. The data are inserted into the
-          selected column and the table grows as needed.
+        * **Single-column paste** – click a cell first and then paste a
+          single column of values. The values are inserted into the
+          selected column starting from the chosen row and the table grows
+          as needed.
         """
 
         COLS = ("PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht")
@@ -960,7 +961,7 @@ def start_gui():
             super().__init__(master)
             self.on_save = on_save
 
-            self._target_col = None
+            self._paste_cell = None
 
             self.tree = ttk.Treeview(self, columns=self.COLS, show="headings")
             for col in self.COLS:
@@ -971,7 +972,7 @@ def start_gui():
                 self.tree.heading(col, text=col, anchor=anchor)
                 self.tree.column(col, width=w, anchor=anchor)
             self.tree.pack(fill="both", expand=True, padx=8, pady=8)
-            self.tree.bind("<Button-1>", self._remember_column)
+            self.tree.bind("<Button-1>", self._remember_cell)
             self.tree.bind("<Control-v>", self._on_paste)
 
             btnf = tk.Frame(self)
@@ -987,13 +988,23 @@ def start_gui():
             for it in self.tree.selection():
                 self.tree.delete(it)
 
-        def _remember_column(self, event):
+        def _remember_cell(self, event):
             col = self.tree.identify_column(event.x)
+            row = self.tree.identify_row(event.y)
             try:
-                idx = int(col.lstrip("#")) - 1
+                col_idx = int(col.lstrip("#")) - 1
             except Exception:
-                idx = None
-            self._target_col = idx
+                self._paste_cell = None
+                return
+            items = list(self.tree.get_children())
+            if row and row in items:
+                row_idx = items.index(row)
+            else:
+                row_idx = None
+            if row_idx is None:
+                self._paste_cell = None
+            else:
+                self._paste_cell = (row_idx, col_idx)
 
         def _on_paste(self, _event=None):
             try:
@@ -1001,16 +1012,18 @@ def start_gui():
             except Exception:
                 return "break"
 
-            if df.shape[1] == 1 and self._target_col is not None:
+            if df.shape[1] == 1 and self._paste_cell is not None:
+                start_row, col_idx = self._paste_cell
                 values = df.iloc[:, 0].tolist()
                 items = list(self.tree.get_children())
                 for i, val in enumerate(values):
-                    if i >= len(items):
+                    row_idx = start_row + i
+                    if row_idx >= len(items):
                         self._add_row()
                         items = list(self.tree.get_children())
-                    item = items[i]
+                    item = items[row_idx]
                     row_vals = list(self.tree.item(item, "values"))
-                    row_vals[self._target_col] = val
+                    row_vals[col_idx] = val
                     self.tree.item(item, values=row_vals)
                 return "break"
 
