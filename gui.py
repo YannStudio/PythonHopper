@@ -5,7 +5,7 @@ import sys
 import threading
 import unicodedata
 import io
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set, Tuple
 
 import pandas as pd
 
@@ -963,6 +963,8 @@ def start_gui():
             self.on_save = on_save
 
             self._paste_cell = None
+            self._sel_anchor = None
+            self._sel_cells: Set[Tuple[str, str]] = set()
 
             self.tree = ttk.Treeview(self, columns=self.COLS, show="headings")
             for col in self.COLS:
@@ -977,6 +979,26 @@ def start_gui():
             self.tree.bind("<Button-1>", self._remember_cell)
             self.tree.bind("<Control-v>", self._on_paste)
 
+            # Selection overlay canvas
+            self.sel_canvas = tk.Canvas(self.tree, highlightthickness=0, background="")
+            self.sel_canvas.place(relx=0, rely=0, relwidth=1, relheight=1)
+            self.sel_canvas.lift(self.tree)
+
+            # Forward events from the overlay to the treeview
+            for ev in ("<Button-1>", "<B1-Motion>", "<ButtonRelease-1>"):
+                self.sel_canvas.bind(ev, lambda e, ev=ev: self.tree.event_generate(ev, x=e.x, y=e.y))
+
+            # Mouse selection bindings
+            self.tree.bind("<Button-1>", self._start_select, add="+")
+            self.tree.bind("<B1-Motion>", self._update_selection, add="+")
+            self.tree.bind("<ButtonRelease-1>", self._finalize_selection, add="+")
+            self.tree.bind("<Configure>", lambda e: self._redraw_selection(), add="+")
+
+            # Reposition selection overlay on scroll
+            self.tree.configure(yscrollcommand=lambda *args: self._on_tree_scroll())
+            for ev in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+                self.tree.bind(ev, lambda e: self.after_idle(self._redraw_selection), add="+")
+
             btnf = tk.Frame(self)
             btnf.pack(fill="x", padx=8, pady=4)
             tk.Button(btnf, text="Rij toevoegen", command=self._add_row).pack(side="left")
@@ -989,6 +1011,86 @@ def start_gui():
         def _del_row(self):
             for it in self.tree.selection():
                 self.tree.delete(it)
+
+        # --- Selection helpers -------------------------------------------------
+
+        def _start_select(self, event):
+            col = self.tree.identify_column(event.x)
+            row_id = self.tree.identify_row(event.y)
+
+            items = list(self.tree.get_children())
+            try:
+                col_idx = int(col.lstrip("#")) - 1
+            except Exception:
+                self._sel_anchor = None
+                return
+
+            if not row_id or row_id not in items:
+                self._sel_anchor = None
+                return
+
+            row_idx = items.index(row_id)
+            self._sel_anchor = (row_idx, col_idx)
+            self._sel_cells.clear()
+            self.sel_canvas.delete("all")
+
+        def _update_selection(self, event):
+            if self._sel_anchor is None:
+                return
+
+            col = self.tree.identify_column(event.x)
+            row_id = self.tree.identify_row(event.y)
+            items = list(self.tree.get_children())
+
+            try:
+                col_idx = int(col.lstrip("#")) - 1
+            except Exception:
+                return
+
+            if row_id and row_id in items:
+                row_idx = items.index(row_id)
+            else:
+                row_idx = len(items) - 1 if items else 0
+
+            start_row, start_col = self._sel_anchor
+            min_row, max_row = sorted((start_row, row_idx))
+            min_col, max_col = sorted((start_col, col_idx))
+
+            self.sel_canvas.delete("all")
+            self._sel_cells.clear()
+
+            for r in range(min_row, max_row + 1):
+                item = items[r]
+                for c in range(min_col, max_col + 1):
+                    col_name = self.COLS[c]
+                    bbox = self.tree.bbox(item, f"#{c+1}")
+                    if not bbox:
+                        continue
+                    x, y, w, h = bbox
+                    self.sel_canvas.create_rectangle(x, y, x + w, y + h, outline="blue")
+                    self._sel_cells.add((item, col_name))
+
+        def _finalize_selection(self, event):
+            if self._sel_anchor is None:
+                return
+            self._update_selection(event)
+            self._sel_anchor = None
+
+        def _redraw_selection(self):
+            self.sel_canvas.delete("all")
+            for item, col_name in self._sel_cells:
+                try:
+                    col_idx = self.COLS.index(col_name)
+                except ValueError:
+                    continue
+                bbox = self.tree.bbox(item, f"#{col_idx+1}")
+                if not bbox:
+                    continue
+                x, y, w, h = bbox
+                self.sel_canvas.create_rectangle(x, y, x + w, y + h, outline="blue")
+
+        def _on_tree_scroll(self, *args):
+            self._redraw_selection()
 
         def _remember_cell(self, event):
             col = self.tree.identify_column(event.x)
