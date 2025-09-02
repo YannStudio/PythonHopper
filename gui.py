@@ -579,6 +579,7 @@ def start_gui():
                 text="Producttype",
                 width=18,
                 anchor="w",
+                justify="left",
                 background=left.cget("bg"),
             ).pack(side="left")
             tk.Label(
@@ -586,6 +587,7 @@ def start_gui():
                 text="Leverancier",
                 width=50,
                 anchor="w",
+                justify="left",
                 background=left.cget("bg"),
             ).pack(side="left", padx=6)
             tk.Label(
@@ -593,6 +595,7 @@ def start_gui():
                 text="Documenttype",
                 width=18,
                 anchor="w",
+                justify="left",
                 background=left.cget("bg"),
             ).pack(side="left", padx=6)
             tk.Label(
@@ -600,6 +603,7 @@ def start_gui():
                 text="Nr.",
                 width=8,
                 anchor="w",
+                justify="left",
                 background=left.cget("bg"),
             ).pack(side="left", padx=6)
             tk.Label(
@@ -607,6 +611,7 @@ def start_gui():
                 text="Leveradres",
                 width=50,
                 anchor="w",
+                justify="left",
                 background=left.cget("bg"),
             ).pack(side="left", padx=6)
 
