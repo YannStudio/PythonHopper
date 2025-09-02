@@ -1095,8 +1095,13 @@ def start_gui():
             items = list(self.tree.get_children())
             start_row = self._paste_cell[0] if self._paste_cell else len(items)
 
-            if df.shape[1] == 1 and self._paste_cell is not None:
-                col_idx = self._paste_cell[1]
+            # Single-column paste: either into a selected cell or appended
+            # to a new row when no cell was selected. Manual test:
+            # 1. Copy a column of values.
+            # 2. Without selecting a cell, press Ctrl+V. The values should
+            #    populate column 0 starting at a new row.
+            if df.shape[1] == 1:
+                col_idx = self._paste_cell[1] if self._paste_cell else 0
                 values = df.iloc[:, 0].tolist()
                 for i, val in enumerate(values):
                     row_idx = start_row + i
