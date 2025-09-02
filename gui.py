@@ -943,8 +943,9 @@ def start_gui():
     class CustomBOMFrame(tk.Toplevel):
         """Window to manually compose a BOM.
 
-        Clipboard paste expects tab separated columns in the following order:
+        Clipboard paste expects columns in the following order:
         PartNumber, Description, Materiaal, Aantal, Oppervlakte, Gewicht.
+        Locale-dependent separators (tab or semicolon) are supported.
         """
 
         COLS = ("PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht")
@@ -980,9 +981,18 @@ def start_gui():
 
         def _on_paste(self, _event=None):
             try:
-                df = pd.read_clipboard(sep="\t")
+                df = pd.read_clipboard(sep=None, engine="python")
             except Exception:
                 return "break"
+
+            if df.shape[1] > len(self.COLS):
+                df = df.iloc[:, : len(self.COLS)]
+            elif df.shape[1] < len(self.COLS):
+                for i in range(len(self.COLS) - df.shape[1]):
+                    df[f"extra_{i}"] = ""
+            df = df.iloc[:, : len(self.COLS)]
+            df.columns = self.COLS
+
             for _, row in df.iterrows():
                 vals = [row.get(c, "") for c in self.COLS]
                 self.tree.insert("", "end", values=vals)
