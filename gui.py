@@ -963,6 +963,7 @@ def start_gui():
             self.on_save = on_save
 
             self._paste_cell = None
+            self._paste_rect = None
 
             self.tree = ttk.Treeview(self, columns=self.COLS, show="headings")
             for col in self.COLS:
@@ -973,7 +974,6 @@ def start_gui():
                 self.tree.heading(col, text=col, anchor=anchor)
                 self.tree.column(col, width=w, anchor=anchor)
             self.tree.pack(fill="both", expand=True, padx=8, pady=8)
-            self.tree.tag_configure("paste_target", background="lightblue")
             self.tree.bind("<Button-1>", self._remember_cell)
             self.tree.bind("<Control-v>", self._on_paste)
 
@@ -990,60 +990,65 @@ def start_gui():
             for it in self.tree.selection():
                 self.tree.delete(it)
 
+        def _clear_highlight(self):
+            if self._paste_rect is not None:
+                self._paste_rect.place_forget()
+                self._paste_rect = None
+
         def _remember_cell(self, event):
-            col = self.tree.identify_column(event.x)
-            row = self.tree.identify_row(event.y)
-
-            # Remove existing paste target highlighting
-            for item in self.tree.get_children():
-                tags = list(self.tree.item(item, "tags"))
-                if "paste_target" in tags:
-                    tags.remove("paste_target")
-                    self.tree.item(item, tags=tags)
-
+            self._clear_highlight()
+            col_id = self.tree.identify_column(event.x)
+            row_id = self.tree.identify_row(event.y)
             try:
-                col_idx = int(col.lstrip("#")) - 1
+                col_idx = int(col_id.lstrip("#")) - 1
+                col_name = self.COLS[col_idx]
             except Exception:
                 self._paste_cell = None
                 return
-
-            items = list(self.tree.get_children())
-            if row and row in items:
-                row_idx = items.index(row)
-                # Highlight the selected row as the paste target
-                tags = list(self.tree.item(row, "tags"))
-                if "paste_target" not in tags:
-                    tags.append("paste_target")
-                self.tree.item(row, tags=tags)
-            else:
-                row_idx = None
-
-            if row_idx is None:
+            if not row_id:
                 self._paste_cell = None
-            else:
-                self._paste_cell = (row_idx, col_idx)
+                return
+            bbox = self.tree.bbox(row_id, col_id)
+            if bbox:
+                x, y, w, h = bbox
+                if self._paste_rect is None:
+                    self._paste_rect = tk.Frame(self.tree, background="lightblue", borderwidth=1)
+                self._paste_rect.place(x=x, y=y, width=w, height=h)
+            self._paste_cell = (row_id, col_name)
 
         def _on_paste(self, _event=None):
             try:
                 text = self.clipboard_get()
-                delimiter = "\t" if "\t" in text else ";"
+                delimiter = "	" if "	" in text else ";"
                 df = pd.read_csv(io.StringIO(text), sep=delimiter)
             except Exception:
+                self._clear_highlight()
                 return "break"
 
             if df.shape[1] == 1 and self._paste_cell is not None:
-                start_row, col_idx = self._paste_cell
+                item_id, col_name = self._paste_cell
+                try:
+                    col_idx = self.COLS.index(col_name)
+                except ValueError:
+                    self._clear_highlight()
+                    self._paste_cell = None
+                    return "break"
                 values = df.iloc[:, 0].tolist()
-                items = list(self.tree.get_children())
-                for i, val in enumerate(values):
-                    row_idx = start_row + i
-                    if row_idx >= len(items):
+                item = item_id
+                for val in values:
+                    if not item:
                         self._add_row()
-                        items = list(self.tree.get_children())
-                    item = items[row_idx]
+                        item = self.tree.get_children()[-1]
                     row_vals = list(self.tree.item(item, "values"))
                     row_vals[col_idx] = val
                     self.tree.item(item, values=row_vals)
+                    next_item = self.tree.next(item)
+                    if not next_item and val != values[-1]:
+                        self._add_row()
+                        next_item = self.tree.get_children()[-1]
+                    item = next_item
+                self._clear_highlight()
+                self._paste_cell = None
                 return "break"
 
             if df.shape[1] > len(self.COLS):
@@ -1057,6 +1062,7 @@ def start_gui():
             for _, row in df.iterrows():
                 vals = [row.get(c, "") for c in self.COLS]
                 self.tree.insert("", "end", values=vals)
+            self._clear_highlight()
             return "break"
 
         def _save(self):
