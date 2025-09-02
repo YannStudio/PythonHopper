@@ -989,6 +989,9 @@ def start_gui():
             self.sel_canvas = tk.Canvas(self.tree, highlightthickness=0)
             self.sel_canvas.place(relx=0, rely=0, relwidth=1, relheight=1)
 
+            # Start with one empty row
+            self._add_row()
+
             btnf = tk.Frame(self)
             btnf.pack(fill="x", padx=8, pady=4)
             tk.Button(btnf, text="Rij toevoegen", command=self._add_row).pack(side="left")
