@@ -944,7 +944,8 @@ def start_gui():
     class CustomBOMFrame(tk.Frame):
         """Frame to manually compose a BOM.
 
-        The clipboard accepts tab- or semicolon-separated text.
+        The clipboard is parsed with :func:`pandas.read_clipboard`, which
+        automatically detects common delimiters.
 
         * **Full-row paste** – expects columns in the following order:
           PartNumber, Description, Materiaal, Aantal, Oppervlakte,
@@ -975,7 +976,8 @@ def start_gui():
                 self.tree.column(col, width=w, anchor=anchor)
             self.tree.pack(fill="both", expand=True, padx=8, pady=8)
             self.tree.tag_configure("paste_target", background="lightblue")
-            self.tree.bind("<Button-1>", self._start_select)
+            self.tree.bind("<Button-1>", self._remember_cell)
+            self.tree.bind("<Button-1>", self._start_select, add=True)
             self.tree.bind("<B1-Motion>", self._update_selection)
             self.tree.bind("<ButtonRelease-1>", self._finalize_selection)
             self.tree.bind("<Control-v>", self._on_paste)
@@ -1008,22 +1010,30 @@ def start_gui():
             self.sel_canvas.delete("sel_rect")
             self._sel_cells.clear()
 
-        def _start_select(self, event):
-            """Begin a new selection at the clicked cell."""
+        def _remember_cell(self, event):
+            """Store the last clicked cell for paste operations."""
             col = self.tree.identify_column(event.x)
             row = self.tree.identify_row(event.y)
             try:
                 col_idx = int(col.lstrip("#")) - 1
             except Exception:
+                self._paste_cell = None
                 return
             items = list(self.tree.get_children())
             if row and row in items:
                 row_idx = items.index(row)
                 self._paste_cell = (row_idx, col_idx)
-                self._sel_anchor = (row_idx, col_idx)
             else:
                 self._paste_cell = None
+
+        def _start_select(self, event):
+            """Begin a new selection at the clicked cell."""
+            if self._paste_cell is None:
                 self._sel_anchor = None
+                self.sel_canvas.delete("sel_rect")
+                self._sel_cells.clear()
+                return
+            self._sel_anchor = self._paste_cell
             self.sel_canvas.delete("sel_rect")
             self._sel_cells.clear()
             self._update_selection(event)
@@ -1084,9 +1094,7 @@ def start_gui():
 
         def _on_paste(self, _event=None):
             try:
-                text = self.clipboard_get()
-                sep = "\t" if "\t" in text else ";"
-                df = pd.read_csv(io.StringIO(text), sep=sep, engine="python")
+                df = pd.read_clipboard(sep=None, engine="python", header=None)
             except Exception:
                 return "break"
 
