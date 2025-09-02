@@ -497,7 +497,7 @@ def start_gui():
         def __init__(self, master, app):
             super().__init__(master)
             self.app = app
-            cols = ("PartNumber", "Description", "Production")
+            cols = ("PartNumber", "Description", "Production", "Material", "Quantity")
             self.tree = ttk.Treeview(self, columns=cols, show="headings")
             for c in cols:
                 self.tree.heading(c, text=c)
@@ -521,7 +521,9 @@ def start_gui():
                 pn = parts[0] if len(parts) > 0 else ""
                 desc = parts[1] if len(parts) > 1 else ""
                 prod = parts[2] if len(parts) > 2 else ""
-                self.tree.insert("", "end", values=(pn, desc, prod))
+                mat = parts[3] if len(parts) > 3 else ""
+                qty = parts[4] if len(parts) > 4 else ""
+                self.tree.insert("", "end", values=(pn, desc, prod, mat, qty))
             return "break"
 
         def clear(self):
@@ -535,15 +537,46 @@ def start_gui():
                 self.app.status_var.set("Geen data in Custom BOM")
                 return
             n = len(rows)
+            missing: List[int] = []
+            pn_list: List[str] = []
+            desc_list: List[str] = []
+            prod_list: List[str] = []
+            mat_list: List[str] = []
+            qty_list: List[int] = []
+            for idx, r in enumerate(rows, start=1):
+                pn = str(r[0]).strip()
+                desc = str(r[1]).strip()
+                prod = str(r[2]).strip()
+                mat = str(r[3]).strip()
+                qty_raw = str(r[4]).strip()
+                try:
+                    qty = int(float(qty_raw))
+                    if qty <= 0:
+                        raise ValueError
+                except ValueError:
+                    qty = None
+                if not pn or not desc or not prod or not mat or qty is None:
+                    missing.append(idx)
+                pn_list.append(pn)
+                desc_list.append(desc)
+                prod_list.append(prod)
+                mat_list.append(mat)
+                qty_list.append(qty if qty is not None else 0)
+            if missing:
+                messagebox.showwarning(
+                    "Let op",
+                    f"Ontbrekende waarden in rijen: {', '.join(map(str, missing))}",
+                )
+                return
             df = pd.DataFrame(
                 {
-                    "PartNumber": [r[0] for r in rows],
-                    "Description": [r[1] for r in rows],
-                    "Production": [r[2] for r in rows],
+                    "PartNumber": pn_list,
+                    "Description": desc_list,
+                    "Production": prod_list,
                     "Bestanden gevonden": ["" for _ in range(n)],
                     "Status": ["" for _ in range(n)],
-                    "Materiaal": ["" for _ in range(n)],
-                    "Aantal": [1 for _ in range(n)],
+                    "Materiaal": mat_list,
+                    "Aantal": qty_list,
                     "Oppervlakte": ["" for _ in range(n)],
                     "Gewicht": ["" for _ in range(n)],
                 }
