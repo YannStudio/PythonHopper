@@ -29,9 +29,14 @@ def main(argv: Optional[List[str]] = None) -> int:
             import tkinter  # noqa: F401
             start_gui()
             return 0
-        except Exception:
+        except ModuleNotFoundError:
+            print("tkinter is not available. Install it to use the GUI.")
             parser.print_help()
             return 0
+        except Exception as exc:
+            print(f"Failed to start GUI: {exc}")
+            parser.print_help()
+            return 1
 
     if args.cmd == "suppliers":
         return cli_suppliers(args)
