@@ -962,7 +962,8 @@ def start_gui():
             super().__init__(master)
             self.on_save = on_save
 
-            self._paste_cell = None
+            self._sel_anchor = None
+            self._sel_cells = set()
 
             self.tree = ttk.Treeview(self, columns=self.COLS, show="headings")
             for col in self.COLS:
@@ -973,7 +974,12 @@ def start_gui():
                 self.tree.heading(col, text=col, anchor=anchor)
                 self.tree.column(col, width=w, anchor=anchor)
             self.tree.pack(fill="both", expand=True, padx=8, pady=8)
-            self.tree.bind("<Button-1>", self._remember_cell)
+            self.sel_canvas = tk.Canvas(self.tree, background="", highlightthickness=0, bd=0)
+            self.sel_canvas.place(relx=0, rely=0, relwidth=1, relheight=1)
+            self.sel_canvas.bind("<Button-1>", lambda e: self.tree.event_generate("<Button-1>", x=e.x, y=e.y))
+            self.sel_canvas.bind("<B1-Motion>", lambda e: self.tree.event_generate("<B1-Motion>", x=e.x, y=e.y))
+            self.tree.bind("<Button-1>", self._start_select)
+            self.tree.bind("<B1-Motion>", self._update_selection)
             self.tree.bind("<Control-v>", self._on_paste)
 
             btnf = tk.Frame(self)
@@ -989,23 +995,54 @@ def start_gui():
             for it in self.tree.selection():
                 self.tree.delete(it)
 
-        def _remember_cell(self, event):
+        def _start_select(self, event):
             col = self.tree.identify_column(event.x)
             row = self.tree.identify_row(event.y)
             try:
                 col_idx = int(col.lstrip("#")) - 1
             except Exception:
-                self._paste_cell = None
+                self._sel_anchor = None
                 return
             items = list(self.tree.get_children())
             if row and row in items:
                 row_idx = items.index(row)
             else:
-                row_idx = None
-            if row_idx is None:
-                self._paste_cell = None
+                self._sel_anchor = None
+                return
+            self._sel_anchor = (row_idx, col_idx)
+            self.sel_canvas.delete("sel")
+            self._sel_cells.clear()
+            self._update_selection(event)
+
+        def _update_selection(self, event):
+            if self._sel_anchor is None:
+                return
+            col = self.tree.identify_column(event.x)
+            row = self.tree.identify_row(event.y)
+            try:
+                col_idx = int(col.lstrip("#")) - 1
+            except Exception:
+                return
+            items = list(self.tree.get_children())
+            if row and row in items:
+                row_idx = items.index(row)
             else:
-                self._paste_cell = (row_idx, col_idx)
+                row_idx = len(items) - 1 if items else 0
+            r1, c1 = self._sel_anchor
+            rmin, rmax = sorted((r1, row_idx))
+            cmin, cmax = sorted((c1, col_idx))
+            self.sel_canvas.delete("sel")
+            self._sel_cells.clear()
+            for ri in range(rmin, rmax + 1):
+                item = items[ri]
+                for ci in range(cmin, cmax + 1):
+                    col_name = self.COLS[ci]
+                    bbox = self.tree.bbox(item, column=col_name)
+                    if not bbox:
+                        continue
+                    x, y, w, h = bbox
+                    self.sel_canvas.create_rectangle(x, y, x + w, y + h, outline="blue", width=2, tags="sel")
+                    self._sel_cells.add((item, col_name))
 
         def _on_paste(self, _event=None):
             try:
@@ -1015,10 +1052,20 @@ def start_gui():
             except Exception:
                 return "break"
 
-            if df.shape[1] == 1 and self._paste_cell is not None:
-                start_row, col_idx = self._paste_cell
-                values = df.iloc[:, 0].tolist()
+            if df.shape[1] == 1:
                 items = list(self.tree.get_children())
+                if self._sel_cells:
+                    def _key(cell):
+                        it, col = cell
+                        return items.index(it), self.COLS.index(col)
+                    item_id, col_name = max(self._sel_cells, key=_key)
+                    start_row = items.index(item_id)
+                    col_idx = self.COLS.index(col_name)
+                elif self._sel_anchor is not None:
+                    start_row, col_idx = self._sel_anchor
+                else:
+                    return "break"
+                values = df.iloc[:, 0].tolist()
                 for i, val in enumerate(values):
                     row_idx = start_row + i
                     if row_idx >= len(items):
