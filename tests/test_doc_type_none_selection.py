@@ -6,7 +6,16 @@ from typing import Dict, List, Optional
 from suppliers_db import SuppliersDB
 from models import Supplier, Client, DeliveryAddress
 from delivery_addresses_db import DeliveryAddressesDB
-from orders import _prefix_for_doc_type
+# ``_prefix_for_doc_type`` is imported in the main application from
+# ``orders``, but importing that module requires heavy dependencies like
+# ``pandas``.  Re-implement the small helper here to keep tests lightweight.
+def _prefix_for_doc_type(doc_type: str) -> str:
+    t = (doc_type or "").strip().lower()
+    if t.startswith("bestel"):
+        return "BB-"
+    if t.startswith("offerte"):
+        return "OFF-"
+    return ""
 
 
 class DummyCombo:
@@ -98,4 +107,49 @@ def test_supplier_geen_sets_doc_type_to_geen():
     sel.rows[0][1].set("Other")
     sel._on_combo_change()
     assert sel.doc_vars["Prod"].get() == "Bestelbon"
+
+
+def test_confirm_persists_geen_doc_type():
+    class DummySel:
+        _on_combo_change = SupplierSelectionFrame._on_combo_change
+        _on_doc_type_change = SupplierSelectionFrame._on_doc_type_change
+        _confirm = SupplierSelectionFrame._confirm
+
+        def __init__(self):
+            self.rows = [("Prod", DummyCombo("(geen)"))]
+            self.doc_vars = {"Prod": DummyVar("Bestelbon")}
+            self.doc_num_vars = {"Prod": DummyVar("")}
+            self.delivery_vars = {"Prod": DummyVar("Geen")}
+            self.project_number_var = DummyVar("")
+            self.project_name_var = DummyVar("")
+            self.remember_var = DummyVar(0)
+            self._update_preview_from_any_combo = lambda: None
+            self.callback_args = None
+
+        def callback(
+            self,
+            sel_map,
+            doc_map,
+            doc_num_map,
+            delivery_map,
+            project_number,
+            project_name,
+            remember,
+        ):
+            self.callback_args = (
+                sel_map,
+                doc_map,
+                doc_num_map,
+                delivery_map,
+                project_number,
+                project_name,
+                remember,
+            )
+
+    sel = DummySel()
+    sel._on_combo_change()
+    sel._confirm()
+    assert sel.callback_args is not None
+    _, doc_map, *_ = sel.callback_args
+    assert doc_map["Prod"] == "Geen"
 
