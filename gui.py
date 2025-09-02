@@ -1215,7 +1215,7 @@ def start_gui():
             tk.Button(
                 bf,
                 text="Custom BOM",
-                command=lambda: self.nb.select(self.custom_bom_frame),
+                command=self._open_custom_bom,
             ).pack(side="left", padx=6)
             tk.Button(bf, text="Controleer Bestanden", command=self._check_files).pack(side="left", padx=6)
             self.bom_controls_frame = bf
@@ -1292,6 +1292,9 @@ def start_gui():
             from tkinter import filedialog
             p = filedialog.askdirectory()
             if p: self.dest_folder = p; self.dst_entry.delete(0, "end"); self.dst_entry.insert(0, p)
+
+        def _open_custom_bom(self):
+            self.nb.select(self.custom_bom_frame)
 
         def _selected_exts(self) -> Optional[List[str]]:
             exts = []
