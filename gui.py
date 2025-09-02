@@ -942,18 +942,7 @@ def start_gui():
             )
 
     class CustomBOMFrame(tk.Frame):
-        """Frame to manually compose a BOM.
-
-        The clipboard is parsed with :func:`pandas.read_clipboard`, which
-        automatically detects common delimiters.
-
-        * **Full-row paste** – expects columns in the following order:
-          PartNumber, Description, Production, QTY, Material.
-        * **Single-column paste** – click a cell first and then paste a
-          single column of values. The values are inserted into the
-          selected column starting from the chosen row and the table grows
-          as needed.
-        """
+        """A simple table widget for manual BOM entry."""
 
         COLS = ("PartNumber", "Description", "Production", "QTY", "Material")
 
@@ -961,36 +950,37 @@ def start_gui():
             super().__init__(master)
             self.on_save = on_save
 
-            self._paste_cell = None
-            self._sel_anchor = None
+            # Selection management
+            self._paste_cell = None  # (row, col)
+            self._sel_anchor = None  # (row, col)
             self._sel_cells: Set[Tuple[str, str]] = set()
 
+            # Table
             self.tree = ttk.Treeview(self, columns=self.COLS, show="headings")
             for col in self.COLS:
-                w = 120
+                width = 120
                 anchor = "center" if col == "QTY" else "w"
                 if col == "Description":
-                    w = 200
+                    width = 200
                 self.tree.heading(col, text=col, anchor=anchor)
-                self.tree.column(col, width=w, anchor=anchor)
+                self.tree.column(col, width=width, anchor=anchor)
             self.tree.pack(fill="both", expand=True, padx=8, pady=8)
-            self.tree.tag_configure("paste_target", background="lightblue")
+
+            # Bindings for selection and paste
             self.tree.bind("<Button-1>", self._start_select)
             self.tree.bind("<B1-Motion>", self._update_selection)
             self.tree.bind("<ButtonRelease-1>", self._finalize_selection)
             self.tree.bind("<Control-v>", self._on_paste)
             self.tree.bind("<Command-v>", self._on_paste)
             self.tree.bind("<Delete>", self._clear_selection)
-            self.tree.bind("<Configure>", lambda e: self._redraw_selection())
+            self.tree.bind("<Configure>", lambda _e: self._redraw_selection())
             for ev in ("<MouseWheel>", "<Button-4>", "<Button-5>", "<Shift-MouseWheel>"):
-                self.tree.bind(ev, lambda e: self.after_idle(self._redraw_selection()))
+                self.tree.bind(ev, lambda _e: self.after_idle(self._redraw_selection()))
 
-            # Canvas used to draw selection rectangles
+            # Canvas for selection rectangles
             style = ttk.Style()
             bg = style.lookup("Treeview", "background") or "#FFFFFF"
-            self.sel_canvas = tk.Canvas(
-                self.tree, background=bg, highlightthickness=0, borderwidth=0
-            )
+            self.sel_canvas = tk.Canvas(self.tree, background=bg, highlightthickness=0, borderwidth=0)
             self.sel_canvas.place(relx=0, rely=0, relwidth=1, relheight=1)
 
             # Start with one empty row
@@ -1002,6 +992,7 @@ def start_gui():
             tk.Button(btnf, text="Rij verwijderen", command=self._del_row).pack(side="left", padx=4)
             tk.Button(btnf, text="Gebruik BOM/Opslaan", command=self._save).pack(side="right")
 
+        # ----- row management -----
         def _add_row(self):
             self.tree.insert("", "end", values=("", "", "", 1, ""))
 
@@ -1009,17 +1000,15 @@ def start_gui():
             for it in self.tree.selection():
                 self.tree.delete(it)
 
+        # ----- selection handling -----
         def _clear_selection(self, _event=None):
-            """Clear the contents of the currently selected cells."""
             for item_id, col_name in list(self._sel_cells):
                 self.tree.set(item_id, col_name, "")
             self.sel_canvas.delete("sel_rect")
             self._sel_cells.clear()
-            # Ensure any remaining highlights are removed after the tree updates
             self.after_idle(self._redraw_selection)
 
         def _start_select(self, event):
-            """Begin a new selection at the clicked cell."""
             col = self.tree.identify_column(event.x)
             row = self.tree.identify_row(event.y)
             try:
@@ -1032,7 +1021,6 @@ def start_gui():
                 self.sel_canvas.delete("sel_rect")
                 self._sel_cells.clear()
                 return
-
             self._paste_cell = (row_idx, col_idx)
             self._sel_anchor = (row_idx, col_idx)
             self.sel_canvas.delete("sel_rect")
@@ -1067,13 +1055,7 @@ def start_gui():
                         continue
                     x, y, w, h = bbox
                     self.sel_canvas.create_rectangle(
-                        x,
-                        y,
-                        x + w,
-                        y + h,
-                        outline="black",
-                        width=1,
-                        tags="sel_rect",
+                        x, y, x + w, y + h, outline="black", width=1, tags="sel_rect"
                     )
                     self._sel_cells.add((item_id, col_name))
 
@@ -1093,12 +1075,9 @@ def start_gui():
                     x, y, x + w, y + h, outline="black", width=1, tags="sel_rect"
                 )
 
+        # ----- clipboard handling -----
         def _on_paste(self, _event=None):
-            """Paste clipboard content into the table.
-
-            Pasting may fail if the operating system or environment lacks
-            clipboard support.
-            """
+            """Paste clipboard content into the table."""
             try:
                 df = pd.read_clipboard(sep=None, engine="python", header=None)
             except Exception:
@@ -1116,12 +1095,7 @@ def start_gui():
             items = list(self.tree.get_children())
             start_row = self._paste_cell[0] if self._paste_cell else len(items)
 
-            # Single-column paste: either into a selected cell or appended
-            # to a new row when no cell was selected. Manual test:
-            # 1. Copy a column of values.
-            # 2. Without selecting a cell, press Ctrl+V. The values should
-            #    populate column 0 starting at a new row.
-            if df.shape[1] == 1:
+            if df.shape[1] == 1:  # column paste
                 col_idx = self._paste_cell[1] if self._paste_cell else 0
                 values = df.iloc[:, 0].tolist()
                 for i, val in enumerate(values):
@@ -1129,13 +1103,14 @@ def start_gui():
                     if row_idx >= len(items):
                         self._add_row()
                         items = list(self.tree.get_children())
-                    item = items[row_idx]
-                    row_vals = list(self.tree.item(item, "values"))
+                    item_id = items[row_idx]
+                    row_vals = list(self.tree.item(item_id, "values"))
                     if col_idx < len(row_vals):
                         row_vals[col_idx] = val
-                    self.tree.item(item, values=row_vals)
+                    self.tree.item(item_id, values=row_vals)
                 return "break"
 
+            # full row paste
             if df.shape[1] > len(self.COLS):
                 df = df.iloc[:, : len(self.COLS)]
             elif df.shape[1] < len(self.COLS):
@@ -1153,12 +1128,17 @@ def start_gui():
                     self.tree.insert("", "end", values=vals)
             return "break"
 
+        # ----- saving -----
         def _save(self):
             rows = [self.tree.item(it, "values") for it in self.tree.get_children()]
             df = pd.DataFrame(rows, columns=self.COLS)
+            df["QTY"] = pd.to_numeric(df["QTY"], errors="coerce")
+            if df["QTY"].isna().any():
+                messagebox.showerror("Fout", "QTY moet een getal zijn.")
+                return
+            df["QTY"] = df["QTY"].astype(int)
             if self.on_save:
                 self.on_save(df)
-
     class App(tk.Tk):
         def __init__(self):
             super().__init__()
