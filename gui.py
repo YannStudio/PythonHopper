@@ -493,6 +493,66 @@ def start_gui():
                 if self.on_change:
                     self.on_change()
 
+    class CustomBOMFrame(tk.Frame):
+        def __init__(self, master, app):
+            super().__init__(master)
+            self.app = app
+            cols = ("PartNumber", "Description", "Production")
+            self.tree = ttk.Treeview(self, columns=cols, show="headings")
+            for c in cols:
+                self.tree.heading(c, text=c)
+                self.tree.column(c, width=160, anchor="w")
+            self.tree.pack(fill="both", expand=True, padx=8, pady=8)
+            self.tree.bind("<Control-v>", self._on_paste)
+            self.tree.bind("<Command-v>", self._on_paste)
+            btns = tk.Frame(self)
+            btns.pack(fill="x")
+            tk.Button(btns, text="Wissen", command=self.clear).pack(side="left", padx=4)
+            tk.Button(btns, text="Gebruik BOM", command=self.export).pack(side="left", padx=4)
+
+        def _on_paste(self, _event=None):
+            try:
+                data = self.clipboard_get()
+            except tk.TclError:
+                return "break"
+            rows = [ln for ln in data.splitlines() if ln.strip()]
+            for ln in rows:
+                parts = [p.strip() for p in ln.split("\t")]
+                pn = parts[0] if len(parts) > 0 else ""
+                desc = parts[1] if len(parts) > 1 else ""
+                prod = parts[2] if len(parts) > 2 else ""
+                self.tree.insert("", "end", values=(pn, desc, prod))
+            return "break"
+
+        def clear(self):
+            for it in self.tree.get_children():
+                self.tree.delete(it)
+
+        def export(self):
+            rows = [self.tree.item(it, "values") for it in self.tree.get_children()]
+            if not rows:
+                self.app.bom_df = None
+                self.app.status_var.set("Geen data in Custom BOM")
+                return
+            n = len(rows)
+            df = pd.DataFrame(
+                {
+                    "PartNumber": [r[0] for r in rows],
+                    "Description": [r[1] for r in rows],
+                    "Production": [r[2] for r in rows],
+                    "Bestanden gevonden": ["" for _ in range(n)],
+                    "Status": ["" for _ in range(n)],
+                    "Materiaal": ["" for _ in range(n)],
+                    "Aantal": [1 for _ in range(n)],
+                    "Oppervlakte": ["" for _ in range(n)],
+                    "Gewicht": ["" for _ in range(n)],
+                }
+            )
+            self.app.bom_df = df
+            self.app._refresh_tree()
+            self.app.status_var.set(f"Custom BOM geladen: {n} rijen")
+            self.app.nb.select(self.app.main_frame)
+
     class SupplierSelectionFrame(tk.Frame):
         """Per productie: type-to-filter of dropdown; rechts detailkaart (klik = selecteer).
            Knoppen altijd zichtbaar onderaan.
@@ -977,6 +1037,9 @@ def start_gui():
                 self.nb, self.db, on_change=self._on_db_change
             )
             self.nb.add(self.suppliers_frame, text="Leverancier beheer")
+
+            self.custom_bom_frame = CustomBOMFrame(self.nb, self)
+            self.nb.add(self.custom_bom_frame, text="Custom BOM")
 
             # Top folders
             top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
