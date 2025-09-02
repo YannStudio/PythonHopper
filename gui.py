@@ -948,15 +948,14 @@ def start_gui():
         automatically detects common delimiters.
 
         * **Full-row paste** – expects columns in the following order:
-          PartNumber, Description, Materiaal, Aantal, Oppervlakte,
-          Gewicht.
+          PartNumber, Description, Production, QTY, Material.
         * **Single-column paste** – click a cell first and then paste a
           single column of values. The values are inserted into the
           selected column starting from the chosen row and the table grows
           as needed.
         """
 
-        COLS = ("PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht")
+        COLS = ("PartNumber", "Description", "Production", "QTY", "Material")
 
         def __init__(self, master, on_save=None):
             super().__init__(master)
@@ -969,7 +968,7 @@ def start_gui():
             self.tree = ttk.Treeview(self, columns=self.COLS, show="headings")
             for col in self.COLS:
                 w = 120
-                anchor = "center" if col == "Aantal" else "w"
+                anchor = "center" if col == "QTY" else "w"
                 if col == "Description":
                     w = 200
                 self.tree.heading(col, text=col, anchor=anchor)
@@ -1000,7 +999,7 @@ def start_gui():
             tk.Button(btnf, text="Gebruik BOM/Opslaan", command=self._save).pack(side="right")
 
         def _add_row(self):
-            self.tree.insert("", "end", values=("", "", "", 1, "", ""))
+            self.tree.insert("", "end", values=("", "", "", 1, ""))
 
         def _del_row(self):
             for it in self.tree.selection():
@@ -1326,6 +1325,16 @@ def start_gui():
                 df["Bestanden gevonden"] = ""
             if "Status" not in df.columns:
                 df["Status"] = ""
+            cols = [
+                "PartNumber",
+                "Description",
+                "Production",
+                "QTY",
+                "Material",
+                "Bestanden gevonden",
+                "Status",
+            ]
+            df = df.reindex(columns=cols, fill_value="")
             self.bom_df = df
             self._refresh_tree()
             self.status_var.set(f"BOM geladen: {len(df)} rijen")
@@ -1361,12 +1370,10 @@ def start_gui():
                     "PartNumber": lines,
                     "Description": ["" for _ in range(n)],
                     "Production": ["" for _ in range(n)],
+                    "QTY": [1 for _ in range(n)],
+                    "Material": ["" for _ in range(n)],
                     "Bestanden gevonden": ["" for _ in range(n)],
                     "Status": ["" for _ in range(n)],
-                    "Materiaal": ["" for _ in range(n)],
-                    "Aantal": [1 for _ in range(n)],
-                    "Oppervlakte": ["" for _ in range(n)],
-                    "Gewicht": ["" for _ in range(n)],
                 }
             )
             self._refresh_tree()
@@ -1380,7 +1387,7 @@ def start_gui():
                 return
 
             cols = ["PartNumber", "Description"]
-            for c in ["Materiaal", "Aantal", "Oppervlakte", "Gewicht", "Production"]:
+            for c in ["Production", "QTY", "Aantal", "Material", "Materiaal", "Oppervlakte", "Gewicht"]:
                 if c in self.bom_df.columns:
                     cols.append(c)
             cols += ["Bestanden gevonden", "Status"]
@@ -1394,7 +1401,7 @@ def start_gui():
                     w = 180
                 if col == "Status":
                     w = 120
-                anchor = "center" if col in ("Status", "Aantal") else "w"
+                anchor = "center" if col in ("Status", "QTY", "Aantal") else "w"
                 self.tree.heading(col, text=col, anchor=anchor)
                 self.tree.column(col, width=w, anchor=anchor)
 
