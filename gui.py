@@ -552,6 +552,8 @@ def start_gui():
             self.project_name_var = tk.StringVar()
             tk.Entry(name_row, textvariable=self.project_name_var, width=50).pack(side="left", padx=6)
 
+            ttk.Separator(left, orient="horizontal").pack(fill="x", pady=(0, 6))
+
             tk.Label(left, text="Kies leveranciers per productie", anchor="w").pack(
                 fill="x", pady=(0, 6)
             )
