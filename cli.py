@@ -6,7 +6,7 @@
 import os
 import shutil
 import argparse
-from typing import List
+from typing import Iterable, List, Optional, Union
 
 import pandas as pd
 
@@ -18,23 +18,53 @@ from delivery_addresses_db import DeliveryAddressesDB, DELIVERY_DB_FILE
 from bom import read_csv_flex, load_bom
 from orders import copy_per_production_and_orders, DEFAULT_FOOTER_NOTE
 
+DEFAULT_ALLOWED_EXTS = "pdf,dxf,dwg,step,stp"
 
-def parse_exts(s: str) -> List[str]:
-    parts = [p.strip().lower() for p in s.split(",") if p.strip()]
-    m = []
-    for p in parts:
-        if p in ("pdf", "dxf", "dwg", "step", "stp"):
-            if p == "step":
-                m += [".step", ".stp"]
-            elif p == "stp":
-                m += [".stp", ".step"]
-            else:
-                m.append("." + p)
-    if not m:
+
+def _normalize_ext(ext: str) -> str:
+    ext = ext.strip().lower()
+    if ext.startswith("*"):
+        ext = ext[1:]
+    if not ext.startswith("."):
+        ext = "." + ext
+    return ext
+
+
+def _parse_ext_list(src: Union[Iterable[str], str]) -> List[str]:
+    if isinstance(src, str):
+        parts = src.split(",")
+    else:
+        parts = list(src)
+    return [_normalize_ext(p) for p in parts if p and p.strip()]
+
+
+def parse_exts(s: str, allowed_exts: Optional[Union[Iterable[str], str]] = None) -> List[str]:
+    allowed = _parse_ext_list(allowed_exts or DEFAULT_ALLOWED_EXTS)
+    allowed_set = set(allowed)
+    if ".step" in allowed_set or ".stp" in allowed_set:
+        allowed_set.update({".step", ".stp"})
+    parts = _parse_ext_list(s)
+    invalid = [p for p in parts if p not in allowed_set]
+    if invalid:
         raise ValueError(
-            "Geen geldige extensies opgegeven (pdf, dxf, dwg, step, stp)."
+            "Ongeldige extensies: {}. Toegestane extensies: {}.".format(
+                ", ".join(sorted(i.lstrip(".") for i in invalid)),
+                ", ".join(sorted(e.lstrip(".") for e in allowed_set)),
+            )
         )
-    return sorted(set(m))
+    result: List[str] = []
+    for p in parts:
+        if p in {".step", ".stp"}:
+            result.extend([".step", ".stp"])
+        else:
+            result.append(p)
+    if not result:
+        raise ValueError(
+            "Geen geldige extensies opgegeven ({}).".format(
+                ", ".join(sorted(e.lstrip(".")) for e in allowed_set)
+            )
+        )
+    return sorted(set(result))
 
 
 def cli_suppliers(args):
@@ -216,7 +246,7 @@ def cli_delivery_addresses(args):
 
 
 def cli_bom_check(args):
-    exts = parse_exts(args.exts)
+    exts = parse_exts(args.exts, args.allowed_exts)
     df = load_bom(args.bom)
     if not os.path.isdir(args.source):
         print("Bronmap ongeldig")
@@ -251,7 +281,7 @@ def cli_bom_check(args):
 
 
 def cli_copy(args):
-    exts = parse_exts(args.exts)
+    exts = parse_exts(args.exts, args.allowed_exts)
     if not os.path.isdir(args.source) or not os.path.isdir(args.dest):
         print("Bron of bestemming ongeldig")
         return 2
@@ -267,7 +297,7 @@ def cli_copy(args):
 
 
 def cli_copy_per_prod(args):
-    exts = parse_exts(args.exts)
+    exts = parse_exts(args.exts, args.allowed_exts)
     df = load_bom(args.bom)
     db = SuppliersDB.load(SUPPLIERS_DB_FILE)
     override_map = dict(kv.split("=", 1) for kv in (args.supplier or []))
@@ -407,12 +437,22 @@ def build_parser() -> argparse.ArgumentParser:
     bcp.add_argument("--source", required=True)
     bcp.add_argument("--bom", required=True)
     bcp.add_argument("--exts", required=True)
+    bcp.add_argument(
+        "--allowed-exts",
+        default=DEFAULT_ALLOWED_EXTS,
+        help="Toegestane extensies (komma gescheiden, wildcards toegestaan)",
+    )
     bcp.add_argument("--out")
 
     cp = sub.add_parser("copy", help="Kopieer vlak")
     cp.add_argument("--source", required=True)
     cp.add_argument("--dest", required=True)
     cp.add_argument("--exts", required=True)
+    cp.add_argument(
+        "--allowed-exts",
+        default=DEFAULT_ALLOWED_EXTS,
+        help="Toegestane extensies (komma gescheiden, wildcards toegestaan)",
+    )
 
     cpp = sub.add_parser(
         "copy-per-prod", help="Kopieer per productie + bestelbonnen"
@@ -421,6 +461,11 @@ def build_parser() -> argparse.ArgumentParser:
     cpp.add_argument("--dest", required=True)
     cpp.add_argument("--bom", required=True)
     cpp.add_argument("--exts", required=True)
+    cpp.add_argument(
+        "--allowed-exts",
+        default=DEFAULT_ALLOWED_EXTS,
+        help="Toegestane extensies (komma gescheiden, wildcards toegestaan)",
+    )
     cpp.add_argument(
         "--supplier",
         action="append",
