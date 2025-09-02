@@ -963,6 +963,8 @@ def start_gui():
             self.on_save = on_save
 
             self._paste_cell = None
+            self._sel_cells = []
+            self._sel_rects = []
 
             self.tree = ttk.Treeview(self, columns=self.COLS, show="headings")
             for col in self.COLS:
@@ -975,6 +977,7 @@ def start_gui():
             self.tree.pack(fill="both", expand=True, padx=8, pady=8)
             self.tree.bind("<Button-1>", self._remember_cell)
             self.tree.bind("<Control-v>", self._on_paste)
+            self.tree.bind("<Delete>", self._clear_selection)
 
             btnf = tk.Frame(self)
             btnf.pack(fill="x", padx=8, pady=4)
@@ -988,6 +991,17 @@ def start_gui():
         def _del_row(self):
             for it in self.tree.selection():
                 self.tree.delete(it)
+
+        def _clear_selection(self, _event=None):
+            for item_id, col_name in self._sel_cells:
+                self.tree.set(item_id, col_name, "")
+            canvas = getattr(self, "_sel_canvas", None)
+            if canvas is not None:
+                for rect in self._sel_rects:
+                    canvas.delete(rect)
+            self._sel_cells = []
+            self._sel_rects = []
+            return "break"
 
         def _remember_cell(self, event):
             col = self.tree.identify_column(event.x)
