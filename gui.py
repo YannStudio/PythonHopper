@@ -964,6 +964,9 @@ def start_gui():
 
             self._paste_cell = None
 
+            self._sel_anchor = None
+            self._sel_cells = set()
+
             self.tree = ttk.Treeview(self, columns=self.COLS, show="headings")
             for col in self.COLS:
                 w = 120
@@ -973,7 +976,13 @@ def start_gui():
                 self.tree.heading(col, text=col, anchor=anchor)
                 self.tree.column(col, width=w, anchor=anchor)
             self.tree.pack(fill="both", expand=True, padx=8, pady=8)
-            self.tree.bind("<Button-1>", self._remember_cell)
+
+            self.sel_canvas = tk.Canvas(self.tree, bg="", highlightthickness=0, bd=0)
+            self.sel_canvas.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+            self.tree.bind("<Button-1>", self._start_select)
+            self.tree.bind("<B1-Motion>", self._update_selection)
+            self.tree.bind("<ButtonRelease-1>", self._finalize_selection)
             self.tree.bind("<Control-v>", self._on_paste)
 
             btnf = tk.Frame(self)
@@ -988,6 +997,54 @@ def start_gui():
         def _del_row(self):
             for it in self.tree.selection():
                 self.tree.delete(it)
+
+        def _start_select(self, event):
+            self.sel_canvas.delete("sel")
+            col = self.tree.identify_column(event.x)
+            row = self.tree.identify_row(event.y)
+            items = list(self.tree.get_children())
+            try:
+                col_idx = int(col.lstrip("#")) - 1
+                row_idx = items.index(row)
+            except Exception:
+                self._sel_anchor = None
+                return
+            self._sel_anchor = (row_idx, col_idx)
+            self._remember_cell(event)
+
+        def _update_selection(self, event):
+            if self._sel_anchor is None:
+                return
+            col = self.tree.identify_column(event.x)
+            row = self.tree.identify_row(event.y)
+            items = list(self.tree.get_children())
+            try:
+                col_idx = int(col.lstrip("#")) - 1
+                row_idx = items.index(row)
+            except Exception:
+                return
+            r0, c0 = self._sel_anchor
+            r1, r2 = sorted((r0, row_idx))
+            c1, c2 = sorted((c0, col_idx))
+            for r in range(r1, r2 + 1):
+                if r >= len(items):
+                    continue
+                item = items[r]
+                for c in range(c1, c2 + 1):
+                    cell = (r, c)
+                    if cell in self._sel_cells:
+                        continue
+                    bbox = self.tree.bbox(item, f"#{c+1}")
+                    if not bbox:
+                        continue
+                    x, y, w, h = bbox
+                    self.sel_canvas.create_rectangle(
+                        x, y, x + w, y + h, outline="blue", width=1, tags="sel"
+                    )
+                    self._sel_cells.add(cell)
+
+        def _finalize_selection(self, _event=None):
+            self._sel_anchor = None
 
         def _remember_cell(self, event):
             col = self.tree.identify_column(event.x)
