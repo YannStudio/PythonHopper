@@ -1111,13 +1111,40 @@ def start_gui():
             style.configure("Treeview", rowheight=24)
             treef = tk.Frame(main)
             treef.pack(fill="both", expand=True, padx=8, pady=6)
-            self.tree = ttk.Treeview(treef, columns=("PartNumber","Description","Production","Bestanden gevonden","Status"), show="headings")
-            for col in ("PartNumber","Description","Production","Bestanden gevonden","Status"):
+            self.tree = ttk.Treeview(
+                treef,
+                columns=(
+                    "PartNumber",
+                    "Description",
+                    "Production",
+                    "Bestanden gevonden",
+                    "Status",
+                    "Materiaal",
+                    "Aantal",
+                ),
+                show="headings",
+            )
+            for col in (
+                "PartNumber",
+                "Description",
+                "Production",
+                "Bestanden gevonden",
+                "Status",
+                "Materiaal",
+                "Aantal",
+            ):
                 w = 140
-                if col=="Description": w=320
-                if col=="Bestanden gevonden": w=180
-                if col=="Status": w=120
-                anchor = "center" if col=="Status" else "w"
+                if col == "Description":
+                    w = 320
+                if col == "Bestanden gevonden":
+                    w = 180
+                if col == "Status":
+                    w = 120
+                if col == "Materiaal":
+                    w = 140
+                if col == "Aantal":
+                    w = 80
+                anchor = "center" if col in ("Status", "Aantal") else "w"
                 self.tree.heading(col, text=col, anchor=anchor)
                 self.tree.column(col, width=w, anchor=anchor)
             tree_scroll = ttk.Scrollbar(treef, orient="vertical", command=self.tree.yview)
@@ -1228,6 +1255,8 @@ def start_gui():
                     row.get("Production", ""),
                     row.get("Bestanden gevonden", ""),
                     row.get("Status", ""),
+                    row.get("Materiaal", ""),
+                    row.get("Aantal", ""),
                 )
                 item = self.tree.insert("", "end", values=vals)
                 link = row.get("Link")
