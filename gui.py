@@ -1098,9 +1098,17 @@ def start_gui():
             """
             try:
                 df = pd.read_clipboard(sep=None, engine="python", header=None)
-            except Exception as e:
-                messagebox.showerror("Fout", f"Kan niet plakken: {e}")
-                return "break"
+            except Exception:
+                try:
+                    text = self.clipboard_get()
+                except Exception:
+                    messagebox.showerror(
+                        "Fout",
+                        "Kan niet plakken: voor klembordondersteuning zijn 'xclip' of 'xsel' nodig",
+                    )
+                    return "break"
+                rows = [r.split("\t") for r in text.splitlines() if r.strip()]
+                df = pd.DataFrame(rows)
 
             items = list(self.tree.get_children())
             start_row = self._paste_cell[0] if self._paste_cell else len(items)
