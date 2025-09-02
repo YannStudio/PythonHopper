@@ -67,3 +67,20 @@ python cli.py copy-per-prod \
     --project-number PRJ123 --project-name "Nieuw project"
 ```
 
+## Custom BOM
+
+Het GUI-programma bevat een tabblad **Custom BOM** waarmee je snel een
+eigen stuklijst kunt opstellen. Start de applicatie zonder CLI-argumenten
+(`python main.py`) en open het tabblad *Custom BOM*.
+
+1. **Data invoeren of plakken** – de tabel bevat de kolommen
+   `PartNumber`, `Description`, `Material`, `Quantity` en `Production`.
+   Kopieer cellen uit een spreadsheet en plak ze rechtstreeks met
+   `Ctrl+V`/`Cmd+V`; elke kolom wordt automatisch toegewezen.
+2. **Gebruik BOM** – kies *Gebruik BOM* om de ingevoerde gegevens naar het
+   hoofdscherm te exporteren en de stuklijst verder te verwerken.
+
+Deze functie maakt gebruik van de `tksheet`-bibliotheek (opgenomen in
+`requirements.txt`). Zorg ervoor dat deze dependency is geïnstalleerd en
+hou er rekening mee dat alleen de bovenstaande kolommen worden ondersteund.
+
