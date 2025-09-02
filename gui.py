@@ -5,7 +5,7 @@ import sys
 import threading
 import unicodedata
 import io
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set, Tuple
 
 import pandas as pd
 
@@ -962,7 +962,8 @@ def start_gui():
             self.on_save = on_save
 
             self._paste_cell = None
-            self._sel_cells = []
+            self._sel_anchor = None
+            self._sel_cells: Set[Tuple[str, str]] = set()
 
             self.tree = ttk.Treeview(self, columns=self.COLS, show="headings")
             for col in self.COLS:
@@ -974,9 +975,14 @@ def start_gui():
                 self.tree.column(col, width=w, anchor=anchor)
             self.tree.pack(fill="both", expand=True, padx=8, pady=8)
             self.tree.tag_configure("paste_target", background="lightblue")
-            self.tree.bind("<Button-1>", self._remember_cell)
+            self.tree.bind("<Button-1>", self._start_select)
+            self.tree.bind("<B1-Motion>", self._update_selection)
+            self.tree.bind("<ButtonRelease-1>", self._finalize_selection)
             self.tree.bind("<Control-v>", self._on_paste)
             self.tree.bind("<Delete>", self._clear_selection)
+            self.tree.bind("<Configure>", lambda e: self._redraw_selection())
+            for ev in ("<MouseWheel>", "<Button-4>", "<Button-5>", "<Shift-MouseWheel>"):
+                self.tree.bind(ev, lambda e: self.after_idle(self._redraw_selection()))
 
             # Canvas used to draw selection rectangles
             self.sel_canvas = tk.Canvas(self.tree, highlightthickness=0)
@@ -999,41 +1005,82 @@ def start_gui():
             """Clear the contents of the currently selected cells."""
             for item_id, col_name in list(self._sel_cells):
                 self.tree.set(item_id, col_name, "")
-            self.sel_canvas.delete("all")
-            self._sel_cells = []
+            self.sel_canvas.delete("sel_rect")
+            self._sel_cells.clear()
 
-        def _remember_cell(self, event):
+        def _start_select(self, event):
+            """Begin a new selection at the clicked cell."""
             col = self.tree.identify_column(event.x)
             row = self.tree.identify_row(event.y)
-
-            # Remove existing paste target highlighting
-            for item in self.tree.get_children():
-                tags = list(self.tree.item(item, "tags"))
-                if "paste_target" in tags:
-                    tags.remove("paste_target")
-                    self.tree.item(item, tags=tags)
-
             try:
                 col_idx = int(col.lstrip("#")) - 1
             except Exception:
-                self._paste_cell = None
                 return
-
             items = list(self.tree.get_children())
             if row and row in items:
                 row_idx = items.index(row)
-                # Highlight the selected row as the paste target
-                tags = list(self.tree.item(row, "tags"))
-                if "paste_target" not in tags:
-                    tags.append("paste_target")
-                self.tree.item(row, tags=tags)
-            else:
-                row_idx = None
-
-            if row_idx is None:
-                self._paste_cell = None
-            else:
                 self._paste_cell = (row_idx, col_idx)
+                self._sel_anchor = (row_idx, col_idx)
+            else:
+                self._paste_cell = None
+                self._sel_anchor = None
+            self.sel_canvas.delete("sel_rect")
+            self._sel_cells.clear()
+            self._update_selection(event)
+
+        def _update_selection(self, event):
+            if self._sel_anchor is None:
+                return
+            anchor_row, anchor_col = self._sel_anchor
+            col = self.tree.identify_column(event.x)
+            row = self.tree.identify_row(event.y)
+            try:
+                col_idx = int(col.lstrip("#")) - 1
+            except Exception:
+                col_idx = anchor_col
+            items = list(self.tree.get_children())
+            if row and row in items:
+                row_idx = items.index(row)
+            else:
+                row_idx = len(items) - 1 if items else 0
+            r0, r1 = sorted([anchor_row, row_idx])
+            c0, c1 = sorted([anchor_col, col_idx])
+            self.sel_canvas.delete("sel_rect")
+            self._sel_cells.clear()
+            for r in range(r0, r1 + 1):
+                item_id = items[r]
+                for c in range(c0, c1 + 1):
+                    col_name = self.COLS[c]
+                    bbox = self.tree.bbox(item_id, col_name)
+                    if not bbox:
+                        continue
+                    x, y, w, h = bbox
+                    self.sel_canvas.create_rectangle(
+                        x,
+                        y,
+                        x + w,
+                        y + h,
+                        outline="black",
+                        width=1,
+                        tags="sel_rect",
+                    )
+                    self._sel_cells.add((item_id, col_name))
+
+        def _finalize_selection(self, _event=None):
+            self._sel_anchor = None
+
+        def _redraw_selection(self):
+            if not self._sel_cells:
+                return
+            self.sel_canvas.delete("sel_rect")
+            for item_id, col_name in self._sel_cells:
+                bbox = self.tree.bbox(item_id, col_name)
+                if not bbox:
+                    continue
+                x, y, w, h = bbox
+                self.sel_canvas.create_rectangle(
+                    x, y, x + w, y + h, outline="black", width=1, tags="sel_rect"
+                )
 
         def _on_paste(self, _event=None):
             try:
@@ -1043,10 +1090,12 @@ def start_gui():
             except Exception:
                 return "break"
 
+            items = list(self.tree.get_children())
+            start_row = self._paste_cell[0] if self._paste_cell else len(items)
+
             if df.shape[1] == 1 and self._paste_cell is not None:
-                start_row, col_idx = self._paste_cell
+                col_idx = self._paste_cell[1]
                 values = df.iloc[:, 0].tolist()
-                items = list(self.tree.get_children())
                 for i, val in enumerate(values):
                     row_idx = start_row + i
                     if row_idx >= len(items):
@@ -1054,7 +1103,8 @@ def start_gui():
                         items = list(self.tree.get_children())
                     item = items[row_idx]
                     row_vals = list(self.tree.item(item, "values"))
-                    row_vals[col_idx] = val
+                    if col_idx < len(row_vals):
+                        row_vals[col_idx] = val
                     self.tree.item(item, values=row_vals)
                 return "break"
 
@@ -1066,9 +1116,13 @@ def start_gui():
             df = df.iloc[:, : len(self.COLS)]
             df.columns = self.COLS
 
-            for _, row in df.iterrows():
-                vals = [row.get(c, "") for c in self.COLS]
-                self.tree.insert("", "end", values=vals)
+            for i, row in enumerate(df.itertuples(index=False)):
+                vals = [getattr(row, c) for c in self.COLS]
+                row_idx = start_row + i
+                if row_idx < len(items):
+                    self.tree.item(items[row_idx], values=vals)
+                else:
+                    self.tree.insert("", "end", values=vals)
             return "break"
 
         def _save(self):
