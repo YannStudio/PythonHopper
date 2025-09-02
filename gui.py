@@ -1087,9 +1087,15 @@ def start_gui():
                 )
 
         def _on_paste(self, _event=None):
+            """Paste clipboard content into the table.
+
+            Pasting may fail if the operating system or environment lacks
+            clipboard support.
+            """
             try:
                 df = pd.read_clipboard(sep=None, engine="python", header=None)
-            except Exception:
+            except Exception as e:
+                messagebox.showerror("Fout", f"Kan niet plakken: {e}")
                 return "break"
 
             items = list(self.tree.get_children())
