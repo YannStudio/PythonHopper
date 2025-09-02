@@ -980,6 +980,7 @@ def start_gui():
             self.tree.bind("<B1-Motion>", self._update_selection)
             self.tree.bind("<ButtonRelease-1>", self._finalize_selection)
             self.tree.bind("<Control-v>", self._on_paste)
+            self.tree.bind("<Command-v>", self._on_paste)
             self.tree.bind("<Delete>", self._clear_selection)
             self.tree.bind("<Configure>", lambda e: self._redraw_selection())
             for ev in ("<MouseWheel>", "<Button-4>", "<Button-5>", "<Shift-MouseWheel>"):
