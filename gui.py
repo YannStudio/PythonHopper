@@ -558,6 +558,44 @@ def start_gui():
                 _prefix_for_doc_type(t) for t in doc_type_opts
             }
 
+            header_row = tk.Frame(left)
+            header_row.pack(fill="x", pady=(8,3))
+            tk.Label(
+                header_row,
+                text="Producttype",
+                width=18,
+                anchor="w",
+                background=left.cget("bg"),
+            ).pack(side="left")
+            tk.Label(
+                header_row,
+                text="Leverancier",
+                width=50,
+                anchor="w",
+                background=left.cget("bg"),
+            ).pack(side="left", padx=6)
+            tk.Label(
+                header_row,
+                text="Documenttype",
+                width=18,
+                anchor="w",
+                background=left.cget("bg"),
+            ).pack(side="left", padx=6)
+            tk.Label(
+                header_row,
+                text="Nr.",
+                width=8,
+                anchor="w",
+                background=left.cget("bg"),
+            ).pack(side="left", padx=6)
+            tk.Label(
+                header_row,
+                text="Leveradres",
+                width=50,
+                anchor="w",
+                background=left.cget("bg"),
+            ).pack(side="left", padx=6)
+
             self.rows = []
             for prod in productions:
                 row = tk.Frame(left)
