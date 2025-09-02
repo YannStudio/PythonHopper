@@ -1009,6 +1009,8 @@ def start_gui():
                 self.tree.set(item_id, col_name, "")
             self.sel_canvas.delete("sel_rect")
             self._sel_cells.clear()
+            # Ensure any remaining highlights are removed after the tree updates
+            self.after_idle(self._redraw_selection)
 
         def _remember_cell(self, event):
             """Store the last clicked cell for paste operations."""
