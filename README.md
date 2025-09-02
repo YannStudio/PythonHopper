@@ -34,6 +34,21 @@ python cli.py clients add "Klant BV" \
     --email "info@klant.be"
 ```
 
+### Opdrachtgevers importeren uit CSV
+
+```
+python cli.py clients import-csv clients.csv \
+    --address "Straat 1, 1000 Brussel" \
+    --vat BE987654321 \
+    --email "info@klant.be"
+```
+
+### Opdrachtgevers exporteren naar CSV
+
+```
+python cli.py clients export-csv clients_export.csv
+```
+
 ### Documentnummer prefixen
 
 Bestelbonnen gebruiken doorgaans een nummer dat begint met `BB-`, terwijl

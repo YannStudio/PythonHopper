@@ -9,6 +9,7 @@ import argparse
 from typing import List
 
 import pandas as pd
+from dataclasses import asdict
 
 from helpers import _to_str, _build_file_index, _unique_path
 from models import Supplier, Client, DeliveryAddress
@@ -181,6 +182,40 @@ def cli_clients(args):
         ok = db.toggle_fav(args.name)
         db.save(CLIENTS_DB_FILE)
         print("Favoriet gewisseld" if ok else "Niet gevonden")
+        return 0
+    if args.action == "import-csv":
+        path = args.csv
+        if not os.path.exists(path):
+            print("CSV niet gevonden.")
+            return 2
+        try:
+            df = pd.read_csv(path, encoding="latin1", sep=";")
+        except Exception:
+            df = read_csv_flex(path)
+        changed = 0
+        for _, row in df.iterrows():
+            raw_name = _to_str(row.get("Name")).strip()
+            if not raw_name or raw_name == "-":
+                continue
+            try:
+                c = Client.from_any({k: row[k] for k in df.columns if k in row})
+                if args.address and not c.address:
+                    c.address = args.address
+                if args.vat and not c.vat:
+                    c.vat = args.vat
+                if args.email and not c.email:
+                    c.email = args.email
+                db.upsert(c)
+                changed += 1
+            except Exception:
+                pass
+        db.save(CLIENTS_DB_FILE)
+        print(f"Verwerkt (upsert): {changed}")
+        return 0
+    if args.action == "export-csv":
+        rows = [asdict(c) for c in db.clients]
+        pd.DataFrame(rows).to_csv(args.csv, index=False, sep=";", encoding="utf-8")
+        print(f"Geëxporteerd: {len(rows)}")
         return 0
     print("Onbekende actie")
     return 2
@@ -365,6 +400,13 @@ def build_parser() -> argparse.ArgumentParser:
     crp.add_argument("name")
     cfp = csp.add_parser("fav")
     cfp.add_argument("name")
+    cip = csp.add_parser("import-csv")
+    cip.add_argument("csv", help="CSV-bestand met opdrachtgevers")
+    cip.add_argument("--address", help="Fallback adres")
+    cip.add_argument("--vat", help="Fallback BTW-nummer")
+    cip.add_argument("--email", help="Fallback e-mail adres")
+    cep = csp.add_parser("export-csv")
+    cep.add_argument("csv", help="Bestand om naar te exporteren")
 
     bp = sub.add_parser("bom", help="BOM acties")
     bsp = bp.add_subparsers(dest="bact", required=True)
