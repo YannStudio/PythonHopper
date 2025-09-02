@@ -82,16 +82,17 @@ class DeliveryAddressesDB:
                 return i
         return -1
 
-    def upsert(self, addr: DeliveryAddress) -> None:
-        i = self._idx_by_name(addr.name)
+    def upsert(self, addr: DeliveryAddress, old_name: Optional[str] = None) -> None:
+        key = old_name or addr.name
+        i = self._idx_by_name(key)
         if i >= 0:
             cur = self.addresses[i]
             for f in asdict(addr):
-                # Renaming addresses is not supported; skip updating the name
-                if f == "name":
-                    continue
                 # Always overwrite existing values, even with None/"" to clear fields
                 setattr(cur, f, getattr(addr, f))
+            if old_name and old_name.strip().lower() != addr.name.strip().lower():
+                self.addresses.pop(i)
+                self.addresses.append(cur)
         else:
             self.addresses.append(addr)
 
