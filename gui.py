@@ -535,17 +535,49 @@ def start_gui():
                 self.sheet.delete_row(sel[0])
 
         def _on_paste(self, _event=None):
+            """Paste clipboard data starting at the currently selected cell.
+
+            Handles single-column pastes, multi-column block pastes and
+            ensures rows are added when needed. Gracefully exits when the
+            clipboard is empty or unavailable.
+            """
+
+            # Get clipboard contents; ignore paste if not available
             try:
                 data = self.clipboard_get()
             except tk.TclError:
                 return "break"
+            if not data:
+                return "break"
+
             rows = [ln for ln in data.splitlines() if ln.strip()]
-            start = self.sheet.get_total_rows()
+            if not rows:
+                return "break"
+
+            # Determine starting position from current selection
+            sel = self.sheet.get_currently_selected()
+            if isinstance(sel, tuple):
+                start_row = sel[0] if sel[0] is not None else self.sheet.get_total_rows()
+                start_col = sel[1] if len(sel) > 1 and sel[1] is not None else 0
+            else:
+                start_row = self.sheet.get_total_rows()
+                start_col = 0
+
+            total_cols = self.sheet.get_total_columns()
+
             for r, ln in enumerate(rows):
+                row_idx = start_row + r
+                # Add rows if necessary
+                if row_idx >= self.sheet.get_total_rows():
+                    self.sheet.insert_row(row_idx)
+
                 parts = [p.strip() for p in ln.split("\t")]
-                self.sheet.insert_row(start + r)
-                for c, val in enumerate(parts[: self.sheet.get_total_columns()]):
-                    self.sheet.set_cell_data(start + r, c, val)
+                for c, val in enumerate(parts):
+                    col_idx = start_col + c
+                    if col_idx >= total_cols:
+                        break
+                    self.sheet.set_cell_data(row_idx, col_idx, val)
+
             return "break"
 
         def clear(self):
