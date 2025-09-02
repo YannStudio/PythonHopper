@@ -534,12 +534,6 @@ def start_gui():
             # Project info entries above production rows
             proj_frame = tk.LabelFrame(left, text="Projectgegevens", labelanchor="n")
             proj_frame.pack(fill="x", pady=(0, 6))
-            tk.Label(
-                proj_frame,
-                text="Deze gegevens gelden voor het volledige project",
-                anchor="w",
-            ).pack(fill="x", padx=6, pady=(0, 3))
-
             pn_row = tk.Frame(proj_frame)
             pn_row.pack(fill="x", pady=3)
             tk.Label(pn_row, text="Projectnr.", width=18, anchor="w").pack(side="left")
@@ -553,10 +547,6 @@ def start_gui():
             tk.Entry(name_row, textvariable=self.project_name_var, width=50).pack(side="left", padx=6)
 
             ttk.Separator(left, orient="horizontal").pack(fill="x", pady=(0, 6))
-
-            tk.Label(left, text="Kies leveranciers per productie", anchor="w").pack(
-                fill="x", pady=(0, 6)
-            )
 
             delivery_opts = [
                 "Geen",
