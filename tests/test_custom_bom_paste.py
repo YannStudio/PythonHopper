@@ -76,10 +76,9 @@ class _DummyFrame:
     COLS = (
         "PartNumber",
         "Description",
-        "Materiaal",
-        "Aantal",
-        "Oppervlakte",
-        "Gewicht",
+        "Production",
+        "QTY",
+        "Material",
     )
 
     def __init__(self, text="", fail_clip=False):
@@ -89,7 +88,7 @@ class _DummyFrame:
         self._fail_clip = fail_clip
 
     def _add_row(self):
-        self.tree.insert("", "end", values=("", "", "", 1, "", ""))
+        self.tree.insert("", "end", values=("", "", "", 1, ""))
 
     def clipboard_get(self):
         if self._fail_clip:
