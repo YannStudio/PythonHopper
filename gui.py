@@ -58,6 +58,7 @@ def sort_supplier_options(
 def start_gui():
     import tkinter as tk
     from tkinter import ttk, filedialog, messagebox, simpledialog
+    from tksheet import Sheet
 
     TREE_ODD_BG = "#FFFFFF"
     TREE_EVEN_BG = "#F5F5F5"
@@ -497,18 +498,41 @@ def start_gui():
         def __init__(self, master, app):
             super().__init__(master)
             self.app = app
-            cols = ("PartNumber", "Description", "Production")
-            self.tree = ttk.Treeview(self, columns=cols, show="headings")
-            for c in cols:
-                self.tree.heading(c, text=c)
-                self.tree.column(c, width=160, anchor="w")
-            self.tree.pack(fill="both", expand=True, padx=8, pady=8)
-            self.tree.bind("<Control-v>", self._on_paste)
-            self.tree.bind("<Command-v>", self._on_paste)
+            headers = (
+                "PartNumber",
+                "Description",
+                "Material",
+                "Quantity",
+                "Production",
+            )
+            self.sheet = Sheet(self, headers=headers)
+            self.sheet.enable_bindings(
+                (
+                    "single_select",
+                    "copy",
+                    "paste",
+                    "cut",
+                    "edit_cell",
+                    "arrowkeys",
+                )
+            )
+            self.sheet.pack(fill="both", expand=True, padx=8, pady=8)
+            self.sheet.bind("<Control-v>", self._on_paste)
+            self.sheet.bind("<Command-v>", self._on_paste)
             btns = tk.Frame(self)
             btns.pack(fill="x")
+            tk.Button(btns, text="Rij +", command=self.add_row).pack(side="left", padx=4)
+            tk.Button(btns, text="Rij -", command=self.del_row).pack(side="left", padx=4)
             tk.Button(btns, text="Wissen", command=self.clear).pack(side="left", padx=4)
             tk.Button(btns, text="Gebruik BOM", command=self.export).pack(side="left", padx=4)
+
+        def add_row(self):
+            self.sheet.insert_row(self.sheet.get_total_rows())
+
+        def del_row(self):
+            sel = self.sheet.get_currently_selected()
+            if isinstance(sel, tuple) and sel[0] is not None:
+                self.sheet.delete_row(sel[0])
 
         def _on_paste(self, _event=None):
             try:
@@ -516,38 +540,37 @@ def start_gui():
             except tk.TclError:
                 return "break"
             rows = [ln for ln in data.splitlines() if ln.strip()]
-            for ln in rows:
+            start = self.sheet.get_total_rows()
+            for r, ln in enumerate(rows):
                 parts = [p.strip() for p in ln.split("\t")]
-                pn = parts[0] if len(parts) > 0 else ""
-                desc = parts[1] if len(parts) > 1 else ""
-                prod = parts[2] if len(parts) > 2 else ""
-                self.tree.insert("", "end", values=(pn, desc, prod))
+                self.sheet.insert_row(start + r)
+                for c, val in enumerate(parts[: self.sheet.get_total_columns()]):
+                    self.sheet.set_cell_data(start + r, c, val)
             return "break"
 
         def clear(self):
-            for it in self.tree.get_children():
-                self.tree.delete(it)
+            self.sheet.set_sheet_data([])
 
         def export(self):
-            rows = [self.tree.item(it, "values") for it in self.tree.get_children()]
-            if not rows:
+            data = [row for row in self.sheet.get_sheet_data() if any(str(c).strip() for c in row)]
+            if not data:
                 self.app.bom_df = None
                 self.app.status_var.set("Geen data in Custom BOM")
                 return
-            n = len(rows)
-            df = pd.DataFrame(
-                {
-                    "PartNumber": [r[0] for r in rows],
-                    "Description": [r[1] for r in rows],
-                    "Production": [r[2] for r in rows],
-                    "Bestanden gevonden": ["" for _ in range(n)],
-                    "Status": ["" for _ in range(n)],
-                    "Materiaal": ["" for _ in range(n)],
-                    "Aantal": [1 for _ in range(n)],
-                    "Oppervlakte": ["" for _ in range(n)],
-                    "Gewicht": ["" for _ in range(n)],
-                }
-            )
+            df = pd.DataFrame(data, columns=[
+                "PartNumber",
+                "Description",
+                "Material",
+                "Quantity",
+                "Production",
+            ])
+            n = len(df)
+            df["Bestanden gevonden"] = ""
+            df["Status"] = ""
+            df["Materiaal"] = df["Material"]
+            df["Aantal"] = pd.to_numeric(df["Quantity"], errors="coerce").fillna(1).astype(int)
+            df["Oppervlakte"] = ""
+            df["Gewicht"] = ""
             self.app.bom_df = df
             self.app._refresh_tree()
             self.app.status_var.set(f"Custom BOM geladen: {n} rijen")
