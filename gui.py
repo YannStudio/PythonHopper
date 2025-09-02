@@ -555,7 +555,7 @@ def start_gui():
             data = [row for row in self.sheet.get_sheet_data() if any(str(c).strip() for c in row)]
             if not data:
                 self.app.bom_df = None
-                self.app.status_var.set("Geen data in Custom BOM")
+                self.app.status_var.set("Geen data in Custom BOM (open via de knop 'Custom BOM')")
                 return
             df = pd.DataFrame(data, columns=[
                 "PartNumber",
@@ -573,7 +573,7 @@ def start_gui():
             df["Gewicht"] = ""
             self.app.bom_df = df
             self.app._refresh_tree()
-            self.app.status_var.set(f"Custom BOM geladen: {n} rijen")
+            self.app.status_var.set(f"Custom BOM geladen: {n} rijen (tab open via de knop 'Custom BOM')")
             self.app.nb.select(self.app.main_frame)
 
     class SupplierSelectionFrame(tk.Frame):
@@ -1095,6 +1095,7 @@ def start_gui():
             # BOM controls
             bf = tk.Frame(main); bf.pack(fill="x", padx=8, pady=6)
             tk.Button(bf, text="Laad BOM (CSV/Excel)", command=self._load_bom).pack(side="left", padx=6)
+            tk.Button(bf, text="Custom BOM", command=self._open_custom_bom).pack(side="left", padx=6)
             tk.Button(bf, text="Controleer Bestanden", command=self._check_files).pack(side="left", padx=6)
 
             pnf = tk.Frame(main); pnf.pack(fill="x", padx=8, pady=(0,6))
@@ -1135,7 +1136,7 @@ def start_gui():
             tk.Button(act, text="Combine pdf", command=self._combine_pdf).pack(side="left", padx=6)
 
             # Status
-            self.status_var = tk.StringVar(value="Klaar")
+            self.status_var = tk.StringVar(value="Klaar - open de Custom BOM tab via de knop 'Custom BOM'")
             tk.Label(main, textvariable=self.status_var, anchor="w").pack(fill="x", padx=8, pady=(0,8))
 
         def _on_db_change(self):
@@ -1176,6 +1177,10 @@ def start_gui():
             if self.dxf_var.get(): exts.append(".dxf")
             if self.dwg_var.get(): exts.append(".dwg")
             return exts or None
+
+        def _open_custom_bom(self):
+            self.nb.select(self.custom_bom_frame)
+            self.status_var.set("Custom BOM tab geopend")
 
         def _load_bom(self):
             from tkinter import filedialog, messagebox
