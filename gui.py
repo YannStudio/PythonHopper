@@ -986,7 +986,11 @@ def start_gui():
                 self.tree.bind(ev, lambda e: self.after_idle(self._redraw_selection()))
 
             # Canvas used to draw selection rectangles
-            self.sel_canvas = tk.Canvas(self.tree, background="", highlightthickness=0)
+            style = ttk.Style()
+            bg = style.lookup("Treeview", "background") or "#FFFFFF"
+            self.sel_canvas = tk.Canvas(
+                self.tree, background=bg, highlightthickness=0, borderwidth=0
+            )
             self.sel_canvas.place(relx=0, rely=0, relwidth=1, relheight=1)
 
             # Start with one empty row
