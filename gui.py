@@ -4,6 +4,7 @@ import subprocess
 import sys
 import threading
 import unicodedata
+import io
 from typing import Dict, List, Optional
 
 import pandas as pd
@@ -943,12 +944,12 @@ def start_gui():
     class CustomBOMFrame(tk.Frame):
         """Frame to manually compose a BOM.
 
-        Clipboard paste supports two workflows:
+        Clipboard paste supports two workflows and accepts both tab- and
+        semicolon-separated data:
 
         * **Full-row paste** – the clipboard contains columns in the
           following order: PartNumber, Description, Materiaal, Aantal,
-          Oppervlakte, Gewicht. Locale-dependent separators (tab or
-          semicolon) are supported.
+          Oppervlakte, Gewicht.
         * **Single-column paste** – click a cell first and then paste a
           single column of values. The values are inserted into the
           selected column starting from the chosen row and the table grows
@@ -1008,7 +1009,9 @@ def start_gui():
 
         def _on_paste(self, _event=None):
             try:
-                df = pd.read_clipboard(sep=None, engine="python")
+                text = self.clipboard_get()
+                delimiter = "\t" if "\t" in text else ";"
+                df = pd.read_csv(io.StringIO(text), sep=delimiter)
             except Exception:
                 return "break"
 
