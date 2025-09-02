@@ -944,12 +944,11 @@ def start_gui():
     class CustomBOMFrame(tk.Frame):
         """Frame to manually compose a BOM.
 
-        Clipboard paste supports two workflows and accepts both tab- and
-        semicolon-separated data:
+        The clipboard accepts tab- or semicolon-separated text.
 
-        * **Full-row paste** – the clipboard contains columns in the
-          following order: PartNumber, Description, Materiaal, Aantal,
-          Oppervlakte, Gewicht.
+        * **Full-row paste** – expects columns in the following order:
+          PartNumber, Description, Materiaal, Aantal, Oppervlakte,
+          Gewicht.
         * **Single-column paste** – click a cell first and then paste a
           single column of values. The values are inserted into the
           selected column starting from the chosen row and the table grows
@@ -1039,8 +1038,8 @@ def start_gui():
         def _on_paste(self, _event=None):
             try:
                 text = self.clipboard_get()
-                delimiter = "\t" if "\t" in text else ";"
-                df = pd.read_csv(io.StringIO(text), sep=delimiter)
+                sep = "\t" if "\t" in text else ";"
+                df = pd.read_csv(io.StringIO(text), sep=sep, engine="python")
             except Exception:
                 return "break"
 
