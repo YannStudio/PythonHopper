@@ -1,4 +1,4 @@
-# PythonHopper
+# Filehopper
 Filehopper in Python
 
 ## Voorbeelden

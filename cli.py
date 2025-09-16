@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Command-line interface helpers for File Hopper."""
+"""Command-line interface helpers for Filehopper."""
 
 import os
 import shutil
@@ -412,7 +412,7 @@ def cli_copy_per_prod(args):
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="File Hopper dual-mode")
+    p = argparse.ArgumentParser(description="Filehopper dual-mode")
     p.add_argument(
         "--run-tests", action="store_true", help="Run basic self-tests and exit"
     )
