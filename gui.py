@@ -1009,6 +1009,7 @@ def start_gui():
             # BOM controls
             bf = tk.Frame(main); bf.pack(fill="x", padx=8, pady=6)
             tk.Button(bf, text="Laad BOM (CSV/Excel)", command=self._load_bom).pack(side="left", padx=6)
+            tk.Button(bf, text="Custom BOM", command=self._open_custom_bom).pack(side="left", padx=6)
             tk.Button(bf, text="Controleer Bestanden", command=self._check_files).pack(side="left", padx=6)
 
             pnf = tk.Frame(main); pnf.pack(fill="x", padx=8, pady=(0,6))
@@ -1104,6 +1105,9 @@ def start_gui():
                 self.status_var.set(f"BOM geladen: {len(self.bom_df)} rijen")
             except Exception as e:
                 messagebox.showerror("Fout", str(e))
+
+        def _open_custom_bom(self):
+            subprocess.Popen([sys.executable, "excel_like_table.py"])
 
         def _load_manual_pns(self):
             text = self.pn_text.get("1.0", "end").strip()
