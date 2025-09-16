@@ -15,7 +15,7 @@ from gui import start_gui
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    """Entry point for the File Hopper application."""
+    """Entry point for the Filehopper application."""
     argv = argv if argv is not None else sys.argv[1:]
     parser = build_parser()
     args = parser.parse_args(argv)
