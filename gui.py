@@ -949,7 +949,7 @@ def start_gui():
                 style.theme_use("aqua")
             else:
                 style.theme_use("clam")
-            self.title("Filehopper – Miami Vice Edition (Dual-mode)")
+            self.title("Filehopper")
             self.minsize(1024, 720)
 
             self.db = SuppliersDB.load(SUPPLIERS_DB_FILE)
