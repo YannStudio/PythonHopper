@@ -2,8 +2,10 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import unicodedata
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import pandas as pd
@@ -959,12 +961,21 @@ def start_gui():
             self.source_folder = ""
             self.dest_folder = ""
             self.bom_df: Optional[pd.DataFrame] = None
+            self._custom_bom_proc: Optional[subprocess.Popen] = None
+            self._custom_bom_temp_path: Optional[Path] = None
 
             self.nb = ttk.Notebook(self)
             self.nb.pack(fill="both", expand=True)
             main = tk.Frame(self.nb)
             self.nb.add(main, text="Main")
             self.main_frame = main
+            self.custom_bom_frame = tk.Frame(self.nb)
+            tk.Button(
+                self.custom_bom_frame,
+                text="Open Custom BOM editor",
+                command=self._open_custom_bom,
+            ).pack(anchor="w", padx=8, pady=8)
+            self.nb.insert(1, self.custom_bom_frame, text="Custom BOM")
             self.clients_frame = ClientsManagerFrame(
                 self.nb, self.client_db, on_change=self._on_db_change
             )
@@ -1009,7 +1020,11 @@ def start_gui():
             # BOM controls
             bf = tk.Frame(main); bf.pack(fill="x", padx=8, pady=6)
             tk.Button(bf, text="Laad BOM (CSV/Excel)", command=self._load_bom).pack(side="left", padx=6)
-            tk.Button(bf, text="Custom BOM", command=self._open_custom_bom).pack(side="left", padx=6)
+            tk.Button(
+                bf,
+                text="Custom BOM",
+                command=lambda: self.nb.select(self.custom_bom_frame),
+            ).pack(side="left", padx=6)
             tk.Button(bf, text="Controleer Bestanden", command=self._check_files).pack(side="left", padx=6)
 
             pnf = tk.Frame(main); pnf.pack(fill="x", padx=8, pady=(0,6))
@@ -1107,7 +1122,114 @@ def start_gui():
                 messagebox.showerror("Fout", str(e))
 
         def _open_custom_bom(self):
-            subprocess.Popen([sys.executable, "excel_like_table.py"])
+            if self._custom_bom_proc and self._custom_bom_proc.poll() is None:
+                messagebox.showinfo(
+                    "Custom BOM",
+                    "De Custom BOM editor is al geopend.",
+                    parent=self,
+                )
+                return
+
+            try:
+                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
+                temp_path = Path(tmp.name)
+                tmp.close()
+                try:
+                    temp_path.unlink()
+                except FileNotFoundError:
+                    pass
+            except Exception as exc:
+                messagebox.showerror(
+                    "Fout",
+                    f"Kon tijdelijk bestand niet voorbereiden: {exc}",
+                    parent=self,
+                )
+                return
+
+            try:
+                self._custom_bom_proc = subprocess.Popen(
+                    [sys.executable, "excel_like_table.py", str(temp_path)]
+                )
+                self._custom_bom_temp_path = temp_path
+            except Exception as exc:
+                self._custom_bom_proc = None
+                self._custom_bom_temp_path = None
+                messagebox.showerror(
+                    "Fout",
+                    f"Kon Custom BOM editor niet starten: {exc}",
+                    parent=self,
+                )
+                if temp_path.exists():
+                    try:
+                        temp_path.unlink()
+                    except Exception:
+                        pass
+                return
+
+            self.after(500, self._check_custom_bom_process)
+
+        def _check_custom_bom_process(self):
+            proc = self._custom_bom_proc
+            if not proc:
+                return
+            if proc.poll() is None:
+                self.after(500, self._check_custom_bom_process)
+                return
+
+            temp_path = self._custom_bom_temp_path
+            self._custom_bom_proc = None
+            self._custom_bom_temp_path = None
+            if temp_path is None:
+                return
+
+            try:
+                if not temp_path.exists():
+                    messagebox.showwarning(
+                        "Custom BOM",
+                        "Geen Custom BOM-bestand gevonden.",
+                        parent=self,
+                    )
+                    return
+
+                try:
+                    if temp_path.stat().st_size == 0:
+                        messagebox.showwarning(
+                            "Custom BOM",
+                            "Het Custom BOM-bestand is leeg.",
+                            parent=self,
+                        )
+                        return
+                except FileNotFoundError:
+                    messagebox.showwarning(
+                        "Custom BOM",
+                        "Geen Custom BOM-bestand gevonden.",
+                        parent=self,
+                    )
+                    return
+
+                try:
+                    self.bom_df = load_bom(str(temp_path))
+                except Exception as exc:
+                    messagebox.showerror(
+                        "Fout",
+                        f"Custom BOM kon niet worden geladen: {exc}",
+                        parent=self,
+                    )
+                    return
+
+                self._refresh_tree()
+                self.status_var.set("Custom BOM geladen")
+                messagebox.showinfo(
+                    "Custom BOM",
+                    "Custom BOM geladen.",
+                    parent=self,
+                )
+            finally:
+                try:
+                    if temp_path.exists():
+                        temp_path.unlink()
+                except Exception:
+                    pass
 
         def _load_manual_pns(self):
             text = self.pn_text.get("1.0", "end").strip()
