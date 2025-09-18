@@ -1,4 +1,5 @@
 import os
+import datetime
 import shutil
 import subprocess
 import sys
@@ -1000,7 +1001,7 @@ def start_gui():
             # Filters
             filt = tk.LabelFrame(main, text="Selecteer bestandstypen om te kopiëren", labelanchor="n"); filt.pack(fill="x", padx=8, pady=6)
             self.pdf_var = tk.IntVar(); self.step_var = tk.IntVar(); self.dxf_var = tk.IntVar(); self.dwg_var = tk.IntVar()
-            self.zip_var = tk.IntVar()
+            self.zip_var = tk.IntVar(); self.export_date_var = tk.IntVar()
             tk.Checkbutton(filt, text="PDF (.pdf)", variable=self.pdf_var).pack(anchor="w", padx=8)
             tk.Checkbutton(filt, text="STEP (.step, .stp)", variable=self.step_var).pack(anchor="w", padx=8)
             tk.Checkbutton(filt, text="DXF (.dxf)", variable=self.dxf_var).pack(anchor="w", padx=8)
@@ -1046,6 +1047,7 @@ def start_gui():
             tk.Button(act, text="Kopieer zonder submappen", command=self._copy_flat).pack(side="left", padx=6)
             tk.Button(act, text="Kopieer per productie + bestelbonnen", command=self._copy_per_prod).pack(side="left", padx=6)
             tk.Checkbutton(act, text="Zip per productie", variable=self.zip_var).pack(side="left", padx=6)
+            tk.Checkbutton(act, text="Datum in bestandsnamen", variable=self.export_date_var).pack(side="left", padx=6)
             tk.Button(act, text="Combine pdf", command=self._combine_pdf).pack(side="left", padx=6)
 
             # Status
@@ -1226,10 +1228,16 @@ def start_gui():
             def work():
                 self.status_var.set("Kopiëren...")
                 idx = _build_file_index(self.source_folder, exts)
+                add_date = bool(self.export_date_var.get())
+                today = datetime.date.today().strftime("%Y-%m-%d") if add_date else ""
                 cnt = 0
                 for _, paths in idx.items():
                     for p in paths:
-                        dst = os.path.join(self.dest_folder, os.path.basename(p))
+                        name = os.path.basename(p)
+                        if add_date:
+                            stem, ext = os.path.splitext(name)
+                            name = f"{stem}_{today}{ext}"
+                        dst = os.path.join(self.dest_folder, name)
                         shutil.copy2(p, dst)
                         cnt += 1
                 self.status_var.set(f"Gekopieerd: {cnt}")
@@ -1292,6 +1300,7 @@ def start_gui():
                         delivery_map=resolved_delivery_map,
                         footer_note=DEFAULT_FOOTER_NOTE,
                         zip_parts=bool(self.zip_var.get()),
+                        date_suffix_exports=bool(self.export_date_var.get()),
                         project_number=project_number,
                         project_name=project_name,
                     )

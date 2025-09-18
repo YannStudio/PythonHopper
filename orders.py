@@ -429,6 +429,7 @@ def copy_per_production_and_orders(
     delivery_map: Dict[str, DeliveryAddress] | None = None,
     footer_note: str = "",
     zip_parts: bool = False,
+    date_suffix_exports: bool = False,
     project_number: str | None = None,
     project_name: str | None = None,
 ) -> Tuple[int, Dict[str, str]]:
@@ -447,6 +448,9 @@ def copy_per_production_and_orders(
     collected into a single ``<production>.zip`` archive instead of individual
     ``PartNumber`` files. Only the generated order Excel/PDF remain unzipped in
     the production folder.
+
+    When ``date_suffix_exports`` is ``True`` the copied export files will have
+    ``YYYY-MM-DD`` appended to their filename before the extension.
     """
     os.makedirs(dest, exist_ok=True)
     file_index = _build_file_index(source, selected_exts)
@@ -462,6 +466,12 @@ def copy_per_production_and_orders(
 
     today = datetime.date.today().strftime("%Y-%m-%d")
     delivery_map = delivery_map or {}
+
+    def _export_name(fname: str) -> str:
+        if not date_suffix_exports:
+            return fname
+        stem, ext = os.path.splitext(fname)
+        return f"{stem}_{today}{ext}"
     for prod, rows in prod_to_rows.items():
         prod_folder = os.path.join(dest, prod)
         os.makedirs(prod_folder, exist_ok=True)
@@ -476,11 +486,13 @@ def copy_per_production_and_orders(
             if zip_parts:
                 for src_file in files:
                     if zf is not None:
-                        zf.write(src_file, arcname=os.path.basename(src_file))
+                        arcname = _export_name(os.path.basename(src_file))
+                        zf.write(src_file, arcname=arcname)
                         count_copied += 1
             else:
                 for src_file in files:
-                    dst = os.path.join(prod_folder, os.path.basename(src_file))
+                    name = _export_name(os.path.basename(src_file))
+                    dst = os.path.join(prod_folder, name)
                     shutil.copy2(src_file, dst)
                     count_copied += 1
 
