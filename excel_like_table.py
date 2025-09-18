@@ -10,6 +10,7 @@ from __future__ import annotations
 import sys
 from typing import List
 
+import pandas as pd
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 
@@ -85,6 +86,9 @@ class MainWindow(QtWidgets.QMainWindow):
         clear_btn = QtWidgets.QPushButton("Clear table")
         clear_btn.clicked.connect(self.clear_table)
 
+        upload_btn = QtWidgets.QPushButton("Upload to main app")
+        upload_btn.clicked.connect(self.upload)
+
         self.table = HighlightTableWidget(10, len(COLUMNS), self)
         self.table.setHorizontalHeaderLabels(COLUMNS)
         self.table.setSelectionMode(
@@ -106,8 +110,12 @@ class MainWindow(QtWidgets.QMainWindow):
             for c in range(self.table.columnCount()):
                 self.table.setItem(r, c, QtWidgets.QTableWidgetItem(""))
 
+        button_row = QtWidgets.QHBoxLayout()
+        button_row.addWidget(clear_btn)
+        button_row.addWidget(upload_btn)
+
         layout = QtWidgets.QVBoxLayout()
-        layout.addWidget(clear_btn)
+        layout.addLayout(button_row)
         layout.addWidget(self.table)
 
         container = QtWidgets.QWidget()
@@ -189,6 +197,38 @@ class MainWindow(QtWidgets.QMainWindow):
                 for c in range(self.table.columnCount()):
                     self.table.setItem(row, c, QtWidgets.QTableWidgetItem(""))
             self.statusBar().showMessage("Tabel leeggemaakt", 2000)
+
+    def upload(self) -> None:
+        rows: list[list[str]] = []
+        for r in range(self.table.rowCount()):
+            row_values: list[str] = []
+            has_data = False
+            for c in range(self.table.columnCount()):
+                item = self.table.item(r, c)
+                value = item.text() if item else ""
+                row_values.append(value)
+                if value.strip():
+                    has_data = True
+            if has_data:
+                rows.append(row_values)
+
+        df = pd.DataFrame(rows, columns=COLUMNS)
+
+        if len(sys.argv) < 2:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Upload mislukt",
+                "Geen uploadpad opgegeven (sys.argv[1]).",
+            )
+            return
+
+        csv_path = sys.argv[1]
+        df.to_csv(csv_path, index=False)
+        print(csv_path, flush=True)
+        self.close()
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            app.quit()
 
     # ── Hulpmethoden ─────────────────────────────────────────────────────────
     def _add_row_if_needed(self, _item: QtWidgets.QTableWidgetItem | None = None) -> None:
