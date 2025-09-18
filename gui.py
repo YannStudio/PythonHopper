@@ -4,9 +4,35 @@ import subprocess
 import sys
 import threading
 import unicodedata
+from importlib import util as importlib_util
 from typing import Dict, List, Optional
 
 import pandas as pd
+
+if importlib_util.find_spec("PyQt6") is not None:
+    from PyQt6 import QtCore, QtGui, QtWidgets  # pragma: no cover - optional GUI dependency
+else:  # pragma: no cover - PyQt is not available in the test env by default
+    QtCore = QtGui = QtWidgets = None
+
+
+CUSTOM_BOM_COLUMNS = [
+    "PartNumber",
+    "Description",
+    "Production",
+    "Materiaal",
+    "Aantal",
+    "Oppervlakte",
+    "Gewicht",
+]
+
+
+TREE_COLUMNS = [
+    "PartNumber",
+    "Description",
+    "Production",
+    "Bestanden gevonden",
+    "Status",
+]
 
 from helpers import _to_str, _build_file_index
 from models import Supplier, Client, DeliveryAddress
@@ -1367,4 +1393,242 @@ def start_gui():
                 )
 
     App().mainloop()
+
+
+if QtWidgets is not None:
+
+    class CustomBomTableModel(QtGui.QStandardItemModel):
+        """Model used by the PyQt custom BOM table view."""
+
+        def __init__(self, parent=None):
+            super().__init__(0, len(CUSTOM_BOM_COLUMNS), parent)
+            self.setHorizontalHeaderLabels(CUSTOM_BOM_COLUMNS)
+
+        def add_empty_row(self):
+            """Append a new editable row with sensible defaults."""
+
+            row = self.rowCount()
+            self.insertRow(row)
+            defaults = ["", "", "", "", "1", "", ""]
+            for col, default in enumerate(defaults):
+                item = QtGui.QStandardItem(default)
+                item.setEditable(True)
+                self.setItem(row, col, item)
+
+
+    class PyQtMainWindow(QtWidgets.QMainWindow):
+        """Alternative PyQt6-based main window used by downstream projects."""
+
+        def __init__(self):
+            super().__init__()
+            self.setWindowTitle("Filehopper")
+            self.resize(1024, 720)
+
+            self.bom_df: Optional[pd.DataFrame] = None
+
+            central = QtWidgets.QWidget(self)
+            self.setCentralWidget(central)
+            layout = QtWidgets.QVBoxLayout(central)
+
+            self.tabs = QtWidgets.QTabWidget(central)
+            layout.addWidget(self.tabs)
+
+            # --- Main tab -------------------------------------------------
+            self.main_tab = QtWidgets.QWidget()
+            self.tabs.addTab(self.main_tab, "Main")
+            main_layout = QtWidgets.QVBoxLayout(self.main_tab)
+
+            action_bar = QtWidgets.QHBoxLayout()
+            action_bar.addStretch()
+            self.custom_bom_button = QtWidgets.QPushButton("Custom BOM")
+            self.custom_bom_button.clicked.connect(self._open_custom_bom_tab)
+            action_bar.addWidget(self.custom_bom_button)
+            main_layout.addLayout(action_bar)
+
+            self.tree_widget = QtWidgets.QTableWidget(0, len(TREE_COLUMNS))
+            self.tree_widget.setHorizontalHeaderLabels(TREE_COLUMNS)
+            self.tree_widget.horizontalHeader().setStretchLastSection(True)
+            self.tree_widget.verticalHeader().setVisible(False)
+            self.tree_widget.setEditTriggers(
+                QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
+            )
+            main_layout.addWidget(self.tree_widget)
+
+            self.status_label = QtWidgets.QLabel("Klaar")
+            main_layout.addWidget(self.status_label)
+
+            # --- Custom BOM tab ------------------------------------------
+            self.custom_bom_tab = QtWidgets.QWidget()
+            self.tabs.addTab(self.custom_bom_tab, "Custom BOM")
+            custom_layout = QtWidgets.QVBoxLayout(self.custom_bom_tab)
+
+            custom_layout.addWidget(
+                QtWidgets.QLabel("Voer de BOM-gegevens hieronder handmatig in:")
+            )
+
+            self.custom_bom_model = CustomBomTableModel(self.custom_bom_tab)
+            self.custom_bom_view = QtWidgets.QTableView(self.custom_bom_tab)
+            self.custom_bom_view.setModel(self.custom_bom_model)
+            self.custom_bom_view.horizontalHeader().setStretchLastSection(True)
+            self.custom_bom_view.verticalHeader().setVisible(False)
+            self.custom_bom_view.setSelectionBehavior(
+                QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
+            )
+            custom_layout.addWidget(self.custom_bom_view)
+
+            controls = QtWidgets.QHBoxLayout()
+            self.add_custom_row_button = QtWidgets.QPushButton("Rij toevoegen")
+            self.add_custom_row_button.clicked.connect(
+                self.custom_bom_model.add_empty_row
+            )
+            controls.addWidget(self.add_custom_row_button)
+
+            self.remove_custom_row_button = QtWidgets.QPushButton(
+                "Geselecteerde rijen verwijderen"
+            )
+            self.remove_custom_row_button.clicked.connect(
+                self._remove_selected_custom_bom_rows
+            )
+            controls.addWidget(self.remove_custom_row_button)
+
+            controls.addStretch()
+
+            self.apply_custom_bom_button = QtWidgets.QPushButton("Gebruik Custom BOM")
+            self.apply_custom_bom_button.clicked.connect(self.apply_custom_bom)
+            controls.addWidget(self.apply_custom_bom_button)
+
+            custom_layout.addLayout(controls)
+
+            if self.custom_bom_model.rowCount() == 0:
+                self.custom_bom_model.add_empty_row()
+
+        # -----------------------------------------------------------------
+        # Helpers
+        # -----------------------------------------------------------------
+        def _open_custom_bom_tab(self):
+            """Show the custom BOM tab when the action button is pressed."""
+
+            self.tabs.setCurrentWidget(self.custom_bom_tab)
+            self.custom_bom_view.setFocus()
+
+        def _remove_selected_custom_bom_rows(self):
+            """Remove the selected rows from the custom BOM table."""
+
+            selection = self.custom_bom_view.selectionModel()
+            if not selection:
+                return
+
+            rows = sorted(
+                {index.row() for index in selection.selectedRows()}, reverse=True
+            )
+            for row in rows:
+                self.custom_bom_model.removeRow(row)
+            if self.custom_bom_model.rowCount() == 0:
+                self.custom_bom_model.add_empty_row()
+
+        # -----------------------------------------------------------------
+        # Data handling
+        # -----------------------------------------------------------------
+        def apply_custom_bom(self):
+            """Collect data from the table view and expose it as the active BOM."""
+
+            rows: List[Dict[str, str]] = []
+            for row in range(self.custom_bom_model.rowCount()):
+                record: Dict[str, str] = {}
+                empty = True
+                for col, header in enumerate(CUSTOM_BOM_COLUMNS):
+                    index = self.custom_bom_model.index(row, col)
+                    value = self.custom_bom_model.data(
+                        index, QtCore.Qt.ItemDataRole.DisplayRole
+                    )
+                    if value is None:
+                        value = ""
+                    if isinstance(value, str):
+                        value = value.strip()
+                    if value not in ("", None):
+                        empty = False
+                    record[header] = value
+                if empty:
+                    continue
+                record["Aantal"] = self._coerce_amount(record.get("Aantal", ""))
+                rows.append(record)
+
+            if not rows:
+                self.bom_df = pd.DataFrame(columns=CUSTOM_BOM_COLUMNS + [
+                    "Bestanden gevonden",
+                    "Status",
+                ])
+                self._refresh_tree()
+                self.status_label.setText("Geen Custom BOM-gegevens ingevuld.")
+                return
+
+            df = pd.DataFrame(rows)
+
+            for col in CUSTOM_BOM_COLUMNS:
+                if col not in df.columns:
+                    df[col] = 1 if col == "Aantal" else ""
+
+            for col in ("Bestanden gevonden", "Status"):
+                if col not in df.columns:
+                    df[col] = ""
+
+            desired_order = [
+                "PartNumber",
+                "Description",
+                "Production",
+                "Materiaal",
+                "Aantal",
+                "Oppervlakte",
+                "Gewicht",
+                "Bestanden gevonden",
+                "Status",
+            ]
+            df = df[desired_order]
+
+            self.bom_df = df
+            self._refresh_tree()
+            self.tabs.setCurrentWidget(self.main_tab)
+            self.status_label.setText(
+                f"Custom BOM toegepast: {len(self.bom_df)} rijen."
+            )
+
+        def _coerce_amount(self, value):
+            """Convert the amount field to an integer when possible."""
+
+            if value in (None, ""):
+                return 1
+            if isinstance(value, (int, float)):
+                return int(value)
+            if isinstance(value, str):
+                txt = value.replace(",", ".").strip()
+                if not txt:
+                    return 1
+                try:
+                    return int(float(txt))
+                except ValueError:
+                    return txt
+            return value
+
+        def _refresh_tree(self):
+            """Refresh the preview tree with the currently loaded BOM."""
+
+            self.tree_widget.setRowCount(0)
+            if self.bom_df is None or self.bom_df.empty:
+                return
+
+            for row_idx, (_, row) in enumerate(self.bom_df.iterrows()):
+                self.tree_widget.insertRow(row_idx)
+                for col_idx, header in enumerate(TREE_COLUMNS):
+                    value = row.get(header, "")
+                    item = QtWidgets.QTableWidgetItem(_to_str(value))
+                    self.tree_widget.setItem(row_idx, col_idx, item)
+
+
+    def start_pyqt_gui():  # pragma: no cover - UI helper, not used in tests
+        """Launch the PyQt6 based interface if the dependency is installed."""
+
+        app = QtWidgets.QApplication(sys.argv)
+        window = PyQtMainWindow()
+        window.show()
+        app.exec()
 
