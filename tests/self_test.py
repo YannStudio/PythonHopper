@@ -6,13 +6,14 @@ import datetime
 
 import pandas as pd
 import pytest
-pytest.importorskip("openpyxl")
+
+openpyxl = pytest.importorskip("openpyxl")
 
 from models import Supplier, Client
 from suppliers_db import SuppliersDB
 from clients_db import ClientsDB
 from bom import load_bom
-from orders import copy_per_production_and_orders, DEFAULT_FOOTER_NOTE
+from orders import copy_per_production_and_orders, DEFAULT_FOOTER_NOTE, write_order_excel
 
 
 def run_tests() -> int:
@@ -109,6 +110,15 @@ def run_tests() -> int:
         assert ws["A11"].value == "BTW" and ws["B11"].value == "BE123"
         assert ws["A12"].value == "E-mail" and ws["B12"].value == "x@y.z"
         assert ws["A13"].value == "Tel" and ws["B13"].value == "+32 123"
+        header_row = None
+        for row in range(1, ws.max_row + 1):
+            if ws.cell(row=row, column=1).value == "PartNumber":
+                header_row = row
+                break
+        assert header_row is not None, "PartNumber header niet gevonden"
+        pn_cell = ws.cell(row=header_row + 1, column=1)
+        assert pn_cell.alignment is not None
+        assert pn_cell.alignment.wrap_text, "PartNumber wrap_text niet geactiveerd"
         pdfs = [f for f in os.listdir(prod_folder) if f.lower().endswith(".pdf")]
         assert pdfs, "PDF bestelbon niet aangemaakt"
     print("All tests passed.")
@@ -117,3 +127,29 @@ def run_tests() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(run_tests())
+
+
+def test_order_excel_partnumber_wrap_text(tmp_path):
+    path = tmp_path / "order.xlsx"
+    items = [
+        {
+            "PartNumber": "PN1-THIS-IS-A-VERY-LONG-CODE-OVER-25CHARS",
+            "Description": "Lange omschrijving",
+            "Materiaal": "S235JR",
+            "Aantal": 1,
+            "Oppervlakte": "1,23",
+            "Gewicht": "4,56",
+        }
+    ]
+    write_order_excel(str(path), items, doc_number="BB-1")
+    wb = openpyxl.load_workbook(path)
+    ws = wb.active
+    header_row = None
+    for row in range(1, ws.max_row + 1):
+        if ws.cell(row=row, column=1).value == "PartNumber":
+            header_row = row
+            break
+    assert header_row is not None, "PartNumber header niet gevonden"
+    pn_cell = ws.cell(row=header_row + 1, column=1)
+    assert pn_cell.alignment is not None
+    assert pn_cell.alignment.wrap_text
