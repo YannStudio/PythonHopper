@@ -17,8 +17,10 @@ from typing import Dict, List, Tuple
 import pandas as pd
 try:
     from openpyxl.styles import Alignment
+    from openpyxl.utils import get_column_letter
 except Exception:  # pragma: no cover - optional dependency
     Alignment = None
+    get_column_letter = None
 
 try:
     from PyPDF2 import PdfMerger
@@ -386,8 +388,15 @@ def write_order_excel(
                 ws.cell(row=r, column=2, value=value)
 
             left_cols = {"PartNumber", "Description"}
+            wrap_cols = {"PartNumber", "Description"}
             for col_idx, col_name in enumerate(df.columns, start=1):
-                align = Alignment(horizontal="left" if col_name in left_cols else "right")
+                align = Alignment(
+                    horizontal="left" if col_name in left_cols else "right",
+                    wrap_text=col_name in wrap_cols,
+                )
+                if col_name == "PartNumber" and get_column_letter is not None:
+                    column_letter = get_column_letter(col_idx)
+                    ws.column_dimensions[column_letter].width = 25
                 for row in range(startrow + 1, startrow + len(df) + 2):
                     ws.cell(row=row, column=col_idx).alignment = align
 
