@@ -121,6 +121,32 @@ def run_tests() -> int:
         assert pn_cell.alignment.wrap_text, "PartNumber wrap_text niet geactiveerd"
         pdfs = [f for f in os.listdir(prod_folder) if f.lower().endswith(".pdf")]
         assert pdfs, "PDF bestelbon niet aangemaakt"
+
+        dst_dates = os.path.join(td, "dst_dates")
+        os.makedirs(dst_dates)
+        cnt_dates, _ = copy_per_production_and_orders(
+            src,
+            dst_dates,
+            ldf,
+            [".pdf", ".stp"],
+            db,
+            {},
+            {},
+            {"Laser": "1"},
+            True,
+            client=client,
+            delivery_map={},
+            footer_note=DEFAULT_FOOTER_NOTE,
+            date_suffix_exports=True,
+        )
+        assert cnt_dates == 2
+        prod_folder_dates = os.path.join(dst_dates, "Laser")
+        assert os.path.exists(
+            os.path.join(prod_folder_dates, f"PN1_{today}.pdf")
+        )
+        assert os.path.exists(
+            os.path.join(prod_folder_dates, f"PN1_{today}.stp")
+        )
     print("All tests passed.")
     return 0
 
