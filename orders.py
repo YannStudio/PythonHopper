@@ -461,7 +461,8 @@ def copy_per_production_and_orders(
 
     When ``date_prefix_exports`` is ``True`` the copied export files will start
     with ``YYYYMMDD-``. When ``date_suffix_exports`` is ``True`` they will end
-    with ``-YYYYMMDD`` before the extension.
+    with ``-YYYYMMDD`` before the extension. Both transformations are applied
+    consistently to copied files and ZIP archive members.
     """
     os.makedirs(dest, exist_ok=True)
     file_index = _build_file_index(source, selected_exts)
@@ -480,10 +481,12 @@ def copy_per_production_and_orders(
     date_token = today_date.strftime("%Y%m%d")
     delivery_map = delivery_map or {}
 
-    def _export_name(fname: str) -> str:
+    def _transform_export_name(filename: str) -> str:
+        """Apply prefix/suffix date tokens to ``filename`` when requested."""
+
         if not (date_prefix_exports or date_suffix_exports):
-            return fname
-        stem, ext = os.path.splitext(fname)
+            return filename
+        stem, ext = os.path.splitext(filename)
         if date_prefix_exports:
             stem = f"{date_token}-{stem}"
         if date_suffix_exports:
@@ -500,16 +503,14 @@ def copy_per_production_and_orders(
         for row in rows:
             pn = str(row["PartNumber"])
             files = file_index.get(pn, [])
-            if zip_parts:
-                for src_file in files:
+            for src_file in files:
+                transformed = _transform_export_name(os.path.basename(src_file))
+                if zip_parts:
                     if zf is not None:
-                        arcname = _export_name(os.path.basename(src_file))
-                        zf.write(src_file, arcname=arcname)
+                        zf.write(src_file, arcname=transformed)
                         count_copied += 1
-            else:
-                for src_file in files:
-                    name = _export_name(os.path.basename(src_file))
-                    dst = os.path.join(prod_folder, name)
+                else:
+                    dst = os.path.join(prod_folder, transformed)
                     shutil.copy2(src_file, dst)
                     count_copied += 1
 
