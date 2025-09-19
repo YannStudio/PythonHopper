@@ -438,6 +438,7 @@ def copy_per_production_and_orders(
     delivery_map: Dict[str, DeliveryAddress] | None = None,
     footer_note: str = "",
     zip_parts: bool = False,
+    date_prefix_exports: bool = False,
     date_suffix_exports: bool = False,
     project_number: str | None = None,
     project_name: str | None = None,
@@ -458,8 +459,9 @@ def copy_per_production_and_orders(
     ``PartNumber`` files. Only the generated order Excel/PDF remain unzipped in
     the production folder.
 
-    When ``date_suffix_exports`` is ``True`` the copied export files will have
-    ``YYYY-MM-DD`` appended to their filename before the extension.
+    When ``date_prefix_exports`` is ``True`` the copied export files will start
+    with ``YYYYMMDD-``. When ``date_suffix_exports`` is ``True`` they will end
+    with ``-YYYYMMDD`` before the extension.
     """
     os.makedirs(dest, exist_ok=True)
     file_index = _build_file_index(source, selected_exts)
@@ -473,14 +475,20 @@ def copy_per_production_and_orders(
         prod = (row.get("Production") or "").strip() or "_Onbekend"
         prod_to_rows[prod].append(row)
 
-    today = datetime.date.today().strftime("%Y-%m-%d")
+    today_date = datetime.date.today()
+    today = today_date.strftime("%Y-%m-%d")
+    date_token = today_date.strftime("%Y%m%d")
     delivery_map = delivery_map or {}
 
     def _export_name(fname: str) -> str:
-        if not date_suffix_exports:
+        if not (date_prefix_exports or date_suffix_exports):
             return fname
         stem, ext = os.path.splitext(fname)
-        return f"{stem}_{today}{ext}"
+        if date_prefix_exports:
+            stem = f"{date_token}-{stem}"
+        if date_suffix_exports:
+            stem = f"{stem}-{date_token}"
+        return f"{stem}{ext}"
     for prod, rows in prod_to_rows.items():
         prod_folder = os.path.join(dest, prod)
         os.makedirs(prod_folder, exist_ok=True)
