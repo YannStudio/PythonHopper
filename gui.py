@@ -1228,15 +1228,28 @@ def start_gui():
             def work():
                 self.status_var.set("Kopiëren...")
                 idx = _build_file_index(self.source_folder, exts)
-                add_date = bool(self.export_date_var.get())
-                today = datetime.date.today().strftime("%Y-%m-%d") if add_date else ""
+                prefix_var = getattr(self, "export_date_prefix_var", None)
+                suffix_var = getattr(self, "export_date_suffix_var", None)
+                add_prefix = bool(prefix_var.get()) if prefix_var is not None else False
+                add_suffix = bool(suffix_var.get()) if suffix_var is not None else False
+                if prefix_var is None and suffix_var is None:
+                    export_date_var = getattr(self, "export_date_var", None)
+                    add_suffix = bool(export_date_var.get()) if export_date_var is not None else False
+                use_date = add_prefix or add_suffix
+                date_str = (
+                    datetime.date.today().strftime("%Y%m%d") if use_date else ""
+                )
                 cnt = 0
                 for _, paths in idx.items():
                     for p in paths:
                         name = os.path.basename(p)
-                        if add_date:
+                        if use_date:
                             stem, ext = os.path.splitext(name)
-                            name = f"{stem}_{today}{ext}"
+                            if add_suffix:
+                                stem = f"{stem}-{date_str}"
+                            if add_prefix:
+                                stem = f"{date_str}-{stem}"
+                            name = f"{stem}{ext}"
                         dst = os.path.join(self.dest_folder, name)
                         shutil.copy2(p, dst)
                         cnt += 1
