@@ -1246,17 +1246,20 @@ def start_gui():
                     if date_prefix or date_suffix
                     else ""
                 )
+
+                def _export_name(fname: str) -> str:
+                    if not date_token:
+                        return fname
+                    stem, ext = os.path.splitext(fname)
+                    if date_prefix:
+                        stem = f"{date_token}-{stem}"
+                    if date_suffix:
+                        stem = f"{stem}-{date_token}"
+                    return f"{stem}{ext}"
                 cnt = 0
                 for _, paths in idx.items():
                     for p in paths:
-                        name = os.path.basename(p)
-                        if date_token:
-                            stem, ext = os.path.splitext(name)
-                            if date_prefix:
-                                stem = f"{date_token}-{stem}"
-                            if date_suffix:
-                                stem = f"{stem}-{date_token}"
-                            name = f"{stem}{ext}"
+                        name = _export_name(os.path.basename(p))
                         dst = os.path.join(self.dest_folder, name)
                         shutil.copy2(p, dst)
                         cnt += 1
