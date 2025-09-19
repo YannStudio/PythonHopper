@@ -142,12 +142,11 @@ def run_tests() -> int:
         )
         assert cnt_dates == 2
         prod_folder_dates = os.path.join(dst_dates, "Laser")
-        assert os.path.exists(
-            os.path.join(prod_folder_dates, f"PN1-{date_token}.pdf")
-        )
-        assert os.path.exists(
-            os.path.join(prod_folder_dates, f"PN1-{date_token}.stp")
-        )
+        suffix_pdf_name = f"PN1-{date_token}.pdf"
+        suffix_stp_name = f"PN1-{date_token}.stp"
+        assert "_" not in suffix_pdf_name and "_" not in suffix_stp_name
+        assert os.path.exists(os.path.join(prod_folder_dates, suffix_pdf_name))
+        assert os.path.exists(os.path.join(prod_folder_dates, suffix_stp_name))
 
         dst_prefix = os.path.join(td, "dst_prefix")
         os.makedirs(dst_prefix)
@@ -168,11 +167,39 @@ def run_tests() -> int:
         )
         assert cnt_prefix == 2
         prod_folder_prefix = os.path.join(dst_prefix, "Laser")
+        prefix_pdf_name = f"{date_token}-PN1.pdf"
+        prefix_stp_name = f"{date_token}-PN1.stp"
+        assert os.path.exists(os.path.join(prod_folder_prefix, prefix_pdf_name))
+        assert os.path.exists(os.path.join(prod_folder_prefix, prefix_stp_name))
+
+        dst_prefix_suffix = os.path.join(td, "dst_prefix_suffix")
+        os.makedirs(dst_prefix_suffix)
+        cnt_prefix_suffix, _ = copy_per_production_and_orders(
+            src,
+            dst_prefix_suffix,
+            ldf,
+            [".pdf", ".stp"],
+            db,
+            {},
+            {},
+            {"Laser": "1"},
+            True,
+            client=client,
+            delivery_map={},
+            footer_note=DEFAULT_FOOTER_NOTE,
+            date_prefix_exports=True,
+            date_suffix_exports=True,
+        )
+        assert cnt_prefix_suffix == 2
+        prod_folder_prefix_suffix = os.path.join(dst_prefix_suffix, "Laser")
+        prefix_suffix_pdf = f"{date_token}-PN1-{date_token}.pdf"
+        prefix_suffix_stp = f"{date_token}-PN1-{date_token}.stp"
+        assert "_" not in prefix_suffix_pdf and "_" not in prefix_suffix_stp
         assert os.path.exists(
-            os.path.join(prod_folder_prefix, f"{date_token}-PN1.pdf")
+            os.path.join(prod_folder_prefix_suffix, prefix_suffix_pdf)
         )
         assert os.path.exists(
-            os.path.join(prod_folder_prefix, f"{date_token}-PN1.stp")
+            os.path.join(prod_folder_prefix_suffix, prefix_suffix_stp)
         )
     print("All tests passed.")
     return 0
