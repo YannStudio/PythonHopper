@@ -438,6 +438,7 @@ def copy_per_production_and_orders(
     delivery_map: Dict[str, DeliveryAddress] | None = None,
     footer_note: str = "",
     zip_parts: bool = False,
+    date_prefix_exports: bool = False,
     date_suffix_exports: bool = False,
     project_number: str | None = None,
     project_name: str | None = None,
@@ -458,8 +459,9 @@ def copy_per_production_and_orders(
     ``PartNumber`` files. Only the generated order Excel/PDF remain unzipped in
     the production folder.
 
-    When ``date_suffix_exports`` is ``True`` the copied export files will have
-    ``YYYY-MM-DD`` appended to their filename before the extension.
+    When ``date_prefix_exports`` is ``True`` the copied export files will be
+    prefixed with ``YYYYMMDD-``. When ``date_suffix_exports`` is ``True`` they
+    receive a ``-YYYYMMDD`` suffix before the extension.
     """
     os.makedirs(dest, exist_ok=True)
     file_index = _build_file_index(source, selected_exts)
@@ -473,14 +475,19 @@ def copy_per_production_and_orders(
         prod = (row.get("Production") or "").strip() or "_Onbekend"
         prod_to_rows[prod].append(row)
 
-    today = datetime.date.today().strftime("%Y-%m-%d")
+    today = datetime.date.today()
+    today_doc = today.strftime("%Y-%m-%d")
+    today_stamp = today.strftime("%Y%m%d")
     delivery_map = delivery_map or {}
 
     def _export_name(fname: str) -> str:
-        if not date_suffix_exports:
-            return fname
         stem, ext = os.path.splitext(fname)
-        return f"{stem}_{today}{ext}"
+        parts = [stem]
+        if date_prefix_exports:
+            parts.insert(0, today_stamp)
+        if date_suffix_exports:
+            parts.append(today_stamp)
+        return f"{'-'.join(parts)}{ext}"
     for prod, rows in prod_to_rows.items():
         prod_folder = os.path.join(dest, prod)
         os.makedirs(prod_folder, exist_ok=True)
@@ -541,7 +548,7 @@ def copy_per_production_and_orders(
                     doc_num = f"{prefix}{doc_num}"
             num_part = f"_{doc_num}" if doc_num else ""
             excel_path = os.path.join(
-                prod_folder, f"{doc_type}{num_part}_{prod}_{today}.xlsx"
+                prod_folder, f"{doc_type}{num_part}_{prod}_{today_doc}.xlsx"
             )
             delivery = delivery_map.get(prod)
             write_order_excel(
@@ -557,7 +564,7 @@ def copy_per_production_and_orders(
             )
 
             pdf_path = os.path.join(
-                prod_folder, f"{doc_type}{num_part}_{prod}_{today}.pdf"
+                prod_folder, f"{doc_type}{num_part}_{prod}_{today_doc}.pdf"
             )
             try:
                 generate_pdf_order_platypus(
