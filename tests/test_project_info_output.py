@@ -54,9 +54,9 @@ def test_project_info_in_documents(tmp_path, monkeypatch):
     cli_copy_per_prod(args)
 
     prod_folder = dst / "Laser"
-    today = datetime.date.today().strftime("%Y-%m-%d")
+    today_file = datetime.date.today().strftime("%Y%m%d")
 
-    xlsx_path = prod_folder / f"Bestelbon_Laser_{today}.xlsx"
+    xlsx_path = prod_folder / f"Bestelbon_Laser_{today_file}.xlsx"
     assert xlsx_path.exists()
     wb = openpyxl.load_workbook(xlsx_path)
     ws = wb.active
@@ -68,7 +68,7 @@ def test_project_info_in_documents(tmp_path, monkeypatch):
     assert ws[f"B{row_num}"].value == "PRJ123"
     assert ws[f"B{row_name}"].value == "New Project"
 
-    pdf_path = prod_folder / f"Bestelbon_Laser_{today}.pdf"
+    pdf_path = prod_folder / f"Bestelbon_Laser_{today_file}.pdf"
     assert pdf_path.exists()
     reader = PdfReader(pdf_path)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)

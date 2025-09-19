@@ -42,24 +42,25 @@ def test_doc_number_in_name_and_header(tmp_path):
     )
 
     prod_folder = dst / "Laser"
-    today = datetime.date.today().strftime("%Y-%m-%d")
+    today_display = datetime.date.today().strftime("%Y-%m-%d")
+    today_file = datetime.date.today().strftime("%Y%m%d")
 
-    xlsx_path = prod_folder / f"Bestelbon_BB-123_Laser_{today}.xlsx"
+    xlsx_path = prod_folder / f"Bestelbon_BB-123_Laser_{today_file}.xlsx"
     assert xlsx_path.exists()
     wb = openpyxl.load_workbook(xlsx_path)
     ws = wb.active
     assert ws["A1"].value == "Nummer"
     assert ws["B1"].value == "BB-123"
     assert ws["A2"].value == "Datum"
-    assert ws["B2"].value == today
+    assert ws["B2"].value == today_display
 
-    pdf_path = prod_folder / f"Bestelbon_BB-123_Laser_{today}.pdf"
+    pdf_path = prod_folder / f"Bestelbon_BB-123_Laser_{today_file}.pdf"
     assert pdf_path.exists()
     reader = PdfReader(pdf_path)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
     lines = text.splitlines()
     assert f"Nummer: BB-123" in text
-    assert f"Datum: {today}" in text
+    assert f"Datum: {today_display}" in text
     assert "BB-123" not in lines[0]
 
 
@@ -100,24 +101,25 @@ def test_offerte_prefix_in_output(tmp_path):
     )
 
     prod_folder = dst / "Laser"
-    today = datetime.date.today().strftime("%Y-%m-%d")
+    today_display = datetime.date.today().strftime("%Y-%m-%d")
+    today_file = datetime.date.today().strftime("%Y%m%d")
 
-    xlsx_path = prod_folder / f"Offerteaanvraag_OFF-42_Laser_{today}.xlsx"
+    xlsx_path = prod_folder / f"Offerteaanvraag_OFF-42_Laser_{today_file}.xlsx"
     assert xlsx_path.exists()
     wb = openpyxl.load_workbook(xlsx_path)
     ws = wb.active
     assert ws["A1"].value == "Nummer"
     assert ws["B1"].value == "OFF-42"
     assert ws["A2"].value == "Datum"
-    assert ws["B2"].value == today
+    assert ws["B2"].value == today_display
 
-    pdf_path = prod_folder / f"Offerteaanvraag_OFF-42_Laser_{today}.pdf"
+    pdf_path = prod_folder / f"Offerteaanvraag_OFF-42_Laser_{today_file}.pdf"
     assert pdf_path.exists()
     reader = PdfReader(pdf_path)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
     lines = text.splitlines()
     assert f"Nummer: OFF-42" in text
-    assert f"Datum: {today}" in text
+    assert f"Datum: {today_display}" in text
     assert "OFF-42" not in lines[0]
 
 
@@ -150,22 +152,23 @@ def test_missing_doc_number_omits_prefix_and_header(tmp_path):
     )
 
     prod_folder = dst / "Laser"
-    today = datetime.date.today().strftime("%Y-%m-%d")
+    today_display = datetime.date.today().strftime("%Y-%m-%d")
+    today_file = datetime.date.today().strftime("%Y%m%d")
 
-    xlsx_path = prod_folder / f"Bestelbon_Laser_{today}.xlsx"
+    xlsx_path = prod_folder / f"Bestelbon_Laser_{today_file}.xlsx"
     assert xlsx_path.exists()
     wb = openpyxl.load_workbook(xlsx_path)
     ws = wb.active
     # Without document number the header starts with the date
     assert ws["A1"].value == "Datum"
-    assert ws["B1"].value == today
+    assert ws["B1"].value == today_display
     rows = list(ws.iter_rows(min_row=1, max_row=10, max_col=2, values_only=True))
     assert all(r[0] != "Nummer" for r in rows)
 
-    pdf_path = prod_folder / f"Bestelbon_Laser_{today}.pdf"
+    pdf_path = prod_folder / f"Bestelbon_Laser_{today_file}.pdf"
     assert pdf_path.exists()
     reader = PdfReader(pdf_path)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
     assert "Nummer:" not in text
-    assert f"Datum: {today}" in text
+    assert f"Datum: {today_display}" in text
 
