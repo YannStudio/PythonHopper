@@ -1001,7 +1001,9 @@ def start_gui():
             # Filters
             filt = tk.LabelFrame(main, text="Selecteer bestandstypen om te kopiëren", labelanchor="n"); filt.pack(fill="x", padx=8, pady=6)
             self.pdf_var = tk.IntVar(); self.step_var = tk.IntVar(); self.dxf_var = tk.IntVar(); self.dwg_var = tk.IntVar()
-            self.zip_var = tk.IntVar(); self.export_date_var = tk.IntVar()
+            self.zip_var = tk.IntVar()
+            self.export_date_prefix_var = tk.IntVar()
+            self.export_date_suffix_var = tk.IntVar()
             tk.Checkbutton(filt, text="PDF (.pdf)", variable=self.pdf_var).pack(anchor="w", padx=8)
             tk.Checkbutton(filt, text="STEP (.step, .stp)", variable=self.step_var).pack(anchor="w", padx=8)
             tk.Checkbutton(filt, text="DXF (.dxf)", variable=self.dxf_var).pack(anchor="w", padx=8)
@@ -1047,7 +1049,16 @@ def start_gui():
             tk.Button(act, text="Kopieer zonder submappen", command=self._copy_flat).pack(side="left", padx=6)
             tk.Button(act, text="Kopieer per productie + bestelbonnen", command=self._copy_per_prod).pack(side="left", padx=6)
             tk.Checkbutton(act, text="Zip per productie", variable=self.zip_var).pack(side="left", padx=6)
-            tk.Checkbutton(act, text="Datum in bestandsnamen", variable=self.export_date_var).pack(side="left", padx=6)
+            tk.Checkbutton(
+                act,
+                text="Datumprefix (YYYYMMDD-)",
+                variable=self.export_date_prefix_var,
+            ).pack(side="left", padx=6)
+            tk.Checkbutton(
+                act,
+                text="Datumsuffix (-YYYYMMDD)",
+                variable=self.export_date_suffix_var,
+            ).pack(side="left", padx=6)
             tk.Button(act, text="Combine pdf", command=self._combine_pdf).pack(side="left", padx=6)
 
             # Status
@@ -1228,15 +1239,24 @@ def start_gui():
             def work():
                 self.status_var.set("Kopiëren...")
                 idx = _build_file_index(self.source_folder, exts)
-                add_date = bool(self.export_date_var.get())
-                today = datetime.date.today().strftime("%Y-%m-%d") if add_date else ""
+                date_prefix = bool(self.export_date_prefix_var.get())
+                date_suffix = bool(self.export_date_suffix_var.get())
+                date_token = (
+                    datetime.date.today().strftime("%Y%m%d")
+                    if date_prefix or date_suffix
+                    else ""
+                )
                 cnt = 0
                 for _, paths in idx.items():
                     for p in paths:
                         name = os.path.basename(p)
-                        if add_date:
+                        if date_token:
                             stem, ext = os.path.splitext(name)
-                            name = f"{stem}_{today}{ext}"
+                            if date_prefix:
+                                stem = f"{date_token}-{stem}"
+                            if date_suffix:
+                                stem = f"{stem}-{date_token}"
+                            name = f"{stem}{ext}"
                         dst = os.path.join(self.dest_folder, name)
                         shutil.copy2(p, dst)
                         cnt += 1
@@ -1300,7 +1320,8 @@ def start_gui():
                         delivery_map=resolved_delivery_map,
                         footer_note=DEFAULT_FOOTER_NOTE,
                         zip_parts=bool(self.zip_var.get()),
-                        date_suffix_exports=bool(self.export_date_var.get()),
+                        date_prefix_exports=bool(self.export_date_prefix_var.get()),
+                        date_suffix_exports=bool(self.export_date_suffix_var.get()),
                         project_number=project_number,
                         project_name=project_name,
                     )

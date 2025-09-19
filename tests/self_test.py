@@ -98,9 +98,10 @@ def run_tests() -> int:
         assert xlsx, "Excel bestelbon niet aangemaakt"
         wb = openpyxl.load_workbook(os.path.join(prod_folder, xlsx[0]))
         ws = wb.active
-        today = datetime.date.today().strftime("%Y-%m-%d")
+        today_display = datetime.date.today().strftime("%Y-%m-%d")
+        date_token = datetime.date.today().strftime("%Y%m%d")
         assert ws["A1"].value == "Nummer" and ws["B1"].value == "BB-1"
-        assert ws["A2"].value == "Datum" and ws["B2"].value == today
+        assert ws["A2"].value == "Datum" and ws["B2"].value == today_display
         assert ws["A4"].value == "Bedrijf" and ws["B4"].value == client.name
         assert ws["A9"].value == "Leverancier" and ws["B9"].value == "ACME"
         assert ws["A10"].value == "Adres"
@@ -142,10 +143,36 @@ def run_tests() -> int:
         assert cnt_dates == 2
         prod_folder_dates = os.path.join(dst_dates, "Laser")
         assert os.path.exists(
-            os.path.join(prod_folder_dates, f"PN1_{today}.pdf")
+            os.path.join(prod_folder_dates, f"PN1-{date_token}.pdf")
         )
         assert os.path.exists(
-            os.path.join(prod_folder_dates, f"PN1_{today}.stp")
+            os.path.join(prod_folder_dates, f"PN1-{date_token}.stp")
+        )
+
+        dst_prefix = os.path.join(td, "dst_prefix")
+        os.makedirs(dst_prefix)
+        cnt_prefix, _ = copy_per_production_and_orders(
+            src,
+            dst_prefix,
+            ldf,
+            [".pdf", ".stp"],
+            db,
+            {},
+            {},
+            {"Laser": "1"},
+            True,
+            client=client,
+            delivery_map={},
+            footer_note=DEFAULT_FOOTER_NOTE,
+            date_prefix_exports=True,
+        )
+        assert cnt_prefix == 2
+        prod_folder_prefix = os.path.join(dst_prefix, "Laser")
+        assert os.path.exists(
+            os.path.join(prod_folder_prefix, f"{date_token}-PN1.pdf")
+        )
+        assert os.path.exists(
+            os.path.join(prod_folder_prefix, f"{date_token}-PN1.stp")
         )
     print("All tests passed.")
     return 0
