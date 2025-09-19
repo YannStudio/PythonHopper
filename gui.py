@@ -15,6 +15,7 @@ from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from clients_db import ClientsDB, CLIENTS_DB_FILE
 from delivery_addresses_db import DeliveryAddressesDB, DELIVERY_DB_FILE
 from bom import read_csv_flex, load_bom
+from bom_custom_tab import BOMCustomTab
 from orders import (
     copy_per_production_and_orders,
     DEFAULT_FOOTER_NOTE,
@@ -978,6 +979,9 @@ def start_gui():
                 self.nb, self.db, on_change=self._on_db_change
             )
             self.nb.add(self.suppliers_frame, text="Leverancier beheer")
+
+            self.custom_bom_tab = BOMCustomTab(self.nb, app_name="Filehopper")
+            self.nb.add(self.custom_bom_tab, text="BOM custom")
 
             # Top folders
             top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
