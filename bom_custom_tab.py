@@ -61,6 +61,7 @@ from pathlib import Path
 from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import messagebox, ttk
 
 try:
@@ -184,6 +185,9 @@ class BOMCustomTab(ttk.Frame):
                 "single_select",
                 "drag_select",
                 "select_all",
+                "column_select",
+                "column_width_resize",
+                "double_click_column_resize",
                 "copy",
                 "edit_cell",
             )
@@ -200,6 +204,7 @@ class BOMCustomTab(ttk.Frame):
         self.sheet.extra_bindings("begin_edit_cell", self._on_begin_edit_cell)
         self.sheet.extra_bindings("end_edit_cell", self._on_end_edit_cell)
 
+        self._auto_resize_columns(range(len(self.HEADERS)))
         self._apply_row_striping()
 
     # ------------------------------------------------------------------
@@ -249,10 +254,42 @@ class BOMCustomTab(ttk.Frame):
             )
         self.sheet.refresh()
 
+    def _auto_resize_columns(self, columns: Iterable[int]) -> None:
+        valid_columns = sorted({col for col in columns if 0 <= col < len(self.HEADERS)})
+        if not valid_columns:
+            return
+
+        try:
+            header_font = tkfont.Font(self.sheet, font=self.sheet.header_font)
+        except (tk.TclError, AttributeError):
+            header_font = tkfont.nametofont("TkDefaultFont")
+        try:
+            table_font = tkfont.Font(self.sheet, font=self.sheet.table_font)
+        except (tk.TclError, AttributeError):
+            table_font = tkfont.nametofont("TkDefaultFont")
+
+        padding = 16
+        min_width = 60
+        total_rows = self.sheet.get_total_rows()
+
+        for col in valid_columns:
+            max_width = header_font.measure(self.HEADERS[col])
+            for row in range(total_rows):
+                cell_value = self._coerce_to_str(self.sheet.get_cell_data(row, col))
+                if not cell_value:
+                    continue
+                cell_width = table_font.measure(cell_value)
+                if cell_width > max_width:
+                    max_width = cell_width
+            target_width = max(min_width, max_width + padding)
+            self.sheet.set_column_width(col, target_width, redraw=False)
+
+        self.sheet.refresh()
+
     def _restore_data(self, data: List[List[str]]) -> None:
         trimmed = [row[: len(self.HEADERS)] for row in data]
         self.sheet.set_sheet_data(trimmed)
-        self.sheet.refresh()
+        self._auto_resize_columns(range(len(self.HEADERS)))
         self._apply_row_striping()
 
     def _push_undo(self, action: str, before: List[List[str]], after: List[List[str]], cells: Sequence[CellCoord]) -> None:
@@ -344,7 +381,9 @@ class BOMCustomTab(ttk.Frame):
                     continue
                 self.sheet.set_cell_data(target_row, target_col, new_val, redraw=False)
                 changed_cells.append((target_row, target_col))
-        self.sheet.refresh()
+        changed_columns = {col for _, col in changed_cells}
+        if changed_columns:
+            self._auto_resize_columns(changed_columns)
         self._apply_row_striping()
         after = self._snapshot_data()
         self._push_undo("paste", before, after, changed_cells)
@@ -369,7 +408,9 @@ class BOMCustomTab(ttk.Frame):
                 continue
             self.sheet.set_cell_data(row, col, "", redraw=False)
             changed.append((row, col))
-        self.sheet.refresh()
+        if changed:
+            changed_columns = {col for _, col in changed}
+            self._auto_resize_columns(changed_columns)
         self._apply_row_striping()
         after = self._snapshot_data()
         self._push_undo("delete", before, after, changed)
@@ -388,7 +429,7 @@ class BOMCustomTab(ttk.Frame):
         if not messagebox.askyesno("Bevestigen", "Alle custom BOM-data verwijderen?", parent=self):
             return
         self.sheet.set_sheet_data([])
-        self.sheet.refresh()
+        self._auto_resize_columns(range(len(self.HEADERS)))
         self._apply_row_striping()
         self._push_undo("clear", data_before, self._snapshot_data(), [])
         coords = [
@@ -418,6 +459,7 @@ class BOMCustomTab(ttk.Frame):
         if before_val != current_val:
             self._push_undo("edit", self._edit_snapshot, after, [(row, col)])
             self._update_status(f"Cel ({row + 1}, {col + 1}) bijgewerkt.")
+            self._auto_resize_columns([col])
         self._edit_snapshot = None
         self._edit_cell = None
 
