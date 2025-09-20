@@ -34,8 +34,8 @@ wordt door ``Ctrl+Z`` in omgekeerde volgorde verwerkt.
 
 CSV-schema
 ==========
-Er worden acht vaste kolommen geëxporteerd in deze volgorde:
-``PartNumber, Description, Quantity, Unit, Production, Drawing, Finish, Material``.
+Er worden twaalf vaste kolommen geëxporteerd in deze volgorde:
+``PartNumber, Description, QTY., Profile, Length profile, Thickness, Production, Material, Finish, RAL color, Weight (kg), Surface Area (m²)``.
 Velden worden met een komma gescheiden en automatisch gequote door ``csv.writer``.
 
 Notebook-integratie
@@ -115,12 +115,16 @@ class BOMCustomTab(ttk.Frame):
     HEADERS: Tuple[str, ...] = (
         "PartNumber",
         "Description",
-        "Quantity",
-        "Unit",
+        "QTY.",
+        "Profile",
+        "Length profile",
+        "Thickness",
         "Production",
-        "Drawing",
-        "Finish",
         "Material",
+        "Finish",
+        "RAL color",
+        "Weight (kg)",
+        "Surface Area (m²)",
     )
 
     def __init__(
