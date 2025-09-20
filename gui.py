@@ -1178,9 +1178,14 @@ def start_gui():
             self.item_links.clear()
             for it in self.tree.get_children():
                 self.tree.delete(it)
-            if self.bom_df is None:
+            df = self.bom_df
+            if df is None:
+                self.status_var.set("Geen BOM geladen.")
                 return
-            for _, row in self.bom_df.iterrows():
+            if df.empty:
+                self.status_var.set("BOM is leeg.")
+                return
+            for _, row in df.iterrows():
                 vals = (
                     row.get("PartNumber", ""),
                     row.get("Description", ""),
@@ -1200,7 +1205,9 @@ def start_gui():
                 messagebox.showwarning("Let op", "Laad eerst een BOM.")
                 return
             for col in ("Bestanden gevonden", "Status", "Link"):
-                self.bom_df[col] = ""
+                if col in self.bom_df.columns:
+                    self.bom_df[col] = ""
+            self.bom_df = None
             self._refresh_tree()
             self.status_var.set("BOM gewist.")
 
@@ -1311,7 +1318,9 @@ def start_gui():
 
         def _copy_per_prod(self):
             from tkinter import messagebox
-            if self.bom_df is None:
+
+            bom_df = self.bom_df
+            if bom_df is None or bom_df.empty:
                 messagebox.showwarning("Let op", "Laad eerst een BOM."); return
             exts = self._selected_exts()
             if not exts or not self.source_folder or not self.dest_folder:
@@ -1320,7 +1329,7 @@ def start_gui():
             prods = sorted(
                 set(
                     (str(r.get("Production") or "").strip() or "_Onbekend")
-                    for _, r in self.bom_df.iterrows()
+                    for _, r in bom_df.iterrows()
                 )
             )
             sel_frame = None
@@ -1334,6 +1343,11 @@ def start_gui():
                 project_name: str,
                 remember: bool,
             ):
+                current_bom = self.bom_df
+                if current_bom is None or current_bom.empty:
+                    messagebox.showwarning("Let op", "Laad eerst een BOM.")
+                    return
+
                 def work():
                     self.status_var.set("Kopiëren & bestelbonnen maken...")
                     client = self.client_db.get(
@@ -1355,7 +1369,7 @@ def start_gui():
                     cnt, chosen = copy_per_production_and_orders(
                         self.source_folder,
                         self.dest_folder,
-                        self.bom_df,
+                        current_bom,
                         exts,
                         self.db,
                         sel_map,
@@ -1410,13 +1424,14 @@ def start_gui():
 
         def _combine_pdf(self):
             from tkinter import messagebox
-            if self.source_folder and self.bom_df is not None:
+            bom_df = self.bom_df
+            if self.source_folder and bom_df is not None:
                 def work():
                     self.status_var.set("PDF's combineren...")
                     try:
                         out_dir = self.dest_folder or self.source_folder
                         cnt = combine_pdfs_from_source(
-                            self.source_folder, self.bom_df, out_dir
+                            self.source_folder, bom_df, out_dir
                         )
                     except ModuleNotFoundError:
                         self.status_var.set("PyPDF2 ontbreekt")
