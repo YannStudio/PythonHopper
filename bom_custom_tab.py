@@ -174,8 +174,6 @@ class BOMCustomTab(ttk.Frame):
             container,
             headers=self.HEADERS,
             show_index=False,
-            show_x_scrollbar=False,
-            show_y_scrollbar=False,
         )
         self.sheet.enable_bindings(
             (
@@ -188,12 +186,6 @@ class BOMCustomTab(ttk.Frame):
         )
         self.sheet.set_sheet_data([])
         self.sheet.grid(row=0, column=0, sticky="nsew")
-
-        vsb = ttk.Scrollbar(container, orient="vertical", command=self.sheet.yview)
-        hsb = ttk.Scrollbar(container, orient="horizontal", command=self.sheet.xview)
-        self.sheet.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
-        vsb.grid(row=0, column=1, sticky="ns")
-        hsb.grid(row=1, column=0, sticky="ew")
 
         self.sheet.bind("<Control-v>", self._on_paste)
         self.sheet.bind("<Control-V>", self._on_paste)
