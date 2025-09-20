@@ -1024,15 +1024,6 @@ def start_gui():
             tk.Button(bf, text="Laad BOM (CSV/Excel)", command=self._load_bom).pack(side="left", padx=6)
             tk.Button(bf, text="Controleer Bestanden", command=self._check_files).pack(side="left", padx=6)
 
-            pnf = tk.Frame(main); pnf.pack(fill="x", padx=8, pady=(0,6))
-            tk.Label(pnf, text="PartNumbers (één per lijn):").pack(anchor="w")
-            txtf = tk.Frame(pnf); txtf.pack(fill="x")
-            self.pn_text = tk.Text(txtf, height=4)
-            pn_scroll = ttk.Scrollbar(txtf, orient="vertical", command=self.pn_text.yview)
-            self.pn_text.configure(yscrollcommand=pn_scroll.set)
-            self.pn_text.pack(side="left", fill="both", expand=True)
-            pn_scroll.pack(side="left", fill="y")
-            tk.Button(pnf, text="Gebruik PartNumbers", command=self._load_manual_pns).pack(anchor="w", pady=4)
 
             # Tree
             style.configure("Treeview", rowheight=24)
@@ -1146,30 +1137,6 @@ def start_gui():
                 self._load_bom_from_path(str(path))
             except Exception as exc:
                 messagebox.showerror("Fout", str(exc))
-
-        def _load_manual_pns(self):
-            text = self.pn_text.get("1.0", "end").strip()
-            if not text:
-                return
-            lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-            if not lines:
-                return
-            n = len(lines)
-            self.bom_df = pd.DataFrame(
-                {
-                    "PartNumber": lines,
-                    "Description": ["" for _ in range(n)],
-                    "Production": ["" for _ in range(n)],
-                    "Bestanden gevonden": ["" for _ in range(n)],
-                    "Status": ["" for _ in range(n)],
-                    "Materiaal": ["" for _ in range(n)],
-                    "Aantal": [1 for _ in range(n)],
-                    "Oppervlakte": ["" for _ in range(n)],
-                    "Gewicht": ["" for _ in range(n)],
-                }
-            )
-            self._refresh_tree()
-            self.status_var.set(f"Partnummers geladen: {n} rijen")
 
         def _refresh_tree(self):
             self.item_links.clear()
