@@ -196,6 +196,8 @@ class BOMCustomTab(ttk.Frame):
         self.sheet.extra_bindings("begin_edit_cell", self._on_begin_edit_cell)
         self.sheet.extra_bindings("end_edit_cell", self._on_end_edit_cell)
 
+        self._apply_row_striping()
+
     # ------------------------------------------------------------------
     # Helpers
     def _update_status(self, text: str) -> None:
@@ -213,10 +215,41 @@ class BOMCustomTab(ttk.Frame):
             return value
         return str(value)
 
+    def _apply_row_striping(self) -> None:
+        total_rows = self.sheet.get_total_rows()
+        self.sheet.dehighlight_rows(rows="all")
+        if total_rows <= 0:
+            self.sheet.refresh()
+            return
+
+        even_rows = list(range(0, total_rows, 2))
+        odd_rows = list(range(1, total_rows, 2))
+
+        if even_rows:
+            self.sheet.highlight_rows(
+                rows=even_rows,
+                bg="#ffffff",
+                fg=False,
+                highlight_index=False,
+                redraw=False,
+                overwrite=True,
+            )
+        if odd_rows:
+            self.sheet.highlight_rows(
+                rows=odd_rows,
+                bg="#f7f7f7",
+                fg=False,
+                highlight_index=False,
+                redraw=False,
+                overwrite=True,
+            )
+        self.sheet.refresh()
+
     def _restore_data(self, data: List[List[str]]) -> None:
         trimmed = [row[: len(self.HEADERS)] for row in data]
         self.sheet.set_sheet_data(trimmed)
         self.sheet.refresh()
+        self._apply_row_striping()
 
     def _push_undo(self, action: str, before: List[List[str]], after: List[List[str]], cells: Sequence[CellCoord]) -> None:
         if before == after:
@@ -250,6 +283,7 @@ class BOMCustomTab(ttk.Frame):
         current = self.sheet.get_total_rows()
         if required_rows > current:
             self.sheet.insert_rows(rows=required_rows - current, idx=current)
+        self._apply_row_striping()
 
     def _event_to_cell(self, event) -> CellCoord:
         if isinstance(event, dict):
@@ -307,6 +341,7 @@ class BOMCustomTab(ttk.Frame):
                 self.sheet.set_cell_data(target_row, target_col, new_val, redraw=False)
                 changed_cells.append((target_row, target_col))
         self.sheet.refresh()
+        self._apply_row_striping()
         after = self._snapshot_data()
         self._push_undo("paste", before, after, changed_cells)
 
@@ -331,6 +366,7 @@ class BOMCustomTab(ttk.Frame):
             self.sheet.set_cell_data(row, col, "", redraw=False)
             changed.append((row, col))
         self.sheet.refresh()
+        self._apply_row_striping()
         after = self._snapshot_data()
         self._push_undo("delete", before, after, changed)
         if changed:
@@ -349,6 +385,7 @@ class BOMCustomTab(ttk.Frame):
             return
         self.sheet.set_sheet_data([])
         self.sheet.refresh()
+        self._apply_row_striping()
         self._push_undo("clear", data_before, self._snapshot_data(), [])
         coords = [
             (r, c)
