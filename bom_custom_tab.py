@@ -272,7 +272,6 @@ class BOMCustomTab(ttk.Frame):
         min_width = 60
         total_rows = self.sheet.get_total_rows()
 
-        widths = {}
         for col in valid_columns:
             max_width = header_font.measure(self.HEADERS[col])
             for row in range(total_rows):
@@ -283,10 +282,7 @@ class BOMCustomTab(ttk.Frame):
                 if cell_width > max_width:
                     max_width = cell_width
             target_width = max(min_width, max_width + padding)
-            widths[col] = target_width
-
-        if widths:
-            self.sheet.set_column_widths(widths, redraw=False)
+            self.sheet.column_width(column=col, width=target_width, redraw=False)
 
         self.sheet.refresh()
 
