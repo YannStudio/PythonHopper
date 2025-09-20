@@ -1146,6 +1146,17 @@ def start_gui():
                 self._load_bom_from_path(str(path))
             except Exception as exc:
                 messagebox.showerror("Fout", str(exc))
+            else:
+                self.nb.select(self.main_frame)
+                row_count = _row_count
+                if row_count:
+                    self.status_var.set(
+                        f"Aangepaste BOM geladen: {row_count} rijen (Main)"
+                    )
+                else:
+                    self.status_var.set(
+                        "Aangepaste BOM geladen. Terug naar Main-tabblad."
+                    )
 
         def _load_manual_pns(self):
             text = self.pn_text.get("1.0", "end").strip()
