@@ -5,6 +5,7 @@ import subprocess
 import sys
 import threading
 import unicodedata
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import pandas as pd
@@ -980,7 +981,12 @@ def start_gui():
             )
             self.nb.add(self.suppliers_frame, text="Leverancier beheer")
 
-            self.custom_bom_tab = BOMCustomTab(self.nb, app_name="Filehopper")
+            self.custom_bom_tab = BOMCustomTab(
+                self.nb,
+                app_name="Filehopper",
+                on_custom_bom_ready=self._on_custom_bom_ready,
+                event_target=self,
+            )
             self.nb.add(self.custom_bom_tab, text="BOM custom")
 
             # Top folders
@@ -1108,19 +1114,38 @@ def start_gui():
             if self.dwg_var.get(): exts.append(".dwg")
             return exts or None
 
+        def _load_bom_from_path(self, path: str) -> None:
+            df = load_bom(path)
+            if "Bestanden gevonden" not in df.columns:
+                df["Bestanden gevonden"] = ""
+            if "Status" not in df.columns:
+                df["Status"] = ""
+            self.bom_df = df
+            self._refresh_tree()
+            self.status_var.set(f"BOM geladen: {len(df)} rijen")
+
         def _load_bom(self):
             from tkinter import filedialog, messagebox
+
             start_dir = self.source_folder if self.source_folder else os.getcwd()
-            path = filedialog.askopenfilename(filetypes=[("CSV","*.csv"),("Excel","*.xlsx;*.xls")], initialdir=start_dir)
-            if not path: return
+            path = filedialog.askopenfilename(
+                filetypes=[("CSV", "*.csv"), ("Excel", "*.xlsx;*.xls")],
+                initialdir=start_dir,
+            )
+            if not path:
+                return
             try:
-                self.bom_df = load_bom(path)
-                if "Bestanden gevonden" not in self.bom_df.columns: self.bom_df["Bestanden gevonden"]=""
-                if "Status" not in self.bom_df.columns: self.bom_df["Status"]=""
-                self._refresh_tree()
-                self.status_var.set(f"BOM geladen: {len(self.bom_df)} rijen")
+                self._load_bom_from_path(path)
             except Exception as e:
                 messagebox.showerror("Fout", str(e))
+
+        def _on_custom_bom_ready(self, path: "Path", _row_count: int) -> None:
+            from tkinter import messagebox
+
+            try:
+                self._load_bom_from_path(str(path))
+            except Exception as exc:
+                messagebox.showerror("Fout", str(exc))
 
         def _load_manual_pns(self):
             text = self.pn_text.get("1.0", "end").strip()
