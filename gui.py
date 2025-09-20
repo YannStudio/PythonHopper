@@ -965,8 +965,15 @@ def start_gui():
 
             self.nb = ttk.Notebook(self)
             self.nb.pack(fill="both", expand=True)
+            self.custom_bom_tab = BOMCustomTab(
+                self.nb,
+                app_name="Filehopper",
+                on_custom_bom_ready=self._on_custom_bom_ready,
+                event_target=self,
+            )
             main = tk.Frame(self.nb)
             self.nb.add(main, text="Main")
+            self.nb.add(self.custom_bom_tab, text="BOM custom")
             self.main_frame = main
             self.clients_frame = ClientsManagerFrame(
                 self.nb, self.client_db, on_change=self._on_db_change
@@ -980,14 +987,6 @@ def start_gui():
                 self.nb, self.db, on_change=self._on_db_change
             )
             self.nb.add(self.suppliers_frame, text="Leverancier beheer")
-
-            self.custom_bom_tab = BOMCustomTab(
-                self.nb,
-                app_name="Filehopper",
-                on_custom_bom_ready=self._on_custom_bom_ready,
-                event_target=self,
-            )
-            self.nb.add(self.custom_bom_tab, text="BOM custom")
 
             # Top folders
             top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
