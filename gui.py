@@ -1022,6 +1022,11 @@ def start_gui():
             # BOM controls
             bf = tk.Frame(main); bf.pack(fill="x", padx=8, pady=6)
             tk.Button(bf, text="Laad BOM (CSV/Excel)", command=self._load_bom).pack(side="left", padx=6)
+            tk.Button(
+                bf,
+                text="Custom BOM",
+                command=lambda: self.nb.select(self.custom_bom_tab),
+            ).pack(side="left", padx=6)
             tk.Button(bf, text="Controleer Bestanden", command=self._check_files).pack(side="left", padx=6)
 
             pnf = tk.Frame(main); pnf.pack(fill="x", padx=8, pady=(0,6))
