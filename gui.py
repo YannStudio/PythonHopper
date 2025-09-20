@@ -1047,6 +1047,7 @@ def start_gui():
                 command=lambda: self.nb.select(self.custom_bom_tab),
             ).pack(side="left", padx=6)
             tk.Button(bf, text="Controleer Bestanden", command=self._check_files).pack(side="left", padx=6)
+            tk.Button(bf, text="Clear BOM", command=self._clear_bom).pack(side="left", padx=6)
 
 
             # Tree
@@ -1135,6 +1136,8 @@ def start_gui():
                 df["Bestanden gevonden"] = ""
             if "Status" not in df.columns:
                 df["Status"] = ""
+            if "Link" not in df.columns:
+                df["Link"] = ""
             self.bom_df = df
             self._refresh_tree()
             self.status_var.set(f"BOM geladen: {len(df)} rijen")
@@ -1191,6 +1194,17 @@ def start_gui():
                 link = row.get("Link")
                 if link:
                     self.item_links[item] = link
+
+        def _clear_bom(self):
+            from tkinter import messagebox
+
+            if self.bom_df is None:
+                messagebox.showwarning("Let op", "Laad eerst een BOM.")
+                return
+            for col in ("Bestanden gevonden", "Status", "Link"):
+                self.bom_df[col] = ""
+            self._refresh_tree()
+            self.status_var.set("BOM gewist.")
 
         def _on_tree_click(self, event):
             item = self.tree.identify_row(event.y)
