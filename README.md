@@ -1,6 +1,18 @@
 # Filehopper
 Filehopper in Python
 
+## Installatie
+
+De GUI-componenten gebruiken het externe pakket [`tksheet`](https://github.com/ragardner/tksheet).
+Installeer eerst de basisvereisten en daarna `tksheet`:
+
+```bash
+pip install -r requirements.txt
+pip install tksheet
+```
+
+Start vervolgens de applicatie met `python main.py` of `python -m gui`.
+
 ## Voorbeelden
 
 ### Leverancier toevoegen

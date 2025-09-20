@@ -11,7 +11,6 @@ from cli import (
     cli_copy_per_prod,
     cli_delivery_addresses,
 )
-from gui import start_gui
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -27,11 +26,22 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not getattr(args, "cmd", None):
         try:
             import tkinter  # noqa: F401
-            start_gui()
-            return 0
         except Exception:
             parser.print_help()
             return 0
+
+        try:
+            from gui import start_gui
+        except RuntimeError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+
+        try:
+            start_gui()
+        except RuntimeError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        return 0
 
     if args.cmd == "suppliers":
         return cli_suppliers(args)

@@ -63,7 +63,37 @@ from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-import tksheet
+try:
+    import tksheet
+    _TKSHEET_IMPORT_ERROR: Optional[BaseException] = None
+except ModuleNotFoundError as exc:  # pragma: no cover - afhankelijk van installatie
+    tksheet = None  # type: ignore[assignment]
+    _TKSHEET_IMPORT_ERROR = exc
+
+_TKSHEET_ERROR = (
+    "De module 'tksheet' is niet geïnstalleerd. "
+    "Voer 'pip install tksheet' uit voordat u de Filehopper GUI start."
+)
+
+
+def _ensure_tksheet_available() -> None:
+    if tksheet is not None:
+        return
+
+    try:
+        import tkinter as _tk
+        from tkinter import messagebox as _messagebox
+
+        _root = _tk.Tk()
+        _root.withdraw()
+        try:
+            _messagebox.showerror("tksheet ontbreekt", _TKSHEET_ERROR)
+        finally:
+            _root.destroy()
+    except Exception:
+        # Val stilletjes terug op een consolefout wanneer Tkinter niet beschikbaar is
+        pass
+    raise RuntimeError(_TKSHEET_ERROR) from _TKSHEET_IMPORT_ERROR
 
 
 CellCoord = Tuple[int, int]
@@ -102,6 +132,8 @@ class BOMCustomTab(ttk.Frame):
         event_target: Optional[tk.Misc] = None,
         max_undo: int = 50,
     ) -> None:
+        _ensure_tksheet_available()
+
         super().__init__(master)
         self.app_name = app_name
         self.on_custom_bom_ready = on_custom_bom_ready
