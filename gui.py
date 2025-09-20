@@ -507,11 +507,15 @@ def start_gui():
             db: SuppliersDB,
             delivery_db: DeliveryAddressesDB,
             callback,
+            project_number_var: tk.StringVar,
+            project_name_var: tk.StringVar,
         ):
             super().__init__(master)
             self.db = db
             self.delivery_db = delivery_db
             self.callback = callback
+            self.project_number_var = project_number_var
+            self.project_name_var = project_name_var
             self._preview_supplier: Optional[Supplier] = None
             self._active_prod: Optional[str] = None  # laatst gefocuste rij
             self.sel_vars: Dict[str, tk.StringVar] = {}
@@ -540,14 +544,22 @@ def start_gui():
             pn_row = tk.Frame(proj_frame)
             pn_row.pack(fill="x", pady=3)
             tk.Label(pn_row, text="Projectnr.", width=18, anchor="w").pack(side="left")
-            self.project_number_var = tk.StringVar()
-            tk.Entry(pn_row, textvariable=self.project_number_var, width=50).pack(side="left", padx=6)
+            ttk.Entry(
+                pn_row,
+                textvariable=self.project_number_var,
+                width=50,
+                state="readonly",
+            ).pack(side="left", padx=6)
 
             name_row = tk.Frame(proj_frame)
             name_row.pack(fill="x", pady=3)
             tk.Label(name_row, text="Projectnaam", width=18, anchor="w").pack(side="left")
-            self.project_name_var = tk.StringVar()
-            tk.Entry(name_row, textvariable=self.project_name_var, width=50).pack(side="left", padx=6)
+            ttk.Entry(
+                name_row,
+                textvariable=self.project_name_var,
+                width=50,
+                state="readonly",
+            ).pack(side="left", padx=6)
 
             ttk.Separator(left, orient="horizontal").pack(fill="x", pady=(0, 6))
 
@@ -961,6 +973,8 @@ def start_gui():
 
             self.source_folder = ""
             self.dest_folder = ""
+            self.project_number_var = tk.StringVar()
+            self.project_name_var = tk.StringVar()
             self.bom_df: Optional[pd.DataFrame] = None
 
             self.nb = ttk.Notebook(self)
@@ -999,11 +1013,17 @@ def start_gui():
             self.dst_entry = tk.Entry(top, width=60); self.dst_entry.grid(row=1, column=1, padx=4)
             tk.Button(top, text="Bladeren", command=self._pick_dst).grid(row=1, column=2, padx=4)
 
-            tk.Label(top, text="Opdrachtgever:").grid(row=2, column=0, sticky="w")
+            tk.Label(top, text="Projectnr.:").grid(row=2, column=0, sticky="w")
+            tk.Entry(top, textvariable=self.project_number_var, width=60).grid(row=2, column=1, padx=4)
+
+            tk.Label(top, text="Projectnaam:").grid(row=3, column=0, sticky="w")
+            tk.Entry(top, textvariable=self.project_name_var, width=60).grid(row=3, column=1, padx=4)
+
+            tk.Label(top, text="Opdrachtgever:").grid(row=4, column=0, sticky="w")
             self.client_var = tk.StringVar()
             self.client_combo = ttk.Combobox(top, textvariable=self.client_var, state="readonly", width=40)
-            self.client_combo.grid(row=2, column=1, padx=4)
-            tk.Button(top, text="Beheer", command=lambda: self.nb.select(self.clients_frame)).grid(row=2, column=2, padx=4)
+            self.client_combo.grid(row=4, column=1, padx=4)
+            tk.Button(top, text="Beheer", command=lambda: self.nb.select(self.clients_frame)).grid(row=4, column=2, padx=4)
             self._refresh_clients_combo()
 
 
@@ -1382,7 +1402,13 @@ def start_gui():
                 threading.Thread(target=work, daemon=True).start()
 
             sel_frame = SupplierSelectionFrame(
-                self.nb, prods, self.db, self.delivery_db, on_sel
+                self.nb,
+                prods,
+                self.db,
+                self.delivery_db,
+                on_sel,
+                self.project_number_var,
+                self.project_name_var,
             )
             self.sel_frame = sel_frame
             self.nb.add(sel_frame, state="hidden")
