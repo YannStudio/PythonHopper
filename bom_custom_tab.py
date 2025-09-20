@@ -10,7 +10,7 @@ Installatie en uitvoeren
 
 Variant B – tijdelijke export
 =============================
-De knop *"Exporteren (tijdelijk)"* schrijft altijd naar een tijdelijke CSV in
+De knop *"Exporteren"* schrijft altijd naar een tijdelijke CSV in
 ``%LOCALAPPDATA%/<appnaam>/temp/custom_bom.csv`` (of ``~/.local/share/<appnaam>/temp``
 op niet-Windows platformen). Er wordt geen bestandsdialoog geopend; een eventueel
 ``on_custom_bom_ready``-callback of het Tk-event ``<<CustomBOMReady>>`` krijgt het
@@ -163,7 +163,7 @@ class BOMCustomTab(ttk.Frame):
         clear_btn = ttk.Button(bar, text="Clear BOM custom", command=self._confirm_clear)
         clear_btn.pack(side="left", padx=(0, 6))
 
-        export_btn = ttk.Button(bar, text="Exporteren (tijdelijk)", command=self._export_temp)
+        export_btn = ttk.Button(bar, text="Exporteren", command=self._export_temp)
         export_btn.pack(side="left", padx=(0, 6))
 
         ttk.Label(bar, textvariable=self.status_var, anchor="w").pack(side="left", fill="x", expand=True)
