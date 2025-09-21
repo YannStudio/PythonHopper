@@ -38,10 +38,13 @@ def test_cli_doc_options_parsing(monkeypatch, tmp_path):
 
     def fake_copy(*args, **kwargs):
         captured.update(kwargs)
-        return 0, {}
+        return 0, {}, kwargs.get("bundle")
 
     monkeypatch.setattr(cli, "copy_per_production_and_orders", fake_copy)
     cli_copy_per_prod(args)
 
     assert captured["doc_type_map"] == {"Laser": "Offerteaanvraag"}
     assert captured["doc_num_map"] == {"Laser": "123", "Plasma": "456"}
+    bundle = captured.get("bundle")
+    assert isinstance(bundle, dict)
+    assert bundle["path"].startswith(str(tmp_path / "dst"))

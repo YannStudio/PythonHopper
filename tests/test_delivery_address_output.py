@@ -1,10 +1,13 @@
 import os
+from pathlib import Path
+
 import pandas as pd
 import pytest
-pytest.importorskip("openpyxl")
-import pytest
+
+openpyxl = pytest.importorskip("openpyxl")
 from PyPDF2 import PdfReader
 
+from helpers import create_export_bundle
 from models import Supplier, DeliveryAddress
 from suppliers_db import SuppliersDB
 from orders import copy_per_production_and_orders
@@ -31,9 +34,10 @@ def test_delivery_address_present_absent(tmp_path):
     # With delivery address
     dst1 = tmp_path / "dst1"
     dst1.mkdir()
-    copy_per_production_and_orders(
+    bundle1 = create_export_bundle(dst1, "WithDelivery")
+    _, _, bundle_info1 = copy_per_production_and_orders(
         str(src),
-        str(dst1),
+        str(bundle1["path"]),
         bom_df,
         [".pdf"],
         db,
@@ -43,8 +47,11 @@ def test_delivery_address_present_absent(tmp_path):
         False,
         client=None,
         delivery_map={"Laser": delivery},
+        bundle=bundle1,
     )
-    prod_folder = dst1 / "Laser"
+    if bundle_info1.get("latest"):
+        assert Path(bundle_info1["latest"]).is_symlink()
+    prod_folder = Path(bundle_info1["path"]) / "Laser"
     xlsx = next(f for f in os.listdir(prod_folder) if f.endswith(".xlsx"))
     wb = openpyxl.load_workbook(prod_folder / xlsx)
     ws = wb.active
@@ -64,9 +71,10 @@ def test_delivery_address_present_absent(tmp_path):
     # Without delivery address
     dst2 = tmp_path / "dst2"
     dst2.mkdir()
-    copy_per_production_and_orders(
+    bundle2 = create_export_bundle(dst2, "NoDelivery")
+    _, _, bundle_info2 = copy_per_production_and_orders(
         str(src),
-        str(dst2),
+        str(bundle2["path"]),
         bom_df,
         [".pdf"],
         db,
@@ -76,8 +84,11 @@ def test_delivery_address_present_absent(tmp_path):
         False,
         client=None,
         delivery_map={},
+        bundle=bundle2,
     )
-    prod_folder2 = dst2 / "Laser"
+    if bundle_info2.get("latest"):
+        assert Path(bundle_info2["latest"]).is_symlink()
+    prod_folder2 = Path(bundle_info2["path"]) / "Laser"
     xlsx2 = next(f for f in os.listdir(prod_folder2) if f.endswith(".xlsx"))
     wb2 = openpyxl.load_workbook(prod_folder2 / xlsx2)
     ws2 = wb2.active
@@ -106,9 +117,10 @@ def test_delivery_address_per_production(tmp_path):
     d2 = DeliveryAddress(name="Depot", address="Weg 2")
     dst = tmp_path / "dst"
     dst.mkdir()
-    copy_per_production_and_orders(
+    bundle = create_export_bundle(dst, "PerProd")
+    _, _, bundle_info = copy_per_production_and_orders(
         str(src),
-        str(dst),
+        str(bundle["path"]),
         bom_df,
         [".pdf"],
         db,
@@ -118,10 +130,13 @@ def test_delivery_address_per_production(tmp_path):
         False,
         client=None,
         delivery_map={"Laser": d1, "Plasma": d2},
+        bundle=bundle,
     )
 
     # Laser folder checks
-    laser = dst / "Laser"
+    if bundle_info.get("latest"):
+        assert Path(bundle_info["latest"]).is_symlink()
+    laser = Path(bundle_info["path"]) / "Laser"
     xlsx1 = next(f for f in os.listdir(laser) if f.endswith(".xlsx"))
     wb1 = openpyxl.load_workbook(laser / xlsx1)
     ws1 = wb1.active
@@ -135,7 +150,7 @@ def test_delivery_address_per_production(tmp_path):
     assert "Leveradres:\nMagazijn" in text1
 
     # Plasma folder checks
-    plasma = dst / "Plasma"
+    plasma = Path(bundle_info["path"]) / "Plasma"
     xlsx2 = next(f for f in os.listdir(plasma) if f.endswith(".xlsx"))
     wb2 = openpyxl.load_workbook(plasma / xlsx2)
     ws2 = wb2.active
@@ -158,9 +173,10 @@ def test_delivery_address_placeholder_prints(tmp_path):
 
     dst = tmp_path / "dst_placeholder"
     dst.mkdir()
-    copy_per_production_and_orders(
+    bundle = create_export_bundle(dst, "Placeholder")
+    _, _, bundle_info = copy_per_production_and_orders(
         str(src),
-        str(dst),
+        str(bundle["path"]),
         bom_df,
         [".pdf"],
         db,
@@ -170,9 +186,9 @@ def test_delivery_address_placeholder_prints(tmp_path):
         False,
         client=None,
         delivery_map={"Laser": delivery},
+        bundle=bundle,
     )
-
-    prod_folder = dst / "Laser"
+    prod_folder = Path(bundle_info["path"]) / "Laser"
     pdf = next(f for f in os.listdir(prod_folder) if f.endswith(".pdf"))
     reader = PdfReader(prod_folder / pdf)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)

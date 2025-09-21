@@ -11,7 +11,13 @@ from typing import Iterable, List, Optional, Union
 import pandas as pd
 from dataclasses import asdict
 
-from helpers import _to_str, _build_file_index, _unique_path, validate_vat
+from helpers import (
+    _to_str,
+    _build_file_index,
+    _unique_path,
+    validate_vat,
+    create_export_bundle,
+)
 from models import Supplier, Client, DeliveryAddress
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from clients_db import ClientsDB, CLIENTS_DB_FILE
@@ -389,9 +395,19 @@ def cli_copy_per_prod(args):
                 return 2
             prod, num = kv.split("=", 1)
             doc_num_map[prod.strip()] = num.strip()
-    cnt, chosen = copy_per_production_and_orders(
+    bundle_label_parts = []
+    if args.project_number:
+        bundle_label_parts.append(args.project_number)
+    if args.project_name:
+        bundle_label_parts.append(args.project_name)
+    if client and client.name:
+        bundle_label_parts.append(client.name)
+    bundle_label = " - ".join(bundle_label_parts) or None
+    bundle = create_export_bundle(args.dest, label=bundle_label)
+
+    cnt, chosen, bundle_info = copy_per_production_and_orders(
         args.source,
-        args.dest,
+        bundle["path"],
         df,
         exts,
         db,
@@ -404,10 +420,15 @@ def cli_copy_per_prod(args):
         footer_note=args.note or DEFAULT_FOOTER_NOTE,
         project_number=args.project_number,
         project_name=args.project_name,
+        bundle=bundle,
     )
     print("Gekopieerd:", cnt)
     for k, v in chosen.items():
         print(f"  {k} → {v}")
+    bundle_out = bundle_info or bundle
+    bundle_path = bundle_out.get("path") if isinstance(bundle_out, dict) else None
+    if bundle_path:
+        print("Bundelmap:", bundle_path)
     return 0
 
 

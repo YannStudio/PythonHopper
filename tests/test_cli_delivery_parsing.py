@@ -41,13 +41,16 @@ def test_cli_delivery_parsing(monkeypatch, tmp_path):
 
     def fake_copy(*args, **kwargs):
         captured.update(kwargs)
-        return 0, {}
+        return 0, {}, kwargs.get("bundle")
 
     monkeypatch.setattr(cli, "copy_per_production_and_orders", fake_copy)
     cli_copy_per_prod(args)
     assert set(captured["delivery_map"]) == {"Laser", "Plasma"}
     assert captured["delivery_map"]["Laser"].name == "Addr1"
     assert captured["delivery_map"]["Plasma"].name == "Addr2"
+    bundle = captured.get("bundle")
+    assert isinstance(bundle, dict)
+    assert bundle["path"].startswith(str(tmp_path / "dst"))
 
 
 def test_cli_delivery_special_tokens(monkeypatch, tmp_path):
@@ -93,10 +96,13 @@ def test_cli_delivery_special_tokens(monkeypatch, tmp_path):
 
     def fake_copy(*args, **kwargs):
         captured.update(kwargs)
-        return 0, {}
+        return 0, {}, kwargs.get("bundle")
 
     monkeypatch.setattr(cli, "copy_per_production_and_orders", fake_copy)
     cli_copy_per_prod(args)
     assert captured["delivery_map"]["Laser"].name == "Bestelling wordt opgehaald"
     assert captured["delivery_map"]["Plasma"].name == "Leveradres wordt nog meegedeeld"
     assert captured["delivery_map"]["Waterjet"] is None
+    bundle = captured.get("bundle")
+    assert isinstance(bundle, dict)
+    assert bundle["path"].startswith(str(tmp_path / "dst"))

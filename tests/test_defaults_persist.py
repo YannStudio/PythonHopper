@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+from helpers import create_export_bundle
 from models import Supplier
 from suppliers_db import SuppliersDB
 from orders import copy_per_production_and_orders
@@ -32,9 +33,10 @@ def test_defaults_persist(tmp_path, monkeypatch):
     overrides = {"Laser": "ACME", "Plasma": "BETA"}
 
     # Run the copy and order generation, remembering defaults
-    cnt, chosen = copy_per_production_and_orders(
+    bundle = create_export_bundle(dst, "Defaults")
+    cnt, chosen, bundle_info = copy_per_production_and_orders(
         str(src),
-        str(dst),
+        str(bundle["path"]),
         bom_df,
         [".pdf"],
         db,
@@ -44,10 +46,13 @@ def test_defaults_persist(tmp_path, monkeypatch):
         True,
         client=None,
         delivery_map={},
+        bundle=bundle,
     )
 
     assert cnt == 2
     assert chosen == overrides
+    if bundle_info.get("latest"):
+        assert (tmp_path / "dst" / "latest").is_symlink()
 
     # Defaults should be updated in memory
     assert db.defaults_by_production == overrides

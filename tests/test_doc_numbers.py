@@ -1,12 +1,14 @@
 import datetime
 import os
+from pathlib import Path
 
 import pandas as pd
 import pytest
-pytest.importorskip("openpyxl")
-import pytest
+
+openpyxl = pytest.importorskip("openpyxl")
 from PyPDF2 import PdfReader
 
+from helpers import create_export_bundle
 from models import Supplier
 from suppliers_db import SuppliersDB
 from orders import copy_per_production_and_orders, _prefix_for_doc_type
@@ -27,9 +29,10 @@ def test_doc_number_in_name_and_header(tmp_path):
     dst.mkdir()
 
     doc_num_map = {"Laser": "123"}
-    copy_per_production_and_orders(
+    bundle = create_export_bundle(dst, "Laser")
+    _, _, bundle_info = copy_per_production_and_orders(
         str(src),
-        str(dst),
+        str(bundle["path"]),
         bom_df,
         [".pdf"],
         db,
@@ -39,9 +42,12 @@ def test_doc_number_in_name_and_header(tmp_path):
         False,
         client=None,
         delivery_map={},
+        bundle=bundle,
     )
 
-    prod_folder = dst / "Laser"
+    prod_folder = Path(bundle_info["path"]) / "Laser"
+    if bundle_info.get("latest"):
+        assert Path(bundle_info["latest"]).is_symlink()
     today = datetime.date.today().strftime("%Y-%m-%d")
 
     xlsx_path = prod_folder / f"Bestelbon_BB-123_Laser_{today}.xlsx"
@@ -85,9 +91,10 @@ def test_offerte_prefix_in_output(tmp_path):
 
     doc_num_map = {"Laser": "42"}
     doc_type_map = {"Laser": "Offerteaanvraag"}
-    copy_per_production_and_orders(
+    bundle = create_export_bundle(dst, "Offerte")
+    _, _, bundle_info = copy_per_production_and_orders(
         str(src),
-        str(dst),
+        str(bundle["path"]),
         bom_df,
         [".pdf"],
         db,
@@ -97,9 +104,12 @@ def test_offerte_prefix_in_output(tmp_path):
         False,
         client=None,
         delivery_map={},
+        bundle=bundle,
     )
 
-    prod_folder = dst / "Laser"
+    prod_folder = Path(bundle_info["path"]) / "Laser"
+    if bundle_info.get("latest"):
+        assert Path(bundle_info["latest"]).is_symlink()
     today = datetime.date.today().strftime("%Y-%m-%d")
 
     xlsx_path = prod_folder / f"Offerteaanvraag_OFF-42_Laser_{today}.xlsx"
@@ -135,9 +145,10 @@ def test_missing_doc_number_omits_prefix_and_header(tmp_path):
     dst = tmp_path / "dst"
     dst.mkdir()
 
-    copy_per_production_and_orders(
+    bundle = create_export_bundle(dst, "MissingDoc")
+    _, _, bundle_info = copy_per_production_and_orders(
         str(src),
-        str(dst),
+        str(bundle["path"]),
         bom_df,
         [".pdf"],
         db,
@@ -147,9 +158,12 @@ def test_missing_doc_number_omits_prefix_and_header(tmp_path):
         False,
         client=None,
         delivery_map={},
+        bundle=bundle,
     )
 
-    prod_folder = dst / "Laser"
+    prod_folder = Path(bundle_info["path"]) / "Laser"
+    if bundle_info.get("latest"):
+        assert Path(bundle_info["latest"]).is_symlink()
     today = datetime.date.today().strftime("%Y-%m-%d")
 
     xlsx_path = prod_folder / f"Bestelbon_Laser_{today}.xlsx"

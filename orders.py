@@ -442,7 +442,8 @@ def copy_per_production_and_orders(
     date_suffix_exports: bool = False,
     project_number: str | None = None,
     project_name: str | None = None,
-) -> Tuple[int, Dict[str, str]]:
+    bundle: Dict[str, str] | None = None,
+) -> Tuple[int, Dict[str, str], Dict[str, str] | None]:
     """Copy files per production and create accompanying order documents.
 
     ``doc_type_map`` may specify per production whether a *Bestelbon* or an
@@ -463,8 +464,13 @@ def copy_per_production_and_orders(
     with ``YYYYMMDD-``. When ``date_suffix_exports`` is ``True`` they will end
     with ``-YYYYMMDD`` before the extension. Both transformations are applied
     consistently to copied files and ZIP archive members.
+
+    ``bundle`` can describe the export bundle destination created via
+    :func:`helpers.create_export_bundle`. When supplied the files are written to
+    ``bundle["path"]`` and the mapping is returned to the caller.
     """
-    os.makedirs(dest, exist_ok=True)
+    target_root = bundle.get("path") if bundle else dest
+    os.makedirs(target_root, exist_ok=True)
     file_index = _build_file_index(source, selected_exts)
     count_copied = 0
     chosen: Dict[str, str] = {}
@@ -493,7 +499,7 @@ def copy_per_production_and_orders(
             stem = f"{stem}-{date_token}"
         return f"{stem}{ext}"
     for prod, rows in prod_to_rows.items():
-        prod_folder = os.path.join(dest, prod)
+        prod_folder = os.path.join(target_root, prod)
         os.makedirs(prod_folder, exist_ok=True)
         zf = None
         if zip_parts:
@@ -589,7 +595,19 @@ def copy_per_production_and_orders(
     # the database reflecting the latest state on disk.
     db.save(SUPPLIERS_DB_FILE)
 
-    return count_copied, chosen
+    bundle_result: Dict[str, str] | None
+    if bundle is None:
+        abs_root = os.path.abspath(target_root)
+        bundle_result = {
+            "root": os.path.abspath(os.path.dirname(abs_root)) if abs_root else "",
+            "name": os.path.basename(abs_root),
+            "path": abs_root,
+            "latest": None,
+        }
+    else:
+        bundle_result = dict(bundle)
+        bundle_result.setdefault("path", os.path.abspath(target_root))
+    return count_copied, chosen, bundle_result
 
 
 def combine_pdfs_from_source(

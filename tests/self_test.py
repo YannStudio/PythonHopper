@@ -13,6 +13,7 @@ from models import Supplier, Client
 from suppliers_db import SuppliersDB
 from clients_db import ClientsDB
 from bom import load_bom
+from helpers import create_export_bundle
 from orders import copy_per_production_and_orders, DEFAULT_FOOTER_NOTE, write_order_excel
 
 
@@ -75,9 +76,10 @@ def run_tests() -> int:
         df.to_excel(bom, index=False, engine="openpyxl")
         ldf = load_bom(bom)
         assert ldf["Aantal"].max() <= 999  # capped
-        cnt, chosen = copy_per_production_and_orders(
+        bundle_main = create_export_bundle(dst, "SelfTest")
+        cnt, chosen, bundle_info = copy_per_production_and_orders(
             src,
-            dst,
+            bundle_main["path"],
             ldf,
             [".pdf", ".stp"],
             db,
@@ -88,10 +90,14 @@ def run_tests() -> int:
             client=client,
             delivery_map={},
             footer_note=DEFAULT_FOOTER_NOTE,
+            bundle=bundle_main,
         )
         assert cnt == 2
         assert chosen.get("Laser") == "ACME"
-        prod_folder = os.path.join(dst, "Laser")
+        prod_folder = os.path.join(bundle_info["path"], "Laser")
+        latest_path = bundle_info.get("latest")
+        if latest_path:
+            assert os.path.islink(latest_path)
         assert os.path.exists(os.path.join(prod_folder, "PN1.pdf"))
         assert os.path.exists(os.path.join(prod_folder, "PN1.stp"))
         xlsx = [f for f in os.listdir(prod_folder) if f.lower().endswith(".xlsx")]
@@ -125,9 +131,10 @@ def run_tests() -> int:
 
         dst_dates = os.path.join(td, "dst_dates")
         os.makedirs(dst_dates)
-        cnt_dates, _ = copy_per_production_and_orders(
+        bundle_dates = create_export_bundle(dst_dates, "Dates")
+        cnt_dates, _, bundle_dates_info = copy_per_production_and_orders(
             src,
-            dst_dates,
+            bundle_dates["path"],
             ldf,
             [".pdf", ".stp"],
             db,
@@ -139,9 +146,10 @@ def run_tests() -> int:
             delivery_map={},
             footer_note=DEFAULT_FOOTER_NOTE,
             date_suffix_exports=True,
+            bundle=bundle_dates,
         )
         assert cnt_dates == 2
-        prod_folder_dates = os.path.join(dst_dates, "Laser")
+        prod_folder_dates = os.path.join(bundle_dates_info["path"], "Laser")
         suffix_pdf_name = f"PN1-{date_token}.pdf"
         suffix_stp_name = f"PN1-{date_token}.stp"
         assert "_" not in suffix_pdf_name and "_" not in suffix_stp_name
@@ -150,9 +158,10 @@ def run_tests() -> int:
 
         dst_prefix = os.path.join(td, "dst_prefix")
         os.makedirs(dst_prefix)
-        cnt_prefix, _ = copy_per_production_and_orders(
+        bundle_prefix = create_export_bundle(dst_prefix, "Prefix")
+        cnt_prefix, _, bundle_prefix_info = copy_per_production_and_orders(
             src,
-            dst_prefix,
+            bundle_prefix["path"],
             ldf,
             [".pdf", ".stp"],
             db,
@@ -164,9 +173,10 @@ def run_tests() -> int:
             delivery_map={},
             footer_note=DEFAULT_FOOTER_NOTE,
             date_prefix_exports=True,
+            bundle=bundle_prefix,
         )
         assert cnt_prefix == 2
-        prod_folder_prefix = os.path.join(dst_prefix, "Laser")
+        prod_folder_prefix = os.path.join(bundle_prefix_info["path"], "Laser")
         prefix_pdf_name = f"{date_token}-PN1.pdf"
         prefix_stp_name = f"{date_token}-PN1.stp"
         assert os.path.exists(os.path.join(prod_folder_prefix, prefix_pdf_name))
@@ -174,9 +184,10 @@ def run_tests() -> int:
 
         dst_prefix_suffix = os.path.join(td, "dst_prefix_suffix")
         os.makedirs(dst_prefix_suffix)
-        cnt_prefix_suffix, _ = copy_per_production_and_orders(
+        bundle_prefix_suffix = create_export_bundle(dst_prefix_suffix, "PrefixSuffix")
+        cnt_prefix_suffix, _, bundle_prefix_suffix_info = copy_per_production_and_orders(
             src,
-            dst_prefix_suffix,
+            bundle_prefix_suffix["path"],
             ldf,
             [".pdf", ".stp"],
             db,
@@ -189,9 +200,12 @@ def run_tests() -> int:
             footer_note=DEFAULT_FOOTER_NOTE,
             date_prefix_exports=True,
             date_suffix_exports=True,
+            bundle=bundle_prefix_suffix,
         )
         assert cnt_prefix_suffix == 2
-        prod_folder_prefix_suffix = os.path.join(dst_prefix_suffix, "Laser")
+        prod_folder_prefix_suffix = os.path.join(
+            bundle_prefix_suffix_info["path"], "Laser"
+        )
         prefix_suffix_pdf = f"{date_token}-PN1-{date_token}.pdf"
         prefix_suffix_stp = f"{date_token}-PN1-{date_token}.stp"
         assert "_" not in prefix_suffix_pdf and "_" not in prefix_suffix_stp

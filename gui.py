@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from helpers import _to_str, _build_file_index
+from helpers import _to_str, _build_file_index, create_export_bundle
 from models import Supplier, Client, DeliveryAddress
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from clients_db import ClientsDB, CLIENTS_DB_FILE
@@ -1366,9 +1366,22 @@ def start_gui():
                         else:
                             addr = self.delivery_db.get(clean)
                             resolved_delivery_map[prod] = addr
-                    cnt, chosen = copy_per_production_and_orders(
+                    bundle_label_parts = [
+                        p
+                        for p in [project_number, project_name, client.name if client else None]
+                        if p
+                    ]
+                    bundle_label = " - ".join(bundle_label_parts) or None
+                    try:
+                        bundle = create_export_bundle(self.dest_folder, label=bundle_label)
+                    except Exception as exc:  # pragma: no cover - GUI notification
+                        self.after(0, lambda: messagebox.showerror("Fout", str(exc)))
+                        self.status_var.set("Fout bij aanmaken bundelmap")
+                        return
+
+                    cnt, chosen, bundle_info = copy_per_production_and_orders(
                         self.source_folder,
-                        self.dest_folder,
+                        bundle["path"],
                         current_bom,
                         exts,
                         self.db,
@@ -1384,16 +1397,22 @@ def start_gui():
                         date_suffix_exports=bool(self.export_date_suffix_var.get()),
                         project_number=project_number,
                         project_name=project_name,
+                        bundle=bundle,
                     )
 
                     def on_done():
+                        bundle_out = bundle_info or bundle
+                        bundle_path = (
+                            bundle_out.get("path") if isinstance(bundle_out, dict) else None
+                        )
                         self.status_var.set(
                             f"Klaar. Gekopieerd: {cnt}. Leveranciers: {chosen}"
+                            + (f". Bundelmap: {bundle_path}" if bundle_path else "")
                         )
                         messagebox.showinfo("Klaar", "Bestelbonnen aangemaakt.")
                         if sys.platform.startswith("win"):
                             try:
-                                os.startfile(self.dest_folder)
+                                os.startfile(bundle_path or self.dest_folder)
                             except Exception:
                                 pass
                         if getattr(self, "sel_frame", None):
