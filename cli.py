@@ -11,7 +11,13 @@ from typing import Iterable, List, Optional, Union
 import pandas as pd
 from dataclasses import asdict
 
-from helpers import _to_str, _build_file_index, _unique_path, validate_vat
+from helpers import (
+    _to_str,
+    _build_file_index,
+    _unique_path,
+    validate_vat,
+    create_export_bundle,
+)
 from models import Supplier, Client, DeliveryAddress
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from clients_db import ClientsDB, CLIENTS_DB_FILE
@@ -389,9 +395,25 @@ def cli_copy_per_prod(args):
                 return 2
             prod, num = kv.split("=", 1)
             doc_num_map[prod.strip()] = num.strip()
+    bundle = create_export_bundle(
+        args.dest,
+        args.project_number,
+        args.project_name,
+        latest_symlink=args.bundle_latest,
+        dry_run=args.bundle_dry_run,
+    )
+    print("Export bundelmap:", bundle.bundle_dir)
+    if bundle.latest_symlink:
+        print("Latest-symlink:", bundle.latest_symlink)
+    for warn in bundle.warnings:
+        print(f"[WAARSCHUWING] {warn}")
+    if bundle.dry_run:
+        print("Dry-run geactiveerd: geen bestanden gekopieerd.")
+        return 0
+
     cnt, chosen = copy_per_production_and_orders(
         args.source,
-        args.dest,
+        bundle.bundle_dir,
         df,
         exts,
         db,
@@ -548,6 +570,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--project-name",
         dest="project_name",
         help="Projectnaam voor documentkoppen",
+    )
+    cpp.add_argument(
+        "--bundle-latest",
+        nargs="?",
+        const="latest",
+        metavar="NAAM",
+        help=(
+            "Maak of update een 'latest'-symlink binnen de bestemmingsmap. "
+            "Optioneel kan een naam voor de symlink opgegeven worden."
+        ),
+    )
+    cpp.add_argument(
+        "--bundle-dry-run",
+        action="store_true",
+        help="Maak geen bundelmap en kopieer geen bestanden, toon enkel het pad.",
     )
 
 
