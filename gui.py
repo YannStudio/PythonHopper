@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from helpers import _to_str, _build_file_index
+from helpers import _to_str, _build_file_index, create_export_bundle, ExportBundleResult
 from models import Supplier, Client, DeliveryAddress
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from clients_db import ClientsDB, CLIENTS_DB_FILE
@@ -973,6 +973,7 @@ def start_gui():
 
             self.source_folder = ""
             self.dest_folder = ""
+            self.last_bundle_result: Optional[ExportBundleResult] = None
             self.project_number_var = tk.StringVar()
             self.project_name_var = tk.StringVar()
             self.bom_df: Optional[pd.DataFrame] = None
@@ -1031,6 +1032,8 @@ def start_gui():
             self.zip_var = tk.IntVar()
             self.export_date_prefix_var = tk.IntVar()
             self.export_date_suffix_var = tk.IntVar()
+            self.bundle_latest_var = tk.IntVar()
+            self.bundle_dry_run_var = tk.IntVar()
             tk.Checkbutton(filt, text="PDF (.pdf)", variable=self.pdf_var).pack(anchor="w", padx=8)
             tk.Checkbutton(filt, text="STEP (.step, .stp)", variable=self.step_var).pack(anchor="w", padx=8)
             tk.Checkbutton(filt, text="DXF (.dxf)", variable=self.dxf_var).pack(anchor="w", padx=8)
@@ -1082,6 +1085,16 @@ def start_gui():
                 act,
                 text="Datumsuffix (-YYYYMMDD)",
                 variable=self.export_date_suffix_var,
+            ).pack(side="left", padx=6)
+            tk.Checkbutton(
+                act,
+                text="Update 'latest'-koppeling",
+                variable=self.bundle_latest_var,
+            ).pack(side="left", padx=6)
+            tk.Checkbutton(
+                act,
+                text="Alleen bundelpad tonen (dry-run)",
+                variable=self.bundle_dry_run_var,
             ).pack(side="left", padx=6)
             tk.Button(act, text="Combine pdf", command=self._combine_pdf).pack(side="left", padx=6)
 
@@ -1287,6 +1300,49 @@ def start_gui():
             if not exts or not self.source_folder or not self.dest_folder:
                 messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies."); return
             def work():
+                self.status_var.set("Bundelmap voorbereiden...")
+                try:
+                    bundle = create_export_bundle(
+                        self.dest_folder,
+                        self.project_number_var.get().strip() or None,
+                        self.project_name_var.get().strip() or None,
+                        latest_symlink="latest" if self.bundle_latest_var.get() else False,
+                        dry_run=bool(self.bundle_dry_run_var.get()),
+                    )
+                except Exception as exc:
+                    def on_error():
+                        messagebox.showerror(
+                            "Fout",
+                            f"Kon bundelmap niet maken:\n{exc}",
+                            parent=self,
+                        )
+                        self.status_var.set("Bundelmap maken mislukt.")
+
+                    self.after(0, on_error)
+                    return
+
+                self.last_bundle_result = bundle
+                bundle_dest = bundle.bundle_dir
+
+                if bundle.warnings:
+                    warnings = list(bundle.warnings)
+
+                    def show_warnings():
+                        messagebox.showwarning("Let op", "\n".join(warnings), parent=self)
+
+                    self.after(0, show_warnings)
+
+                if bundle.dry_run:
+                    def on_dry():
+                        lines = ["Bundelpad (dry-run):", bundle_dest]
+                        if bundle.latest_symlink:
+                            lines.append(f"Symlink: {bundle.latest_symlink}")
+                        messagebox.showinfo("Dry-run", "\n".join(lines), parent=self)
+                        self.status_var.set(f"Dry-run bundelpad: {bundle_dest}")
+
+                    self.after(0, on_dry)
+                    return
+
                 self.status_var.set("Kopiëren...")
                 idx = _build_file_index(self.source_folder, exts)
                 date_prefix = bool(self.export_date_prefix_var.get())
@@ -1310,10 +1366,13 @@ def start_gui():
                 for _, paths in idx.items():
                     for p in paths:
                         name = _export_name(os.path.basename(p))
-                        dst = os.path.join(self.dest_folder, name)
+                        dst = os.path.join(bundle_dest, name)
                         shutil.copy2(p, dst)
                         cnt += 1
-                self.status_var.set(f"Gekopieerd: {cnt}")
+                def on_done():
+                    self.status_var.set(f"Gekopieerd: {cnt} → {bundle_dest}")
+
+                self.after(0, on_done)
             threading.Thread(target=work, daemon=True).start()
 
         def _copy_per_prod(self):
@@ -1349,6 +1408,49 @@ def start_gui():
                     return
 
                 def work():
+                    self.status_var.set("Bundelmap voorbereiden...")
+                    try:
+                        bundle = create_export_bundle(
+                            self.dest_folder,
+                            project_number or None,
+                            project_name or None,
+                            latest_symlink="latest" if self.bundle_latest_var.get() else False,
+                            dry_run=bool(self.bundle_dry_run_var.get()),
+                        )
+                    except Exception as exc:
+                        def on_error():
+                            messagebox.showerror(
+                                "Fout",
+                                f"Kon bundelmap niet maken:\n{exc}",
+                                parent=self,
+                            )
+                            self.status_var.set("Bundelmap maken mislukt.")
+
+                        self.after(0, on_error)
+                        return
+
+                    self.last_bundle_result = bundle
+                    bundle_dest = bundle.bundle_dir
+
+                    if bundle.warnings:
+                        warnings = list(bundle.warnings)
+
+                        def show_warnings():
+                            messagebox.showwarning("Let op", "\n".join(warnings), parent=self)
+
+                        self.after(0, show_warnings)
+
+                    if bundle.dry_run:
+                        def on_dry():
+                            lines = ["Bundelpad (dry-run):", bundle_dest]
+                            if bundle.latest_symlink:
+                                lines.append(f"Symlink: {bundle.latest_symlink}")
+                            messagebox.showinfo("Dry-run", "\n".join(lines), parent=self)
+                            self.status_var.set(f"Dry-run bundelpad: {bundle_dest}")
+
+                        self.after(0, on_dry)
+                        return
+
                     self.status_var.set("Kopiëren & bestelbonnen maken...")
                     client = self.client_db.get(
                         self.client_var.get().replace("★ ", "", 1)
@@ -1368,7 +1470,7 @@ def start_gui():
                             resolved_delivery_map[prod] = addr
                     cnt, chosen = copy_per_production_and_orders(
                         self.source_folder,
-                        self.dest_folder,
+                        bundle_dest,
                         current_bom,
                         exts,
                         self.db,
@@ -1388,14 +1490,25 @@ def start_gui():
 
                     def on_done():
                         self.status_var.set(
-                            f"Klaar. Gekopieerd: {cnt}. Leveranciers: {chosen}"
+                            f"Klaar. Gekopieerd: {cnt}. Leveranciers: {chosen}. → {bundle_dest}"
                         )
-                        messagebox.showinfo("Klaar", "Bestelbonnen aangemaakt.")
-                        if sys.platform.startswith("win"):
-                            try:
-                                os.startfile(self.dest_folder)
-                            except Exception:
-                                pass
+                        info_lines = ["Bestelbonnen aangemaakt in:", bundle_dest]
+                        if bundle.latest_symlink:
+                            info_lines.append(f"Symlink: {bundle.latest_symlink}")
+                        messagebox.showinfo("Klaar", "\n".join(info_lines), parent=self)
+                        try:
+                            if sys.platform.startswith("win"):
+                                os.startfile(bundle_dest)
+                            elif sys.platform == "darwin":
+                                subprocess.run(["open", bundle_dest], check=False)
+                            else:
+                                subprocess.run(["xdg-open", bundle_dest], check=False)
+                        except Exception as exc:
+                            messagebox.showwarning(
+                                "Let op",
+                                f"Kon bundelmap niet openen:\n{exc}",
+                                parent=self,
+                            )
                         if getattr(self, "sel_frame", None):
                             try:
                                 self.nb.forget(self.sel_frame)

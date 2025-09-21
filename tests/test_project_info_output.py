@@ -1,4 +1,6 @@
 import datetime
+from pathlib import Path
+
 import pandas as pd
 import pytest
 pytest.importorskip("openpyxl")
@@ -7,6 +9,7 @@ from PyPDF2 import PdfReader
 
 import cli
 from cli import build_parser, cli_copy_per_prod
+from helpers import create_export_bundle
 from models import Supplier
 from suppliers_db import SuppliersDB
 from clients_db import ClientsDB
@@ -53,7 +56,8 @@ def test_project_info_in_documents(tmp_path, monkeypatch):
 
     cli_copy_per_prod(args)
 
-    prod_folder = dst / "Laser"
+    bundle = create_export_bundle(str(dst), "PRJ123", "New Project", dry_run=True)
+    prod_folder = Path(bundle.bundle_dir) / "Laser"
     today = datetime.date.today().strftime("%Y-%m-%d")
 
     xlsx_path = prod_folder / f"Bestelbon_Laser_{today}.xlsx"
