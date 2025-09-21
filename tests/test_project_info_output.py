@@ -1,5 +1,4 @@
 import datetime
-from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -9,7 +8,6 @@ from PyPDF2 import PdfReader
 
 import cli
 from cli import build_parser, cli_copy_per_prod
-from helpers import create_export_bundle
 from models import Supplier
 from suppliers_db import SuppliersDB
 from clients_db import ClientsDB
@@ -56,9 +54,13 @@ def test_project_info_in_documents(tmp_path, monkeypatch):
 
     cli_copy_per_prod(args)
 
-    bundle = create_export_bundle(str(dst), "PRJ123", "New Project", dry_run=True)
-    prod_folder = Path(bundle.bundle_dir) / "Laser"
     today = datetime.date.today().strftime("%Y-%m-%d")
+    slug = "new-project"
+    expected_prefix = f"{today}_PRJ123_{slug}"
+    bundle_dirs = [p for p in dst.iterdir() if p.is_dir() and p.name.startswith(expected_prefix)]
+    assert bundle_dirs, "Geen bundelmap aangemaakt"
+    assert len(bundle_dirs) == 1, "Meerdere bundelmappen aangetroffen"
+    prod_folder = bundle_dirs[0] / "Laser"
 
     xlsx_path = prod_folder / f"Bestelbon_Laser_{today}.xlsx"
     assert xlsx_path.exists()

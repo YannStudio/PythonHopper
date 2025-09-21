@@ -7,6 +7,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
+from export_bundle import create_export_bundle as _create_export_bundle
+
 
 def _to_str(x: Any) -> str:
     return "" if x is None else str(x)
@@ -124,52 +126,61 @@ def create_export_bundle(
     *,
     latest_symlink: bool | str = False,
     dry_run: bool = False,
-    timestamp: datetime.datetime | None = None,
+    timestamp: datetime.datetime | datetime.date | None = None,
 ) -> ExportBundleResult:
-    """Create or determine an export bundle directory within ``base_dir``.
-
-    The directory name is derived from ``project_number`` and ``project_name``.
-    Missing or unusable values fall back to ``bundle-YYYYMMDD-HHMMSS``. When
-    ``dry_run`` is ``True`` the directory and optional symlink are not created.
-
-    ``latest_symlink`` enables creation of a symlink inside ``base_dir`` that
-    points to the bundle directory. When a string is provided it is used as the
-    symlink name; otherwise ``"latest"`` is used. Existing non-symlink paths
-    with the same name are left untouched and reported via ``warnings``.
-    """
+    """Create or determine an export bundle directory within ``base_dir``."""
 
     root_dir = os.path.abspath(base_dir)
-    components: List[str] = []
     warnings: List[str] = []
-
-    pn = _sanitize_bundle_component(project_number)
-    if pn:
-        components.append(pn)
-    elif _to_str(project_number).strip():
-        warnings.append("Projectnummer bevat geen geldige tekens en is overgeslagen.")
-
-    pname = _sanitize_bundle_component(project_name)
-    if pname:
-        components.append(pname)
-    elif _to_str(project_name).strip():
-        warnings.append("Projectnaam bevat geen geldige tekens en is overgeslagen.")
-
     used_fallback = False
-    if components:
-        folder_name = " - ".join(components)
-    else:
+
+    pn_raw = _to_str(project_number).strip()
+    pn_clean = _sanitize_bundle_component(pn_raw)
+    if pn_raw and not pn_clean:
+        warnings.append("Projectnummer bevat geen geldige tekens en is overgeslagen.")
+    if not pn_clean:
+        pn_clean = "project"
         used_fallback = True
-        if not (project_number or project_name):
-            warnings.append(
-                "Projectnummer of -naam ontbreekt; er wordt een fallbackmap gebruikt."
-            )
-        timestamp = timestamp or datetime.datetime.now()
-        folder_name = timestamp.strftime("bundle-%Y%m%d-%H%M%S")
 
-    bundle_dir = os.path.abspath(os.path.join(root_dir, folder_name))
+    name_raw = _to_str(project_name).strip()
+    name_for_slug = name_raw
+    if name_raw and not _sanitize_bundle_component(name_raw):
+        warnings.append("Projectnaam bevat geen geldige tekens en is overgeslagen.")
+        name_for_slug = ""
+    if not name_for_slug:
+        used_fallback = True
 
-    if not dry_run:
-        os.makedirs(bundle_dir, exist_ok=True)
+    if not pn_raw and not name_raw:
+        warnings.append(
+            "Projectnummer of -naam ontbreekt; er wordt een fallbackmap gebruikt."
+        )
+
+    bundle_date: datetime.date | None
+    if timestamp is None:
+        bundle_date = None
+    elif isinstance(timestamp, datetime.datetime):
+        bundle_date = timestamp.date()
+    elif isinstance(timestamp, datetime.date):
+        bundle_date = timestamp
+    else:  # pragma: no cover - defensive
+        raise TypeError("timestamp must be a date, datetime, or None")
+
+    if not os.path.exists(root_dir):
+        os.makedirs(root_dir, exist_ok=True)
+    elif not os.path.isdir(root_dir):  # pragma: no cover - defensive
+        raise NotADirectoryError(f"Exportbasis is geen map: {root_dir}")
+
+    bundle_path = _create_export_bundle(
+        root_dir,
+        pn_clean,
+        name_for_slug or pn_clean,
+        date=bundle_date,
+        dry_run=dry_run,
+        create_latest_symlink=False,
+    )
+
+    folder_name = bundle_path.name
+    bundle_dir = str(bundle_path)
 
     latest_path: str | None = None
     link_requested = bool(latest_symlink)
