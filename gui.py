@@ -1027,12 +1027,24 @@ def start_gui():
 
 
             # Filters
+            filters_row = tk.Frame(main)
+            filters_row.pack(fill="x", padx=8, pady=6)
+            filters_row.grid_columnconfigure(0, weight=1)
+            filters_row.grid_columnconfigure(1, weight=1)
+
             filt = tk.LabelFrame(
-                main, text="Selecteer bestandstypen om te kopiëren", labelanchor="n"
+                filters_row,
+                text="Selecteer bestandstypen om te kopiëren",
+                labelanchor="n",
             )
-            filt.pack(fill="x", padx=8, pady=6)
+            filt.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
             filt.grid_columnconfigure(0, weight=1)
-            filt.grid_columnconfigure(1, weight=1)
+
+            options_frame_parent = tk.LabelFrame(
+                filters_row, text="Geavanceerde opties", labelanchor="n"
+            )
+            options_frame_parent.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+            options_frame_parent.grid_columnconfigure(0, weight=1)
 
             self.pdf_var = tk.IntVar()
             self.step_var = tk.IntVar()
@@ -1045,9 +1057,9 @@ def start_gui():
             self.bundle_dry_run_var = tk.IntVar()
 
             ext_frame = tk.Frame(filt)
-            ext_frame.grid(row=0, column=0, sticky="nw", padx=(8, 16), pady=4)
-            options_frame = tk.Frame(filt)
-            options_frame.grid(row=0, column=1, sticky="nw", padx=8, pady=4)
+            ext_frame.grid(row=0, column=0, sticky="nw", padx=8, pady=4)
+            options_frame = tk.Frame(options_frame_parent)
+            options_frame.grid(row=0, column=0, sticky="nw", padx=8, pady=4)
 
             tk.Checkbutton(ext_frame, text="PDF (.pdf)", variable=self.pdf_var, anchor="w").pack(
                 anchor="w", pady=2
