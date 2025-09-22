@@ -426,6 +426,7 @@ def cli_copy_per_prod(args):
         footer_note=args.note or DEFAULT_FOOTER_NOTE,
         project_number=args.project_number,
         project_name=args.project_name,
+        export_name_token=args.export_token or "",
     )
     print("Gekopieerd:", cnt)
     for k, v in chosen.items():
@@ -570,6 +571,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--project-name",
         dest="project_name",
         help="Projectnaam voor documentkoppen",
+    )
+    cpp.add_argument(
+        "--export-token",
+        dest="export_token",
+        default="",
+        help="Extra toevoeging voor exportbestandsnamen",
     )
     cpp.add_argument(
         "--bundle-latest",

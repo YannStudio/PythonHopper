@@ -1075,6 +1075,7 @@ def start_gui():
             self.zip_var = tk.IntVar(value=1)
             self.export_date_prefix_var = tk.IntVar()
             self.export_date_suffix_var = tk.IntVar()
+            self.export_name_custom_var = tk.StringVar()
             self.bundle_latest_var = tk.IntVar()
             self.bundle_dry_run_var = tk.IntVar()
 
@@ -1115,6 +1116,14 @@ def start_gui():
                 variable=self.export_date_suffix_var,
                 anchor="w",
             ).pack(anchor="w", pady=2)
+            tk.Label(
+                export_name_inner,
+                text="Aangepaste toevoeging:",
+            ).pack(anchor="w", pady=(8, 0))
+            tk.Entry(
+                export_name_inner,
+                textvariable=self.export_name_custom_var,
+            ).pack(anchor="w", fill="x", pady=(0, 2))
             tk.Checkbutton(
                 options_frame,
                 text="Maak snelkoppeling naar nieuwste exportmap",
@@ -1375,7 +1384,9 @@ def start_gui():
             exts = self._selected_exts()
             if not exts or not self.source_folder or not self.dest_folder:
                 messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies."); return
-            def work():
+            custom_token = self.export_name_custom_var.get().strip()
+
+            def work(token=custom_token):
                 self.status_var.set("Bundelmap voorbereiden...")
                 try:
                     bundle = create_export_bundle(
@@ -1430,13 +1441,15 @@ def start_gui():
                 )
 
                 def _export_name(fname: str) -> str:
-                    if not date_token:
+                    if not (date_prefix or date_suffix or token):
                         return fname
                     stem, ext = os.path.splitext(fname)
-                    if date_prefix:
+                    if date_prefix and date_token:
                         stem = f"{date_token}-{stem}"
-                    if date_suffix:
+                    if date_suffix and date_token:
                         stem = f"{stem}-{date_token}"
+                    if token:
+                        stem = f"{stem}-{token}"
                     return f"{stem}{ext}"
                 cnt = 0
                 for _, paths in idx.items():
@@ -1483,7 +1496,9 @@ def start_gui():
                     messagebox.showwarning("Let op", "Laad eerst een BOM.")
                     return
 
-                def work():
+                custom_token = self.export_name_custom_var.get().strip()
+
+                def work(token=custom_token):
                     self.status_var.set("Bundelmap voorbereiden...")
                     try:
                         bundle = create_export_bundle(
@@ -1562,6 +1577,7 @@ def start_gui():
                         date_suffix_exports=bool(self.export_date_suffix_var.get()),
                         project_number=project_number,
                         project_name=project_name,
+                        export_name_token=token,
                     )
 
                     def on_done():

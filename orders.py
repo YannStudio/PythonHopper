@@ -442,6 +442,7 @@ def copy_per_production_and_orders(
     date_suffix_exports: bool = False,
     project_number: str | None = None,
     project_name: str | None = None,
+    export_name_token: str = "",
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
 
@@ -463,6 +464,9 @@ def copy_per_production_and_orders(
     with ``YYYYMMDD-``. When ``date_suffix_exports`` is ``True`` they will end
     with ``-YYYYMMDD`` before the extension. Both transformations are applied
     consistently to copied files and ZIP archive members.
+
+    When ``export_name_token`` is provided, it is appended to the filename stem
+    before the extension for all exported files, including ZIP members.
     """
     os.makedirs(dest, exist_ok=True)
     file_index = _build_file_index(source, selected_exts)
@@ -480,17 +484,20 @@ def copy_per_production_and_orders(
     today = today_date.strftime("%Y-%m-%d")
     date_token = today_date.strftime("%Y%m%d")
     delivery_map = delivery_map or {}
+    export_name_token = (export_name_token or "").strip()
 
     def _transform_export_name(filename: str) -> str:
         """Apply prefix/suffix date tokens to ``filename`` when requested."""
 
-        if not (date_prefix_exports or date_suffix_exports):
+        if not (date_prefix_exports or date_suffix_exports or export_name_token):
             return filename
         stem, ext = os.path.splitext(filename)
         if date_prefix_exports:
             stem = f"{date_token}-{stem}"
         if date_suffix_exports:
             stem = f"{stem}-{date_token}"
+        if export_name_token:
+            stem = f"{stem}-{export_name_token}"
         return f"{stem}{ext}"
     for prod, rows in prod_to_rows.items():
         prod_folder = os.path.join(dest, prod)
