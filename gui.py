@@ -60,6 +60,7 @@ def sort_supplier_options(
 
 def start_gui():
     import tkinter as tk
+    import tkinter.font as tkfont
     from tkinter import ttk, filedialog, messagebox, simpledialog
 
     TREE_ODD_BG = "#FFFFFF"
@@ -1005,19 +1006,27 @@ def start_gui():
 
             # Top folders
             top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
-            tk.Label(top, text="📁 Bronmap:").grid(row=0, column=0, sticky="w")
+            FOLDER_ICON = "\U0001F4C1\ufe0e"
+            USER_ICON = "\U0001F464\ufe0e"
+            label_font = tkfont.nametofont("TkDefaultFont")
+
+            tk.Label(top, text=f"{FOLDER_ICON} Bronmap:", font=label_font).grid(
+                row=0, column=0, sticky="w"
+            )
             self.src_entry = tk.Entry(top, width=60); self.src_entry.grid(row=0, column=1, padx=4)
             tk.Button(top, text="Bladeren", command=self._pick_src).grid(row=0, column=2, padx=4)
             tk.Label(top, text="Projectnr.:").grid(row=0, column=3, sticky="w", padx=(16, 0))
             tk.Entry(top, textvariable=self.project_number_var, width=60).grid(row=0, column=4, padx=4, sticky="w")
 
-            tk.Label(top, text="📁 Bestemmingsmap:").grid(row=1, column=0, sticky="w")
+            tk.Label(top, text=f"{FOLDER_ICON} Bestemmingsmap:", font=label_font).grid(
+                row=1, column=0, sticky="w"
+            )
             self.dst_entry = tk.Entry(top, width=60); self.dst_entry.grid(row=1, column=1, padx=4)
             tk.Button(top, text="Bladeren", command=self._pick_dst).grid(row=1, column=2, padx=4)
             tk.Label(top, text="Projectnaam:").grid(row=1, column=3, sticky="w", padx=(16, 0))
             tk.Entry(top, textvariable=self.project_name_var, width=60).grid(row=1, column=4, padx=4, sticky="w")
 
-            tk.Label(top, text="👤 Opdrachtgever:").grid(
+            tk.Label(top, text=f"{USER_ICON} Opdrachtgever:", font=label_font).grid(
                 row=2, column=0, sticky="w", pady=(8, 0)
             )
             self.client_var = tk.StringVar()
