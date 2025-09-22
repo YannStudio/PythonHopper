@@ -1006,8 +1006,8 @@ def start_gui():
 
             # Top folders
             top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
-            FOLDER_ICON = "\U0001F4C1\ufe0e"
-            USER_ICON = "\U0001F464\ufe0e"
+            FOLDER_ICON = "\U0001F4C1"
+            USER_ICON = "\U0001F464"
             label_font = tkfont.nametofont("TkDefaultFont")
 
             tk.Label(top, text=f"{FOLDER_ICON} Bronmap:", font=label_font).grid(
