@@ -443,6 +443,9 @@ def copy_per_production_and_orders(
     project_number: str | None = None,
     project_name: str | None = None,
     export_name_token: str = "",
+    export_name_token_enabled: bool | None = None,
+    export_name_token_prefix: bool = False,
+    export_name_token_suffix: bool | None = None,
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
 
@@ -465,8 +468,10 @@ def copy_per_production_and_orders(
     with ``-YYYYMMDD`` before the extension. Both transformations are applied
     consistently to copied files and ZIP archive members.
 
-    When ``export_name_token`` is provided, it is appended to the filename stem
-    before the extension for all exported files, including ZIP members.
+    When ``export_name_token`` is provided and enabled, it can be added before
+    and/or after the filename according to ``export_name_token_prefix`` and
+    ``export_name_token_suffix``. Both transformations are applied consistently
+    to copied files and ZIP archive members.
     """
     os.makedirs(dest, exist_ok=True)
     file_index = _build_file_index(source, selected_exts)
@@ -485,20 +490,40 @@ def copy_per_production_and_orders(
     date_token = today_date.strftime("%Y%m%d")
     delivery_map = delivery_map or {}
     export_name_token = (export_name_token or "").strip()
+    token_has_text = bool(export_name_token)
+    if export_name_token_enabled is None:
+        token_enabled = token_has_text
+    else:
+        token_enabled = bool(export_name_token_enabled) and token_has_text
+    token_prefix_active = token_enabled and bool(export_name_token_prefix)
+    if export_name_token_suffix is None:
+        token_suffix_active = token_enabled
+    else:
+        token_suffix_active = token_enabled and bool(export_name_token_suffix)
 
     def _transform_export_name(filename: str) -> str:
-        """Apply prefix/suffix date tokens to ``filename`` when requested."""
+        """Apply date/custom tokens to ``filename`` when requested."""
 
-        if not (date_prefix_exports or date_suffix_exports or export_name_token):
+        if not (
+            date_prefix_exports
+            or date_suffix_exports
+            or token_prefix_active
+            or token_suffix_active
+        ):
             return filename
         stem, ext = os.path.splitext(filename)
+        prefix_parts: List[str] = []
         if date_prefix_exports:
-            stem = f"{date_token}-{stem}"
+            prefix_parts.append(date_token)
+        if token_prefix_active:
+            prefix_parts.append(export_name_token)
+        suffix_parts: List[str] = []
         if date_suffix_exports:
-            stem = f"{stem}-{date_token}"
-        if export_name_token:
-            stem = f"{stem}-{export_name_token}"
-        return f"{stem}{ext}"
+            suffix_parts.append(date_token)
+        if token_suffix_active:
+            suffix_parts.append(export_name_token)
+        new_stem = "-".join(prefix_parts + [stem] + suffix_parts)
+        return f"{new_stem}{ext}"
     for prod, rows in prod_to_rows.items():
         prod_folder = os.path.join(dest, prod)
         os.makedirs(prod_folder, exist_ok=True)

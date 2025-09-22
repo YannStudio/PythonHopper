@@ -1076,6 +1076,9 @@ def start_gui():
             self.export_date_prefix_var = tk.IntVar()
             self.export_date_suffix_var = tk.IntVar()
             self.export_name_custom_var = tk.StringVar()
+            self.export_name_custom_enabled_var = tk.IntVar()
+            self.export_name_custom_prefix_var = tk.IntVar()
+            self.export_name_custom_suffix_var = tk.IntVar(value=1)
             self.bundle_latest_var = tk.IntVar()
             self.bundle_dry_run_var = tk.IntVar()
 
@@ -1116,14 +1119,28 @@ def start_gui():
                 variable=self.export_date_suffix_var,
                 anchor="w",
             ).pack(anchor="w", pady=2)
-            tk.Label(
-                export_name_inner,
-                text="Aangepaste toevoeging:",
-            ).pack(anchor="w", pady=(8, 0))
-            tk.Entry(
-                export_name_inner,
+            custom_row = tk.Frame(export_name_inner)
+            custom_row.pack(anchor="w", fill="x", pady=(8, 2))
+            tk.Checkbutton(
+                custom_row,
+                text="Aangepaste toevoeging",
+                variable=self.export_name_custom_enabled_var,
+            ).pack(side="left", padx=(0, 4))
+            custom_entry = tk.Entry(
+                custom_row,
                 textvariable=self.export_name_custom_var,
-            ).pack(anchor="w", fill="x", pady=(0, 2))
+            )
+            custom_entry.pack(side="left", fill="x", expand=True, padx=(0, 4))
+            tk.Checkbutton(
+                custom_row,
+                text="Prefix",
+                variable=self.export_name_custom_prefix_var,
+            ).pack(side="left", padx=(0, 4))
+            tk.Checkbutton(
+                custom_row,
+                text="Suffix",
+                variable=self.export_name_custom_suffix_var,
+            ).pack(side="left")
             tk.Checkbutton(
                 options_frame,
                 text="Maak snelkoppeling naar nieuwste exportmap",
@@ -1385,8 +1402,16 @@ def start_gui():
             if not exts or not self.source_folder or not self.dest_folder:
                 messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies."); return
             custom_token = self.export_name_custom_var.get().strip()
+            custom_token_enabled = bool(self.export_name_custom_enabled_var.get())
+            custom_token_prefix = bool(self.export_name_custom_prefix_var.get())
+            custom_token_suffix = bool(self.export_name_custom_suffix_var.get())
 
-            def work(token=custom_token):
+            def work(
+                token=custom_token,
+                token_enabled=custom_token_enabled,
+                token_prefix=custom_token_prefix,
+                token_suffix=custom_token_suffix,
+            ):
                 self.status_var.set("Bundelmap voorbereiden...")
                 try:
                     bundle = create_export_bundle(
@@ -1441,16 +1466,30 @@ def start_gui():
                 )
 
                 def _export_name(fname: str) -> str:
-                    if not (date_prefix or date_suffix or token):
+                    token_active = token_enabled and bool(token)
+                    prefix_active = token_active and token_prefix
+                    suffix_active = token_active and token_suffix
+                    if not (
+                        date_prefix
+                        or date_suffix
+                        or prefix_active
+                        or suffix_active
+                    ):
                         return fname
                     stem, ext = os.path.splitext(fname)
+                    prefix_parts = []
                     if date_prefix and date_token:
-                        stem = f"{date_token}-{stem}"
+                        prefix_parts.append(date_token)
+                    if prefix_active:
+                        prefix_parts.append(token)
+                    suffix_parts = []
                     if date_suffix and date_token:
-                        stem = f"{stem}-{date_token}"
-                    if token:
-                        stem = f"{stem}-{token}"
-                    return f"{stem}{ext}"
+                        suffix_parts.append(date_token)
+                    if suffix_active:
+                        suffix_parts.append(token)
+                    parts = prefix_parts + [stem] + suffix_parts
+                    new_stem = "-".join([p for p in parts if p])
+                    return f"{new_stem}{ext}"
                 cnt = 0
                 for _, paths in idx.items():
                     for p in paths:
@@ -1497,8 +1536,16 @@ def start_gui():
                     return
 
                 custom_token = self.export_name_custom_var.get().strip()
+                custom_token_enabled = bool(self.export_name_custom_enabled_var.get())
+                custom_token_prefix = bool(self.export_name_custom_prefix_var.get())
+                custom_token_suffix = bool(self.export_name_custom_suffix_var.get())
 
-                def work(token=custom_token):
+                def work(
+                    token=custom_token,
+                    token_enabled=custom_token_enabled,
+                    token_prefix=custom_token_prefix,
+                    token_suffix=custom_token_suffix,
+                ):
                     self.status_var.set("Bundelmap voorbereiden...")
                     try:
                         bundle = create_export_bundle(
@@ -1578,6 +1625,9 @@ def start_gui():
                         project_number=project_number,
                         project_name=project_name,
                         export_name_token=token,
+                        export_name_token_enabled=token_enabled,
+                        export_name_token_prefix=token_prefix,
+                        export_name_token_suffix=token_suffix,
                     )
 
                     def on_done():
