@@ -1073,7 +1073,7 @@ def start_gui():
             self.dxf_var = tk.IntVar()
             self.dwg_var = tk.IntVar()
             self.zip_var = tk.IntVar(value=1)
-            self.export_date_prefix_var = tk.IntVar()
+            self.export_date_prefix_var = tk.IntVar(value=1)
             self.export_date_suffix_var = tk.IntVar()
             self.export_name_custom_prefix_text = tk.StringVar()
             self.export_name_custom_prefix_enabled_var = tk.IntVar()
