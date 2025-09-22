@@ -1044,6 +1044,7 @@ def start_gui():
             filters_row.pack(fill="x", padx=8, pady=6)
             filters_row.grid_columnconfigure(0, weight=1)
             filters_row.grid_columnconfigure(1, weight=1)
+            filters_row.grid_columnconfigure(2, weight=1)
 
             filt = tk.LabelFrame(
                 filters_row,
@@ -1056,8 +1057,16 @@ def start_gui():
             options_frame_parent = tk.LabelFrame(
                 filters_row, text="Geavanceerde opties", labelanchor="n"
             )
-            options_frame_parent.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+            options_frame_parent.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
             options_frame_parent.grid_columnconfigure(0, weight=1)
+
+            export_name_frame = tk.LabelFrame(
+                filters_row,
+                text="Bestandsnaam exportbestand",
+                labelanchor="n",
+            )
+            export_name_frame.grid(row=0, column=2, sticky="nsew")
+            export_name_frame.grid_columnconfigure(0, weight=1)
 
             self.pdf_var = tk.IntVar()
             self.step_var = tk.IntVar()
@@ -1073,6 +1082,8 @@ def start_gui():
             ext_frame.grid(row=0, column=0, sticky="nw", padx=8, pady=4)
             options_frame = tk.Frame(options_frame_parent)
             options_frame.grid(row=0, column=0, sticky="nw", padx=8, pady=4)
+            export_name_inner = tk.Frame(export_name_frame)
+            export_name_inner.grid(row=0, column=0, sticky="nw", padx=8, pady=4)
 
             tk.Checkbutton(ext_frame, text="PDF (.pdf)", variable=self.pdf_var, anchor="w").pack(
                 anchor="w", pady=2
@@ -1093,13 +1104,13 @@ def start_gui():
                 anchor="w",
             ).pack(anchor="w", pady=2)
             tk.Checkbutton(
-                options_frame,
+                export_name_inner,
                 text="Datumprefix (YYYYMMDD-)",
                 variable=self.export_date_prefix_var,
                 anchor="w",
             ).pack(anchor="w", pady=2)
             tk.Checkbutton(
-                options_frame,
+                export_name_inner,
                 text="Datumsuffix (-YYYYMMDD)",
                 variable=self.export_date_suffix_var,
                 anchor="w",
