@@ -1088,12 +1088,12 @@ def start_gui():
             ).pack(side="left", padx=6)
             tk.Checkbutton(
                 act,
-                text="Update 'latest'-koppeling",
+                text="Maak snelkoppeling naar nieuwste exportmap",
                 variable=self.bundle_latest_var,
             ).pack(side="left", padx=6)
             tk.Checkbutton(
                 act,
-                text="Alleen bundelpad tonen (dry-run)",
+                text="Testrun: toon alleen doelmap (niets wordt gekopieerd)",
                 variable=self.bundle_dry_run_var,
             ).pack(side="left", padx=6)
             tk.Button(act, text="Combine pdf", command=self._combine_pdf).pack(side="left", padx=6)
@@ -1334,11 +1334,11 @@ def start_gui():
 
                 if bundle.dry_run:
                     def on_dry():
-                        lines = ["Bundelpad (dry-run):", bundle_dest]
+                        lines = ["Testrun - doelmap:", bundle_dest]
                         if bundle.latest_symlink:
-                            lines.append(f"Symlink: {bundle.latest_symlink}")
-                        messagebox.showinfo("Dry-run", "\n".join(lines), parent=self)
-                        self.status_var.set(f"Dry-run bundelpad: {bundle_dest}")
+                            lines.append(f"Snelkoppeling: {bundle.latest_symlink}")
+                        messagebox.showinfo("Testrun", "\n".join(lines), parent=self)
+                        self.status_var.set(f"Testrun - doelmap: {bundle_dest}")
 
                     self.after(0, on_dry)
                     return
@@ -1442,11 +1442,11 @@ def start_gui():
 
                     if bundle.dry_run:
                         def on_dry():
-                            lines = ["Bundelpad (dry-run):", bundle_dest]
+                            lines = ["Testrun - doelmap:", bundle_dest]
                             if bundle.latest_symlink:
-                                lines.append(f"Symlink: {bundle.latest_symlink}")
-                            messagebox.showinfo("Dry-run", "\n".join(lines), parent=self)
-                            self.status_var.set(f"Dry-run bundelpad: {bundle_dest}")
+                                lines.append(f"Snelkoppeling: {bundle.latest_symlink}")
+                            messagebox.showinfo("Testrun", "\n".join(lines), parent=self)
+                            self.status_var.set(f"Testrun - doelmap: {bundle_dest}")
 
                         self.after(0, on_dry)
                         return
