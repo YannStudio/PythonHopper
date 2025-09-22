@@ -58,10 +58,10 @@ def test_export_token_positions(tmp_path, monkeypatch, prefix, suffix, expected)
         {},
         {},
         False,
-        export_name_token="REV-A",
-        export_name_token_enabled=True,
-        export_name_token_prefix=prefix,
-        export_name_token_suffix=suffix,
+        export_name_prefix_text="REV-A",
+        export_name_prefix_enabled=prefix,
+        export_name_suffix_text="REV-A",
+        export_name_suffix_enabled=suffix,
     )
     assert cnt == 1
     exported = dest / "Laser" / expected
@@ -78,10 +78,10 @@ def test_export_token_positions(tmp_path, monkeypatch, prefix, suffix, expected)
         {},
         False,
         zip_parts=True,
-        export_name_token="REV-A",
-        export_name_token_enabled=True,
-        export_name_token_prefix=prefix,
-        export_name_token_suffix=suffix,
+        export_name_prefix_text="REV-A",
+        export_name_prefix_enabled=prefix,
+        export_name_suffix_text="REV-A",
+        export_name_suffix_enabled=suffix,
     )
     assert cnt_zip == 1
     zip_path = dest_zip / "Laser" / "Laser.zip"
@@ -112,10 +112,10 @@ def test_export_token_disabled(tmp_path, monkeypatch):
         {},
         {},
         False,
-        export_name_token="REV-A",
-        export_name_token_enabled=False,
-        export_name_token_prefix=True,
-        export_name_token_suffix=True,
+        export_name_prefix_text="REV-A",
+        export_name_prefix_enabled=False,
+        export_name_suffix_text="REV-A",
+        export_name_suffix_enabled=False,
     )
     assert cnt == 1
     exported = dest / "Laser" / "PN1.pdf"
@@ -134,11 +134,12 @@ def test_cli_export_token_flags(monkeypatch, tmp_path):
         str(tmp_path / "bom.xlsx"),
         "--exts",
         "pdf",
-        "--export-token",
+        "--export-prefix-text",
         "REV-A",
-        "--export-token-enabled",
-        "--export-token-prefix",
-        "--no-export-token-suffix",
+        "--export-prefix-enabled",
+        "--export-suffix-text",
+        "REV-A",
+        "--no-export-suffix-enabled",
     ])
 
     (tmp_path / "src").mkdir()
@@ -161,7 +162,7 @@ def test_cli_export_token_flags(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "copy_per_production_and_orders", fake_copy)
     cli_copy_per_prod(args)
 
-    assert captured["export_name_token"] == "REV-A"
-    assert captured["export_name_token_enabled"] is True
-    assert captured["export_name_token_prefix"] is True
-    assert captured["export_name_token_suffix"] is False
+    assert captured["export_name_prefix_text"] == "REV-A"
+    assert captured["export_name_prefix_enabled"] is True
+    assert captured["export_name_suffix_text"] == "REV-A"
+    assert captured["export_name_suffix_enabled"] is False

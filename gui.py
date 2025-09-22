@@ -1075,10 +1075,10 @@ def start_gui():
             self.zip_var = tk.IntVar(value=1)
             self.export_date_prefix_var = tk.IntVar()
             self.export_date_suffix_var = tk.IntVar()
-            self.export_name_custom_var = tk.StringVar()
-            self.export_name_custom_enabled_var = tk.IntVar()
-            self.export_name_custom_prefix_var = tk.IntVar()
-            self.export_name_custom_suffix_var = tk.IntVar(value=1)
+            self.export_name_custom_prefix_text = tk.StringVar()
+            self.export_name_custom_prefix_enabled_var = tk.IntVar()
+            self.export_name_custom_suffix_text = tk.StringVar()
+            self.export_name_custom_suffix_enabled_var = tk.IntVar(value=1)
             self.bundle_latest_var = tk.IntVar()
             self.bundle_dry_run_var = tk.IntVar()
 
@@ -1119,28 +1119,28 @@ def start_gui():
                 variable=self.export_date_suffix_var,
                 anchor="w",
             ).pack(anchor="w", pady=2)
-            custom_row = tk.Frame(export_name_inner)
-            custom_row.pack(anchor="w", fill="x", pady=(8, 2))
+            prefix_row = tk.Frame(export_name_inner)
+            prefix_row.pack(anchor="w", fill="x", pady=(8, 2))
             tk.Checkbutton(
-                custom_row,
-                text="Aangepaste toevoeging",
-                variable=self.export_name_custom_enabled_var,
+                prefix_row,
+                text="Aangepaste prefix",
+                variable=self.export_name_custom_prefix_enabled_var,
             ).pack(side="left", padx=(0, 4))
-            custom_entry = tk.Entry(
-                custom_row,
-                textvariable=self.export_name_custom_var,
-            )
-            custom_entry.pack(side="left", fill="x", expand=True, padx=(0, 4))
+            tk.Entry(
+                prefix_row,
+                textvariable=self.export_name_custom_prefix_text,
+            ).pack(side="left", fill="x", expand=True)
+            suffix_row = tk.Frame(export_name_inner)
+            suffix_row.pack(anchor="w", fill="x", pady=2)
             tk.Checkbutton(
-                custom_row,
-                text="Prefix",
-                variable=self.export_name_custom_prefix_var,
+                suffix_row,
+                text="Aangepaste suffix",
+                variable=self.export_name_custom_suffix_enabled_var,
             ).pack(side="left", padx=(0, 4))
-            tk.Checkbutton(
-                custom_row,
-                text="Suffix",
-                variable=self.export_name_custom_suffix_var,
-            ).pack(side="left")
+            tk.Entry(
+                suffix_row,
+                textvariable=self.export_name_custom_suffix_text,
+            ).pack(side="left", fill="x", expand=True)
             tk.Checkbutton(
                 options_frame,
                 text="Maak snelkoppeling naar nieuwste exportmap",
@@ -1401,16 +1401,20 @@ def start_gui():
             exts = self._selected_exts()
             if not exts or not self.source_folder or not self.dest_folder:
                 messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies."); return
-            custom_token = self.export_name_custom_var.get().strip()
-            custom_token_enabled = bool(self.export_name_custom_enabled_var.get())
-            custom_token_prefix = bool(self.export_name_custom_prefix_var.get())
-            custom_token_suffix = bool(self.export_name_custom_suffix_var.get())
+            custom_prefix_text = self.export_name_custom_prefix_text.get().strip()
+            custom_prefix_enabled = bool(
+                self.export_name_custom_prefix_enabled_var.get()
+            )
+            custom_suffix_text = self.export_name_custom_suffix_text.get().strip()
+            custom_suffix_enabled = bool(
+                self.export_name_custom_suffix_enabled_var.get()
+            )
 
             def work(
-                token=custom_token,
-                token_enabled=custom_token_enabled,
-                token_prefix=custom_token_prefix,
-                token_suffix=custom_token_suffix,
+                token_prefix_text=custom_prefix_text,
+                token_suffix_text=custom_suffix_text,
+                token_prefix_enabled=custom_prefix_enabled,
+                token_suffix_enabled=custom_suffix_enabled,
             ):
                 self.status_var.set("Bundelmap voorbereiden...")
                 try:
@@ -1459,6 +1463,10 @@ def start_gui():
                 idx = _build_file_index(self.source_folder, exts)
                 date_prefix = bool(self.export_date_prefix_var.get())
                 date_suffix = bool(self.export_date_suffix_var.get())
+                prefix_text_clean = (token_prefix_text or "").strip()
+                suffix_text_clean = (token_suffix_text or "").strip()
+                prefix_active = bool(token_prefix_enabled) and bool(prefix_text_clean)
+                suffix_active = bool(token_suffix_enabled) and bool(suffix_text_clean)
                 date_token = (
                     datetime.date.today().strftime("%Y%m%d")
                     if date_prefix or date_suffix
@@ -1466,9 +1474,6 @@ def start_gui():
                 )
 
                 def _export_name(fname: str) -> str:
-                    token_active = token_enabled and bool(token)
-                    prefix_active = token_active and token_prefix
-                    suffix_active = token_active and token_suffix
                     if not (
                         date_prefix
                         or date_suffix
@@ -1481,12 +1486,12 @@ def start_gui():
                     if date_prefix and date_token:
                         prefix_parts.append(date_token)
                     if prefix_active:
-                        prefix_parts.append(token)
+                        prefix_parts.append(prefix_text_clean)
                     suffix_parts = []
                     if date_suffix and date_token:
                         suffix_parts.append(date_token)
                     if suffix_active:
-                        suffix_parts.append(token)
+                        suffix_parts.append(suffix_text_clean)
                     parts = prefix_parts + [stem] + suffix_parts
                     new_stem = "-".join([p for p in parts if p])
                     return f"{new_stem}{ext}"
@@ -1535,16 +1540,20 @@ def start_gui():
                     messagebox.showwarning("Let op", "Laad eerst een BOM.")
                     return
 
-                custom_token = self.export_name_custom_var.get().strip()
-                custom_token_enabled = bool(self.export_name_custom_enabled_var.get())
-                custom_token_prefix = bool(self.export_name_custom_prefix_var.get())
-                custom_token_suffix = bool(self.export_name_custom_suffix_var.get())
+                custom_prefix_text = self.export_name_custom_prefix_text.get().strip()
+                custom_prefix_enabled = bool(
+                    self.export_name_custom_prefix_enabled_var.get()
+                )
+                custom_suffix_text = self.export_name_custom_suffix_text.get().strip()
+                custom_suffix_enabled = bool(
+                    self.export_name_custom_suffix_enabled_var.get()
+                )
 
                 def work(
-                    token=custom_token,
-                    token_enabled=custom_token_enabled,
-                    token_prefix=custom_token_prefix,
-                    token_suffix=custom_token_suffix,
+                    token_prefix_text=custom_prefix_text,
+                    token_suffix_text=custom_suffix_text,
+                    token_prefix_enabled=custom_prefix_enabled,
+                    token_suffix_enabled=custom_suffix_enabled,
                 ):
                     self.status_var.set("Bundelmap voorbereiden...")
                     try:
@@ -1624,10 +1633,10 @@ def start_gui():
                         date_suffix_exports=bool(self.export_date_suffix_var.get()),
                         project_number=project_number,
                         project_name=project_name,
-                        export_name_token=token,
-                        export_name_token_enabled=token_enabled,
-                        export_name_token_prefix=token_prefix,
-                        export_name_token_suffix=token_suffix,
+                        export_name_prefix_text=token_prefix_text,
+                        export_name_prefix_enabled=token_prefix_enabled,
+                        export_name_suffix_text=token_suffix_text,
+                        export_name_suffix_enabled=token_suffix_enabled,
                     )
 
                     def on_done():
