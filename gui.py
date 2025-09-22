@@ -1027,17 +1027,70 @@ def start_gui():
 
 
             # Filters
-            filt = tk.LabelFrame(main, text="Selecteer bestandstypen om te kopiëren", labelanchor="n"); filt.pack(fill="x", padx=8, pady=6)
-            self.pdf_var = tk.IntVar(); self.step_var = tk.IntVar(); self.dxf_var = tk.IntVar(); self.dwg_var = tk.IntVar()
+            filt = tk.LabelFrame(
+                main, text="Selecteer bestandstypen om te kopiëren", labelanchor="n"
+            )
+            filt.pack(fill="x", padx=8, pady=6)
+            filt.grid_columnconfigure(0, weight=1)
+            filt.grid_columnconfigure(1, weight=1)
+
+            self.pdf_var = tk.IntVar()
+            self.step_var = tk.IntVar()
+            self.dxf_var = tk.IntVar()
+            self.dwg_var = tk.IntVar()
             self.zip_var = tk.IntVar()
             self.export_date_prefix_var = tk.IntVar()
             self.export_date_suffix_var = tk.IntVar()
             self.bundle_latest_var = tk.IntVar()
             self.bundle_dry_run_var = tk.IntVar()
-            tk.Checkbutton(filt, text="PDF (.pdf)", variable=self.pdf_var).pack(anchor="w", padx=8)
-            tk.Checkbutton(filt, text="STEP (.step, .stp)", variable=self.step_var).pack(anchor="w", padx=8)
-            tk.Checkbutton(filt, text="DXF (.dxf)", variable=self.dxf_var).pack(anchor="w", padx=8)
-            tk.Checkbutton(filt, text="DWG (.dwg)", variable=self.dwg_var).pack(anchor="w", padx=8)
+
+            ext_frame = tk.Frame(filt)
+            ext_frame.grid(row=0, column=0, sticky="nw", padx=(8, 16), pady=4)
+            options_frame = tk.Frame(filt)
+            options_frame.grid(row=0, column=1, sticky="nw", padx=8, pady=4)
+
+            tk.Checkbutton(ext_frame, text="PDF (.pdf)", variable=self.pdf_var, anchor="w").pack(
+                anchor="w", pady=2
+            )
+            tk.Checkbutton(
+                ext_frame, text="STEP (.step, .stp)", variable=self.step_var, anchor="w"
+            ).pack(anchor="w", pady=2)
+            tk.Checkbutton(ext_frame, text="DXF (.dxf)", variable=self.dxf_var, anchor="w").pack(
+                anchor="w", pady=2
+            )
+            tk.Checkbutton(ext_frame, text="DWG (.dwg)", variable=self.dwg_var, anchor="w").pack(
+                anchor="w", pady=2
+            )
+            tk.Checkbutton(
+                options_frame,
+                text="Zip per productie",
+                variable=self.zip_var,
+                anchor="w",
+            ).pack(anchor="w", pady=2)
+            tk.Checkbutton(
+                options_frame,
+                text="Datumprefix (YYYYMMDD-)",
+                variable=self.export_date_prefix_var,
+                anchor="w",
+            ).pack(anchor="w", pady=2)
+            tk.Checkbutton(
+                options_frame,
+                text="Datumsuffix (-YYYYMMDD)",
+                variable=self.export_date_suffix_var,
+                anchor="w",
+            ).pack(anchor="w", pady=2)
+            tk.Checkbutton(
+                options_frame,
+                text="Maak snelkoppeling naar nieuwste exportmap",
+                variable=self.bundle_latest_var,
+                anchor="w",
+            ).pack(anchor="w", pady=2)
+            tk.Checkbutton(
+                options_frame,
+                text="Testrun: toon alleen doelmap (niets wordt gekopieerd)",
+                variable=self.bundle_dry_run_var,
+                anchor="w",
+            ).pack(anchor="w", pady=2)
 
             # BOM controls
             bf = tk.Frame(main); bf.pack(fill="x", padx=8, pady=6)
@@ -1073,30 +1126,17 @@ def start_gui():
 
             # Actions
             act = tk.Frame(main); act.pack(fill="x", padx=8, pady=8)
-            tk.Button(act, text="Kopieer zonder submappen", command=self._copy_flat).pack(side="left", padx=6)
-            tk.Button(act, text="Kopieer per productie + bestelbonnen", command=self._copy_per_prod).pack(side="left", padx=6)
-            tk.Checkbutton(act, text="Zip per productie", variable=self.zip_var).pack(side="left", padx=6)
-            tk.Checkbutton(
+            tk.Button(act, text="Kopieer zonder submappen", command=self._copy_flat).pack(
+                side="left", padx=6
+            )
+            tk.Button(
                 act,
-                text="Datumprefix (YYYYMMDD-)",
-                variable=self.export_date_prefix_var,
+                text="Kopieer per productie + bestelbonnen",
+                command=self._copy_per_prod,
             ).pack(side="left", padx=6)
-            tk.Checkbutton(
-                act,
-                text="Datumsuffix (-YYYYMMDD)",
-                variable=self.export_date_suffix_var,
-            ).pack(side="left", padx=6)
-            tk.Checkbutton(
-                act,
-                text="Maak snelkoppeling naar nieuwste exportmap",
-                variable=self.bundle_latest_var,
-            ).pack(side="left", padx=6)
-            tk.Checkbutton(
-                act,
-                text="Testrun: toon alleen doelmap (niets wordt gekopieerd)",
-                variable=self.bundle_dry_run_var,
-            ).pack(side="left", padx=6)
-            tk.Button(act, text="Combine pdf", command=self._combine_pdf).pack(side="left", padx=6)
+            tk.Button(act, text="Combine pdf", command=self._combine_pdf).pack(
+                side="left", padx=6
+            )
 
             # Status
             self.status_var = tk.StringVar(value="Klaar")
