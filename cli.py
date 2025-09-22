@@ -395,16 +395,10 @@ def cli_copy_per_prod(args):
                 return 2
             prod, num = kv.split("=", 1)
             doc_num_map[prod.strip()] = num.strip()
-    export_token = args.export_token or ""
-    if args.export_token_enabled is None:
-        token_enabled = bool(export_token)
-    else:
-        token_enabled = bool(args.export_token_enabled) and bool(export_token)
-    token_prefix = bool(args.export_token_prefix)
-    if args.export_token_suffix is None:
-        token_suffix = token_enabled
-    else:
-        token_suffix = bool(args.export_token_suffix)
+    export_prefix_text = (args.export_prefix_text or "").strip()
+    export_suffix_text = (args.export_suffix_text or "").strip()
+    export_prefix_enabled = args.export_prefix_enabled
+    export_suffix_enabled = args.export_suffix_enabled
     bundle = create_export_bundle(
         args.dest,
         args.project_number,
@@ -436,10 +430,10 @@ def cli_copy_per_prod(args):
         footer_note=args.note or DEFAULT_FOOTER_NOTE,
         project_number=args.project_number,
         project_name=args.project_name,
-        export_name_token=export_token,
-        export_name_token_enabled=token_enabled,
-        export_name_token_prefix=token_prefix,
-        export_name_token_suffix=token_suffix,
+        export_name_prefix_text=export_prefix_text,
+        export_name_prefix_enabled=export_prefix_enabled,
+        export_name_suffix_text=export_suffix_text,
+        export_name_suffix_enabled=export_suffix_enabled,
     )
     print("Gekopieerd:", cnt)
     for k, v in chosen.items():
@@ -586,31 +580,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Projectnaam voor documentkoppen",
     )
     cpp.add_argument(
-        "--export-token",
-        dest="export_token",
+        "--export-prefix-text",
+        dest="export_prefix_text",
         default="",
-        help="Extra toevoeging voor exportbestandsnamen",
+        help="Extra prefix voor exportbestandsnamen",
     )
     cpp.add_argument(
-        "--export-token-enabled",
-        dest="export_token_enabled",
+        "--export-prefix-enabled",
+        dest="export_prefix_enabled",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Schakel de aangepaste toevoeging in of uit (standaard automatisch)",
+        help="Schakel de aangepaste prefix in of uit (standaard automatisch)",
     )
     cpp.add_argument(
-        "--export-token-prefix",
-        dest="export_token_prefix",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Plaats de toevoeging als prefix",
+        "--export-suffix-text",
+        dest="export_suffix_text",
+        default="",
+        help="Extra suffix voor exportbestandsnamen",
     )
     cpp.add_argument(
-        "--export-token-suffix",
-        dest="export_token_suffix",
+        "--export-suffix-enabled",
+        dest="export_suffix_enabled",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Plaats de toevoeging als suffix (standaard wanneer actief)",
+        help="Schakel de aangepaste suffix in of uit (standaard automatisch)",
     )
     cpp.add_argument(
         "--bundle-latest",

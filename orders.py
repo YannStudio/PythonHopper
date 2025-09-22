@@ -442,10 +442,10 @@ def copy_per_production_and_orders(
     date_suffix_exports: bool = False,
     project_number: str | None = None,
     project_name: str | None = None,
-    export_name_token: str = "",
-    export_name_token_enabled: bool | None = None,
-    export_name_token_prefix: bool = False,
-    export_name_token_suffix: bool | None = None,
+    export_name_prefix_text: str = "",
+    export_name_prefix_enabled: bool | None = None,
+    export_name_suffix_text: str = "",
+    export_name_suffix_enabled: bool | None = None,
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
 
@@ -468,10 +468,11 @@ def copy_per_production_and_orders(
     with ``-YYYYMMDD`` before the extension. Both transformations are applied
     consistently to copied files and ZIP archive members.
 
-    When ``export_name_token`` is provided and enabled, it can be added before
-    and/or after the filename according to ``export_name_token_prefix`` and
-    ``export_name_token_suffix``. Both transformations are applied consistently
-    to copied files and ZIP archive members.
+    When custom export prefix/suffix tokens are provided and enabled they are
+    added before and/or after the filename. Both transformations are applied
+    consistently to copied files and ZIP archive members. The enable flags
+    default to active when the corresponding text is non-empty unless
+    explicitly set to ``False``.
     """
     os.makedirs(dest, exist_ok=True)
     file_index = _build_file_index(source, selected_exts)
@@ -489,17 +490,18 @@ def copy_per_production_and_orders(
     today = today_date.strftime("%Y-%m-%d")
     date_token = today_date.strftime("%Y%m%d")
     delivery_map = delivery_map or {}
-    export_name_token = (export_name_token or "").strip()
-    token_has_text = bool(export_name_token)
-    if export_name_token_enabled is None:
-        token_enabled = token_has_text
+    export_name_prefix_text = (export_name_prefix_text or "").strip()
+    export_name_suffix_text = (export_name_suffix_text or "").strip()
+    prefix_has_text = bool(export_name_prefix_text)
+    suffix_has_text = bool(export_name_suffix_text)
+    if export_name_prefix_enabled is None:
+        token_prefix_active = prefix_has_text
     else:
-        token_enabled = bool(export_name_token_enabled) and token_has_text
-    token_prefix_active = token_enabled and bool(export_name_token_prefix)
-    if export_name_token_suffix is None:
-        token_suffix_active = token_enabled
+        token_prefix_active = bool(export_name_prefix_enabled) and prefix_has_text
+    if export_name_suffix_enabled is None:
+        token_suffix_active = suffix_has_text
     else:
-        token_suffix_active = token_enabled and bool(export_name_token_suffix)
+        token_suffix_active = bool(export_name_suffix_enabled) and suffix_has_text
 
     def _transform_export_name(filename: str) -> str:
         """Apply date/custom tokens to ``filename`` when requested."""
@@ -516,12 +518,12 @@ def copy_per_production_and_orders(
         if date_prefix_exports:
             prefix_parts.append(date_token)
         if token_prefix_active:
-            prefix_parts.append(export_name_token)
+            prefix_parts.append(export_name_prefix_text)
         suffix_parts: List[str] = []
         if date_suffix_exports:
             suffix_parts.append(date_token)
         if token_suffix_active:
-            suffix_parts.append(export_name_token)
+            suffix_parts.append(export_name_suffix_text)
         new_stem = "-".join(prefix_parts + [stem] + suffix_parts)
         return f"{new_stem}{ext}"
     for prod, rows in prod_to_rows.items():
