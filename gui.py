@@ -1017,11 +1017,15 @@ def start_gui():
             tk.Label(top, text="Projectnaam:").grid(row=1, column=3, sticky="w", padx=(16, 0))
             tk.Entry(top, textvariable=self.project_name_var, width=60).grid(row=1, column=4, padx=4, sticky="w")
 
-            tk.Label(top, text="👤 Opdrachtgever:").grid(row=2, column=0, sticky="w")
+            tk.Label(top, text="👤 Opdrachtgever:").grid(
+                row=2, column=0, sticky="w", pady=(8, 0)
+            )
             self.client_var = tk.StringVar()
             self.client_combo = ttk.Combobox(top, textvariable=self.client_var, state="readonly", width=40)
-            self.client_combo.grid(row=2, column=1, padx=4)
-            tk.Button(top, text="Beheer", command=lambda: self.nb.select(self.clients_frame)).grid(row=2, column=2, padx=4)
+            self.client_combo.grid(row=2, column=1, padx=4, pady=(8, 0))
+            tk.Button(top, text="Beheer", command=lambda: self.nb.select(self.clients_frame)).grid(
+                row=2, column=2, padx=4, pady=(8, 0)
+            )
             self._refresh_clients_combo()
 
 
