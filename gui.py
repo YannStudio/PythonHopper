@@ -1075,7 +1075,8 @@ def start_gui():
             self.zip_var = tk.IntVar(value=1)
             self.export_date_prefix_var = tk.IntVar()
             self.export_date_suffix_var = tk.IntVar()
-            self.export_name_custom_var = tk.StringVar()
+            self.export_name_custom_prefix_text_var = tk.StringVar()
+            self.export_name_custom_suffix_text_var = tk.StringVar()
             self.export_name_custom_enabled_var = tk.IntVar()
             self.export_name_custom_prefix_var = tk.IntVar()
             self.export_name_custom_suffix_var = tk.IntVar(value=1)
@@ -1126,11 +1127,18 @@ def start_gui():
                 text="Aangepaste toevoeging",
                 variable=self.export_name_custom_enabled_var,
             ).pack(side="left", padx=(0, 4))
-            custom_entry = tk.Entry(
-                custom_row,
-                textvariable=self.export_name_custom_var,
+            custom_entries = tk.Frame(custom_row)
+            custom_entries.pack(side="left", fill="x", expand=True, padx=(0, 4))
+            custom_prefix_entry = tk.Entry(
+                custom_entries,
+                textvariable=self.export_name_custom_prefix_text_var,
             )
-            custom_entry.pack(side="left", fill="x", expand=True, padx=(0, 4))
+            custom_prefix_entry.pack(side="left", fill="x", expand=True, padx=(0, 2))
+            custom_suffix_entry = tk.Entry(
+                custom_entries,
+                textvariable=self.export_name_custom_suffix_text_var,
+            )
+            custom_suffix_entry.pack(side="left", fill="x", expand=True, padx=(2, 0))
             tk.Checkbutton(
                 custom_row,
                 text="Prefix",
@@ -1141,6 +1149,16 @@ def start_gui():
                 text="Suffix",
                 variable=self.export_name_custom_suffix_var,
             ).pack(side="left")
+            self._add_placeholder(
+                custom_prefix_entry,
+                self.export_name_custom_prefix_text_var,
+                "Custom Prefix -",
+            )
+            self._add_placeholder(
+                custom_suffix_entry,
+                self.export_name_custom_suffix_text_var,
+                "- Custom suffix",
+            )
             tk.Checkbutton(
                 options_frame,
                 text="Maak snelkoppeling naar nieuwste exportmap",
@@ -1203,6 +1221,70 @@ def start_gui():
             # Status
             self.status_var = tk.StringVar(value="Klaar")
             tk.Label(main, textvariable=self.status_var, anchor="w").pack(fill="x", padx=8, pady=(0,8))
+
+        def _add_placeholder(self, entry: "tk.Entry", var: "tk.StringVar", text: str) -> None:
+            """Configure a Tk entry with placeholder text handling."""
+
+            placeholder_fg = "gray50"
+            default_fg = entry.cget("fg")
+            default_font = tkfont.Font(font=entry.cget("font"))
+            placeholder_font = tkfont.Font(font=entry.cget("font"))
+            placeholder_font.configure(slant="italic")
+            state = {
+                "active": False,
+                "internal": False,
+                "default_font": default_font,
+                "placeholder_font": placeholder_font,
+            }
+
+            def show_placeholder() -> None:
+                if state["active"]:
+                    return
+                state["internal"] = True
+                try:
+                    var.set("")
+                finally:
+                    state["internal"] = False
+                entry.config(textvariable=None)
+                entry.delete(0, "end")
+                entry.insert(0, text)
+                entry.config(fg=placeholder_fg, font=placeholder_font)
+                state["active"] = True
+
+            def hide_placeholder() -> None:
+                if not state["active"]:
+                    return
+                entry.config(textvariable=var)
+                entry.config(fg=default_fg, font=default_font)
+                state["active"] = False
+
+            def on_focus_in(_event) -> None:
+                hide_placeholder()
+
+            def on_focus_out(_event) -> None:
+                if not var.get():
+                    show_placeholder()
+
+            def on_var_change(*_args) -> None:
+                if state["internal"]:
+                    return
+                value = var.get()
+                if value:
+                    hide_placeholder()
+                else:
+                    if entry.focus_get() is entry:
+                        hide_placeholder()
+                    else:
+                        show_placeholder()
+
+            entry.bind("<FocusIn>", on_focus_in, add=True)
+            entry.bind("<FocusOut>", on_focus_out, add=True)
+            var.trace_add("write", on_var_change)
+
+            if var.get():
+                hide_placeholder()
+            else:
+                show_placeholder()
 
         def _on_db_change(self):
             self._refresh_clients_combo()
@@ -1401,13 +1483,15 @@ def start_gui():
             exts = self._selected_exts()
             if not exts or not self.source_folder or not self.dest_folder:
                 messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies."); return
-            custom_token = self.export_name_custom_var.get().strip()
+            custom_prefix_text = self.export_name_custom_prefix_text_var.get().strip()
+            custom_suffix_text = self.export_name_custom_suffix_text_var.get().strip()
             custom_token_enabled = bool(self.export_name_custom_enabled_var.get())
             custom_token_prefix = bool(self.export_name_custom_prefix_var.get())
             custom_token_suffix = bool(self.export_name_custom_suffix_var.get())
 
             def work(
-                token=custom_token,
+                prefix_text=custom_prefix_text,
+                suffix_text=custom_suffix_text,
                 token_enabled=custom_token_enabled,
                 token_prefix=custom_token_prefix,
                 token_suffix=custom_token_suffix,
@@ -1466,9 +1550,9 @@ def start_gui():
                 )
 
                 def _export_name(fname: str) -> str:
-                    token_active = token_enabled and bool(token)
-                    prefix_active = token_active and token_prefix
-                    suffix_active = token_active and token_suffix
+                    token_active = token_enabled and bool(prefix_text or suffix_text)
+                    prefix_active = token_active and token_prefix and bool(prefix_text)
+                    suffix_active = token_active and token_suffix and bool(suffix_text)
                     if not (
                         date_prefix
                         or date_suffix
@@ -1481,12 +1565,12 @@ def start_gui():
                     if date_prefix and date_token:
                         prefix_parts.append(date_token)
                     if prefix_active:
-                        prefix_parts.append(token)
+                        prefix_parts.append(prefix_text)
                     suffix_parts = []
                     if date_suffix and date_token:
                         suffix_parts.append(date_token)
                     if suffix_active:
-                        suffix_parts.append(token)
+                        suffix_parts.append(suffix_text)
                     parts = prefix_parts + [stem] + suffix_parts
                     new_stem = "-".join([p for p in parts if p])
                     return f"{new_stem}{ext}"
@@ -1535,13 +1619,15 @@ def start_gui():
                     messagebox.showwarning("Let op", "Laad eerst een BOM.")
                     return
 
-                custom_token = self.export_name_custom_var.get().strip()
+                custom_prefix_text = self.export_name_custom_prefix_text_var.get().strip()
+                custom_suffix_text = self.export_name_custom_suffix_text_var.get().strip()
                 custom_token_enabled = bool(self.export_name_custom_enabled_var.get())
                 custom_token_prefix = bool(self.export_name_custom_prefix_var.get())
                 custom_token_suffix = bool(self.export_name_custom_suffix_var.get())
 
                 def work(
-                    token=custom_token,
+                    prefix_text=custom_prefix_text,
+                    suffix_text=custom_suffix_text,
                     token_enabled=custom_token_enabled,
                     token_prefix=custom_token_prefix,
                     token_suffix=custom_token_suffix,
@@ -1624,10 +1710,12 @@ def start_gui():
                         date_suffix_exports=bool(self.export_date_suffix_var.get()),
                         project_number=project_number,
                         project_name=project_name,
-                        export_name_token=token,
+                        export_name_token="",
                         export_name_token_enabled=token_enabled,
                         export_name_token_prefix=token_prefix,
                         export_name_token_suffix=token_suffix,
+                        export_name_prefix_token=prefix_text,
+                        export_name_suffix_token=suffix_text,
                     )
 
                     def on_done():

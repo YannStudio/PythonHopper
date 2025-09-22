@@ -90,6 +90,65 @@ def test_export_token_positions(tmp_path, monkeypatch, prefix, suffix, expected)
         assert expected in zf.namelist()
 
 
+def test_export_token_distinct_strings(tmp_path, monkeypatch):
+    monkeypatch.setattr(orders, "SUPPLIERS_DB_FILE", str(tmp_path / "suppliers.json"))
+
+    src = tmp_path / "src_distinct"
+    dest = tmp_path / "dest_distinct"
+    dest_zip = tmp_path / "dest_distinct_zip"
+    src.mkdir()
+    dest.mkdir()
+    dest_zip.mkdir()
+
+    (src / "PN1.pdf").write_text("dummy")
+
+    db = _make_db()
+    bom_df = _build_bom()
+
+    cnt, _ = copy_per_production_and_orders(
+        str(src),
+        str(dest),
+        bom_df,
+        [".pdf"],
+        db,
+        {"Laser": ""},
+        {},
+        {},
+        False,
+        export_name_token_enabled=True,
+        export_name_token_prefix=True,
+        export_name_token_suffix=True,
+        export_name_prefix_token="PRE",
+        export_name_suffix_token="POST",
+    )
+    assert cnt == 1
+    exported = dest / "Laser" / "PRE-PN1-POST.pdf"
+    assert exported.exists()
+
+    cnt_zip, _ = copy_per_production_and_orders(
+        str(src),
+        str(dest_zip),
+        bom_df,
+        [".pdf"],
+        db,
+        {"Laser": ""},
+        {},
+        {},
+        False,
+        zip_parts=True,
+        export_name_token_enabled=True,
+        export_name_token_prefix=True,
+        export_name_token_suffix=True,
+        export_name_prefix_token="PRE",
+        export_name_suffix_token="POST",
+    )
+    assert cnt_zip == 1
+    zip_path = dest_zip / "Laser" / "Laser.zip"
+    assert zip_path.exists()
+    with zipfile.ZipFile(zip_path) as zf:
+        assert "PRE-PN1-POST.pdf" in zf.namelist()
+
+
 def test_export_token_disabled(tmp_path, monkeypatch):
     monkeypatch.setattr(orders, "SUPPLIERS_DB_FILE", str(tmp_path / "suppliers.json"))
 

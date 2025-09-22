@@ -446,6 +446,8 @@ def copy_per_production_and_orders(
     export_name_token_enabled: bool | None = None,
     export_name_token_prefix: bool = False,
     export_name_token_suffix: bool | None = None,
+    export_name_prefix_token: str | None = None,
+    export_name_suffix_token: str | None = None,
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
 
@@ -470,8 +472,10 @@ def copy_per_production_and_orders(
 
     When ``export_name_token`` is provided and enabled, it can be added before
     and/or after the filename according to ``export_name_token_prefix`` and
-    ``export_name_token_suffix``. Both transformations are applied consistently
-    to copied files and ZIP archive members.
+    ``export_name_token_suffix``. ``export_name_prefix_token`` and
+    ``export_name_suffix_token`` can override the shared token for the prefix
+    and suffix respectively. All transformations are applied consistently to
+    copied files and ZIP archive members.
     """
     os.makedirs(dest, exist_ok=True)
     file_index = _build_file_index(source, selected_exts)
@@ -490,16 +494,27 @@ def copy_per_production_and_orders(
     date_token = today_date.strftime("%Y%m%d")
     delivery_map = delivery_map or {}
     export_name_token = (export_name_token or "").strip()
-    token_has_text = bool(export_name_token)
+    prefix_token = export_name_prefix_token
+    suffix_token = export_name_suffix_token
+    if prefix_token is None:
+        prefix_token = export_name_token
+    if suffix_token is None:
+        suffix_token = export_name_token
+    prefix_token = (prefix_token or "").strip()
+    suffix_token = (suffix_token or "").strip()
+    token_has_text = bool(prefix_token or suffix_token)
     if export_name_token_enabled is None:
         token_enabled = token_has_text
     else:
         token_enabled = bool(export_name_token_enabled) and token_has_text
-    token_prefix_active = token_enabled and bool(export_name_token_prefix)
+    token_prefix_active = (
+        token_enabled and bool(export_name_token_prefix) and bool(prefix_token)
+    )
     if export_name_token_suffix is None:
-        token_suffix_active = token_enabled
+        suffix_flag = token_enabled
     else:
-        token_suffix_active = token_enabled and bool(export_name_token_suffix)
+        suffix_flag = bool(export_name_token_suffix)
+    token_suffix_active = token_enabled and suffix_flag and bool(suffix_token)
 
     def _transform_export_name(filename: str) -> str:
         """Apply date/custom tokens to ``filename`` when requested."""
@@ -516,12 +531,12 @@ def copy_per_production_and_orders(
         if date_prefix_exports:
             prefix_parts.append(date_token)
         if token_prefix_active:
-            prefix_parts.append(export_name_token)
+            prefix_parts.append(prefix_token)
         suffix_parts: List[str] = []
         if date_suffix_exports:
             suffix_parts.append(date_token)
         if token_suffix_active:
-            suffix_parts.append(export_name_token)
+            suffix_parts.append(suffix_token)
         new_stem = "-".join(prefix_parts + [stem] + suffix_parts)
         return f"{new_stem}{ext}"
     for prod, rows in prod_to_rows.items():
