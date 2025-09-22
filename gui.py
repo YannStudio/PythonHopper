@@ -1062,7 +1062,7 @@ def start_gui():
 
             export_name_frame = tk.LabelFrame(
                 filters_row,
-                text="Bestandsnaam exportbestand",
+                text="Benaming exportbestand",
                 labelanchor="n",
             )
             export_name_frame.grid(row=0, column=2, sticky="nsew")
