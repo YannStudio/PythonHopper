@@ -593,6 +593,7 @@ def start_gui():
             self._project_name_value = project_name_value
 
             proj_frame.update_idletasks()
+            required_height = proj_frame.winfo_reqheight()
             pad_spec = project_number_value.pack_info().get("padx", 0)
             if isinstance(pad_spec, str):
                 pad_parts = [int(p) for p in pad_spec.split()]
@@ -613,7 +614,7 @@ def start_gui():
             ]
             target_width = max(width_candidates) + desired_padding
             proj_frame.pack_propagate(False)
-            proj_frame.configure(width=target_width)
+            proj_frame.configure(width=target_width, height=required_height)
 
             ttk.Separator(left, orient="horizontal").pack(fill="x", pady=(0, 6))
 
