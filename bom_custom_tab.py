@@ -332,8 +332,31 @@ class BOMCustomTab(ttk.Frame):
             return
 
         total_min_width = sum(widths)
-        if available_width > total_min_width:
-            widths[-1] += available_width - total_min_width
+        if available_width > total_min_width and widths:
+            extra_width = available_width - total_min_width
+            weights = [max(min_widths_map.get(idx, 1), 1) for idx in column_indices]
+            total_weight = sum(weights)
+            if total_weight <= 0:
+                total_weight = len(weights)
+                weights = [1] * len(weights)
+
+            base_additions = []
+            remainders = []
+            for idx, (width, weight) in enumerate(zip(widths, weights)):
+                numerator = extra_width * weight
+                addition = numerator // total_weight
+                base_additions.append(addition)
+                remainders.append((numerator % total_weight, idx))
+
+            remainder = extra_width - sum(base_additions)
+            if remainder > 0:
+                remainders.sort(reverse=True)
+                for _, idx in remainders[:remainder]:
+                    base_additions[idx] += 1
+
+            widths = [width + addition for width, addition in zip(widths, base_additions)]
+
+        widths = [max(width, min_widths_map.get(idx, 0)) for idx, width in enumerate(widths)]
 
         self._in_container_resize = True
         try:
