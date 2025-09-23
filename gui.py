@@ -542,24 +542,36 @@ def start_gui():
             # Project info entries above production rows
             proj_frame = tk.LabelFrame(left, text="Projectgegevens", labelanchor="n")
             proj_frame.pack(fill="x", pady=(0, 6))
+            readonly_bg = "#f0f0f0"
+
             pn_row = tk.Frame(proj_frame)
             pn_row.pack(fill="x", pady=3)
             tk.Label(pn_row, text="Projectnr.", width=18, anchor="w").pack(side="left")
-            ttk.Entry(
+            tk.Label(
                 pn_row,
                 textvariable=self.project_number_var,
                 width=50,
-                state="readonly",
+                anchor="w",
+                background=readonly_bg,
+                relief="solid",
+                borderwidth=1,
+                padx=6,
+                pady=2,
             ).pack(side="left", padx=6)
 
             name_row = tk.Frame(proj_frame)
             name_row.pack(fill="x", pady=3)
             tk.Label(name_row, text="Projectnaam", width=18, anchor="w").pack(side="left")
-            ttk.Entry(
+            tk.Label(
                 name_row,
                 textvariable=self.project_name_var,
                 width=50,
-                state="readonly",
+                anchor="w",
+                background=readonly_bg,
+                relief="solid",
+                borderwidth=1,
+                padx=6,
+                pady=2,
             ).pack(side="left", padx=6)
 
             ttk.Separator(left, orient="horizontal").pack(fill="x", pady=(0, 6))
