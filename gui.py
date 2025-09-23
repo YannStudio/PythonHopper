@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
+from app_settings import AppSettings
 from helpers import _to_str, _build_file_index, create_export_bundle, ExportBundleResult
 from models import Supplier, Client, DeliveryAddress
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
@@ -1030,6 +1031,108 @@ def start_gui():
                 bool(self.remember_var.get()),
             )
 
+    class SettingsFrame(tk.Frame):
+        def __init__(self, master, app: "App"):
+            super().__init__(master)
+            self.app = app
+
+            general = tk.LabelFrame(self, text="Algemeen")
+            general.pack(fill="x", padx=8, pady=(8, 4))
+            for col in (1, 4):
+                general.grid_columnconfigure(col, weight=1)
+
+            tk.Label(general, text="Bronmap:").grid(row=0, column=0, sticky="w", padx=4, pady=2)
+            tk.Entry(general, textvariable=app.source_folder_var).grid(
+                row=0, column=1, sticky="ew", padx=4, pady=2
+            )
+            tk.Button(general, text="Bladeren", command=app._pick_src).grid(
+                row=0, column=2, padx=4, pady=2
+            )
+            tk.Label(general, text="Projectnr.:").grid(
+                row=0, column=3, sticky="w", padx=4, pady=2
+            )
+            tk.Entry(general, textvariable=app.project_number_var).grid(
+                row=0, column=4, sticky="ew", padx=4, pady=2
+            )
+
+            tk.Label(general, text="Bestemmingsmap:").grid(
+                row=1, column=0, sticky="w", padx=4, pady=2
+            )
+            tk.Entry(general, textvariable=app.dest_folder_var).grid(
+                row=1, column=1, sticky="ew", padx=4, pady=2
+            )
+            tk.Button(general, text="Bladeren", command=app._pick_dst).grid(
+                row=1, column=2, padx=4, pady=2
+            )
+            tk.Label(general, text="Projectnaam:").grid(
+                row=1, column=3, sticky="w", padx=4, pady=2
+            )
+            tk.Entry(general, textvariable=app.project_name_var).grid(
+                row=1, column=4, sticky="ew", padx=4, pady=2
+            )
+
+            options = tk.Frame(self)
+            options.pack(fill="both", expand=True, padx=8, pady=(4, 8))
+            for col in range(3):
+                options.grid_columnconfigure(col, weight=1)
+
+            ext_frame = tk.LabelFrame(options, text="Bestandstypen")
+            ext_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+            for txt, var in (
+                ("PDF (.pdf)", app.pdf_var),
+                ("STEP (.step, .stp)", app.step_var),
+                ("DXF (.dxf)", app.dxf_var),
+                ("DWG (.dwg)", app.dwg_var),
+            ):
+                tk.Checkbutton(ext_frame, text=txt, variable=var, anchor="w").pack(
+                    fill="x", padx=8, pady=2
+                )
+
+            adv_frame = tk.LabelFrame(options, text="Geavanceerd")
+            adv_frame.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
+            for txt, var in (
+                ("Zip per productie", app.zip_var),
+                ("Maak snelkoppeling naar nieuwste exportmap", app.bundle_latest_var),
+                ("Testrun: toon alleen doelmap", app.bundle_dry_run_var),
+            ):
+                tk.Checkbutton(adv_frame, text=txt, variable=var, anchor="w").pack(
+                    fill="x", padx=8, pady=2
+                )
+
+            export_frame = tk.LabelFrame(options, text="Exportnaam")
+            export_frame.grid(row=0, column=2, sticky="nsew")
+            for txt, var in (
+                ("Datumprefix (YYYYMMDD-)", app.export_date_prefix_var),
+                ("Datumsuffix (-YYYYMMDD)", app.export_date_suffix_var),
+            ):
+                tk.Checkbutton(export_frame, text=txt, variable=var, anchor="w").pack(
+                    fill="x", padx=8, pady=2
+                )
+
+            prefix_row = tk.Frame(export_frame)
+            prefix_row.pack(fill="x", padx=8, pady=(8, 2))
+            tk.Checkbutton(
+                prefix_row,
+                text="Aangepaste prefix",
+                variable=app.export_name_custom_prefix_enabled_var,
+                anchor="w",
+            ).pack(side="left", padx=(0, 4))
+            tk.Entry(prefix_row, textvariable=app.export_name_custom_prefix_text).pack(
+                side="left", fill="x", expand=True
+            )
+
+            suffix_row = tk.Frame(export_frame)
+            suffix_row.pack(fill="x", padx=8, pady=2)
+            tk.Checkbutton(
+                suffix_row,
+                text="Aangepaste suffix",
+                variable=app.export_name_custom_suffix_enabled_var,
+                anchor="w",
+            ).pack(side="left", padx=(0, 4))
+            tk.Entry(suffix_row, textvariable=app.export_name_custom_suffix_text).pack(
+                side="left", fill="x", expand=True
+            )
+
     class App(tk.Tk):
         def __init__(self):
             super().__init__()
@@ -1046,15 +1149,82 @@ def start_gui():
             self.client_db = ClientsDB.load(CLIENTS_DB_FILE)
             self.delivery_db = DeliveryAddressesDB.load(DELIVERY_DB_FILE)
 
-            self.source_folder = ""
-            self.dest_folder = ""
+            self.settings = AppSettings.load()
+
+            self.source_folder_var = tk.StringVar(
+                master=self, value=self.settings.source_folder
+            )
+            self.dest_folder_var = tk.StringVar(
+                master=self, value=self.settings.dest_folder
+            )
+            self.project_number_var = tk.StringVar(
+                master=self, value=self.settings.project_number
+            )
+            self.project_name_var = tk.StringVar(
+                master=self, value=self.settings.project_name
+            )
+            self.pdf_var = tk.IntVar(master=self, value=1 if self.settings.pdf else 0)
+            self.step_var = tk.IntVar(master=self, value=1 if self.settings.step else 0)
+            self.dxf_var = tk.IntVar(master=self, value=1 if self.settings.dxf else 0)
+            self.dwg_var = tk.IntVar(master=self, value=1 if self.settings.dwg else 0)
+            self.zip_var = tk.IntVar(
+                master=self, value=1 if self.settings.zip_per_production else 0
+            )
+            self.export_date_prefix_var = tk.IntVar(
+                master=self, value=1 if self.settings.export_date_prefix else 0
+            )
+            self.export_date_suffix_var = tk.IntVar(
+                master=self, value=1 if self.settings.export_date_suffix else 0
+            )
+            self.export_name_custom_prefix_text = tk.StringVar(
+                master=self, value=self.settings.custom_prefix_text
+            )
+            self.export_name_custom_prefix_enabled_var = tk.IntVar(
+                master=self, value=1 if self.settings.custom_prefix_enabled else 0
+            )
+            self.export_name_custom_suffix_text = tk.StringVar(
+                master=self, value=self.settings.custom_suffix_text
+            )
+            self.export_name_custom_suffix_enabled_var = tk.IntVar(
+                master=self, value=1 if self.settings.custom_suffix_enabled else 0
+            )
+            self.bundle_latest_var = tk.IntVar(
+                master=self, value=1 if self.settings.bundle_latest else 0
+            )
+            self.bundle_dry_run_var = tk.IntVar(
+                master=self, value=1 if self.settings.bundle_dry_run else 0
+            )
+
+            self.source_folder = self.source_folder_var.get().strip()
+            self.dest_folder = self.dest_folder_var.get().strip()
             self.last_bundle_result: Optional[ExportBundleResult] = None
-            self.project_number_var = tk.StringVar()
-            self.project_name_var = tk.StringVar()
             self.bom_df: Optional[pd.DataFrame] = None
 
+            for var in (
+                self.source_folder_var,
+                self.dest_folder_var,
+                self.project_number_var,
+                self.project_name_var,
+                self.export_name_custom_prefix_text,
+                self.export_name_custom_suffix_text,
+            ):
+                var.trace_add("write", self._save_settings)
+            for var in (
+                self.pdf_var,
+                self.step_var,
+                self.dxf_var,
+                self.dwg_var,
+                self.zip_var,
+                self.export_date_prefix_var,
+                self.export_date_suffix_var,
+                self.export_name_custom_prefix_enabled_var,
+                self.export_name_custom_suffix_enabled_var,
+                self.bundle_latest_var,
+                self.bundle_dry_run_var,
+            ):
+                var.trace_add("write", self._save_settings)
+
             self.nb = ttk.Notebook(self)
-            self.nb.pack(fill="both", expand=True)
             self.custom_bom_tab = BOMCustomTab(
                 self.nb,
                 app_name="Filehopper",
@@ -1078,6 +1248,19 @@ def start_gui():
             )
             self.nb.add(self.suppliers_frame, text="Leverancier beheer")
 
+            self.settings_frame = SettingsFrame(self.nb, self)
+            self.nb.add(self.settings_frame, text="⚙ Settings")
+
+            topbar = tk.Frame(self)
+            topbar.pack(fill="x", padx=8, pady=(4, 0))
+            tk.Button(
+                topbar,
+                text="⚙",
+                command=lambda: self.nb.select(self.settings_frame),
+            ).pack(side="right")
+
+            self.nb.pack(fill="both", expand=True)
+
             # Top folders
             top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
             FOLDER_ICON = "\U0001F4C1"
@@ -1087,7 +1270,8 @@ def start_gui():
             tk.Label(top, text=f"{FOLDER_ICON} Bronmap:", font=label_font).grid(
                 row=0, column=0, sticky="w"
             )
-            self.src_entry = tk.Entry(top, width=60); self.src_entry.grid(row=0, column=1, padx=4)
+            self.src_entry = tk.Entry(top, width=60, textvariable=self.source_folder_var)
+            self.src_entry.grid(row=0, column=1, padx=4)
             tk.Button(top, text="Bladeren", command=self._pick_src).grid(row=0, column=2, padx=4)
             tk.Label(top, text="Projectnr.:").grid(row=0, column=3, sticky="w", padx=(16, 0))
             tk.Entry(top, textvariable=self.project_number_var, width=60).grid(row=0, column=4, padx=4, sticky="w")
@@ -1095,7 +1279,8 @@ def start_gui():
             tk.Label(top, text=f"{FOLDER_ICON} Bestemmingsmap:", font=label_font).grid(
                 row=1, column=0, sticky="w"
             )
-            self.dst_entry = tk.Entry(top, width=60); self.dst_entry.grid(row=1, column=1, padx=4)
+            self.dst_entry = tk.Entry(top, width=60, textvariable=self.dest_folder_var)
+            self.dst_entry.grid(row=1, column=1, padx=4)
             tk.Button(top, text="Bladeren", command=self._pick_dst).grid(row=1, column=2, padx=4)
             tk.Label(top, text="Projectnaam:").grid(row=1, column=3, sticky="w", padx=(16, 0))
             tk.Entry(top, textvariable=self.project_name_var, width=60).grid(row=1, column=4, padx=4, sticky="w")
@@ -1141,20 +1326,6 @@ def start_gui():
             )
             export_name_frame.grid(row=0, column=2, sticky="nsew")
             export_name_frame.grid_columnconfigure(0, weight=1)
-
-            self.pdf_var = tk.IntVar()
-            self.step_var = tk.IntVar()
-            self.dxf_var = tk.IntVar()
-            self.dwg_var = tk.IntVar()
-            self.zip_var = tk.IntVar(value=1)
-            self.export_date_prefix_var = tk.IntVar(value=0)
-            self.export_date_suffix_var = tk.IntVar()
-            self.export_name_custom_prefix_text = tk.StringVar()
-            self.export_name_custom_prefix_enabled_var = tk.IntVar()
-            self.export_name_custom_suffix_text = tk.StringVar()
-            self.export_name_custom_suffix_enabled_var = tk.IntVar(value=0)
-            self.bundle_latest_var = tk.IntVar()
-            self.bundle_dry_run_var = tk.IntVar()
 
             ext_frame = tk.Frame(filt)
             ext_frame.grid(row=0, column=0, sticky="nw", padx=8, pady=4)
@@ -1283,6 +1454,7 @@ def start_gui():
             # Status
             self.status_var = tk.StringVar(value="Klaar")
             tk.Label(main, textvariable=self.status_var, anchor="w").pack(fill="x", padx=8, pady=(0,8))
+            self._save_settings()
 
         def _on_db_change(self):
             self._refresh_clients_combo()
@@ -1305,15 +1477,48 @@ def start_gui():
             elif opts:
                 self.client_combo.set(opts[0])
 
+        def _save_settings(self, *_args):
+            self.source_folder = self.source_folder_var.get().strip()
+            self.dest_folder = self.dest_folder_var.get().strip()
+            self.settings.source_folder = self.source_folder
+            self.settings.dest_folder = self.dest_folder
+            self.settings.project_number = self.project_number_var.get().strip()
+            self.settings.project_name = self.project_name_var.get().strip()
+            self.settings.pdf = bool(self.pdf_var.get())
+            self.settings.step = bool(self.step_var.get())
+            self.settings.dxf = bool(self.dxf_var.get())
+            self.settings.dwg = bool(self.dwg_var.get())
+            self.settings.zip_per_production = bool(self.zip_var.get())
+            self.settings.export_date_prefix = bool(self.export_date_prefix_var.get())
+            self.settings.export_date_suffix = bool(self.export_date_suffix_var.get())
+            self.settings.custom_prefix_enabled = bool(
+                self.export_name_custom_prefix_enabled_var.get()
+            )
+            self.settings.custom_prefix_text = self.export_name_custom_prefix_text.get().strip()
+            self.settings.custom_suffix_enabled = bool(
+                self.export_name_custom_suffix_enabled_var.get()
+            )
+            self.settings.custom_suffix_text = self.export_name_custom_suffix_text.get().strip()
+            self.settings.bundle_latest = bool(self.bundle_latest_var.get())
+            self.settings.bundle_dry_run = bool(self.bundle_dry_run_var.get())
+            try:
+                self.settings.save()
+            except Exception as exc:
+                print(f"Kon instellingen niet opslaan: {exc}", file=sys.stderr)
+
         def _pick_src(self):
             from tkinter import filedialog
             p = filedialog.askdirectory()
-            if p: self.source_folder = p; self.src_entry.delete(0, "end"); self.src_entry.insert(0, p)
+            if p:
+                self.source_folder_var.set(p)
+                self._save_settings()
 
         def _pick_dst(self):
             from tkinter import filedialog
             p = filedialog.askdirectory()
-            if p: self.dest_folder = p; self.dst_entry.delete(0, "end"); self.dst_entry.insert(0, p)
+            if p:
+                self.dest_folder_var.set(p)
+                self._save_settings()
 
         def _selected_exts(self) -> Optional[List[str]]:
             exts = []
