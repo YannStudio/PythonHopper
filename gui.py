@@ -1183,11 +1183,6 @@ def start_gui():
             self.nb.add(self.settings_frame, text="⚙ Settings")
 
             self.nb.grid(row=0, column=0, sticky="nsew")
-            tk.Button(
-                tabs_wrapper,
-                text="⚙",
-                command=lambda: self.nb.select(self.settings_frame),
-            ).grid(row=0, column=1, sticky="ne", padx=(4, 12), pady=(4, 0))
 
             # Top folders
             top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
