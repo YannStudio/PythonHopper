@@ -46,7 +46,7 @@ Notebook-integratie
     from bom_custom_tab import BOMCustomTab
 
     tab = BOMCustomTab(notebook, app_name="Filehopper")
-    notebook.add(tab, text="BOM custom")
+    notebook.add(tab, text="Custom BOM")
 
 ``tab.get_last_export_path()`` geeft het pad van de laatst weggeschreven CSV
 terug (of ``None`` wanneer er nog niet geëxporteerd is).
@@ -161,7 +161,7 @@ class BOMCustomTab(ttk.Frame):
         bar = ttk.Frame(self)
         bar.pack(fill="x", padx=8, pady=6)
 
-        clear_btn = ttk.Button(bar, text="Clear BOM custom", command=self._confirm_clear)
+        clear_btn = ttk.Button(bar, text="Clear Custom BOM", command=self._confirm_clear)
         clear_btn.pack(side="left", padx=(0, 6))
 
         export_btn = ttk.Button(bar, text="Exporteren", command=self._export_temp)

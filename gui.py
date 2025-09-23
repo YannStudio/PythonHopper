@@ -989,7 +989,7 @@ def start_gui():
             )
             main = tk.Frame(self.nb)
             self.nb.add(main, text="Main")
-            self.nb.add(self.custom_bom_tab, text="BOM custom")
+            self.nb.add(self.custom_bom_tab, text="Custom BOM")
             self.main_frame = main
             self.clients_frame = ClientsManagerFrame(
                 self.nb, self.client_db, on_change=self._on_db_change
