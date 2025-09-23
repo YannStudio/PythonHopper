@@ -92,6 +92,11 @@ def test_export_token_positions(tmp_path, monkeypatch, prefix, suffix, expected)
     assert re.fullmatch(r"Laser(?:_.+)?", zip_path.stem)
     with zipfile.ZipFile(zip_path) as zf:
         assert expected in zf.namelist()
+        info = zf.getinfo(expected)
+        if getattr(zipfile, "zlib", None):
+            assert info.compress_type == zipfile.ZIP_DEFLATED
+        else:
+            assert info.compress_type == zipfile.ZIP_STORED
 
 
 def test_export_token_disabled(tmp_path, monkeypatch):
