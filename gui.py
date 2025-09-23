@@ -1046,17 +1046,12 @@ def start_gui():
             super().__init__()
             import sys
             style = ttk.Style(self)
+            if sys.platform == "darwin":
+                style.theme_use("aqua")
+            else:
+                style.theme_use("clam")
 
-            def _apply_right_aligned_notebook_style():
-                base_notebook_layout = style.layout("TNotebook")
-                right_aligned_layout = []
-                for element, options in base_notebook_layout:
-                    updated_options = deepcopy(options) if options is not None else None
-                    if element == "Notebook.tabs":
-                        updated_options = updated_options or {}
-                        updated_options["side"] = "right"
-                    right_aligned_layout.append((element, updated_options))
-                style.layout("RightAligned.TNotebook", right_aligned_layout)
+            def _configure_tab_like_button_style():
                 tab_layout = deepcopy(style.layout("TNotebook.Tab"))
 
                 def _remove_focus(layout_items):
@@ -1075,38 +1070,36 @@ def start_gui():
                             cleaned.append((child_element, child_options))
                     return cleaned
 
-                style.layout(
-                    "RightAligned.TNotebook.Tab",
-                    _remove_focus(tab_layout),
-                )
+                if tab_layout:
+                    style.layout("Tab.TButton", _remove_focus(tab_layout))
+
+                tab_config = {}
+                for opt in ("padding", "background", "foreground", "font", "borderwidth", "relief"):
+                    val = style.lookup("TNotebook.Tab", opt)
+                    if val not in (None, ""):
+                        tab_config[opt] = val
+                if tab_config:
+                    style.configure("Tab.TButton", **tab_config)
+
+                for opt in ("background", "foreground", "bordercolor", "focuscolor", "lightcolor", "darkcolor"):
+                    states = style.map("TNotebook.Tab", opt)
+                    if states:
+                        style.map("Tab.TButton", **{opt: states})
+
+                padding = style.lookup("TNotebook.Tab", "padding")
+                if padding in (None, ""):
+                    style.configure("Tab.TButton", padding=(12, 4))
 
                 bg_color = (
                     style.lookup("TNotebook.Tab", "background")
                     or style.lookup("TNotebook", "background")
                     or style.lookup("TFrame", "background")
+                    or self.cget("background")
                 )
-                color_states = [
-                    ("disabled", bg_color),
-                    ("selected", bg_color),
-                    ("active", bg_color),
-                    ("!disabled", bg_color),
-                ]
-                style.configure(
-                    "RightAligned.TNotebook.Tab",
-                    focuscolor=bg_color,
-                    bordercolor=bg_color,
-                    lightcolor=bg_color,
-                    darkcolor=bg_color,
-                )
-                for opt in ("focuscolor", "bordercolor", "lightcolor", "darkcolor"):
-                    style.map("RightAligned.TNotebook.Tab", **{opt: color_states})
+                style.configure("SettingsTabContainer.TFrame", background=bg_color)
+                style.map("SettingsTabContainer.TFrame", background=[("!disabled", bg_color)])
 
-            _apply_right_aligned_notebook_style()
-            if sys.platform == "darwin":
-                style.theme_use("aqua")
-            else:
-                style.theme_use("clam")
-            _apply_right_aligned_notebook_style()
+            _configure_tab_like_button_style()
             self.title("Filehopper")
             self.minsize(1024, 720)
 
@@ -1191,10 +1184,33 @@ def start_gui():
 
             tabs_wrapper = tk.Frame(self)
             tabs_wrapper.pack(fill="both", expand=True, padx=8, pady=(4, 0))
-            tabs_wrapper.columnconfigure(0, weight=1)
-            tabs_wrapper.rowconfigure(0, weight=1)
 
-            self.nb = ttk.Notebook(tabs_wrapper, style="RightAligned.TNotebook")
+            tabs_background = (
+                style.lookup("TNotebook", "background")
+                or style.lookup("TFrame", "background")
+                or self.cget("background")
+            )
+
+            tabs_container = tk.Frame(tabs_wrapper, background=tabs_background)
+            tabs_container.pack(fill="both", expand=True)
+
+            self.nb = ttk.Notebook(tabs_container)
+            self.nb.pack(side="left", fill="both", expand=True)
+
+            settings_tab_container = ttk.Frame(
+                tabs_container, style="SettingsTabContainer.TFrame"
+            )
+            settings_tab_container.pack(side="left", fill="y", padx=(4, 0))
+            settings_tab_container.bind("<Button-1>", self._show_settings_tab)
+
+            self.settings_tab_button = ttk.Button(
+                settings_tab_container,
+                text="⚙ Settings",
+                style="Tab.TButton",
+                command=self._show_settings_tab,
+                takefocus=True,
+            )
+            self.settings_tab_button.pack(fill="both")
             self.custom_bom_tab = BOMCustomTab(
                 self.nb,
                 app_name="Filehopper",
@@ -1220,8 +1236,9 @@ def start_gui():
 
             self.settings_frame = SettingsFrame(self.nb, self)
             self.nb.add(self.settings_frame, text="⚙ Settings")
-
-            self.nb.grid(row=0, column=0, sticky="nsew")
+            self.nb.hide(self.settings_frame)
+            self.nb.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+            self._on_tab_changed()
 
             # Top folders
             top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
@@ -1417,6 +1434,22 @@ def start_gui():
             self.status_var = tk.StringVar(value="Klaar")
             tk.Label(main, textvariable=self.status_var, anchor="w").pack(fill="x", padx=8, pady=(0,8))
             self._save_settings()
+
+        def _show_settings_tab(self, _event=None):
+            self.nb.tab(self.settings_frame, state="normal")
+            self.nb.select(self.settings_frame)
+            self.settings_tab_button.focus_set()
+            if _event is not None and _event.widget is not self.settings_tab_button:
+                return "break"
+
+        def _on_tab_changed(self, _event=None):
+            current = self.nb.select()
+            settings_id = str(self.settings_frame)
+            if current == settings_id:
+                self.settings_tab_button.state(["pressed"])
+            else:
+                self.settings_tab_button.state(["!pressed"])
+                self.nb.tab(self.settings_frame, state="hidden")
 
         def _on_db_change(self):
             self._refresh_clients_combo()
