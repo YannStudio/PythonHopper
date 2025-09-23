@@ -607,7 +607,7 @@ def start_gui():
             tk.Label(
                 header_row,
                 text="Nr.",
-                width=8,
+                width=12,
                 anchor="w",
                 justify="left",
                 background=left.cget("bg"),
@@ -651,7 +651,7 @@ def start_gui():
 
                 doc_num_var = tk.StringVar()
                 self.doc_num_vars[prod] = doc_num_var
-                tk.Entry(row, textvariable=doc_num_var, width=8).pack(side="left", padx=6)
+                tk.Entry(row, textvariable=doc_num_var, width=12).pack(side="left", padx=6)
 
                 dvar = tk.StringVar(value="Geen")
                 self.delivery_vars[prod] = dvar
