@@ -1057,10 +1057,49 @@ def start_gui():
                         updated_options["side"] = "right"
                     right_aligned_layout.append((element, updated_options))
                 style.layout("RightAligned.TNotebook", right_aligned_layout)
+                tab_layout = deepcopy(style.layout("TNotebook.Tab"))
+
+                def _remove_focus(layout_items):
+                    cleaned = []
+                    for child_element, child_options in layout_items:
+                        if child_element == "Notebook.focus":
+                            continue
+                        if child_options:
+                            new_child_options = deepcopy(child_options)
+                            if "children" in new_child_options:
+                                new_child_options["children"] = _remove_focus(
+                                    new_child_options["children"]
+                                )
+                            cleaned.append((child_element, new_child_options))
+                        else:
+                            cleaned.append((child_element, child_options))
+                    return cleaned
+
                 style.layout(
                     "RightAligned.TNotebook.Tab",
-                    deepcopy(style.layout("TNotebook.Tab")),
+                    _remove_focus(tab_layout),
                 )
+
+                bg_color = (
+                    style.lookup("TNotebook.Tab", "background")
+                    or style.lookup("TNotebook", "background")
+                    or style.lookup("TFrame", "background")
+                )
+                color_states = [
+                    ("disabled", bg_color),
+                    ("selected", bg_color),
+                    ("active", bg_color),
+                    ("!disabled", bg_color),
+                ]
+                style.configure(
+                    "RightAligned.TNotebook.Tab",
+                    focuscolor=bg_color,
+                    bordercolor=bg_color,
+                    lightcolor=bg_color,
+                    darkcolor=bg_color,
+                )
+                for opt in ("focuscolor", "bordercolor", "lightcolor", "darkcolor"):
+                    style.map("RightAligned.TNotebook.Tab", **{opt: color_states})
 
             _apply_right_aligned_notebook_style()
             if sys.platform == "darwin":
