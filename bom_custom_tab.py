@@ -314,15 +314,48 @@ class BOMCustomTab(ttk.Frame):
         if not hasattr(self, "sheet"):
             return
         try:
-            available_width = 0
+            container_width = 0
             if event is not None and getattr(event, "width", None):
-                available_width = int(event.width)
-            if available_width <= 0:
-                available_width = int(container.winfo_width())
+                container_width = int(event.width)
+            if container_width <= 0:
+                container_width = int(container.winfo_width())
         except (tk.TclError, ValueError, TypeError):
             return
-        if available_width <= 1:
+        if container_width <= 1:
             return
+
+        scrollbar_width = 0
+        yscroll = getattr(self.sheet, "yscroll", None)
+        if yscroll is not None:
+            showing = False
+            try:
+                showing = bool(yscroll.winfo_ismapped())
+            except tk.TclError:
+                showing = False
+
+            if not showing:
+                yscroll_showing = getattr(self.sheet, "yscroll_showing", None)
+                try:
+                    if callable(yscroll_showing):
+                        showing = bool(yscroll_showing())
+                    elif yscroll_showing is not None:
+                        showing = bool(yscroll_showing)
+                except Exception:
+                    showing = False
+
+            if showing:
+                try:
+                    scrollbar_width = int(yscroll.winfo_width())
+                    if scrollbar_width <= 0:
+                        scrollbar_width = int(yscroll.winfo_reqwidth())
+                except (tk.TclError, ValueError, TypeError):
+                    try:
+                        scrollbar_width = int(yscroll.winfo_reqwidth())
+                    except (tk.TclError, ValueError, TypeError):
+                        scrollbar_width = 0
+
+        available_width = container_width - scrollbar_width - self.TRAILING_GUTTER
+        effective_available_width = max(available_width, 0)
 
         column_indices = range(len(self.HEADERS))
         min_widths_map = self._calculate_column_min_widths(column_indices)
@@ -334,7 +367,6 @@ class BOMCustomTab(ttk.Frame):
             return
 
         total_min_width = sum(widths)
-        effective_available_width = max(available_width - self.TRAILING_GUTTER, 0)
 
         if effective_available_width > total_min_width and widths:
             extra_width = effective_available_width - total_min_width
