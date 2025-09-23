@@ -559,16 +559,23 @@ def start_gui():
                 anchor="w",
             )
             project_number_label.pack(side="left")
-            project_number_value = tk.Label(
-                pn_row,
-                textvariable=self.project_number_var,
+            field_border = "#d8d8d8"
+            field_kwargs = dict(
                 width=50,
                 anchor="w",
                 background=readonly_bg,
-                relief="solid",
-                borderwidth=1,
+                relief="flat",
+                borderwidth=0,
                 padx=6,
                 pady=2,
+                highlightthickness=1,
+                highlightbackground=field_border,
+                highlightcolor=field_border,
+            )
+            project_number_value = tk.Label(
+                pn_row,
+                textvariable=self.project_number_var,
+                **field_kwargs,
             )
             project_number_value.pack(side="left", padx=(6, 0))
             self._project_number_label = project_number_label
@@ -586,13 +593,7 @@ def start_gui():
             project_name_value = tk.Label(
                 name_row,
                 textvariable=self.project_name_var,
-                width=50,
-                anchor="w",
-                background=readonly_bg,
-                relief="solid",
-                borderwidth=1,
-                padx=6,
-                pady=2,
+                **field_kwargs,
             )
             project_name_value.pack(side="left", padx=(6, 0))
             self._project_name_label = project_name_label
