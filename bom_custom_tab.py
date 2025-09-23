@@ -58,7 +58,7 @@ import csv
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import tkinter as tk
 import tkinter.font as tkfont
@@ -148,6 +148,8 @@ class BOMCustomTab(ttk.Frame):
         self._edit_snapshot: Optional[List[List[str]]] = None
         self._edit_cell: Optional[CellCoord] = None
         self.last_temp_csv_path: Optional[Path] = None
+        self._sheet_container: Optional[tk.Widget] = None
+        self._in_container_resize = False
 
         self.status_var = tk.StringVar(value="")
 
@@ -174,7 +176,6 @@ class BOMCustomTab(ttk.Frame):
         container.pack(fill="both", expand=True, padx=8, pady=(0, 8))
         container.rowconfigure(0, weight=1)
         container.columnconfigure(0, weight=1)
-
         self.sheet = tksheet.Sheet(
             container,
             headers=self.HEADERS,
@@ -194,6 +195,8 @@ class BOMCustomTab(ttk.Frame):
         )
         self.sheet.set_sheet_data([])
         self.sheet.grid(row=0, column=0, sticky="nsew")
+        self._sheet_container = container
+        container.bind("<Configure>", self._on_container_resize)
 
         self.sheet.bind("<Control-v>", self._on_paste)
         self.sheet.bind("<Control-V>", self._on_paste)
@@ -254,10 +257,12 @@ class BOMCustomTab(ttk.Frame):
             )
         self.sheet.refresh()
 
-    def _auto_resize_columns(self, columns: Iterable[int]) -> None:
+    def _calculate_column_min_widths(self, columns: Iterable[int]) -> Dict[int, int]:
+        if not hasattr(self, "sheet"):
+            return {}
         valid_columns = sorted({col for col in columns if 0 <= col < len(self.HEADERS)})
         if not valid_columns:
-            return
+            return {}
 
         try:
             header_font = tkfont.Font(self.sheet, font=self.sheet.header_font)
@@ -272,6 +277,8 @@ class BOMCustomTab(ttk.Frame):
         min_width = 60
         total_rows = self.sheet.get_total_rows()
 
+        widths: Dict[int, int] = {}
+
         for col in valid_columns:
             max_width = header_font.measure(self.HEADERS[col])
             for row in range(total_rows):
@@ -282,9 +289,59 @@ class BOMCustomTab(ttk.Frame):
                 if cell_width > max_width:
                     max_width = cell_width
             target_width = max(min_width, max_width + padding)
-            self.sheet.column_width(column=col, width=target_width, redraw=False)
+            widths[col] = target_width
 
+        return widths
+
+    def _auto_resize_columns(self, columns: Iterable[int]) -> None:
+        widths = self._calculate_column_min_widths(columns)
+        if not widths:
+            return
+
+        for col in sorted(widths):
+            self.sheet.column_width(column=col, width=widths[col], redraw=False)
         self.sheet.refresh()
+        self._on_container_resize()
+
+    def _on_container_resize(self, event=None) -> None:
+        if self._in_container_resize:
+            return
+        container = self._sheet_container
+        if container is None:
+            return
+        if not hasattr(self, "sheet"):
+            return
+        try:
+            available_width = 0
+            if event is not None and getattr(event, "width", None):
+                available_width = int(event.width)
+            if available_width <= 0:
+                available_width = int(container.winfo_width())
+        except (tk.TclError, ValueError, TypeError):
+            return
+        if available_width <= 1:
+            return
+
+        column_indices = range(len(self.HEADERS))
+        min_widths_map = self._calculate_column_min_widths(column_indices)
+        if not min_widths_map:
+            return
+
+        widths = [min_widths_map.get(idx, 0) for idx in column_indices]
+        if not widths:
+            return
+
+        total_min_width = sum(widths)
+        if available_width > total_min_width:
+            widths[-1] += available_width - total_min_width
+
+        self._in_container_resize = True
+        try:
+            for col, width in enumerate(widths):
+                self.sheet.column_width(column=col, width=width, redraw=False)
+            self.sheet.refresh()
+        finally:
+            self._in_container_resize = False
 
     def _restore_data(self, data: List[List[str]]) -> None:
         trimmed = [row[: len(self.HEADERS)] for row in data]
