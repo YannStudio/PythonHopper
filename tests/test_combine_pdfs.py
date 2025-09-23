@@ -27,7 +27,7 @@ def test_combine_handles_loose_files_and_zip(tmp_path):
     # production with PDFs only inside a zip archive
     prod2 = dest / "prod2"
     prod2.mkdir()
-    zip_path = prod2 / "prod2.zip"
+    zip_path = prod2 / "prod2_BB-123.zip"
     with zipfile.ZipFile(zip_path, "w") as zf:
         for name in ["c.pdf", "d.pdf"]:
             tmp = prod2 / name

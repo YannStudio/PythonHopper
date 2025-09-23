@@ -1,3 +1,4 @@
+import re
 import zipfile
 
 import pandas as pd
@@ -84,8 +85,11 @@ def test_export_token_positions(tmp_path, monkeypatch, prefix, suffix, expected)
         export_name_suffix_enabled=suffix,
     )
     assert cnt_zip == 1
-    zip_path = dest_zip / "Laser" / "Laser.zip"
-    assert zip_path.exists()
+    zip_dir = dest_zip / "Laser"
+    zip_files = sorted(zip_dir.glob("Laser*.zip"))
+    assert len(zip_files) == 1
+    zip_path = zip_files[0]
+    assert re.fullmatch(r"Laser(?:_.+)?", zip_path.stem)
     with zipfile.ZipFile(zip_path) as zf:
         assert expected in zf.namelist()
 
