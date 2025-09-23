@@ -194,6 +194,7 @@ class BOMCustomTab(ttk.Frame):
             )
         )
         self.sheet.set_sheet_data([])
+        self._ensure_minimum_rows()
         self.sheet.grid(row=0, column=0, sticky="nsew")
         self._sheet_container = container
         container.bind("<Configure>", self._on_container_resize)
@@ -369,6 +370,11 @@ class BOMCustomTab(ttk.Frame):
     def _restore_data(self, data: List[List[str]]) -> None:
         trimmed = [row[: len(self.HEADERS)] for row in data]
         self.sheet.set_sheet_data(trimmed)
+        if trimmed:
+            self._auto_resize_columns(range(len(self.HEADERS)))
+            self._apply_row_striping()
+            return
+        self._ensure_minimum_rows()
         self._auto_resize_columns(range(len(self.HEADERS)))
         self._apply_row_striping()
 
@@ -405,6 +411,16 @@ class BOMCustomTab(ttk.Frame):
         if required_rows > current:
             self.sheet.insert_rows(rows=required_rows - current, idx=current)
         self._apply_row_striping()
+
+    def _ensure_minimum_rows(self, minimum: int = 1) -> None:
+        """Zorg dat er minimaal ``minimum`` lege rijen beschikbaar zijn."""
+
+        if minimum <= 0:
+            return
+        current = self.sheet.get_total_rows()
+        if current >= minimum:
+            return
+        self.sheet.insert_rows(rows=minimum - current, idx=current)
 
     def _event_to_cell(self, event) -> CellCoord:
         if isinstance(event, dict):
@@ -509,6 +525,7 @@ class BOMCustomTab(ttk.Frame):
         if not messagebox.askyesno("Bevestigen", "Alle custom BOM-data verwijderen?", parent=self):
             return
         self.sheet.set_sheet_data([])
+        self._ensure_minimum_rows()
         self._auto_resize_columns(range(len(self.HEADERS)))
         self._apply_row_striping()
         self._push_undo("clear", data_before, self._snapshot_data(), [])
