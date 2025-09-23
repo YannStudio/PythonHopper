@@ -127,6 +127,7 @@ class BOMCustomTab(ttk.Frame):
         "Weight (kg)",
         "Surface Area (m²)",
     )
+    DEFAULT_EMPTY_ROWS: int = 20
 
     def __init__(
         self,
@@ -194,7 +195,7 @@ class BOMCustomTab(ttk.Frame):
             )
         )
         self.sheet.set_sheet_data([])
-        self._ensure_minimum_rows()
+        self._ensure_minimum_rows(self.DEFAULT_EMPTY_ROWS)
         self.sheet.grid(row=0, column=0, sticky="nsew")
         self._sheet_container = container
         container.bind("<Configure>", self._on_container_resize)
@@ -374,7 +375,7 @@ class BOMCustomTab(ttk.Frame):
             self._auto_resize_columns(range(len(self.HEADERS)))
             self._apply_row_striping()
             return
-        self._ensure_minimum_rows()
+        self._ensure_minimum_rows(self.DEFAULT_EMPTY_ROWS)
         self._auto_resize_columns(range(len(self.HEADERS)))
         self._apply_row_striping()
 
@@ -525,7 +526,7 @@ class BOMCustomTab(ttk.Frame):
         if not messagebox.askyesno("Bevestigen", "Alle custom BOM-data verwijderen?", parent=self):
             return
         self.sheet.set_sheet_data([])
-        self._ensure_minimum_rows()
+        self._ensure_minimum_rows(self.DEFAULT_EMPTY_ROWS)
         self._auto_resize_columns(range(len(self.HEADERS)))
         self._apply_row_striping()
         self._push_undo("clear", data_before, self._snapshot_data(), [])
@@ -557,6 +558,10 @@ class BOMCustomTab(ttk.Frame):
             self._push_undo("edit", self._edit_snapshot, after, [(row, col)])
             self._update_status(f"Cel ({row + 1}, {col + 1}) bijgewerkt.")
             self._auto_resize_columns([col])
+        total_rows = self.sheet.get_total_rows()
+        if row == total_rows - 1 and current_val.strip():
+            self._ensure_minimum_rows(row + 2)
+            self._apply_row_striping()
         self._edit_snapshot = None
         self._edit_cell = None
 
