@@ -540,7 +540,13 @@ def start_gui():
             left.grid(row=0, column=0, sticky="nw")
 
             # Project info entries above production rows
-            proj_frame = tk.LabelFrame(left, text="Projectgegevens", labelanchor="n")
+            proj_frame = tk.LabelFrame(
+                left,
+                text="Projectgegevens",
+                labelanchor="n",
+                padx=12,
+                pady=10,
+            )
             proj_frame.pack(pady=(0, 6), anchor="w")
             readonly_bg = "#f0f0f0"
 
@@ -612,7 +618,20 @@ def start_gui():
                 project_name_label.winfo_reqwidth()
                 + project_name_value.winfo_reqwidth(),
             ]
-            target_width = max(width_candidates) + desired_padding
+            pad_conf = proj_frame.cget("padx")
+            if isinstance(pad_conf, str):
+                pad_values = [int(p) for p in pad_conf.split() if p]
+            elif isinstance(pad_conf, (tuple, list)):
+                pad_values = [int(p) for p in pad_conf]
+            elif pad_conf:
+                pad_values = [int(pad_conf)]
+            else:
+                pad_values = []
+            if len(pad_values) == 1:
+                total_inner_pad = pad_values[0] * 2
+            else:
+                total_inner_pad = sum(pad_values)
+            target_width = max(width_candidates) + desired_padding + total_inner_pad
             proj_frame.pack_propagate(False)
             proj_frame.configure(width=target_width, height=required_height)
 
