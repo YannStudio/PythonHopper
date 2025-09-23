@@ -402,11 +402,18 @@ def write_order_excel(
 
 
 def pick_supplier_for_production(
-    prod: str, db: SuppliersDB, override_map: Dict[str, str]
+    prod: str,
+    db: SuppliersDB,
+    override_map: Dict[str, str],
+    suppliers_sorted: List[Supplier] | None = None,
 ) -> Supplier:
-    """Select a supplier for a given production."""
+    """Select a supplier for a given production.
+
+    ``suppliers_sorted`` allows callers to provide a pre-sorted supplier list in
+    order to avoid repeated :meth:`SuppliersDB.suppliers_sorted` lookups.
+    """
     name = override_map.get(prod)
-    sups = db.suppliers_sorted()
+    sups = suppliers_sorted if suppliers_sorted is not None else db.suppliers_sorted()
     if name is not None:
         if not name.strip():
             return Supplier(supplier="")
@@ -526,6 +533,8 @@ def copy_per_production_and_orders(
             suffix_parts.append(export_name_suffix_text)
         new_stem = "-".join(prefix_parts + [stem] + suffix_parts)
         return f"{new_stem}{ext}"
+    suppliers_sorted = db.suppliers_sorted()
+
     for prod, rows in prod_to_rows.items():
         prod_folder = os.path.join(dest, prod)
         os.makedirs(prod_folder, exist_ok=True)
@@ -561,7 +570,9 @@ def copy_per_production_and_orders(
         if zf is not None:
             zf.close()
 
-        supplier = pick_supplier_for_production(prod, db, override_map)
+        supplier = pick_supplier_for_production(
+            prod, db, override_map, suppliers_sorted=suppliers_sorted
+        )
         chosen[prod] = supplier.supplier
         if remember_defaults and supplier.supplier not in ("", "Onbekend"):
             db.set_default(prod, supplier.supplier)
