@@ -1046,28 +1046,46 @@ def start_gui():
             super().__init__()
             import sys
             style = ttk.Style(self)
-
-            def _apply_right_aligned_notebook_style():
-                base_notebook_layout = style.layout("TNotebook")
-                right_aligned_layout = []
-                for element, options in base_notebook_layout:
-                    updated_options = deepcopy(options) if options is not None else None
-                    if element == "Notebook.tabs":
-                        updated_options = updated_options or {}
-                        updated_options["side"] = "right"
-                    right_aligned_layout.append((element, updated_options))
-                style.layout("RightAligned.TNotebook", right_aligned_layout)
-                style.layout(
-                    "RightAligned.TNotebook.Tab",
-                    deepcopy(style.layout("TNotebook.Tab")),
-                )
-
-            _apply_right_aligned_notebook_style()
             if sys.platform == "darwin":
                 style.theme_use("aqua")
             else:
                 style.theme_use("clam")
-            _apply_right_aligned_notebook_style()
+
+            def _create_toolbar_notebook_styles() -> None:
+                base_notebook_layout = deepcopy(style.layout("TNotebook"))
+                tabs_only_layout = []
+                content_only_layout = []
+                for element, options in base_notebook_layout:
+                    updated_options = deepcopy(options) if options is not None else None
+                    if element == "Notebook.tabs":
+                        updated_options = updated_options or {}
+                        if isinstance(updated_options, dict):
+                            updated_options["sticky"] = "w"
+                        tabs_only_layout.append((element, updated_options))
+                    elif element == "Notebook.client":
+                        content_only_layout.append((element, updated_options))
+                    else:
+                        tabs_only_layout.append((element, updated_options))
+                        content_only_layout.append((element, updated_options))
+
+                if not tabs_only_layout:
+                    tabs_only_layout = [("Notebook.tabs", {"sticky": "w"})]
+                if not content_only_layout:
+                    content_only_layout = [("Notebook.client", {"sticky": "nsew"})]
+
+                base_tab_layout = deepcopy(style.layout("TNotebook.Tab"))
+
+                style.layout("TabsOnly.TNotebook", tabs_only_layout)
+                style.layout("TabsOnly.TNotebook.Tab", base_tab_layout)
+                style.layout("Content.TNotebook", content_only_layout)
+                style.layout("Content.TNotebook.Tab", base_tab_layout)
+                style.layout("SettingsTab.TButton", base_tab_layout)
+
+                tab_maps = style.map("TNotebook.Tab")
+                if tab_maps:
+                    style.map("SettingsTab.TButton", **tab_maps)
+
+            _create_toolbar_notebook_styles()
             self.title("Filehopper")
             self.minsize(1024, 720)
 
@@ -1153,9 +1171,35 @@ def start_gui():
             tabs_wrapper = tk.Frame(self)
             tabs_wrapper.pack(fill="both", expand=True, padx=8, pady=(4, 0))
             tabs_wrapper.columnconfigure(0, weight=1)
-            tabs_wrapper.rowconfigure(0, weight=1)
+            tabs_wrapper.rowconfigure(1, weight=1)
 
-            self.nb = ttk.Notebook(tabs_wrapper, style="RightAligned.TNotebook")
+            tabs_toolbar = tk.Frame(tabs_wrapper)
+            tabs_toolbar.grid(row=0, column=0, sticky="ew")
+            tabs_toolbar.grid_columnconfigure(0, weight=1)
+
+            self.tab_bar = ttk.Notebook(
+                tabs_toolbar, style="TabsOnly.TNotebook", takefocus=True
+            )
+            self.tab_bar.grid(row=0, column=0, sticky="w")
+            self.tab_bar.enable_traversal()
+
+            toolbar_extra = tk.Frame(tabs_toolbar)
+            toolbar_extra.grid(row=0, column=1, sticky="e")
+
+            self.nb = ttk.Notebook(tabs_wrapper, style="Content.TNotebook")
+            self.nb.grid(row=1, column=0, sticky="nsew")
+
+            self._frame_to_placeholder = {}
+            self._placeholder_to_frame = {}
+
+            def _add_primary_tab(frame: tk.Widget, text: str) -> tk.Widget:
+                placeholder = ttk.Frame(self.tab_bar)
+                placeholder.pack_propagate(False)
+                self.tab_bar.add(placeholder, text=text)
+                self.nb.add(frame, text=text)
+                self._frame_to_placeholder[frame] = placeholder
+                self._placeholder_to_frame[placeholder] = frame
+                return frame
             self.custom_bom_tab = BOMCustomTab(
                 self.nb,
                 app_name="Filehopper",
@@ -1163,26 +1207,96 @@ def start_gui():
                 event_target=self,
             )
             main = tk.Frame(self.nb)
-            self.nb.add(main, text="Main")
-            self.nb.add(self.custom_bom_tab, text="Custom BOM")
+            _add_primary_tab(main, "Main")
+            _add_primary_tab(self.custom_bom_tab, "Custom BOM")
             self.main_frame = main
             self.clients_frame = ClientsManagerFrame(
                 self.nb, self.client_db, on_change=self._on_db_change
             )
-            self.nb.add(self.clients_frame, text="Klant beheer")
+            _add_primary_tab(self.clients_frame, "Klant beheer")
             self.delivery_frame = DeliveryAddressesManagerFrame(
                 self.nb, self.delivery_db, on_change=self._on_db_change
             )
-            self.nb.add(self.delivery_frame, text="Leveradres beheer")
+            _add_primary_tab(self.delivery_frame, "Leveradres beheer")
             self.suppliers_frame = SuppliersManagerFrame(
                 self.nb, self.db, on_change=self._on_db_change
             )
-            self.nb.add(self.suppliers_frame, text="Leverancier beheer")
+            _add_primary_tab(self.suppliers_frame, "Leverancier beheer")
 
             self.settings_frame = SettingsFrame(self.nb, self)
             self.nb.add(self.settings_frame, text="⚙ Settings")
+            self.nb.tab(self.settings_frame, state="hidden")
 
-            self.nb.grid(row=0, column=0, sticky="nsew")
+            self._settings_visible = False
+            self._synchronizing_from_nb = False
+            self._synchronizing_from_tab_bar = False
+
+            def _sync_tab_bar_from_nb(event=None):
+                if self._synchronizing_from_tab_bar:
+                    return
+                current = self.nb.select()
+                if not current:
+                    return
+                frame = self.nb.nametowidget(current)
+                if frame is self.settings_frame:
+                    if not self._settings_visible:
+                        self._settings_visible = True
+                    return
+                placeholder = self._frame_to_placeholder.get(frame)
+                if placeholder:
+                    self._synchronizing_from_nb = True
+                    try:
+                        self.tab_bar.select(placeholder)
+                    finally:
+                        self._synchronizing_from_nb = False
+                    if self._settings_visible:
+                        _hide_settings_tab()
+                elif self._settings_visible:
+                    _hide_settings_tab()
+
+            def _sync_nb_from_tab_bar(event=None):
+                if self._synchronizing_from_nb:
+                    return
+                current = self.tab_bar.select()
+                if not current:
+                    return
+                placeholder = self.tab_bar.nametowidget(current)
+                frame = self._placeholder_to_frame.get(placeholder)
+                if frame:
+                    self._synchronizing_from_tab_bar = True
+                    try:
+                        if self._settings_visible:
+                            _hide_settings_tab()
+                        self.nb.select(frame)
+                    finally:
+                        self._synchronizing_from_tab_bar = False
+
+            def _show_settings_tab():
+                if not self._settings_visible:
+                    self.nb.tab(self.settings_frame, state="normal")
+                    self._settings_visible = True
+                self.nb.select(self.settings_frame)
+
+            def _hide_settings_tab():
+                if self._settings_visible:
+                    self.nb.tab(self.settings_frame, state="hidden")
+                    self._settings_visible = False
+
+            self.tab_bar.bind("<<NotebookTabChanged>>", _sync_nb_from_tab_bar)
+            self.nb.bind("<<NotebookTabChanged>>", _sync_tab_bar_from_nb)
+
+            settings_control = ttk.Button(
+                toolbar_extra,
+                text="⚙ Instellingen",
+                command=_show_settings_tab,
+                style="SettingsTab.TButton",
+            )
+            settings_control.pack(side="right", padx=(8, 0), pady=(2, 0))
+
+            primary_placeholder = self._frame_to_placeholder.get(self.main_frame)
+            if primary_placeholder:
+                self.tab_bar.select(primary_placeholder)
+            _sync_tab_bar_from_nb()
 
             # Top folders
             top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
