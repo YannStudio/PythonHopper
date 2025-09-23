@@ -192,8 +192,12 @@ class BOMCustomTab(ttk.Frame):
                 "column_select",
                 "column_width_resize",
                 "double_click_column_resize",
+                "double_click_select",
                 "copy",
                 "edit_cell",
+                "tab_key",
+                "arrowkeys",
+                "enter_key",
             )
         )
         self.sheet.set_sheet_data([])
