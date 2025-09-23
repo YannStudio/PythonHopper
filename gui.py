@@ -541,13 +541,19 @@ def start_gui():
 
             # Project info entries above production rows
             proj_frame = tk.LabelFrame(left, text="Projectgegevens", labelanchor="n")
-            proj_frame.pack(fill="x", pady=(0, 6))
+            proj_frame.pack(pady=(0, 6), anchor="w")
             readonly_bg = "#f0f0f0"
 
             pn_row = tk.Frame(proj_frame)
             pn_row.pack(fill="x", pady=3)
-            tk.Label(pn_row, text="Projectnr.", width=18, anchor="w").pack(side="left")
-            tk.Label(
+            project_number_label = tk.Label(
+                pn_row,
+                text="Projectnr.",
+                width=18,
+                anchor="w",
+            )
+            project_number_label.pack(side="left")
+            project_number_value = tk.Label(
                 pn_row,
                 textvariable=self.project_number_var,
                 width=50,
@@ -557,12 +563,21 @@ def start_gui():
                 borderwidth=1,
                 padx=6,
                 pady=2,
-            ).pack(side="left", padx=6)
+            )
+            project_number_value.pack(side="left", padx=(6, 0))
+            self._project_number_label = project_number_label
+            self._project_number_value = project_number_value
 
             name_row = tk.Frame(proj_frame)
             name_row.pack(fill="x", pady=3)
-            tk.Label(name_row, text="Projectnaam", width=18, anchor="w").pack(side="left")
-            tk.Label(
+            project_name_label = tk.Label(
+                name_row,
+                text="Projectnaam",
+                width=18,
+                anchor="w",
+            )
+            project_name_label.pack(side="left")
+            project_name_value = tk.Label(
                 name_row,
                 textvariable=self.project_name_var,
                 width=50,
@@ -572,7 +587,33 @@ def start_gui():
                 borderwidth=1,
                 padx=6,
                 pady=2,
-            ).pack(side="left", padx=6)
+            )
+            project_name_value.pack(side="left", padx=(6, 0))
+            self._project_name_label = project_name_label
+            self._project_name_value = project_name_value
+
+            proj_frame.update_idletasks()
+            pad_spec = project_number_value.pack_info().get("padx", 0)
+            if isinstance(pad_spec, str):
+                pad_parts = [int(p) for p in pad_spec.split()]
+            elif isinstance(pad_spec, (tuple, list)):
+                pad_parts = [int(p) for p in pad_spec]
+            elif pad_spec:
+                pad_parts = [int(pad_spec)]
+            else:
+                pad_parts = []
+            desired_padding = (
+                pad_parts[0] * 2 if len(pad_parts) == 1 else sum(pad_parts)
+            )
+            width_candidates = [
+                project_number_label.winfo_reqwidth()
+                + project_number_value.winfo_reqwidth(),
+                project_name_label.winfo_reqwidth()
+                + project_name_value.winfo_reqwidth(),
+            ]
+            target_width = max(width_candidates) + desired_padding
+            proj_frame.pack_propagate(False)
+            proj_frame.configure(width=target_width)
 
             ttk.Separator(left, orient="horizontal").pack(fill="x", pady=(0, 6))
 
