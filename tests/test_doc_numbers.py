@@ -1,5 +1,6 @@
 import datetime
 import os
+import zipfile
 
 import pandas as pd
 import pytest
@@ -168,4 +169,48 @@ def test_missing_doc_number_omits_prefix_and_header(tmp_path):
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
     assert "Nummer:" not in text
     assert f"Datum: {today}" in text
+
+
+def test_doc_number_applied_to_zip_filename(tmp_path):
+    db = SuppliersDB()
+    db.upsert(Supplier.from_any({"supplier": "ACME"}))
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "PN1.pdf").write_text("dummy")
+
+    bom_df = pd.DataFrame([
+        {"PartNumber": "PN1", "Description": "", "Production": "Laser", "Aantal": 1}
+    ])
+
+    dst = tmp_path / "dst_zip"
+    dst.mkdir()
+
+    doc_num_map = {"Laser": "123"}
+
+    cnt, _ = copy_per_production_and_orders(
+        str(src),
+        str(dst),
+        bom_df,
+        [".pdf"],
+        db,
+        {},
+        {},
+        doc_num_map,
+        False,
+        client=None,
+        delivery_map={},
+        zip_parts=True,
+    )
+
+    assert cnt == 1
+
+    prod_folder = dst / "Laser"
+    zip_files = sorted(prod_folder.glob("Laser*.zip"))
+    assert len(zip_files) == 1
+    zip_path = zip_files[0]
+    assert zip_path.name == "Laser_BB-123.zip"
+
+    with zipfile.ZipFile(zip_path) as zf:
+        assert "PN1.pdf" in zf.namelist()
 

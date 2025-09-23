@@ -529,9 +529,19 @@ def copy_per_production_and_orders(
     for prod, rows in prod_to_rows.items():
         prod_folder = os.path.join(dest, prod)
         os.makedirs(prod_folder, exist_ok=True)
+
+        raw_doc_type = doc_type_map.get(prod, "Bestelbon")
+        doc_type = _to_str(raw_doc_type).strip() or "Bestelbon"
+        doc_num = _to_str(doc_num_map.get(prod, "")).strip()
+        prefix = _prefix_for_doc_type(doc_type)
+        if doc_num and prefix and not doc_num.upper().startswith(prefix.upper()):
+            doc_num = f"{prefix}{doc_num}"
+        num_part = f"_{doc_num}" if doc_num else ""
+
         zf = None
         if zip_parts:
-            zip_path = os.path.join(prod_folder, f"{prod}.zip")
+            zip_name = f"{prod}{num_part}.zip"
+            zip_path = os.path.join(prod_folder, zip_name)
             zf = zipfile.ZipFile(zip_path, "w")
 
         for row in rows:
@@ -576,13 +586,6 @@ def copy_per_production_and_orders(
             "email": client.email if client else "",
         }
         if supplier.supplier:
-            doc_type = doc_type_map.get(prod, "Bestelbon")
-            doc_num = _to_str(doc_num_map.get(prod, "")).strip()
-            prefix = _prefix_for_doc_type(doc_type)
-            if doc_num:
-                if prefix and not doc_num.upper().startswith(prefix.upper()):
-                    doc_num = f"{prefix}{doc_num}"
-            num_part = f"_{doc_num}" if doc_num else ""
             excel_path = os.path.join(
                 prod_folder, f"{doc_type}{num_part}_{prod}_{today}.xlsx"
             )
@@ -702,9 +705,20 @@ def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
             for fname in pdfs:
                 merger.append(os.path.join(prod_path, fname))
         else:
-            zip_path = os.path.join(prod_path, f"{prod}.zip")
-            if not os.path.isfile(zip_path):
-                continue
+            zip_path = None
+            prod_prefix = f"{prod}_"
+            for fname in sorted(os.listdir(prod_path)):
+                if not fname.lower().endswith(".zip"):
+                    continue
+                stem, _ = os.path.splitext(fname)
+                if stem.startswith(prod_prefix):
+                    zip_path = os.path.join(prod_path, fname)
+                    break
+            if zip_path is None:
+                fallback = os.path.join(prod_path, f"{prod}.zip")
+                if not os.path.isfile(fallback):
+                    continue
+                zip_path = fallback
             with zipfile.ZipFile(zip_path) as zf:
                 zip_pdfs = [
                     name
