@@ -541,7 +541,7 @@ def start_gui():
 
             # Project info entries above production rows
             proj_frame = tk.LabelFrame(left, text="Projectgegevens", labelanchor="n")
-            proj_frame.pack(fill="x", pady=(0, 6))
+            proj_frame.pack(anchor="w", padx=(0, 6), pady=(0, 6), ipadx=6)
             pn_row = tk.Frame(proj_frame)
             pn_row.pack(fill="x", pady=3)
             tk.Label(pn_row, text="Projectnr.", width=18, anchor="w").pack(side="left")
