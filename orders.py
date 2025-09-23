@@ -544,19 +544,23 @@ def copy_per_production_and_orders(
             zip_path = os.path.join(prod_folder, zip_name)
             zf = zipfile.ZipFile(zip_path, "w")
 
+        processed_pairs: set[tuple[str, str]] = set()
         for row in rows:
             pn = str(row["PartNumber"])
             files = file_index.get(pn, [])
             for src_file in files:
                 transformed = _transform_export_name(os.path.basename(src_file))
+                combo = (src_file, transformed)
+                if combo in processed_pairs:
+                    continue
+                processed_pairs.add(combo)
                 if zip_parts:
                     if zf is not None:
                         zf.write(src_file, arcname=transformed)
-                        count_copied += 1
                 else:
                     dst = os.path.join(prod_folder, transformed)
                     shutil.copy2(src_file, dst)
-                    count_copied += 1
+                count_copied += 1
 
         if zf is not None:
             zf.close()
