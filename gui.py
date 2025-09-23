@@ -1058,6 +1058,10 @@ def start_gui():
                     cleaned = []
                     for child_element, child_options in layout_items:
                         if child_element == "Notebook.focus":
+                            if child_options:
+                                children = child_options.get("children")
+                                if children:
+                                    cleaned.extend(_remove_focus(children))
                             continue
                         if child_options:
                             new_child_options = deepcopy(child_options)
