@@ -1224,7 +1224,12 @@ def start_gui():
             ):
                 var.trace_add("write", self._save_settings)
 
-            self.nb = ttk.Notebook(self)
+            tabs_wrapper = tk.Frame(self)
+            tabs_wrapper.pack(fill="both", expand=True, padx=8, pady=(4, 0))
+            tabs_wrapper.columnconfigure(0, weight=1)
+            tabs_wrapper.rowconfigure(0, weight=1)
+
+            self.nb = ttk.Notebook(tabs_wrapper)
             self.custom_bom_tab = BOMCustomTab(
                 self.nb,
                 app_name="Filehopper",
@@ -1251,12 +1256,7 @@ def start_gui():
             self.settings_frame = SettingsFrame(self.nb, self)
             self.nb.add(self.settings_frame, text="⚙ Settings")
 
-            tabs_wrapper = tk.Frame(self)
-            tabs_wrapper.pack(fill="both", expand=True, padx=8, pady=(4, 0))
-            tabs_wrapper.columnconfigure(0, weight=1)
-            tabs_wrapper.rowconfigure(0, weight=1)
-
-            self.nb.grid(row=0, column=0, sticky="nsew", in_=tabs_wrapper)
+            self.nb.grid(row=0, column=0, sticky="nsew")
             tk.Button(
                 tabs_wrapper,
                 text="⚙",
