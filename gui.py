@@ -1164,6 +1164,11 @@ def start_gui():
             ).pack(side="left", padx=6)
             tk.Button(bf, text="Controleer Bestanden", command=self._check_files).pack(side="left", padx=6)
             tk.Button(bf, text="Clear BOM", command=self._clear_bom).pack(side="left", padx=6)
+            tk.Button(
+                bf,
+                text="Delete",
+                command=self._delete_selected_bom_rows,
+            ).pack(side="left", padx=6)
 
 
             # Tree
@@ -1184,6 +1189,7 @@ def start_gui():
             self.tree.pack(side="left", fill="both", expand=True)
             tree_scroll.pack(side="left", fill="y")
             self.tree.bind("<Button-1>", self._on_tree_click)
+            self.tree.bind("<Delete>", self._delete_selected_bom_rows)
             self.item_links: Dict[str, str] = {}
 
             # Actions
@@ -1312,6 +1318,50 @@ def start_gui():
                 link = row.get("Link")
                 if link:
                     self.item_links[item] = link
+
+        def _delete_selected_bom_rows(self, event=None):
+            df = self.bom_df
+            if df is None or df.empty:
+                return "break" if event is not None else None
+            selection = self.tree.selection()
+            if not selection:
+                return "break" if event is not None else None
+
+            indices: List[int] = []
+            for item in selection:
+                try:
+                    idx = self.tree.index(item)
+                except tk.TclError:
+                    continue
+                indices.append(idx)
+            if not indices:
+                return "break" if event is not None else None
+
+            row_count = len(df)
+            drop_labels = []
+            for idx in sorted(set(indices)):
+                if 0 <= idx < row_count:
+                    drop_labels.append(df.index[idx])
+            if not drop_labels:
+                return "break" if event is not None else None
+
+            self.bom_df = df.drop(drop_labels).reset_index(drop=True)
+
+            removed = 0
+            for item in selection:
+                if item in self.item_links:
+                    self.item_links.pop(item, None)
+                try:
+                    self.tree.delete(item)
+                except tk.TclError:
+                    continue
+                removed += 1
+
+            if removed:
+                msg = "1 BOM-rij verwijderd." if removed == 1 else f"{removed} BOM-rijen verwijderd."
+                self.status_var.set(msg)
+
+            return "break" if event is not None else None
 
         def _clear_bom(self):
             from tkinter import messagebox
