@@ -5,6 +5,7 @@ import subprocess
 import sys
 import threading
 import unicodedata
+from copy import deepcopy
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -1138,10 +1139,28 @@ def start_gui():
             super().__init__()
             import sys
             style = ttk.Style(self)
+
+            def _apply_right_aligned_notebook_style():
+                base_notebook_layout = style.layout("TNotebook")
+                right_aligned_layout = []
+                for element, options in base_notebook_layout:
+                    updated_options = deepcopy(options) if options is not None else None
+                    if element == "Notebook.tabs":
+                        updated_options = updated_options or {}
+                        updated_options["side"] = "right"
+                    right_aligned_layout.append((element, updated_options))
+                style.layout("RightAligned.TNotebook", right_aligned_layout)
+                style.layout(
+                    "RightAligned.TNotebook.Tab",
+                    deepcopy(style.layout("TNotebook.Tab")),
+                )
+
+            _apply_right_aligned_notebook_style()
             if sys.platform == "darwin":
                 style.theme_use("aqua")
             else:
                 style.theme_use("clam")
+            _apply_right_aligned_notebook_style()
             self.title("Filehopper")
             self.minsize(1024, 720)
 
@@ -1229,7 +1248,7 @@ def start_gui():
             tabs_wrapper.columnconfigure(0, weight=1)
             tabs_wrapper.rowconfigure(0, weight=1)
 
-            self.nb = ttk.Notebook(tabs_wrapper)
+            self.nb = ttk.Notebook(tabs_wrapper, style="RightAligned.TNotebook")
             self.custom_bom_tab = BOMCustomTab(
                 self.nb,
                 app_name="Filehopper",
