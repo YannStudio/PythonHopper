@@ -1251,15 +1251,17 @@ def start_gui():
             self.settings_frame = SettingsFrame(self.nb, self)
             self.nb.add(self.settings_frame, text="⚙ Settings")
 
-            topbar = tk.Frame(self)
-            topbar.pack(fill="x", padx=8, pady=(4, 0))
+            tabs_wrapper = tk.Frame(self)
+            tabs_wrapper.pack(fill="both", expand=True, padx=8, pady=(4, 0))
+            tabs_wrapper.columnconfigure(0, weight=1)
+            tabs_wrapper.rowconfigure(0, weight=1)
+
+            self.nb.grid(row=0, column=0, sticky="nsew", in_=tabs_wrapper)
             tk.Button(
-                topbar,
+                tabs_wrapper,
                 text="⚙",
                 command=lambda: self.nb.select(self.settings_frame),
-            ).pack(side="right")
-
-            self.nb.pack(fill="both", expand=True)
+            ).grid(row=0, column=1, sticky="ne", padx=(4, 12), pady=(4, 0))
 
             # Top folders
             top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
