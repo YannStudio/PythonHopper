@@ -542,7 +542,30 @@ def copy_per_production_and_orders(
         if zip_parts:
             zip_name = f"{prod}{num_part}.zip"
             zip_path = os.path.join(prod_folder, zip_name)
-            zf = zipfile.ZipFile(zip_path, "w")
+            try:
+                zf = zipfile.ZipFile(
+                    zip_path,
+                    "w",
+                    compression=zipfile.ZIP_DEFLATED,
+                    compresslevel=6,
+                )
+            except TypeError:
+                # ``compresslevel`` not supported (older Python). Retry without it.
+                zf = zipfile.ZipFile(
+                    zip_path,
+                    "w",
+                    compression=zipfile.ZIP_DEFLATED,
+                )
+            except (RuntimeError, NotImplementedError):
+                print(
+                    "[WAARSCHUWING] ZIP_DEFLATED niet beschikbaar, val terug op ZIP_STORED",
+                    file=sys.stderr,
+                )
+                zf = zipfile.ZipFile(
+                    zip_path,
+                    "w",
+                    compression=zipfile.ZIP_STORED,
+                )
 
         for row in rows:
             pn = str(row["PartNumber"])

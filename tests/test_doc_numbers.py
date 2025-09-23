@@ -213,4 +213,9 @@ def test_doc_number_applied_to_zip_filename(tmp_path):
 
     with zipfile.ZipFile(zip_path) as zf:
         assert "PN1.pdf" in zf.namelist()
+        info = zf.getinfo("PN1.pdf")
+        if getattr(zipfile, "zlib", None):
+            assert info.compress_type == zipfile.ZIP_DEFLATED
+        else:
+            assert info.compress_type == zipfile.ZIP_STORED
 
