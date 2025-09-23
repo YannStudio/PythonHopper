@@ -127,6 +127,8 @@ class BOMCustomTab(ttk.Frame):
         "Weight (kg)",
         "Surface Area (m²)",
     )
+    COLUMN_PADDING: int = 24
+    TRAILING_GUTTER: int = 12
 
     def __init__(
         self,
@@ -274,7 +276,6 @@ class BOMCustomTab(ttk.Frame):
         except (tk.TclError, AttributeError):
             table_font = tkfont.nametofont("TkDefaultFont")
 
-        padding = 16
         min_width = 60
         total_rows = self.sheet.get_total_rows()
 
@@ -289,7 +290,7 @@ class BOMCustomTab(ttk.Frame):
                 cell_width = table_font.measure(cell_value)
                 if cell_width > max_width:
                     max_width = cell_width
-            target_width = max(min_width, max_width + padding)
+            target_width = max(min_width, max_width + self.COLUMN_PADDING)
             widths[col] = target_width
 
         return widths
@@ -333,8 +334,10 @@ class BOMCustomTab(ttk.Frame):
             return
 
         total_min_width = sum(widths)
-        if available_width > total_min_width and widths:
-            extra_width = available_width - total_min_width
+        effective_available_width = max(available_width - self.TRAILING_GUTTER, 0)
+
+        if effective_available_width > total_min_width and widths:
+            extra_width = effective_available_width - total_min_width
             weights = [max(min_widths_map.get(idx, 1), 1) for idx in column_indices]
             total_weight = sum(weights)
             if total_weight <= 0:
@@ -363,7 +366,7 @@ class BOMCustomTab(ttk.Frame):
         try:
             for col, width in enumerate(widths):
                 self.sheet.column_width(column=col, width=width, redraw=False)
-            self.sheet.refresh()
+            self._apply_row_striping()
         finally:
             self._in_container_resize = False
 
