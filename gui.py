@@ -7,11 +7,11 @@ import threading
 import unicodedata
 from copy import deepcopy
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 import pandas as pd
 
-from app_settings import AppSettings, FileExtensionSetting
+from app_settings import AppSettings, FileExtensionSetting, FILE_EXTENSION_PRESETS
 from helpers import _to_str, _build_file_index, create_export_bundle, ExportBundleResult
 from models import Supplier, Client, DeliveryAddress
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
@@ -1071,6 +1071,18 @@ def start_gui():
             tk.Button(btns, text="Verwijderen", command=self._remove_selected).pack(
                 side="left", padx=4
             )
+            move_btns = tk.Frame(btns)
+            move_btns.pack(side="right", padx=4)
+            tk.Button(
+                move_btns,
+                text="▲ Omhoog",
+                command=lambda: self._move_selected(-1),
+            ).pack(side="top", fill="x", pady=1)
+            tk.Button(
+                move_btns,
+                text="▼ Omlaag",
+                command=lambda: self._move_selected(1),
+            ).pack(side="top", fill="x", pady=1)
 
             self._refresh_list()
 
@@ -1101,6 +1113,62 @@ def start_gui():
             if idx is None:
                 return None
             return self.extensions[idx]
+
+        def _normalize_extensions(self, values: Iterable[str]) -> List[str]:
+            cleaned: List[str] = []
+            seen = set()
+            for raw in values:
+                if not isinstance(raw, str):
+                    continue
+                ext = raw.strip().lower()
+                if not ext:
+                    continue
+                ext = ext.lstrip(".")
+                if not ext or ext in seen:
+                    continue
+                cleaned.append(ext)
+                seen.add(ext)
+            return cleaned
+
+        def _duplicate_message(
+            self,
+            new_ext: FileExtensionSetting,
+            *,
+            exclude_index: Optional[int] = None,
+        ) -> Optional[str]:
+            target_name = new_ext.label.strip()
+            normalized_patterns = set(self._normalize_extensions(new_ext.patterns))
+            for idx, existing in enumerate(self.extensions):
+                if exclude_index is not None and idx == exclude_index:
+                    continue
+                existing_name = existing.label.strip()
+                if (
+                    target_name
+                    and existing_name
+                    and target_name.casefold() == existing_name.casefold()
+                ):
+                    return f"Er bestaat al een bestandstype met de naam '{existing.label}'."
+                existing_patterns = set(
+                    self._normalize_extensions(existing.patterns)
+                )
+                if normalized_patterns and normalized_patterns == existing_patterns:
+                    formatted = ", ".join(
+                        sorted(f".{ext}" for ext in normalized_patterns)
+                    )
+                    return (
+                        "De extensies "
+                        f"{formatted} zijn al gekoppeld aan '{existing.label}'."
+                    )
+            return None
+
+        def _select_by_key(self, key: str) -> None:
+            for idx, ext in enumerate(self.extensions):
+                if ext.key == key:
+                    self.listbox.selection_clear(0, tk.END)
+                    self.listbox.selection_set(idx)
+                    self.listbox.activate(idx)
+                    self.listbox.see(idx)
+                    break
 
         def _ensure_unique_key(self, key: str, exclude_index: Optional[int] = None) -> str:
             existing = {
@@ -1146,6 +1214,22 @@ def start_gui():
             del self.extensions[idx]
             self._persist()
 
+        def _move_selected(self, offset: int) -> None:
+            idx = self._selected_index()
+            if idx is None:
+                return
+            new_idx = idx + offset
+            if new_idx < 0 or new_idx >= len(self.extensions):
+                return
+            selected_ext = self.extensions[idx]
+            self.extensions[idx], self.extensions[new_idx] = (
+                self.extensions[new_idx],
+                self.extensions[idx],
+            )
+            moved_key = selected_ext.key
+            self._persist()
+            self._select_by_key(moved_key)
+
         def _open_extension_dialog(
             self, title: str, existing: Optional[FileExtensionSetting]
         ) -> None:
@@ -1169,12 +1253,49 @@ def start_gui():
                 row=1, column=1, padx=4, pady=4
             )
 
+            tk.Label(win, text="Preset:").grid(row=2, column=0, sticky="e", padx=4, pady=4)
+            no_preset_label = "(Geen preset)"
+            preset_choices = [no_preset_label, *FILE_EXTENSION_PRESETS.keys()]
+            preset_var = tk.StringVar(value=no_preset_label)
+            preset_combo = ttk.Combobox(
+                win,
+                textvariable=preset_var,
+                values=preset_choices,
+                state="readonly",
+                width=32,
+            )
+            preset_combo.grid(row=2, column=1, sticky="we", padx=4, pady=4)
+            preset_info_var = tk.StringVar(value="Selecteer een preset")
+            tk.Label(win, textvariable=preset_info_var, anchor="w").grid(
+                row=2, column=2, sticky="w", padx=(4, 0), pady=4
+            )
+
             enabled_var = tk.BooleanVar(value=existing.enabled if existing else True)
             tk.Checkbutton(
                 win,
                 text="Standaard aangevinkt",
                 variable=enabled_var,
-            ).grid(row=2, column=1, sticky="w", padx=4, pady=4)
+            ).grid(row=3, column=1, sticky="w", padx=4, pady=4)
+
+            def _update_preset_info(name: str) -> None:
+                if name in FILE_EXTENSION_PRESETS:
+                    count = len(self._normalize_extensions(FILE_EXTENSION_PRESETS[name]))
+                    suffix = "s" if count != 1 else ""
+                    preset_info_var.set(f"Preset bevat {count} extensie{suffix}")
+                else:
+                    preset_info_var.set("Selecteer een preset")
+
+            def _on_preset_selected(_event=None) -> None:
+                name = preset_var.get()
+                if name in FILE_EXTENSION_PRESETS:
+                    normalized = self._normalize_extensions(FILE_EXTENSION_PRESETS[name])
+                    if normalized:
+                        patterns_var.set(", ".join(f".{ext}" for ext in normalized))
+                        if existing is None or not name_var.get().strip():
+                            name_var.set(name)
+                _update_preset_info(name)
+
+            preset_combo.bind("<<ComboboxSelected>>", _on_preset_selected)
 
             def _save() -> None:
                 try:
@@ -1188,6 +1309,14 @@ def start_gui():
                     messagebox.showerror("Fout", str(exc), parent=win)
                     return
                 if existing is None:
+                    dup_msg = self._duplicate_message(new_ext)
+                else:
+                    idx = self.extensions.index(existing)
+                    dup_msg = self._duplicate_message(new_ext, exclude_index=idx)
+                if dup_msg:
+                    messagebox.showerror("Fout", dup_msg, parent=win)
+                    return
+                if existing is None:
                     new_ext.key = self._ensure_unique_key(new_ext.key)
                     self.extensions.append(new_ext)
                 else:
@@ -1197,14 +1326,25 @@ def start_gui():
                 self._persist()
                 win.destroy()
 
+            if existing:
+                existing_norm = set(self._normalize_extensions(existing.patterns))
+                for preset_name, preset_exts in FILE_EXTENSION_PRESETS.items():
+                    if existing_norm == set(self._normalize_extensions(preset_exts)):
+                        preset_var.set(preset_name)
+                        break
+
+            preset_combo.set(preset_var.get())
+            _update_preset_info(preset_var.get())
+
             btns = tk.Frame(win)
-            btns.grid(row=3, column=0, columnspan=2, pady=(8, 4))
+            btns.grid(row=4, column=0, columnspan=3, pady=(8, 4))
             tk.Button(btns, text="Opslaan", command=_save).pack(side="left", padx=4)
             tk.Button(btns, text="Annuleer", command=win.destroy).pack(
                 side="left", padx=4
             )
 
             win.columnconfigure(1, weight=1)
+            win.columnconfigure(2, weight=1)
             name_var.set(name_var.get())
             win.resizable(False, False)
             win.wait_visibility()
