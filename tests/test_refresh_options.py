@@ -1,8 +1,10 @@
 import ast
 import pathlib
 import types
+from copy import deepcopy
 from typing import List, Dict, Optional
 
+from app_settings import FileExtensionSetting
 from suppliers_db import SuppliersDB
 from delivery_addresses_db import DeliveryAddressesDB
 from clients_db import ClientsDB
@@ -63,11 +65,14 @@ def _load_gui_classes():
         "List": List,
         "Dict": Dict,
         "Optional": Optional,
+        "deepcopy": deepcopy,
         "Supplier": Supplier,
         "Client": Client,
         "DeliveryAddress": DeliveryAddress,
         "SuppliersDB": SuppliersDB,
         "DeliveryAddressesDB": DeliveryAddressesDB,
+        "FileExtensionSetting": FileExtensionSetting,
+        "SUGGESTED_FILE_EXTENSION_GROUPS": [],
     }
     exec(code, ns)
     return ns["SupplierSelectionFrame"], ns["App"]

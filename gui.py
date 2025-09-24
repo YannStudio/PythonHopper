@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from app_settings import AppSettings
+from app_settings import AppSettings, FileExtensionSetting, SUGGESTED_FILE_EXTENSION_GROUPS
 from helpers import _to_str, _build_file_index, create_export_bundle, ExportBundleResult
 from models import Supplier, Client, DeliveryAddress
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
@@ -1036,10 +1036,277 @@ def start_gui():
         def __init__(self, master, app: "App"):
             super().__init__(master)
             self.app = app
-
-            tk.Label(self, text="Instellingen volgen…").pack(
-                fill="both", expand=True, padx=8, pady=8
+            self.extensions: List[FileExtensionSetting] = deepcopy(
+                self.app.settings.file_extensions
             )
+
+            tk.Label(
+                self,
+                text=(
+                    "Beheer hier welke bestandstypen beschikbaar zijn op het hoofdscherm.\n"
+                    "Voeg extensies toe of verwijder ze naar wens."
+                ),
+                justify="left",
+                anchor="w",
+            ).pack(fill="x", padx=8, pady=(8, 4))
+
+            list_container = tk.Frame(self)
+            list_container.pack(fill="both", expand=True, padx=8)
+
+            self.listbox = tk.Listbox(list_container, activestyle="none")
+            self.listbox.pack(side="left", fill="both", expand=True)
+            scrollbar = tk.Scrollbar(list_container, command=self.listbox.yview)
+            scrollbar.pack(side="right", fill="y")
+            self.listbox.configure(yscrollcommand=scrollbar.set)
+            self.listbox.bind("<Double-Button-1>", lambda _e: self._edit_selected())
+
+            btns = tk.Frame(self)
+            btns.pack(fill="x", padx=8, pady=(4, 8))
+            tk.Button(
+                btns, text="Suggesties…", command=self._open_suggestions
+            ).pack(side="right", padx=4)
+            tk.Button(btns, text="Toevoegen", command=self._add_extension).pack(
+                side="left", padx=4
+            )
+            tk.Button(btns, text="Bewerken", command=self._edit_selected).pack(
+                side="left", padx=4
+            )
+            tk.Button(btns, text="Verwijderen", command=self._remove_selected).pack(
+                side="left", padx=4
+            )
+
+            self._refresh_list()
+
+        def _refresh_list(self) -> None:
+            self.listbox.delete(0, tk.END)
+            if not self.extensions:
+                self.listbox.insert(0, "Geen bestandstypen gedefinieerd.")
+                self.listbox.itemconfig(0, foreground="#777777")
+                return
+            for ext in self.extensions:
+                status = "✓" if ext.enabled else "✗"
+                patterns = ", ".join(ext.patterns)
+                self.listbox.insert(tk.END, f"{status} {ext.label} — {patterns}")
+
+        def _selected_index(self) -> Optional[int]:
+            if not self.extensions:
+                return None
+            sel = self.listbox.curselection()
+            if not sel:
+                return None
+            idx = int(sel[0])
+            if idx >= len(self.extensions):
+                return None
+            return idx
+
+        def _selected_extension(self) -> Optional[FileExtensionSetting]:
+            idx = self._selected_index()
+            if idx is None:
+                return None
+            return self.extensions[idx]
+
+        def _ensure_unique_key(self, key: str, exclude_index: Optional[int] = None) -> str:
+            existing = {
+                ext.key
+                for idx, ext in enumerate(self.extensions)
+                if exclude_index is None or idx != exclude_index
+            }
+            if key not in existing:
+                return key
+            base = key
+            suffix = 2
+            while True:
+                candidate = f"{base}_{suffix}"
+                if candidate not in existing:
+                    return candidate
+                suffix += 1
+
+        def _persist(self) -> None:
+            self.app.apply_file_extensions(deepcopy(self.extensions))
+            self.extensions = deepcopy(self.app.settings.file_extensions)
+            self._refresh_list()
+
+        def _add_extension(self) -> None:
+            self._open_extension_dialog("Bestandstype toevoegen", None)
+
+        def _edit_selected(self) -> None:
+            ext = self._selected_extension()
+            if ext is None:
+                return
+            self._open_extension_dialog("Bestandstype bewerken", ext)
+
+        def _remove_selected(self) -> None:
+            idx = self._selected_index()
+            if idx is None:
+                return
+            ext = self.extensions[idx]
+            if not messagebox.askyesno(
+                "Bevestigen",
+                f"Verwijder '{ext.label}' van de lijst?",
+                parent=self,
+            ):
+                return
+            del self.extensions[idx]
+            self._persist()
+
+        def _open_suggestions(self) -> None:
+            if not SUGGESTED_FILE_EXTENSION_GROUPS:
+                messagebox.showinfo(
+                    "Suggesties",
+                    "Er zijn momenteel geen suggesties beschikbaar.",
+                    parent=self,
+                )
+                return
+
+            win = tk.Toplevel(self)
+            win.title("Bestandstype suggesties")
+            win.transient(self)
+            win.grab_set()
+
+            tk.Label(
+                win,
+                text="Selecteer één of meerdere suggesties om toe te voegen.",
+                anchor="w",
+                justify="left",
+            ).pack(fill="x", padx=8, pady=(8, 4))
+
+            existing_pattern_signatures = {
+                tuple(sorted(p.lower() for p in ext.patterns))
+                for ext in self.extensions
+            }
+
+            selections: List[tuple[tk.BooleanVar, FileExtensionSetting]] = []
+
+            for group_label, presets in SUGGESTED_FILE_EXTENSION_GROUPS:
+                if not presets:
+                    continue
+                group_frame = tk.LabelFrame(win, text=group_label)
+                group_frame.pack(fill="x", padx=8, pady=4)
+                for preset in presets:
+                    pattern_sig = tuple(sorted(p.lower() for p in preset.patterns))
+                    already_present = pattern_sig in existing_pattern_signatures
+                    text = f"{preset.label} — {', '.join(preset.patterns)}"
+                    if already_present:
+                        text += " (reeds aanwezig)"
+                    var = tk.BooleanVar(value=False)
+                    chk = tk.Checkbutton(
+                        group_frame,
+                        text=text,
+                        variable=var,
+                        anchor="w",
+                        justify="left",
+                    )
+                    chk.pack(anchor="w", fill="x", padx=4, pady=2)
+                    if already_present:
+                        chk.configure(state="disabled")
+                    else:
+                        selections.append((var, preset))
+
+            btns = tk.Frame(win)
+            btns.pack(fill="x", padx=8, pady=(4, 8))
+
+            def _apply() -> None:
+                added = 0
+                pattern_signatures = {
+                    tuple(sorted(p.lower() for p in ext.patterns))
+                    for ext in self.extensions
+                }
+                for var, preset in selections:
+                    if not var.get():
+                        continue
+                    pattern_sig = tuple(sorted(p.lower() for p in preset.patterns))
+                    if pattern_sig in pattern_signatures:
+                        continue
+                    ext_obj = FileExtensionSetting(
+                        key=preset.key,
+                        label=preset.label,
+                        patterns=list(preset.patterns),
+                        enabled=preset.enabled,
+                    )
+                    ext_obj.key = self._ensure_unique_key(ext_obj.key)
+                    self.extensions.append(ext_obj)
+                    pattern_signatures.add(pattern_sig)
+                    added += 1
+                if added:
+                    self._persist()
+                win.destroy()
+
+            tk.Button(btns, text="Annuleer", command=win.destroy).pack(
+                side="right", padx=4
+            )
+            tk.Button(btns, text="Toevoegen", command=_apply).pack(
+                side="right", padx=4
+            )
+
+            win.resizable(False, False)
+            win.wait_visibility()
+            win.focus_set()
+            win.wait_window()
+
+        def _open_extension_dialog(
+            self, title: str, existing: Optional[FileExtensionSetting]
+        ) -> None:
+            win = tk.Toplevel(self)
+            win.title(title)
+            win.transient(self)
+            win.grab_set()
+
+            tk.Label(win, text="Naam:").grid(row=0, column=0, sticky="e", padx=4, pady=4)
+            name_var = tk.StringVar(value=existing.label if existing else "")
+            tk.Entry(win, textvariable=name_var, width=40).grid(
+                row=0, column=1, padx=4, pady=4
+            )
+
+            tk.Label(win, text="Extensies (komma of spatie gescheiden):").grid(
+                row=1, column=0, sticky="e", padx=4, pady=4
+            )
+            patterns_text = ", ".join(existing.patterns) if existing else ""
+            patterns_var = tk.StringVar(value=patterns_text)
+            tk.Entry(win, textvariable=patterns_var, width=40).grid(
+                row=1, column=1, padx=4, pady=4
+            )
+
+            enabled_var = tk.BooleanVar(value=existing.enabled if existing else True)
+            tk.Checkbutton(
+                win,
+                text="Standaard aangevinkt",
+                variable=enabled_var,
+            ).grid(row=2, column=1, sticky="w", padx=4, pady=4)
+
+            def _save() -> None:
+                try:
+                    new_ext = FileExtensionSetting.from_user_input(
+                        name_var.get(),
+                        patterns_var.get(),
+                        enabled_var.get(),
+                        key=existing.key if existing else None,
+                    )
+                except ValueError as exc:
+                    messagebox.showerror("Fout", str(exc), parent=win)
+                    return
+                if existing is None:
+                    new_ext.key = self._ensure_unique_key(new_ext.key)
+                    self.extensions.append(new_ext)
+                else:
+                    idx = self.extensions.index(existing)
+                    new_ext.key = self._ensure_unique_key(new_ext.key, exclude_index=idx)
+                    self.extensions[idx] = new_ext
+                self._persist()
+                win.destroy()
+
+            btns = tk.Frame(win)
+            btns.grid(row=3, column=0, columnspan=2, pady=(8, 4))
+            tk.Button(btns, text="Opslaan", command=_save).pack(side="left", padx=4)
+            tk.Button(btns, text="Annuleer", command=win.destroy).pack(
+                side="left", padx=4
+            )
+
+            win.columnconfigure(1, weight=1)
+            name_var.set(name_var.get())
+            win.resizable(False, False)
+            win.wait_visibility()
+            win.focus_set()
+            win.wait_window()
 
     class App(tk.Tk):
         def __init__(self):
@@ -1105,6 +1372,8 @@ def start_gui():
             self.delivery_db = DeliveryAddressesDB.load(DELIVERY_DB_FILE)
 
             self.settings = AppSettings.load()
+            self.extension_vars: Dict[str, tk.IntVar] = {}
+            self._extension_trace_ids: Dict[tk.Variable, str] = {}
 
             self.source_folder_var = tk.StringVar(
                 master=self, value=self.settings.source_folder
@@ -1118,10 +1387,6 @@ def start_gui():
             self.project_name_var = tk.StringVar(
                 master=self, value=self.settings.project_name
             )
-            self.pdf_var = tk.IntVar(master=self, value=1 if self.settings.pdf else 0)
-            self.step_var = tk.IntVar(master=self, value=1 if self.settings.step else 0)
-            self.dxf_var = tk.IntVar(master=self, value=1 if self.settings.dxf else 0)
-            self.dwg_var = tk.IntVar(master=self, value=1 if self.settings.dwg else 0)
             self.zip_var = tk.IntVar(
                 master=self, value=1 if self.settings.zip_per_production else 0
             )
@@ -1150,6 +1415,8 @@ def start_gui():
                 master=self, value=1 if self.settings.bundle_dry_run else 0
             )
 
+            self._sync_extension_vars_from_settings()
+
             self.source_folder = self.source_folder_var.get().strip()
             self.dest_folder = self.dest_folder_var.get().strip()
             self.last_bundle_result: Optional[ExportBundleResult] = None
@@ -1165,10 +1432,6 @@ def start_gui():
             ):
                 var.trace_add("write", self._save_settings)
             for var in (
-                self.pdf_var,
-                self.step_var,
-                self.dxf_var,
-                self.dwg_var,
                 self.zip_var,
                 self.export_date_prefix_var,
                 self.export_date_suffix_var,
@@ -1287,23 +1550,13 @@ def start_gui():
 
             ext_frame = tk.Frame(filt)
             ext_frame.grid(row=0, column=0, sticky="nw", padx=8, pady=4)
+            self.ext_frame = ext_frame
             options_frame = tk.Frame(options_frame_parent)
             options_frame.grid(row=0, column=0, sticky="nw", padx=8, pady=4)
             export_name_inner = tk.Frame(export_name_frame)
             export_name_inner.grid(row=0, column=0, sticky="nw", padx=8, pady=4)
 
-            tk.Checkbutton(ext_frame, text="PDF (.pdf)", variable=self.pdf_var, anchor="w").pack(
-                anchor="w", pady=2
-            )
-            tk.Checkbutton(
-                ext_frame, text="STEP (.step, .stp)", variable=self.step_var, anchor="w"
-            ).pack(anchor="w", pady=2)
-            tk.Checkbutton(ext_frame, text="DXF (.dxf)", variable=self.dxf_var, anchor="w").pack(
-                anchor="w", pady=2
-            )
-            tk.Checkbutton(ext_frame, text="DWG (.dwg)", variable=self.dwg_var, anchor="w").pack(
-                anchor="w", pady=2
-            )
+            self._render_extension_checkbuttons()
             tk.Checkbutton(
                 options_frame,
                 text="Zip per productie",
@@ -1435,6 +1688,62 @@ def start_gui():
             elif opts:
                 self.client_combo.set(opts[0])
 
+        def _sync_extension_vars_from_settings(self) -> None:
+            for var, trace_id in getattr(self, "_extension_trace_ids", {}).items():
+                try:
+                    var.trace_remove("write", trace_id)
+                except Exception:
+                    pass
+            self.extension_vars = {}
+            self._extension_trace_ids = {}
+            for ext in self.settings.file_extensions:
+                var = tk.IntVar(master=self, value=1 if ext.enabled else 0)
+                trace_id = var.trace_add("write", self._save_settings)
+                self.extension_vars[ext.key] = var
+                self._extension_trace_ids[var] = trace_id
+
+        def _render_extension_checkbuttons(self) -> None:
+            if not hasattr(self, "ext_frame"):
+                return
+            for child in self.ext_frame.winfo_children():
+                child.destroy()
+            extensions = self.settings.file_extensions
+            if not extensions:
+                tk.Label(
+                    self.ext_frame,
+                    text="Geen bestandstypen gedefinieerd.",
+                    anchor="w",
+                ).pack(anchor="w", pady=2)
+                return
+            for ext in extensions:
+                var = self.extension_vars.get(ext.key)
+                if var is None:
+                    var = tk.IntVar(master=self, value=1 if ext.enabled else 0)
+                    trace_id = var.trace_add("write", self._save_settings)
+                    self.extension_vars[ext.key] = var
+                    self._extension_trace_ids[var] = trace_id
+                text = ext.label
+                tk.Checkbutton(
+                    self.ext_frame,
+                    text=text,
+                    variable=var,
+                    anchor="w",
+                ).pack(anchor="w", pady=2)
+
+        def apply_file_extensions(self, extensions: List[FileExtensionSetting]) -> None:
+            self.settings.file_extensions = [
+                FileExtensionSetting(
+                    key=ext.key,
+                    label=ext.label,
+                    patterns=list(ext.patterns),
+                    enabled=ext.enabled,
+                )
+                for ext in extensions
+            ]
+            self._sync_extension_vars_from_settings()
+            self._render_extension_checkbuttons()
+            self._save_settings()
+
         def _save_settings(self, *_args):
             self.source_folder = self.source_folder_var.get().strip()
             self.dest_folder = self.dest_folder_var.get().strip()
@@ -1442,10 +1751,6 @@ def start_gui():
             self.settings.dest_folder = self.dest_folder
             self.settings.project_number = self.project_number_var.get().strip()
             self.settings.project_name = self.project_name_var.get().strip()
-            self.settings.pdf = bool(self.pdf_var.get())
-            self.settings.step = bool(self.step_var.get())
-            self.settings.dxf = bool(self.dxf_var.get())
-            self.settings.dwg = bool(self.dwg_var.get())
             self.settings.zip_per_production = bool(self.zip_var.get())
             self.settings.export_date_prefix = bool(self.export_date_prefix_var.get())
             self.settings.export_date_suffix = bool(self.export_date_suffix_var.get())
@@ -1459,6 +1764,10 @@ def start_gui():
             self.settings.custom_suffix_text = self.export_name_custom_suffix_text.get().strip()
             self.settings.bundle_latest = bool(self.bundle_latest_var.get())
             self.settings.bundle_dry_run = bool(self.bundle_dry_run_var.get())
+            for ext in self.settings.file_extensions:
+                var = self.extension_vars.get(ext.key)
+                if var is not None:
+                    ext.enabled = bool(var.get())
             try:
                 self.settings.save()
             except Exception as exc:
@@ -1479,11 +1788,13 @@ def start_gui():
                 self._save_settings()
 
         def _selected_exts(self) -> Optional[List[str]]:
-            exts = []
-            if self.pdf_var.get(): exts.append(".pdf")
-            if self.step_var.get(): exts += [".step",".stp"]
-            if self.dxf_var.get(): exts.append(".dxf")
-            if self.dwg_var.get(): exts.append(".dwg")
+            exts: List[str] = []
+            for ext in self.settings.file_extensions:
+                var = self.extension_vars.get(ext.key)
+                if var is None:
+                    continue
+                if var.get():
+                    exts.extend(ext.patterns)
             return exts or None
 
         def _load_bom_from_path(self, path: str) -> None:
