@@ -1075,7 +1075,9 @@ def start_gui():
                     return cleaned
 
                 if tab_layout:
-                    style.layout("Tab.TButton", _remove_focus(tab_layout))
+                    cleaned_layout = _remove_focus(tab_layout)
+                    style.layout("TNotebook.Tab", cleaned_layout)
+                    style.layout("Tab.TButton", cleaned_layout)
 
                 tab_config = {}
                 for opt in ("padding", "background", "foreground", "font", "borderwidth", "relief"):
