@@ -152,7 +152,7 @@ FILE_EXTENSION_PRESETS: Dict[str, List[str]] = {
         "obj",
     ],
     "SolidWorks": ["sldprt", "sldasm", "slddrw"],
-    "Autodesk Inventor": ["ipt", "iam", "idw", "dwg", "step", "stl"],
+    "Autodesk Inventor": ["ipt", "iam", "idw"],
     "Office & PDF": ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx"],
     "Afbeeldingen": ["jpg", "jpeg", "png", "bmp", "gif", "tiff", "webp", "svg"],
     "Archieven": ["zip", "rar", "7z"],
