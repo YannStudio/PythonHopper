@@ -1094,15 +1094,6 @@ def start_gui():
                 if padding in (None, ""):
                     style.configure("Tab.TButton", padding=(12, 4))
 
-                bg_color = (
-                    style.lookup("TNotebook.Tab", "background")
-                    or style.lookup("TNotebook", "background")
-                    or style.lookup("TFrame", "background")
-                    or self.cget("background")
-                )
-                style.configure("SettingsTabContainer.TFrame", background=bg_color)
-                style.map("SettingsTabContainer.TFrame", background=[("!disabled", bg_color)])
-
             _configure_tab_like_button_style()
             self.title("Filehopper")
             self.minsize(1024, 720)
@@ -1199,22 +1190,7 @@ def start_gui():
             tabs_container.pack(fill="both", expand=True)
 
             self.nb = ttk.Notebook(tabs_container)
-            self.nb.pack(side="left", fill="both", expand=True)
-
-            settings_tab_container = ttk.Frame(
-                tabs_container, style="SettingsTabContainer.TFrame"
-            )
-            settings_tab_container.pack(side="left", fill="y", padx=(4, 0))
-            settings_tab_container.bind("<Button-1>", self._show_settings_tab)
-
-            self.settings_tab_button = ttk.Button(
-                settings_tab_container,
-                text="⚙ Settings",
-                style="Tab.TButton",
-                command=self._show_settings_tab,
-                takefocus=True,
-            )
-            self.settings_tab_button.pack(fill="both")
+            self.nb.pack(fill="both", expand=True)
             self.custom_bom_tab = BOMCustomTab(
                 self.nb,
                 app_name="Filehopper",
@@ -1240,9 +1216,6 @@ def start_gui():
 
             self.settings_frame = SettingsFrame(self.nb, self)
             self.nb.add(self.settings_frame, text="⚙ Settings")
-            self.nb.hide(self.settings_frame)
-            self.nb.bind("<<NotebookTabChanged>>", self._on_tab_changed)
-            self._on_tab_changed()
 
             # Top folders
             top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
@@ -1438,22 +1411,6 @@ def start_gui():
             self.status_var = tk.StringVar(value="Klaar")
             tk.Label(main, textvariable=self.status_var, anchor="w").pack(fill="x", padx=8, pady=(0,8))
             self._save_settings()
-
-        def _show_settings_tab(self, _event=None):
-            self.nb.tab(self.settings_frame, state="normal")
-            self.nb.select(self.settings_frame)
-            self.settings_tab_button.focus_set()
-            if _event is not None and _event.widget is not self.settings_tab_button:
-                return "break"
-
-        def _on_tab_changed(self, _event=None):
-            current = self.nb.select()
-            settings_id = str(self.settings_frame)
-            if current == settings_id:
-                self.settings_tab_button.state(["pressed"])
-            else:
-                self.settings_tab_button.state(["!pressed"])
-                self.nb.tab(self.settings_frame, state="hidden")
 
         def _on_db_change(self):
             self._refresh_clients_combo()
