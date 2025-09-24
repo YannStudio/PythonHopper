@@ -4,7 +4,7 @@ import json
 from copy import deepcopy
 from dataclasses import dataclass, field, asdict, fields
 from pathlib import Path
-from typing import Any, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from suppliers_db import SUPPLIERS_DB_FILE
 
@@ -135,6 +135,28 @@ class FileExtensionSetting:
         else:
             norm_key = _normalize_key(patterns[0].lstrip("."))
         return cls(key=norm_key, label=label, patterns=patterns, enabled=bool(enabled))
+
+
+FILE_EXTENSION_PRESETS: Dict[str, List[str]] = {
+    "Default (Main)": ["pdf", "step", "dxf", "dwg"],
+    "CAD – Algemeen": [
+        "step",
+        "stp",
+        "iges",
+        "igs",
+        "x_t",
+        "x_b",
+        "stl",
+        "dxf",
+        "dwg",
+        "obj",
+    ],
+    "SolidWorks": ["sldprt", "sldasm", "slddrw"],
+    "Autodesk Inventor": ["ipt", "iam", "idw", "dwg", "step", "stl"],
+    "Office & PDF": ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx"],
+    "Afbeeldingen": ["jpg", "jpeg", "png", "bmp", "gif", "tiff", "webp", "svg"],
+    "Archieven": ["zip", "rar", "7z"],
+}
 
 
 DEFAULT_FILE_EXTENSIONS: List[FileExtensionSetting] = [
