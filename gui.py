@@ -1072,6 +1072,21 @@ def start_gui():
                 side="left", padx=4
             )
 
+            move_btns = tk.Frame(btns)
+            move_btns.pack(side="right", padx=4)
+            tk.Button(
+                move_btns,
+                text="▲",
+                width=3,
+                command=lambda: self._move_selected(-1),
+            ).pack(pady=2)
+            tk.Button(
+                move_btns,
+                text="▼",
+                width=3,
+                command=lambda: self._move_selected(1),
+            ).pack(pady=2)
+
             self._refresh_list()
 
         def _refresh_list(self) -> None:
@@ -1145,6 +1160,24 @@ def start_gui():
                 return
             del self.extensions[idx]
             self._persist()
+
+        def _move_selected(self, offset: int) -> None:
+            idx = self._selected_index()
+            if idx is None:
+                return
+            new_idx = idx + offset
+            if new_idx < 0 or new_idx >= len(self.extensions):
+                return
+            self.extensions[idx], self.extensions[new_idx] = (
+                self.extensions[new_idx],
+                self.extensions[idx],
+            )
+            self._persist()
+            if 0 <= new_idx < len(self.extensions):
+                self.listbox.selection_clear(0, tk.END)
+                self.listbox.selection_set(new_idx)
+                self.listbox.activate(new_idx)
+                self.listbox.see(new_idx)
 
         def _open_extension_dialog(
             self, title: str, existing: Optional[FileExtensionSetting]
