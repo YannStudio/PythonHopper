@@ -1,4 +1,11 @@
-from app_settings import AppSettings
+import json
+
+from app_settings import (
+    AppSettings,
+    FileExtensionSetting,
+    DEFAULT_FILE_EXTENSIONS,
+    SUGGESTED_FILE_EXTENSION_GROUPS,
+)
 
 
 def test_app_settings_roundtrip(tmp_path):
@@ -8,10 +15,20 @@ def test_app_settings_roundtrip(tmp_path):
         dest_folder="/tmp/dst",
         project_number="PN-123",
         project_name="Demo",
-        pdf=True,
-        step=True,
-        dxf=False,
-        dwg=True,
+        file_extensions=[
+            FileExtensionSetting(
+                key="pdf",
+                label="PDF (.pdf)",
+                patterns=[".pdf"],
+                enabled=True,
+            ),
+            FileExtensionSetting(
+                key="igs",
+                label="IGES (.iges, .igs)",
+                patterns=[".iges", ".igs"],
+                enabled=False,
+            ),
+        ],
         zip_per_production=False,
         export_date_prefix=True,
         export_date_suffix=False,
@@ -36,3 +53,34 @@ def test_app_settings_corrupt_file_returns_defaults(tmp_path):
     loaded = AppSettings.load(path)
 
     assert loaded == AppSettings()
+
+
+def test_app_settings_loads_legacy_extension_flags(tmp_path):
+    path = tmp_path / "app_settings.json"
+    payload = {
+        "source_folder": "/tmp/src",
+        "pdf": 1,
+        "step": False,
+        "dxf": "true",
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = AppSettings.load(path)
+
+    assert any(ext.key == "pdf" and ext.enabled for ext in loaded.file_extensions)
+    assert any(ext.key == "dxf" and ext.enabled for ext in loaded.file_extensions)
+    assert any(ext.key == "step" and not ext.enabled for ext in loaded.file_extensions)
+    loaded_keys = {ext.key for ext in loaded.file_extensions}
+    assert {ext.key for ext in DEFAULT_FILE_EXTENSIONS}.issubset(loaded_keys)
+
+
+def test_suggested_extensions_are_normalized():
+    assert SUGGESTED_FILE_EXTENSION_GROUPS
+    for group_label, options in SUGGESTED_FILE_EXTENSION_GROUPS:
+        assert isinstance(group_label, str)
+        for option in options:
+            assert isinstance(option, FileExtensionSetting)
+            assert option.label
+            assert option.patterns
+            normalized = [p for p in option.patterns if p == p.lower() and p.startswith(".")]
+            assert normalized == option.patterns

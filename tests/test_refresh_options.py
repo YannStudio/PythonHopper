@@ -7,6 +7,7 @@ from suppliers_db import SuppliersDB
 from delivery_addresses_db import DeliveryAddressesDB
 from clients_db import ClientsDB
 from models import Supplier, DeliveryAddress, Client
+from app_settings import FileExtensionSetting
 
 
 class DummyCombo:
@@ -68,6 +69,7 @@ def _load_gui_classes():
         "DeliveryAddress": DeliveryAddress,
         "SuppliersDB": SuppliersDB,
         "DeliveryAddressesDB": DeliveryAddressesDB,
+        "FileExtensionSetting": FileExtensionSetting,
     }
     exec(code, ns)
     return ns["SupplierSelectionFrame"], ns["App"]
