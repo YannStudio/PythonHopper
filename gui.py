@@ -1050,6 +1050,56 @@ def start_gui():
                 anchor="w",
             ).pack(fill="x", padx=8, pady=(8, 4))
 
+            export_options = tk.LabelFrame(
+                self, text="Exportopties", labelanchor="n"
+            )
+            export_options.pack(fill="x", padx=8, pady=(0, 8))
+
+            def _add_option(
+                parent: tk.Widget,
+                text: str,
+                description: str,
+                variable: "tk.IntVar",
+            ) -> None:
+                container = tk.Frame(parent)
+                container.pack(fill="x", expand=True, anchor="w", pady=(4, 2))
+                tk.Checkbutton(
+                    container,
+                    text=text,
+                    variable=variable,
+                    anchor="w",
+                    justify="left",
+                ).pack(anchor="w")
+                tk.Label(
+                    container,
+                    text=description,
+                    justify="left",
+                    anchor="w",
+                    wraplength=520,
+                    foreground="#555555",
+                ).pack(fill="x", anchor="w", padx=(24, 0))
+
+            _add_option(
+                export_options,
+                "Maak snelkoppeling naar nieuwste exportmap",
+                (
+                    "Na het exporteren wordt er een snelkoppeling met de naam 'latest'"
+                    " geplaatst in de exportmap. Deze verwijst altijd naar de"
+                    " meest recente export zodat je die snel kunt openen."
+                ),
+                self.app.bundle_latest_var,
+            )
+            _add_option(
+                export_options,
+                "Testrun: toon alleen doelmap (niets wordt gekopieerd)",
+                (
+                    "Voer een proefrun uit zonder bestanden te kopiëren. Je ziet"
+                    " welke doelmap gebruikt zou worden, maar er worden geen"
+                    " bestanden aangemaakt of overschreven."
+                ),
+                self.app.bundle_dry_run_var,
+            )
+
             list_container = tk.Frame(self)
             list_container.pack(fill="both", expand=True, padx=8)
 
@@ -1595,18 +1645,7 @@ def start_gui():
                 suffix_row,
                 textvariable=self.export_name_custom_suffix_text,
             ).pack(side="left", fill="x", expand=True)
-            tk.Checkbutton(
-                options_frame,
-                text="Maak snelkoppeling naar nieuwste exportmap",
-                variable=self.bundle_latest_var,
-                anchor="w",
-            ).pack(anchor="w", pady=2)
-            tk.Checkbutton(
-                options_frame,
-                text="Testrun: toon alleen doelmap (niets wordt gekopieerd)",
-                variable=self.bundle_dry_run_var,
-                anchor="w",
-            ).pack(anchor="w", pady=2)
+            # Legacy options moved to settings tab
 
             # BOM controls
             bf = tk.Frame(main); bf.pack(fill="x", padx=8, pady=6)
