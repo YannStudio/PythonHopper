@@ -1040,16 +1040,6 @@ def start_gui():
                 self.app.settings.file_extensions
             )
 
-            tk.Label(
-                self,
-                text=(
-                    "Beheer hier welke bestandstypen beschikbaar zijn op het hoofdscherm.\n"
-                    "Voeg extensies toe of verwijder ze naar wens."
-                ),
-                justify="left",
-                anchor="w",
-            ).pack(fill="x", padx=8, pady=(8, 4))
-
             export_options = tk.LabelFrame(
                 self, text="Exportopties", labelanchor="n"
             )
@@ -1100,14 +1090,40 @@ def start_gui():
                 self.app.bundle_dry_run_var,
             )
 
+            tk.Label(
+                self,
+                text=(
+                    "Beheer hier welke bestandstypen beschikbaar zijn op het hoofdscherm.\n"
+                    "Voeg extensies toe of verwijder ze naar wens."
+                ),
+                justify="left",
+                anchor="w",
+            ).pack(fill="x", padx=8, pady=(0, 4))
+
             list_container = tk.Frame(self)
-            list_container.pack(fill="both", expand=True, padx=8)
+            list_container.pack(anchor="w", padx=8)
 
             self.listbox = tk.Listbox(list_container, activestyle="none")
             self.listbox.pack(side="left", fill="both", expand=True)
             scrollbar = tk.Scrollbar(list_container, command=self.listbox.yview)
-            scrollbar.pack(side="right", fill="y")
+            scrollbar.pack(side="left", fill="y", padx=(2, 0))
             self.listbox.configure(yscrollcommand=scrollbar.set)
+
+            move_btns = tk.Frame(list_container)
+            move_btns.pack(side="left", padx=(4, 0), fill="y")
+            tk.Button(
+                move_btns,
+                text="▲",
+                width=3,
+                command=lambda: self._move_selected(-1),
+            ).pack(pady=2)
+            tk.Button(
+                move_btns,
+                text="▼",
+                width=3,
+                command=lambda: self._move_selected(1),
+            ).pack(pady=2)
+
             self.listbox.bind("<Double-Button-1>", lambda _e: self._edit_selected())
 
             btns = tk.Frame(self)
@@ -1122,33 +1138,37 @@ def start_gui():
                 side="left", padx=4
             )
 
-            move_btns = tk.Frame(btns)
-            move_btns.pack(side="right", padx=4)
-            tk.Button(
-                move_btns,
-                text="▲",
-                width=3,
-                command=lambda: self._move_selected(-1),
-            ).pack(pady=2)
-            tk.Button(
-                move_btns,
-                text="▼",
-                width=3,
-                command=lambda: self._move_selected(1),
-            ).pack(pady=2)
-
             self._refresh_list()
 
         def _refresh_list(self) -> None:
+            entries: List[str] = []
             self.listbox.delete(0, tk.END)
             if not self.extensions:
-                self.listbox.insert(0, "Geen bestandstypen gedefinieerd.")
+                placeholder = "Geen bestandstypen gedefinieerd."
+                entries.append(placeholder)
+                self.listbox.insert(0, placeholder)
                 self.listbox.itemconfig(0, foreground="#777777")
+            else:
+                for ext in self.extensions:
+                    status = "✓" if ext.enabled else "✗"
+                    patterns = ", ".join(ext.patterns)
+                    text = f"{status} {ext.label} — {patterns}"
+                    entries.append(text)
+                    self.listbox.insert(tk.END, text)
+            self._update_listbox_height(len(entries))
+            self._update_listbox_width(entries)
+
+        def _update_listbox_height(self, item_count: int) -> None:
+            visible = max(1, item_count)
+            height = min(visible + 1, 10)
+            self.listbox.configure(height=height)
+
+        def _update_listbox_width(self, entries: List[str]) -> None:
+            if not entries:
                 return
-            for ext in self.extensions:
-                status = "✓" if ext.enabled else "✗"
-                patterns = ", ".join(ext.patterns)
-                self.listbox.insert(tk.END, f"{status} {ext.label} — {patterns}")
+            longest = max(len(entry) for entry in entries)
+            width = max(20, min(longest + 2, 80))
+            self.listbox.configure(width=width)
 
         def _selected_index(self) -> Optional[int]:
             if not self.extensions:
