@@ -1040,10 +1040,15 @@ def start_gui():
                 self.app.settings.file_extensions
             )
 
+            self.configure(padx=12, pady=12)
+            self.columnconfigure(0, weight=1)
+            self.rowconfigure(1, weight=1)
+
             export_options = tk.LabelFrame(
                 self, text="Exportopties", labelanchor="n"
             )
-            export_options.pack(fill="x", padx=8, pady=(0, 8))
+            export_options.grid(row=0, column=0, sticky="ew")
+            export_options.columnconfigure(0, weight=1)
 
             def _add_option(
                 parent: tk.Widget,
@@ -1051,15 +1056,17 @@ def start_gui():
                 description: str,
                 variable: "tk.IntVar",
             ) -> None:
+                row = parent.grid_size()[1]
                 container = tk.Frame(parent)
-                container.pack(fill="x", expand=True, anchor="w", pady=(4, 2))
+                container.grid(row=row, column=0, sticky="ew", padx=12, pady=(6, 2))
+                container.columnconfigure(0, weight=1)
                 tk.Checkbutton(
                     container,
                     text=text,
                     variable=variable,
                     anchor="w",
                     justify="left",
-                ).pack(anchor="w")
+                ).grid(row=0, column=0, sticky="w")
                 tk.Label(
                     container,
                     text=description,
@@ -1067,7 +1074,7 @@ def start_gui():
                     anchor="w",
                     wraplength=520,
                     foreground="#555555",
-                ).pack(fill="x", anchor="w", padx=(24, 0))
+                ).grid(row=1, column=0, sticky="ew", padx=(28, 0))
 
             _add_option(
                 export_options,
@@ -1090,31 +1097,42 @@ def start_gui():
                 self.app.bundle_dry_run_var,
             )
 
+            extensions_frame = tk.LabelFrame(
+                self, text="Bestandstypen", labelanchor="n"
+            )
+            extensions_frame.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
+            extensions_frame.columnconfigure(0, weight=1)
+            extensions_frame.rowconfigure(1, weight=1)
+
             tk.Label(
-                self,
+                extensions_frame,
                 text=(
                     "Beheer hier welke bestandstypen beschikbaar zijn op het hoofdscherm.\n"
                     "Voeg extensies toe of verwijder ze naar wens."
                 ),
                 justify="left",
                 anchor="w",
-            ).pack(fill="x", padx=8, pady=(0, 4))
+                wraplength=520,
+            ).grid(row=0, column=0, columnspan=2, sticky="ew", padx=12, pady=(8, 4))
 
-            list_container = tk.Frame(self)
-            list_container.pack(anchor="w", padx=8, pady=(0, 4))
+            list_container = tk.Frame(extensions_frame)
+            list_container.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=12)
+            list_container.columnconfigure(0, weight=1)
+            list_container.rowconfigure(0, weight=1)
 
             list_frame = tk.Frame(list_container)
-            list_frame.pack(side="left", anchor="n")
+            list_frame.grid(row=0, column=0, sticky="nsew")
+            list_frame.columnconfigure(0, weight=1)
 
             self.listbox = tk.Listbox(list_frame, activestyle="none")
-            self.listbox.pack(side="left", fill="both")
+            self.listbox.grid(row=0, column=0, sticky="nsew")
             scrollbar = tk.Scrollbar(list_frame, command=self.listbox.yview)
-            scrollbar.pack(side="right", fill="y")
+            scrollbar.grid(row=0, column=1, sticky="ns")
             self.listbox.configure(yscrollcommand=scrollbar.set)
             self.listbox.bind("<Double-Button-1>", lambda _e: self._edit_selected())
 
             move_btns = tk.Frame(list_container)
-            move_btns.pack(side="left", fill="y")
+            move_btns.grid(row=0, column=1, sticky="ns", padx=(8, 0))
             move_btns.grid_rowconfigure(0, weight=1)
             move_btns.grid_rowconfigure(3, weight=1)
             move_btns.grid_columnconfigure(0, weight=1)
@@ -1131,8 +1149,8 @@ def start_gui():
                 command=lambda: self._move_selected(1),
             ).grid(row=2, column=0, pady=2, sticky="nsew")
 
-            btns = tk.Frame(self)
-            btns.pack(fill="x", padx=8, pady=(4, 8))
+            btns = tk.Frame(extensions_frame)
+            btns.grid(row=2, column=0, columnspan=2, sticky="ew", padx=12, pady=(8, 12))
             tk.Button(btns, text="Toevoegen", command=self._add_extension).pack(
                 side="left", padx=4
             )
@@ -1288,8 +1306,8 @@ def start_gui():
             )
             patterns_text = ", ".join(existing.patterns) if existing else ""
             patterns_var = tk.StringVar(value=patterns_text)
-            tk.Entry(win, textvariable=patterns_var, width=40).grid(
-                row=1, column=1, padx=4, pady=4
+            tk.Entry(win, textvariable=patterns_var, width=28).grid(
+                row=1, column=1, padx=(4, 12), pady=(4, 8)
             )
 
             tk.Label(win, text="Preset:").grid(row=2, column=0, sticky="e", padx=4, pady=4)
