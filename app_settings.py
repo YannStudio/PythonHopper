@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from suppliers_db import SUPPLIERS_DB_FILE
+from orders import DEFAULT_FOOTER_NOTE
 
 SETTINGS_FILE = Path(SUPPLIERS_DB_FILE).with_name("app_settings.json")
 
@@ -190,6 +191,7 @@ class AppSettings:
     custom_suffix_text: str = ""
     bundle_latest: bool = False
     bundle_dry_run: bool = False
+    footer_note: str = DEFAULT_FOOTER_NOTE
     _path: Path = field(default=SETTINGS_FILE, repr=False, compare=False)
 
     @classmethod

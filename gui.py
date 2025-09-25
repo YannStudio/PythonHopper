@@ -1042,7 +1042,7 @@ def start_gui():
 
             self.configure(padx=12, pady=12)
             self.columnconfigure(0, weight=1)
-            self.rowconfigure(1, weight=1)
+            self.rowconfigure(2, weight=1)
 
             export_options = tk.LabelFrame(
                 self, text="Exportopties", labelanchor="n"
@@ -1097,10 +1097,55 @@ def start_gui():
                 self.app.bundle_dry_run_var,
             )
 
+            footer_frame = tk.LabelFrame(
+                self,
+                text="Bestelbon/offerte onderschrift",
+                labelanchor="n",
+            )
+            footer_frame.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
+            footer_frame.columnconfigure(0, weight=1)
+            footer_frame.rowconfigure(1, weight=1)
+
+            tk.Label(
+                footer_frame,
+                text=(
+                    "Pas hier het onderschrift aan dat onderaan de bestelbon of"
+                    " offerteaanvraag wordt geplaatst."
+                ),
+                justify="left",
+                anchor="w",
+                wraplength=520,
+            ).grid(row=0, column=0, sticky="ew", padx=12, pady=(8, 4))
+
+            self.footer_note_text = tk.Text(
+                footer_frame,
+                height=5,
+                wrap="word",
+            )
+            self.footer_note_text.grid(
+                row=1,
+                column=0,
+                sticky="nsew",
+                padx=12,
+                pady=(0, 4),
+            )
+            self._reload_footer_note()
+
+            footer_btns = tk.Frame(footer_frame)
+            footer_btns.grid(row=2, column=0, sticky="e", padx=12, pady=(0, 8))
+            tk.Button(footer_btns, text="Opslaan", command=self._save_footer_note).pack(
+                side="left", padx=4
+            )
+            tk.Button(
+                footer_btns,
+                text="Reset naar standaard",
+                command=self._reset_footer_note,
+            ).pack(side="left", padx=4)
+
             extensions_frame = tk.LabelFrame(
                 self, text="Bestandstypen", labelanchor="n"
             )
-            extensions_frame.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
+            extensions_frame.grid(row=2, column=0, sticky="nsew", pady=(12, 0))
             extensions_frame.columnconfigure(0, weight=1)
             extensions_frame.rowconfigure(1, weight=1)
 
@@ -1177,6 +1222,25 @@ def start_gui():
                 self.listbox.insert(tk.END, f"{status} {ext.label} — {patterns}")
             self._update_listbox_height(len(self.extensions))
             self._update_listbox_width()
+
+        def _reload_footer_note(self) -> None:
+            text = self.app.footer_note_var.get()
+            self.footer_note_text.delete("1.0", "end")
+            if text:
+                self.footer_note_text.insert("1.0", text)
+
+        def _current_footer_text(self) -> str:
+            raw = self.footer_note_text.get("1.0", "end-1c")
+            return raw.replace("\r\n", "\n")
+
+        def _save_footer_note(self) -> None:
+            note = self._current_footer_text().strip()
+            self.app.update_footer_note(note)
+            self._reload_footer_note()
+
+        def _reset_footer_note(self) -> None:
+            self.app.update_footer_note(DEFAULT_FOOTER_NOTE)
+            self._reload_footer_note()
 
         def _update_listbox_height(self, item_count: int) -> None:
             visible = max(1, item_count)
@@ -1507,6 +1571,9 @@ def start_gui():
             self.bundle_dry_run_var = tk.IntVar(
                 master=self, value=1 if self.settings.bundle_dry_run else 0
             )
+            self.footer_note_var = tk.StringVar(
+                master=self, value=self.settings.footer_note or ""
+            )
 
             self.source_folder = self.source_folder_var.get().strip()
             self.dest_folder = self.dest_folder_var.get().strip()
@@ -1789,6 +1856,7 @@ def start_gui():
             self.settings.custom_suffix_text = self.export_name_custom_suffix_text.get().strip()
             self.settings.bundle_latest = bool(self.bundle_latest_var.get())
             self.settings.bundle_dry_run = bool(self.bundle_dry_run_var.get())
+            self.settings.footer_note = self.footer_note_var.get().replace("\r\n", "\n")
             for ext in self.settings.file_extensions:
                 var = self.extension_vars.get(ext.key)
                 if var is not None:
@@ -1875,6 +1943,16 @@ def start_gui():
             self.settings.file_extensions = normalized
             self._sync_extension_vars_from_settings()
             self._rebuild_extension_checkbuttons()
+            self._save_settings()
+
+        def update_footer_note(self, text: str) -> None:
+            normalized = (text or "").replace("\r\n", "\n")
+            prev = getattr(self, "_suspend_save", False)
+            self._suspend_save = True
+            try:
+                self.footer_note_var.set(normalized)
+            finally:
+                self._suspend_save = prev
             self._save_settings()
 
         def _pick_src(self):
@@ -2336,15 +2414,15 @@ def start_gui():
                         sel_map,
                         doc_map,
                         doc_num_map,
-                        remember,
-                        client=client,
-                        delivery_map=resolved_delivery_map,
-                        footer_note=DEFAULT_FOOTER_NOTE,
-                        zip_parts=bool(self.zip_var.get()),
-                        date_prefix_exports=bool(self.export_date_prefix_var.get()),
-                        date_suffix_exports=bool(self.export_date_suffix_var.get()),
-                        project_number=project_number,
-                        project_name=project_name,
+                    remember,
+                    client=client,
+                    delivery_map=resolved_delivery_map,
+                    footer_note=self.footer_note_var.get(),
+                    zip_parts=bool(self.zip_var.get()),
+                    date_prefix_exports=bool(self.export_date_prefix_var.get()),
+                    date_suffix_exports=bool(self.export_date_suffix_var.get()),
+                    project_number=project_number,
+                    project_name=project_name,
                         export_name_prefix_text=token_prefix_text,
                         export_name_prefix_enabled=token_prefix_enabled,
                         export_name_suffix_text=token_suffix_text,

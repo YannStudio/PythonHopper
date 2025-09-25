@@ -1,6 +1,7 @@
 import json
 
 from app_settings import AppSettings, FileExtensionSetting, DEFAULT_FILE_EXTENSIONS
+from orders import DEFAULT_FOOTER_NOTE
 
 
 def test_app_settings_roundtrip(tmp_path):
@@ -33,6 +34,7 @@ def test_app_settings_roundtrip(tmp_path):
         custom_suffix_text="SUF",
         bundle_latest=True,
         bundle_dry_run=True,
+        footer_note="Aangepaste voorwaarden",
     )
     settings.save(path)
 
@@ -67,3 +69,7 @@ def test_app_settings_loads_legacy_extension_flags(tmp_path):
     assert any(ext.key == "step" and not ext.enabled for ext in loaded.file_extensions)
     loaded_keys = {ext.key for ext in loaded.file_extensions}
     assert {ext.key for ext in DEFAULT_FILE_EXTENSIONS}.issubset(loaded_keys)
+
+
+def test_default_footer_note_matches_orders_constant():
+    assert AppSettings().footer_note == DEFAULT_FOOTER_NOTE
