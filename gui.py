@@ -1883,6 +1883,15 @@ def start_gui():
                     selected.extend(ext.patterns)
             return selected or None
 
+        def _ensure_bom_loaded(self) -> bool:
+            from tkinter import messagebox
+
+            bom_df = self.bom_df
+            if bom_df is None or bom_df.empty:
+                messagebox.showwarning("Let op", "Laad eerst een BOM.")
+                return False
+            return True
+
         def _load_bom_from_path(self, path: str) -> None:
             df = load_bom(path)
             if "Bestanden gevonden" not in df.columns:
@@ -2032,8 +2041,8 @@ def start_gui():
 
         def _check_files(self):
             from tkinter import messagebox
-            if self.bom_df is None:
-                messagebox.showwarning("Let op", "Laad eerst een BOM."); return
+            if not self._ensure_bom_loaded():
+                return
             if not self.source_folder:
                 messagebox.showwarning("Let op", "Selecteer een bronmap."); return
             exts = self._selected_exts()
@@ -2082,6 +2091,8 @@ def start_gui():
 
         def _copy_flat(self):
             from tkinter import messagebox
+            if not self._ensure_bom_loaded():
+                return
             exts = self._selected_exts()
             if not exts or not self.source_folder or not self.dest_folder:
                 messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies."); return
@@ -2195,9 +2206,9 @@ def start_gui():
         def _copy_per_prod(self):
             from tkinter import messagebox
 
+            if not self._ensure_bom_loaded():
+                return
             bom_df = self.bom_df
-            if bom_df is None or bom_df.empty:
-                messagebox.showwarning("Let op", "Laad eerst een BOM."); return
             exts = self._selected_exts()
             if not exts or not self.source_folder or not self.dest_folder:
                 messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies."); return
@@ -2219,10 +2230,9 @@ def start_gui():
                 project_name: str,
                 remember: bool,
             ):
-                current_bom = self.bom_df
-                if current_bom is None or current_bom.empty:
-                    messagebox.showwarning("Let op", "Laad eerst een BOM.")
+                if not self._ensure_bom_loaded():
                     return
+                current_bom = self.bom_df
 
                 custom_prefix_text = self.export_name_custom_prefix_text.get().strip()
                 custom_prefix_enabled = bool(
@@ -2372,6 +2382,8 @@ def start_gui():
 
         def _combine_pdf(self):
             from tkinter import messagebox
+            if not self._ensure_bom_loaded():
+                return
             bom_df = self.bom_df
             if self.source_folder and bom_df is not None:
                 def work():
@@ -2391,24 +2403,9 @@ def start_gui():
                     self.status_var.set(f"Gecombineerde pdf's: {cnt}")
                     messagebox.showinfo("Klaar", "PDF's gecombineerd.")
                 threading.Thread(target=work, daemon=True).start()
-            elif self.dest_folder:
-                def work():
-                    self.status_var.set("PDF's combineren...")
-                    try:
-                        cnt = combine_pdfs_per_production(self.dest_folder)
-                    except ModuleNotFoundError:
-                        self.status_var.set("PyPDF2 ontbreekt")
-                        messagebox.showwarning(
-                            "PyPDF2 ontbreekt",
-                            "Installeer PyPDF2 om PDF's te combineren.",
-                        )
-                        return
-                    self.status_var.set(f"Gecombineerde pdf's: {cnt}")
-                    messagebox.showinfo("Klaar", "PDF's gecombineerd.")
-                threading.Thread(target=work, daemon=True).start()
             else:
                 messagebox.showwarning(
-                    "Let op", "Selecteer bron + BOM of bestemmingsmap."
+                    "Let op", "Selecteer bronmap en laad een BOM."
                 )
 
     App().mainloop()
