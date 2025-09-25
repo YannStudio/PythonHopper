@@ -1040,16 +1040,6 @@ def start_gui():
                 self.app.settings.file_extensions
             )
 
-            tk.Label(
-                self,
-                text=(
-                    "Beheer hier welke bestandstypen beschikbaar zijn op het hoofdscherm.\n"
-                    "Voeg extensies toe of verwijder ze naar wens."
-                ),
-                justify="left",
-                anchor="w",
-            ).pack(fill="x", padx=8, pady=(8, 4))
-
             export_options = tk.LabelFrame(
                 self, text="Exportopties", labelanchor="n"
             )
@@ -1100,8 +1090,18 @@ def start_gui():
                 self.app.bundle_dry_run_var,
             )
 
+            tk.Label(
+                self,
+                text=(
+                    "Beheer hier welke bestandstypen beschikbaar zijn op het hoofdscherm.\n"
+                    "Voeg extensies toe of verwijder ze naar wens."
+                ),
+                justify="left",
+                anchor="w",
+            ).pack(fill="x", padx=8, pady=(0, 4))
+
             list_container = tk.Frame(self)
-            list_container.pack(fill="both", expand=True, padx=8)
+            list_container.pack(fill="x", padx=8)
 
             self.listbox = tk.Listbox(list_container, activestyle="none")
             self.listbox.pack(side="left", fill="both", expand=True)
@@ -1144,11 +1144,18 @@ def start_gui():
             if not self.extensions:
                 self.listbox.insert(0, "Geen bestandstypen gedefinieerd.")
                 self.listbox.itemconfig(0, foreground="#777777")
+                self._update_listbox_height(1)
                 return
             for ext in self.extensions:
                 status = "✓" if ext.enabled else "✗"
                 patterns = ", ".join(ext.patterns)
                 self.listbox.insert(tk.END, f"{status} {ext.label} — {patterns}")
+            self._update_listbox_height(len(self.extensions))
+
+        def _update_listbox_height(self, item_count: int) -> None:
+            visible = max(1, item_count)
+            height = min(visible + 1, 10)
+            self.listbox.configure(height=height)
 
         def _selected_index(self) -> Optional[int]:
             if not self.extensions:
