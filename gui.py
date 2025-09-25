@@ -1101,14 +1101,32 @@ def start_gui():
             ).pack(fill="x", padx=8, pady=(0, 4))
 
             list_container = tk.Frame(self)
-            list_container.pack(fill="x", padx=8)
+            list_container.pack(fill="both", expand=True, padx=8)
 
-            self.listbox = tk.Listbox(list_container, activestyle="none")
+            list_frame = tk.Frame(list_container)
+            list_frame.pack(side="left", fill="both", expand=True)
+
+            self.listbox = tk.Listbox(list_frame, activestyle="none")
             self.listbox.pack(side="left", fill="both", expand=True)
-            scrollbar = tk.Scrollbar(list_container, command=self.listbox.yview)
+            scrollbar = tk.Scrollbar(list_frame, command=self.listbox.yview)
             scrollbar.pack(side="right", fill="y")
             self.listbox.configure(yscrollcommand=scrollbar.set)
             self.listbox.bind("<Double-Button-1>", lambda _e: self._edit_selected())
+
+            move_btns = tk.Frame(list_container)
+            move_btns.pack(side="left", fill="y", padx=(4, 0))
+            tk.Button(
+                move_btns,
+                text="▲",
+                width=3,
+                command=lambda: self._move_selected(-1),
+            ).pack(pady=2, anchor="n")
+            tk.Button(
+                move_btns,
+                text="▼",
+                width=3,
+                command=lambda: self._move_selected(1),
+            ).pack(pady=2, anchor="n")
 
             btns = tk.Frame(self)
             btns.pack(fill="x", padx=8, pady=(4, 8))
@@ -1122,21 +1140,6 @@ def start_gui():
                 side="left", padx=4
             )
 
-            move_btns = tk.Frame(btns)
-            move_btns.pack(side="right", padx=4)
-            tk.Button(
-                move_btns,
-                text="▲",
-                width=3,
-                command=lambda: self._move_selected(-1),
-            ).pack(pady=2)
-            tk.Button(
-                move_btns,
-                text="▼",
-                width=3,
-                command=lambda: self._move_selected(1),
-            ).pack(pady=2)
-
             self._refresh_list()
 
         def _refresh_list(self) -> None:
@@ -1145,17 +1148,28 @@ def start_gui():
                 self.listbox.insert(0, "Geen bestandstypen gedefinieerd.")
                 self.listbox.itemconfig(0, foreground="#777777")
                 self._update_listbox_height(1)
+                self._update_listbox_width()
                 return
             for ext in self.extensions:
                 status = "✓" if ext.enabled else "✗"
                 patterns = ", ".join(ext.patterns)
                 self.listbox.insert(tk.END, f"{status} {ext.label} — {patterns}")
             self._update_listbox_height(len(self.extensions))
+            self._update_listbox_width()
 
         def _update_listbox_height(self, item_count: int) -> None:
             visible = max(1, item_count)
             height = min(visible + 1, 10)
             self.listbox.configure(height=height)
+
+        def _update_listbox_width(self) -> None:
+            items = self.listbox.get(0, tk.END)
+            if not items:
+                self.listbox.configure(width=40)
+                return
+            max_len = max(len(item) for item in items)
+            width = max(40, min(80, max_len + 2))
+            self.listbox.configure(width=width)
 
         def _selected_index(self) -> Optional[int]:
             if not self.extensions:
