@@ -12,7 +12,7 @@ import re
 import zipfile
 import io
 from collections import defaultdict
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 try:
@@ -102,7 +102,7 @@ def generate_pdf_order_platypus(
     items: List[Dict[str, str]],
     doc_type: str = "Bestelbon",
     doc_number: str | None = None,
-    footer_note: str = "",
+    footer_note: Optional[str] = None,
     delivery: DeliveryAddress | None = None,
     project_number: str | None = None,
     project_name: str | None = None,
@@ -300,7 +300,10 @@ def generate_pdf_order_platypus(
     )
     story.append(tbl)
 
-    note = footer_note or DEFAULT_FOOTER_NOTE
+    if footer_note is None:
+        note = DEFAULT_FOOTER_NOTE
+    else:
+        note = _to_str(footer_note)
     if note:
         story.append(Spacer(0, 8))
         story.append(Paragraph(note, small_style))
@@ -443,7 +446,7 @@ def copy_per_production_and_orders(
     remember_defaults: bool,
     client: Client | None = None,
     delivery_map: Dict[str, DeliveryAddress] | None = None,
-    footer_note: str = "",
+    footer_note: Optional[str] = None,
     zip_parts: bool = False,
     date_prefix_exports: bool = False,
     date_suffix_exports: bool = False,
@@ -534,6 +537,12 @@ def copy_per_production_and_orders(
         new_stem = "-".join(prefix_parts + [stem] + suffix_parts)
         return f"{new_stem}{ext}"
     suppliers_sorted = db.suppliers_sorted()
+
+    footer_note_text = (
+        DEFAULT_FOOTER_NOTE
+        if footer_note is None
+        else _to_str(footer_note).replace("\r\n", "\n")
+    )
 
     for prod, rows in prod_to_rows.items():
         prod_folder = os.path.join(dest, prod)
@@ -652,7 +661,7 @@ def copy_per_production_and_orders(
                     items,
                     doc_type=doc_type,
                     doc_number=doc_num or None,
-                    footer_note=footer_note or DEFAULT_FOOTER_NOTE,
+                    footer_note=footer_note_text,
                     delivery=delivery,
                     project_number=project_number,
                     project_name=project_name,
