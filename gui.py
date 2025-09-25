@@ -1101,32 +1101,35 @@ def start_gui():
             ).pack(fill="x", padx=8, pady=(0, 4))
 
             list_container = tk.Frame(self)
-            list_container.pack(fill="both", expand=True, padx=8)
+            list_container.pack(anchor="w", padx=8, pady=(0, 4))
 
             list_frame = tk.Frame(list_container)
-            list_frame.pack(side="left", fill="both", expand=True)
+            list_frame.pack(side="left", anchor="n")
 
             self.listbox = tk.Listbox(list_frame, activestyle="none")
-            self.listbox.pack(side="left", fill="both", expand=True)
+            self.listbox.pack(side="left", fill="both")
             scrollbar = tk.Scrollbar(list_frame, command=self.listbox.yview)
             scrollbar.pack(side="right", fill="y")
             self.listbox.configure(yscrollcommand=scrollbar.set)
             self.listbox.bind("<Double-Button-1>", lambda _e: self._edit_selected())
 
             move_btns = tk.Frame(list_container)
-            move_btns.pack(side="left", fill="y", padx=(4, 0))
+            move_btns.pack(side="left", fill="y")
+            move_btns.grid_rowconfigure(0, weight=1)
+            move_btns.grid_rowconfigure(3, weight=1)
+            move_btns.grid_columnconfigure(0, weight=1)
             tk.Button(
                 move_btns,
                 text="▲",
                 width=3,
                 command=lambda: self._move_selected(-1),
-            ).pack(pady=2, anchor="n")
+            ).grid(row=1, column=0, pady=2, sticky="nsew")
             tk.Button(
                 move_btns,
                 text="▼",
                 width=3,
                 command=lambda: self._move_selected(1),
-            ).pack(pady=2, anchor="n")
+            ).grid(row=2, column=0, pady=2, sticky="nsew")
 
             btns = tk.Frame(self)
             btns.pack(fill="x", padx=8, pady=(4, 8))
@@ -1159,16 +1162,16 @@ def start_gui():
 
         def _update_listbox_height(self, item_count: int) -> None:
             visible = max(1, item_count)
-            height = min(visible + 1, 10)
+            height = min(max(visible, 3), 10)
             self.listbox.configure(height=height)
 
         def _update_listbox_width(self) -> None:
             items = self.listbox.get(0, tk.END)
             if not items:
-                self.listbox.configure(width=40)
+                self.listbox.configure(width=28)
                 return
             max_len = max(len(item) for item in items)
-            width = max(40, min(80, max_len + 2))
+            width = max(28, min(64, max_len + 4))
             self.listbox.configure(width=width)
 
         def _selected_index(self) -> Optional[int]:
