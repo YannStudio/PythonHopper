@@ -1306,8 +1306,8 @@ def start_gui():
             )
             patterns_text = ", ".join(existing.patterns) if existing else ""
             patterns_var = tk.StringVar(value=patterns_text)
-            tk.Entry(win, textvariable=patterns_var, width=40).grid(
-                row=1, column=1, padx=4, pady=4
+            tk.Entry(win, textvariable=patterns_var, width=28).grid(
+                row=1, column=1, padx=(4, 12), pady=(4, 8)
             )
 
             tk.Label(win, text="Preset:").grid(row=2, column=0, sticky="e", padx=4, pady=4)
