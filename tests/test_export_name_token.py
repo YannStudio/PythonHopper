@@ -49,7 +49,7 @@ def test_export_token_positions(tmp_path, monkeypatch, prefix, suffix, expected)
     db = _make_db()
     bom_df = _build_bom()
 
-    cnt, _ = copy_per_production_and_orders(
+    cnt, _, _ = copy_per_production_and_orders(
         str(src),
         str(dest),
         bom_df,
@@ -68,7 +68,7 @@ def test_export_token_positions(tmp_path, monkeypatch, prefix, suffix, expected)
     exported = dest / "Laser" / expected
     assert exported.exists()
 
-    cnt_zip, _ = copy_per_production_and_orders(
+    cnt_zip, _, _ = copy_per_production_and_orders(
         str(src),
         str(dest_zip),
         bom_df,
@@ -111,7 +111,7 @@ def test_export_token_disabled(tmp_path, monkeypatch):
     db = _make_db()
     bom_df = _build_bom()
 
-    cnt, _ = copy_per_production_and_orders(
+    cnt, _, _ = copy_per_production_and_orders(
         str(src),
         str(dest),
         bom_df,
@@ -166,7 +166,7 @@ def test_cli_export_token_flags(monkeypatch, tmp_path):
 
     def fake_copy(*args, **kwargs):
         captured.update(kwargs)
-        return 0, {}
+        return 0, {}, []
 
     monkeypatch.setattr(cli, "copy_per_production_and_orders", fake_copy)
     cli_copy_per_prod(args)

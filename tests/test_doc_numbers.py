@@ -188,7 +188,7 @@ def test_doc_number_applied_to_zip_filename(tmp_path):
 
     doc_num_map = {"Laser": "123"}
 
-    cnt, _ = copy_per_production_and_orders(
+    cnt, _, _ = copy_per_production_and_orders(
         str(src),
         str(dst),
         bom_df,

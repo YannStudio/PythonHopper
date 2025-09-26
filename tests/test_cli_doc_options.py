@@ -38,7 +38,7 @@ def test_cli_doc_options_parsing(monkeypatch, tmp_path):
 
     def fake_copy(*args, **kwargs):
         captured.update(kwargs)
-        return 0, {}
+        return 0, {}, []
 
     monkeypatch.setattr(cli, "copy_per_production_and_orders", fake_copy)
     cli_copy_per_prod(args)

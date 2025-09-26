@@ -420,7 +420,7 @@ def cli_copy_per_prod(args):
     settings_note = settings.footer_note
     footer_note = settings_note if args.note is None else args.note
 
-    cnt, chosen = copy_per_production_and_orders(
+    cnt, chosen, order_warnings = copy_per_production_and_orders(
         args.source,
         bundle.bundle_dir,
         df,
@@ -443,6 +443,8 @@ def cli_copy_per_prod(args):
     print("Gekopieerd:", cnt)
     for k, v in chosen.items():
         print(f"  {k} → {v}")
+    for warn in order_warnings:
+        print(f"[WAARSCHUWING] {warn}")
     return 0
 
 

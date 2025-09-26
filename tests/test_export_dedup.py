@@ -33,7 +33,7 @@ def test_duplicate_parts_single_export(tmp_path):
     db = _make_db()
     bom_df = _build_bom()
 
-    cnt, _ = copy_per_production_and_orders(
+    cnt, _, _ = copy_per_production_and_orders(
         str(src),
         str(dest),
         bom_df,
@@ -48,7 +48,7 @@ def test_duplicate_parts_single_export(tmp_path):
     exported_files = list((dest / "Laser").glob("PN1*.pdf"))
     assert len(exported_files) == 1
 
-    cnt_zip, _ = copy_per_production_and_orders(
+    cnt_zip, _, _ = copy_per_production_and_orders(
         str(src),
         str(dest_zip),
         bom_df,

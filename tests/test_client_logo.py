@@ -8,7 +8,12 @@ from PIL import Image
 
 from clients_db import ClientsDB
 from models import Client, Supplier
-from orders import generate_pdf_order_platypus, REPORTLAB_OK, write_order_excel
+import orders
+from orders import (
+    LOGO_SUPPORT_WARNING_PREFIX,
+    REPORTLAB_OK,
+    generate_pdf_order_platypus,
+)
 import logo_resolver
 
 
@@ -158,7 +163,10 @@ def test_write_order_excel_embeds_logo(tmp_path):
         }
     ]
 
-    write_order_excel(str(xlsx_path), items, company_info=company, supplier=supplier)
+    warnings = orders.write_order_excel(
+        str(xlsx_path), items, company_info=company, supplier=supplier
+    )
+    assert not warnings
 
     with zipfile.ZipFile(xlsx_path) as zf:
         media_entries = [name for name in zf.namelist() if name.startswith("xl/media/")]
@@ -168,3 +176,38 @@ def test_write_order_excel_embeds_logo(tmp_path):
     with Image.open(io.BytesIO(image_data)) as embedded:
         embedded.load()
         assert embedded.size == (120, 60)
+
+
+def test_write_order_excel_warns_when_logo_support_missing(tmp_path, monkeypatch):
+    logo_path = tmp_path / "logo.png"
+    Image.new("RGB", (120, 60), "green").save(logo_path)
+
+    xlsx_path = tmp_path / "order_no_logo.xlsx"
+    company = {
+        "name": "ACME",
+        "address": "Example Street 1",
+        "vat": "BE0123456789",
+        "email": "info@example.com",
+        "logo_path": str(logo_path),
+    }
+    supplier = Supplier(supplier="Supplier BV")
+    items = [
+        {
+            "PartNumber": "PN-1",
+            "Description": "Onderdeel",
+            "Materiaal": "",
+            "Aantal": 1,
+            "Oppervlakte": "",
+            "Gewicht": "",
+        }
+    ]
+
+    monkeypatch.setattr(orders, "PILImage", None)
+
+    warnings = orders.write_order_excel(
+        str(xlsx_path), items, company_info=company, supplier=supplier
+    )
+
+    assert xlsx_path.exists()
+    assert warnings
+    assert any(w.startswith(LOGO_SUPPORT_WARNING_PREFIX) for w in warnings)

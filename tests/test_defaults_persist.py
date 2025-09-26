@@ -32,7 +32,7 @@ def test_defaults_persist(tmp_path, monkeypatch):
     overrides = {"Laser": "ACME", "Plasma": "BETA"}
 
     # Run the copy and order generation, remembering defaults
-    cnt, chosen = copy_per_production_and_orders(
+    cnt, chosen, warnings = copy_per_production_and_orders(
         str(src),
         str(dst),
         bom_df,
@@ -48,6 +48,7 @@ def test_defaults_persist(tmp_path, monkeypatch):
 
     assert cnt == 2
     assert chosen == overrides
+    assert not warnings
 
     # Defaults should be updated in memory
     assert db.defaults_by_production == overrides
