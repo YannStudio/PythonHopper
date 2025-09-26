@@ -27,10 +27,7 @@ from orders import (
     combine_pdfs_from_source,
     _prefix_for_doc_type,
 )
-from logo_resolver import resolve_logo_path as shared_resolve_logo_path
-
-
-CLIENT_LOGO_DIR = Path("client_logos")
+from logo_resolver import CLIENT_LOGO_DIR, resolve_logo_path as shared_resolve_logo_path
 
 
 def _norm(text: str) -> str:
@@ -220,7 +217,7 @@ def start_gui():
                 if not path:
                     return
                 dest_dir = CLIENT_LOGO_DIR
-                dest_dir.mkdir(exist_ok=True)
+                dest_dir.mkdir(parents=True, exist_ok=True)
                 ext = Path(path).suffix or ".png"
                 base = entries["name"].get().strip() or Path(path).stem
                 safe = re.sub(r"[^a-z0-9]+", "_", base.lower()).strip("_") or "logo"
