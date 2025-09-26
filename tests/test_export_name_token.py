@@ -10,8 +10,12 @@ from cli import build_parser, cli_copy_per_prod
 from clients_db import ClientsDB
 from delivery_addresses_db import DeliveryAddressesDB
 from models import Supplier
-from orders import copy_per_production_and_orders
+from orders import copy_per_production_and_orders, REPORTLAB_OK
 from suppliers_db import SuppliersDB
+
+requires_reportlab = pytest.mark.skipif(
+    not REPORTLAB_OK, reason="ReportLab is vereist voor PDF-exporttests"
+)
 
 
 def _make_db() -> SuppliersDB:
@@ -34,6 +38,7 @@ def _build_bom() -> pd.DataFrame:
         (True, True, "REV-A-PN1-REV-A.pdf"),
     ],
 )
+@requires_reportlab
 def test_export_token_positions(tmp_path, monkeypatch, prefix, suffix, expected):
     monkeypatch.setattr(orders, "SUPPLIERS_DB_FILE", str(tmp_path / "suppliers.json"))
 
@@ -99,6 +104,7 @@ def test_export_token_positions(tmp_path, monkeypatch, prefix, suffix, expected)
             assert info.compress_type == zipfile.ZIP_STORED
 
 
+@requires_reportlab
 def test_export_token_disabled(tmp_path, monkeypatch):
     monkeypatch.setattr(orders, "SUPPLIERS_DB_FILE", str(tmp_path / "suppliers.json"))
 

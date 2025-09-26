@@ -78,6 +78,10 @@ DEFAULT_FOOTER_NOTE = (
 )
 
 
+class ReportLabUnavailableError(RuntimeError):
+    """Raised when PDF generation is requested without ReportLab installed."""
+
+
 def _normalize_crop_box(
     crop: object, width: int, height: int
 ) -> Optional[tuple[int, int, int, int]]:
@@ -172,7 +176,10 @@ def generate_pdf_order_platypus(
     ``"Offerteaanvraag"``.
     """
     if not REPORTLAB_OK:
-        return
+        raise ReportLabUnavailableError(
+            "ReportLab is required to generate PDF orders. "
+            "Install it with 'pip install reportlab' and try again."
+        )
 
     margin = 18 * mm
     doc = SimpleDocTemplate(
@@ -706,6 +713,8 @@ def copy_per_production_and_orders(
         else _to_str(footer_note).replace("\r\n", "\n")
     )
 
+    missing_reportlab_exc: ReportLabUnavailableError | None = None
+
     for prod, rows in prod_to_rows.items():
         prod_folder = os.path.join(dest, prod)
         os.makedirs(prod_folder, exist_ok=True)
@@ -829,12 +838,18 @@ def copy_per_production_and_orders(
                 project_number=project_number,
                 project_name=project_name,
             )
+        except ReportLabUnavailableError as exc:
+            missing_reportlab_exc = exc
+            break
         except Exception as e:
             print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
 
     # Persist any (possibly unchanged) supplier defaults so that callers can rely on
     # the database reflecting the latest state on disk.
     db.save(SUPPLIERS_DB_FILE)
+
+    if missing_reportlab_exc is not None:
+        raise missing_reportlab_exc
 
     return count_copied, chosen
 

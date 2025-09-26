@@ -10,9 +10,18 @@ from PyPDF2 import PdfReader
 
 from models import Supplier
 from suppliers_db import SuppliersDB
-from orders import copy_per_production_and_orders, _prefix_for_doc_type
+from orders import (
+    copy_per_production_and_orders,
+    _prefix_for_doc_type,
+    REPORTLAB_OK,
+)
+
+requires_reportlab = pytest.mark.skipif(
+    not REPORTLAB_OK, reason="ReportLab is vereist voor PDF-testen"
+)
 
 
+@requires_reportlab
 def test_doc_number_in_name_and_header(tmp_path):
     reportlab = pytest.importorskip("reportlab")
 
@@ -70,6 +79,7 @@ def test_prefix_helper():
     assert _prefix_for_doc_type("Onbekend") == ""
 
 
+@requires_reportlab
 def test_offerte_prefix_in_output(tmp_path):
     reportlab = pytest.importorskip("reportlab")
 
@@ -122,6 +132,7 @@ def test_offerte_prefix_in_output(tmp_path):
     assert "OFF-42" not in lines[0]
 
 
+@requires_reportlab
 def test_missing_doc_number_omits_prefix_and_header(tmp_path):
     reportlab = pytest.importorskip("reportlab")
 
@@ -171,6 +182,7 @@ def test_missing_doc_number_omits_prefix_and_header(tmp_path):
     assert f"Datum: {today}" in text
 
 
+@requires_reportlab
 def test_doc_number_applied_to_zip_filename(tmp_path):
     db = SuppliersDB()
     db.upsert(Supplier.from_any({"supplier": "ACME"}))

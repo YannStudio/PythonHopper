@@ -1,9 +1,11 @@
 import zipfile
 
+import pytest
+
 import pandas as pd
 
 from models import Supplier
-from orders import copy_per_production_and_orders
+from orders import copy_per_production_and_orders, REPORTLAB_OK
 from suppliers_db import SuppliersDB
 
 
@@ -20,6 +22,7 @@ def _build_bom() -> pd.DataFrame:
     ])
 
 
+@pytest.mark.skipif(not REPORTLAB_OK, reason="ReportLab is vereist voor deze test")
 def test_duplicate_parts_single_export(tmp_path):
     src = tmp_path / "src"
     dest = tmp_path / "dest"

@@ -1,10 +1,12 @@
 import os
 import pandas as pd
+import pytest
 from models import Supplier
 from suppliers_db import SuppliersDB
-from orders import copy_per_production_and_orders
+from orders import copy_per_production_and_orders, REPORTLAB_OK
 
 
+@pytest.mark.skipif(not REPORTLAB_OK, reason="ReportLab is vereist voor deze test")
 def test_defaults_persist(tmp_path, monkeypatch):
     # Ensure suppliers DB file is created inside temporary directory
     monkeypatch.chdir(tmp_path)
