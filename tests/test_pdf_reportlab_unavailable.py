@@ -1,5 +1,7 @@
 import datetime
+
 import pandas as pd
+import pytest
 
 from models import Supplier
 from suppliers_db import SuppliersDB
@@ -32,11 +34,6 @@ def test_pdf_export_skipped_when_reportlab_missing(tmp_path, monkeypatch):
 
     monkeypatch.setattr(orders, "REPORTLAB_OK", False, raising=False)
 
-    def _unexpected_pdf_call(*_args, **_kwargs):  # pragma: no cover - safety guard
-        raise AssertionError("PDF helper should not be called when ReportLab is absent")
-
-    monkeypatch.setattr(orders, "generate_pdf_order_platypus", _unexpected_pdf_call)
-
     count, chosen, warnings = orders.copy_per_production_and_orders(
         str(source),
         str(dest),
@@ -65,3 +62,20 @@ def test_pdf_export_skipped_when_reportlab_missing(tmp_path, monkeypatch):
 
     exported_files = {p.name for p in prod_dir.iterdir()}
     assert "PN1.pdf" in exported_files
+
+
+def test_generate_pdf_order_platypus_reports_missing_dependency(tmp_path, monkeypatch):
+    monkeypatch.setattr(orders, "REPORTLAB_OK", False, raising=False)
+
+    supplier = Supplier.from_any({"supplier": "Test"})
+
+    with pytest.raises(orders.PDFGenerationUnavailableError) as excinfo:
+        orders.generate_pdf_order_platypus(
+            str(tmp_path / "out.pdf"),
+            {"name": "Test", "address": ""},
+            supplier,
+            "Laser",
+            [],
+        )
+
+    assert "ReportLab" in str(excinfo.value)

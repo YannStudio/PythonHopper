@@ -26,6 +26,7 @@ from orders import (
     combine_pdfs_per_production,
     combine_pdfs_from_source,
     _prefix_for_doc_type,
+    PDFGenerationUnavailableError,
 )
 from logo_resolver import CLIENT_LOGO_DIR, resolve_logo_path as shared_resolve_logo_path
 
@@ -2757,29 +2758,32 @@ def start_gui():
                         else:
                             addr = self.delivery_db.get(clean)
                             resolved_delivery_map[prod] = addr
-                    cnt, chosen, order_warnings = copy_per_production_and_orders(
-                        self.source_folder,
-                        bundle_dest,
-                        current_bom,
-                        exts,
-                        self.db,
-                        sel_map,
-                        doc_map,
-                        doc_num_map,
-                        remember,
-                        client=client,
-                        delivery_map=resolved_delivery_map,
-                        footer_note=self.footer_note_var.get(),
-                        zip_parts=bool(self.zip_var.get()),
-                        date_prefix_exports=bool(self.export_date_prefix_var.get()),
-                        date_suffix_exports=bool(self.export_date_suffix_var.get()),
-                        project_number=project_number,
-                        project_name=project_name,
-                        export_name_prefix_text=token_prefix_text,
-                        export_name_prefix_enabled=token_prefix_enabled,
-                        export_name_suffix_text=token_suffix_text,
-                        export_name_suffix_enabled=token_suffix_enabled,
-                    )
+                    try:
+                        cnt, chosen, order_warnings = copy_per_production_and_orders(
+                            self.source_folder,
+                            bundle_dest,
+                            current_bom,
+                            exts,
+                            self.db,
+                            sel_map,
+                            doc_map,
+                            doc_num_map,
+                            remember,
+                            client=client,
+                            delivery_map=resolved_delivery_map,
+                            footer_note=self.footer_note_var.get(),
+                            zip_parts=bool(self.zip_var.get()),
+                            date_prefix_exports=bool(self.export_date_prefix_var.get()),
+                            date_suffix_exports=bool(self.export_date_suffix_var.get()),
+                            project_number=project_number,
+                            project_name=project_name,
+                            export_name_prefix_text=token_prefix_text,
+                            export_name_prefix_enabled=token_prefix_enabled,
+                            export_name_suffix_text=token_suffix_text,
+                            export_name_suffix_enabled=token_suffix_enabled,
+                        )
+                    except PDFGenerationUnavailableError as exc:
+                        cnt, chosen, order_warnings = 0, {}, [str(exc)]
 
                     def on_done():
                         warn_suffix = (

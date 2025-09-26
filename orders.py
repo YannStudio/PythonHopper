@@ -82,6 +82,10 @@ LOGO_SUPPORT_WARNING_PREFIX = (
 )
 
 
+class PDFGenerationUnavailableError(RuntimeError):
+    """Raised when PDF generation cannot proceed due to missing dependencies."""
+
+
 def _normalize_crop_box(
     crop: object, width: int, height: int
 ) -> Optional[tuple[int, int, int, int]]:
@@ -176,7 +180,9 @@ def generate_pdf_order_platypus(
     ``"Offerteaanvraag"``.
     """
     if not REPORTLAB_OK:
-        return
+        raise PDFGenerationUnavailableError(
+            "ReportLab ontbreekt. Installeer het 'reportlab'-pakket om PDF-bestelbonnen te genereren."
+        )
 
     margin = 18 * mm
     doc = SimpleDocTemplate(
@@ -861,11 +867,14 @@ def copy_per_production_and_orders(
                     project_number=project_number,
                     project_name=project_name,
                 )
+            except PDFGenerationUnavailableError as exc:
+                warning = f"PDF niet aangemaakt voor {prod}: {exc}"
+                warnings.append(warning)
+                print(f"[WAARSCHUWING] {warning}", file=sys.stderr)
             except Exception as e:
-                print(
-                    f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}",
-                    file=sys.stderr,
-                )
+                warning = f"PDF mislukt voor {prod}: {e}"
+                warnings.append(warning)
+                print(f"[WAARSCHUWING] {warning}", file=sys.stderr)
 
     # Persist any (possibly unchanged) supplier defaults so that callers can rely on
     # the database reflecting the latest state on disk.

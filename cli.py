@@ -4,6 +4,7 @@
 """Command-line interface helpers for Filehopper."""
 
 import os
+import sys
 import shutil
 import argparse
 from typing import Iterable, List, Optional, Union
@@ -23,7 +24,11 @@ from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from clients_db import ClientsDB, CLIENTS_DB_FILE
 from delivery_addresses_db import DeliveryAddressesDB, DELIVERY_DB_FILE
 from bom import read_csv_flex, load_bom
-from orders import copy_per_production_and_orders, DEFAULT_FOOTER_NOTE
+from orders import (
+    copy_per_production_and_orders,
+    DEFAULT_FOOTER_NOTE,
+    PDFGenerationUnavailableError,
+)
 from app_settings import AppSettings
 
 DEFAULT_ALLOWED_EXTS = "pdf,dxf,dwg,step,stp"
@@ -420,31 +425,36 @@ def cli_copy_per_prod(args):
     settings_note = settings.footer_note
     footer_note = settings_note if args.note is None else args.note
 
-    cnt, chosen, order_warnings = copy_per_production_and_orders(
-        args.source,
-        bundle.bundle_dir,
-        df,
-        exts,
-        db,
-        override_map,
-        doc_type_map=doc_type_map,
-        doc_num_map=doc_num_map,
-        remember_defaults=args.remember_defaults,
-        client=client,
-        delivery_map=delivery_map,
-        footer_note=footer_note if footer_note is not None else DEFAULT_FOOTER_NOTE,
-        project_number=args.project_number,
-        project_name=args.project_name,
-        export_name_prefix_text=export_prefix_text,
-        export_name_prefix_enabled=export_prefix_enabled,
-        export_name_suffix_text=export_suffix_text,
-        export_name_suffix_enabled=export_suffix_enabled,
-    )
+    try:
+        cnt, chosen, order_warnings = copy_per_production_and_orders(
+            args.source,
+            bundle.bundle_dir,
+            df,
+            exts,
+            db,
+            override_map,
+            doc_type_map=doc_type_map,
+            doc_num_map=doc_num_map,
+            remember_defaults=args.remember_defaults,
+            client=client,
+            delivery_map=delivery_map,
+            footer_note=footer_note if footer_note is not None else DEFAULT_FOOTER_NOTE,
+            project_number=args.project_number,
+            project_name=args.project_name,
+            export_name_prefix_text=export_prefix_text,
+            export_name_prefix_enabled=export_prefix_enabled,
+            export_name_suffix_text=export_suffix_text,
+            export_name_suffix_enabled=export_suffix_enabled,
+        )
+    except PDFGenerationUnavailableError as exc:
+        warning = str(exc)
+        print(f"[WAARSCHUWING] {warning}", file=sys.stderr)
+        cnt, chosen, order_warnings = 0, {}, [warning]
     print("Gekopieerd:", cnt)
     for k, v in chosen.items():
         print(f"  {k} → {v}")
     for warn in order_warnings:
-        print(f"[WAARSCHUWING] {warn}")
+        print(f"[WAARSCHUWING] {warn}", file=sys.stderr)
     return 0
 
 
