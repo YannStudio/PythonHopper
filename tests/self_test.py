@@ -75,7 +75,7 @@ def run_tests() -> int:
         df.to_excel(bom, index=False, engine="openpyxl")
         ldf = load_bom(bom)
         assert ldf["Aantal"].max() <= 999  # capped
-        cnt, chosen = copy_per_production_and_orders(
+        cnt, chosen, order_warnings = copy_per_production_and_orders(
             src,
             dst,
             ldf,
@@ -91,6 +91,7 @@ def run_tests() -> int:
         )
         assert cnt == 2
         assert chosen.get("Laser") == "ACME"
+        assert not order_warnings
         prod_folder = os.path.join(dst, "Laser")
         assert os.path.exists(os.path.join(prod_folder, "PN1.pdf"))
         assert os.path.exists(os.path.join(prod_folder, "PN1.stp"))
@@ -125,7 +126,7 @@ def run_tests() -> int:
 
         dst_dates = os.path.join(td, "dst_dates")
         os.makedirs(dst_dates)
-        cnt_dates, _ = copy_per_production_and_orders(
+        cnt_dates, _, _ = copy_per_production_and_orders(
             src,
             dst_dates,
             ldf,
@@ -150,7 +151,7 @@ def run_tests() -> int:
 
         dst_prefix = os.path.join(td, "dst_prefix")
         os.makedirs(dst_prefix)
-        cnt_prefix, _ = copy_per_production_and_orders(
+        cnt_prefix, _, _ = copy_per_production_and_orders(
             src,
             dst_prefix,
             ldf,
@@ -174,7 +175,7 @@ def run_tests() -> int:
 
         dst_prefix_suffix = os.path.join(td, "dst_prefix_suffix")
         os.makedirs(dst_prefix_suffix)
-        cnt_prefix_suffix, _ = copy_per_production_and_orders(
+        cnt_prefix_suffix, _, _ = copy_per_production_and_orders(
             src,
             dst_prefix_suffix,
             ldf,
@@ -221,7 +222,8 @@ def test_order_excel_partnumber_wrap_text(tmp_path):
             "Gewicht": "4,56",
         }
     ]
-    write_order_excel(str(path), items, doc_number="BB-1")
+    warnings = write_order_excel(str(path), items, doc_number="BB-1")
+    assert not warnings
     wb = openpyxl.load_workbook(path)
     ws = wb.active
     header_row = None

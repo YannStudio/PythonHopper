@@ -2757,7 +2757,7 @@ def start_gui():
                         else:
                             addr = self.delivery_db.get(clean)
                             resolved_delivery_map[prod] = addr
-                    cnt, chosen = copy_per_production_and_orders(
+                    cnt, chosen, order_warnings = copy_per_production_and_orders(
                         self.source_folder,
                         bundle_dest,
                         current_bom,
@@ -2766,15 +2766,15 @@ def start_gui():
                         sel_map,
                         doc_map,
                         doc_num_map,
-                    remember,
-                    client=client,
-                    delivery_map=resolved_delivery_map,
-                    footer_note=self.footer_note_var.get(),
-                    zip_parts=bool(self.zip_var.get()),
-                    date_prefix_exports=bool(self.export_date_prefix_var.get()),
-                    date_suffix_exports=bool(self.export_date_suffix_var.get()),
-                    project_number=project_number,
-                    project_name=project_name,
+                        remember,
+                        client=client,
+                        delivery_map=resolved_delivery_map,
+                        footer_note=self.footer_note_var.get(),
+                        zip_parts=bool(self.zip_var.get()),
+                        date_prefix_exports=bool(self.export_date_prefix_var.get()),
+                        date_suffix_exports=bool(self.export_date_suffix_var.get()),
+                        project_number=project_number,
+                        project_name=project_name,
                         export_name_prefix_text=token_prefix_text,
                         export_name_prefix_enabled=token_prefix_enabled,
                         export_name_suffix_text=token_suffix_text,
@@ -2782,13 +2782,24 @@ def start_gui():
                     )
 
                     def on_done():
+                        warn_suffix = (
+                            f" ({len(order_warnings)} waarschuwing(en))"
+                            if order_warnings
+                            else ""
+                        )
                         self.status_var.set(
-                            f"Klaar. Gekopieerd: {cnt}. Leveranciers: {chosen}. → {bundle_dest}"
+                            f"Klaar. Gekopieerd: {cnt}. Leveranciers: {chosen}. → {bundle_dest}{warn_suffix}"
                         )
                         info_lines = ["Bestelbonnen aangemaakt in:", bundle_dest]
                         if bundle.latest_symlink:
                             info_lines.append(f"Symlink: {bundle.latest_symlink}")
                         messagebox.showinfo("Klaar", "\n".join(info_lines), parent=self)
+                        if order_warnings:
+                            messagebox.showwarning(
+                                "Let op",
+                                "\n".join(order_warnings),
+                                parent=self,
+                            )
                         try:
                             if sys.platform.startswith("win"):
                                 os.startfile(bundle_dest)

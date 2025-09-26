@@ -77,6 +77,10 @@ DEFAULT_FOOTER_NOTE = (
     "Vermeld onze productiereferentie bij levering."
 )
 
+LOGO_SUPPORT_WARNING_PREFIX = (
+    "Logo niet toegevoegd: ontbrekende ondersteuning voor "
+)
+
 
 def _normalize_crop_box(
     crop: object, width: int, height: int
@@ -448,8 +452,14 @@ def write_order_excel(
     doc_number: str | None = None,
     project_number: str | None = None,
     project_name: str | None = None,
-) -> None:
-    """Write order information to an Excel file with header info."""
+) -> List[str]:
+    """Write order information to an Excel file with header info.
+
+    Returns any warnings encountered during generation, such as missing logo
+    support. The workbook itself is still written even when warnings are
+    emitted.
+    """
+    warnings: List[str] = []
     df = pd.DataFrame(
         items,
         columns=["PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht"],
@@ -520,28 +530,34 @@ def write_order_excel(
             logo_candidate = company_info.get("logo_path") if company_info else None
             logo_path = resolve_logo_path(logo_candidate)
             logo_buffer = None
-            if (
-                logo_path is not None
-                and XLImage is not None
-                and PILImage is not None
-            ):
-                try:
-                    with PILImage.open(logo_path) as pil_img:
-                        pil_img.load()
-                        logo_buffer = io.BytesIO()
-                        save_format = pil_img.format or "PNG"
-                        pil_img.save(logo_buffer, format=save_format)
-                    logo_buffer.seek(0)
-                    xl_image = XLImage(logo_buffer)
-                    xl_image.anchor = "A1"
-                    ws.add_image(xl_image)
-                    if not hasattr(ws, "_pythonhopper_logo_streams"):
-                        ws._pythonhopper_logo_streams = []  # type: ignore[attr-defined]
-                    ws._pythonhopper_logo_streams.append(logo_buffer)  # type: ignore[attr-defined]
-                except Exception:
-                    if logo_buffer is not None:
-                        logo_buffer.close()
-                    logo_buffer = None
+            if logo_path is not None:
+                missing_support: List[str] = []
+                if PILImage is None:
+                    missing_support.append("Pillow")
+                if XLImage is None:
+                    missing_support.append("openpyxl")
+                if missing_support:
+                    joined = " en ".join(missing_support)
+                    warnings.append(f"{LOGO_SUPPORT_WARNING_PREFIX}{joined}.")
+                else:
+                    try:
+                        with PILImage.open(logo_path) as pil_img:
+                            pil_img.load()
+                            logo_buffer = io.BytesIO()
+                            save_format = pil_img.format or "PNG"
+                            pil_img.save(logo_buffer, format=save_format)
+                        logo_buffer.seek(0)
+                        xl_image = XLImage(logo_buffer)
+                        xl_image.anchor = "A1"
+                        ws.add_image(xl_image)
+                        if not hasattr(ws, "_pythonhopper_logo_streams"):
+                            ws._pythonhopper_logo_streams = []  # type: ignore[attr-defined]
+                        ws._pythonhopper_logo_streams.append(logo_buffer)  # type: ignore[attr-defined]
+                    except Exception as exc:
+                        if logo_buffer is not None:
+                            logo_buffer.close()
+                        logo_buffer = None
+                        warnings.append(f"Logo niet toegevoegd: {exc}")
 
             left_cols = {"PartNumber", "Description"}
             wrap_cols = {"PartNumber", "Description"}
@@ -564,6 +580,8 @@ def write_order_excel(
                         buffer.close()
                     except Exception:
                         pass
+
+    return warnings
 
 
 def pick_supplier_for_production(
@@ -618,7 +636,7 @@ def copy_per_production_and_orders(
     export_name_prefix_enabled: bool | None = None,
     export_name_suffix_text: str = "",
     export_name_suffix_enabled: bool | None = None,
-) -> Tuple[int, Dict[str, str]]:
+) -> Tuple[int, Dict[str, str], List[str]]:
     """Copy files per production and create accompanying order documents.
 
     ``doc_type_map`` may specify per production whether a *Bestelbon* or an
@@ -645,11 +663,16 @@ def copy_per_production_and_orders(
     consistently to copied files and ZIP archive members. The enable flags
     default to active when the corresponding text is non-empty unless
     explicitly set to ``False``.
+
+    Returns a tuple ``(count_copied, chosen_suppliers, warnings)`` where
+    ``warnings`` collects non-fatal issues encountered while generating the
+    accompanying documents.
     """
     os.makedirs(dest, exist_ok=True)
     file_index = _build_file_index(source, selected_exts)
     count_copied = 0
     chosen: Dict[str, str] = {}
+    warnings: List[str] = []
     doc_type_map = doc_type_map or {}
     doc_num_map = doc_num_map or {}
 
@@ -800,16 +823,18 @@ def copy_per_production_and_orders(
             prod_folder, f"{doc_type}{num_part}_{prod}_{today}.xlsx"
         )
         delivery = delivery_map.get(prod)
-        write_order_excel(
-            excel_path,
-            items,
-            company,
-            supplier,
-            delivery,
-            doc_type,
-            doc_num or None,
-            project_number=project_number,
-            project_name=project_name,
+        warnings.extend(
+            write_order_excel(
+                excel_path,
+                items,
+                company,
+                supplier,
+                delivery,
+                doc_type,
+                doc_num or None,
+                project_number=project_number,
+                project_name=project_name,
+            )
         )
 
         pdf_path = os.path.join(
@@ -836,7 +861,7 @@ def copy_per_production_and_orders(
     # the database reflecting the latest state on disk.
     db.save(SUPPLIERS_DB_FILE)
 
-    return count_copied, chosen
+    return count_copied, chosen, warnings
 
 
 def combine_pdfs_from_source(

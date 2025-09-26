@@ -107,7 +107,7 @@ def test_documents_created_without_suppliers(tmp_path, monkeypatch):
         ]
     )
 
-    cnt, chosen = copy_per_production_and_orders(
+    cnt, chosen, warnings = copy_per_production_and_orders(
         str(src),
         str(dest),
         bom_df,
@@ -123,6 +123,7 @@ def test_documents_created_without_suppliers(tmp_path, monkeypatch):
 
     assert cnt == 1
     assert chosen == {"Laser": ""}
+    assert not warnings
 
     today = datetime.date.today().strftime("%Y-%m-%d")
     prod_folder = dest / "Laser"
