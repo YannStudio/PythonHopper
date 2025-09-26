@@ -11,6 +11,7 @@ import datetime
 import re
 import zipfile
 import io
+import warnings as warning_mod
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
@@ -254,8 +255,13 @@ def generate_pdf_order_platypus(
                                 buffer, width=width_pt, height=height_pt
                             )
                             logo_flowable.hAlign = "LEFT"
-                except Exception:
+                except Exception as exc:
                     logo_flowable = None
+                    message = "Logo niet toegevoegd aan PDF"
+                    if resolved_logo:
+                        message += f" ({resolved_logo})"
+                    message += f": {exc}"
+                    warning_mod.warn(message, UserWarning)
 
     # Supplier info with full address and contact details
     addr_parts = []
@@ -848,19 +854,23 @@ def copy_per_production_and_orders(
                 prod_folder, f"{doc_type}{num_part}_{prod}_{today}.pdf"
             )
             try:
-                generate_pdf_order_platypus(
-                    pdf_path,
-                    company,
-                    supplier,
-                    prod,
-                    items,
-                    doc_type=doc_type,
-                    doc_number=doc_num or None,
-                    footer_note=footer_note_text,
-                    delivery=delivery,
-                    project_number=project_number,
-                    project_name=project_name,
-                )
+                with warning_mod.catch_warnings(record=True) as caught_pdf_warnings:
+                    warning_mod.simplefilter("always")
+                    generate_pdf_order_platypus(
+                        pdf_path,
+                        company,
+                        supplier,
+                        prod,
+                        items,
+                        doc_type=doc_type,
+                        doc_number=doc_num or None,
+                        footer_note=footer_note_text,
+                        delivery=delivery,
+                        project_number=project_number,
+                        project_name=project_name,
+                    )
+                for warning_msg in caught_pdf_warnings or []:
+                    warnings.append(str(warning_msg.message))
             except Exception as e:
                 print(
                     f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}",

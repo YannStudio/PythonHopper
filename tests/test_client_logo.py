@@ -2,6 +2,7 @@ import io
 import zipfile
 
 import pytest
+import pandas as pd
 
 pytest.importorskip("PIL")
 from PIL import Image
@@ -15,6 +16,7 @@ from orders import (
     generate_pdf_order_platypus,
 )
 import logo_resolver
+from suppliers_db import SuppliersDB
 
 
 def test_clients_db_persists_logo_fields(tmp_path):
@@ -211,3 +213,54 @@ def test_write_order_excel_warns_when_logo_support_missing(tmp_path, monkeypatch
     assert xlsx_path.exists()
     assert warnings
     assert any(w.startswith(LOGO_SUPPORT_WARNING_PREFIX) for w in warnings)
+
+
+@pytest.mark.skipif(not REPORTLAB_OK, reason="ReportLab niet beschikbaar")
+def test_copy_per_production_collects_corrupt_logo_warning(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    dest = tmp_path / "dest"
+    source.mkdir()
+    dest.mkdir()
+
+    corrupt_logo = tmp_path / "broken.png"
+    corrupt_logo.write_bytes(b"not a valid image")
+
+    client = Client(name="ACME", logo_path=str(corrupt_logo))
+    supplier = Supplier(supplier="Supplier BV")
+    db = SuppliersDB([supplier])
+
+    monkeypatch.setattr(orders, "SUPPLIERS_DB_FILE", str(tmp_path / "suppliers.json"))
+
+    bom_df = pd.DataFrame(
+        [
+            {
+                "Production": "PROD-CORRUPT",
+                "PartNumber": "PN-1",
+                "Description": "Onderdeel",
+                "Aantal": 1,
+                "Materiaal": "",
+                "Oppervlakte": "",
+                "Gewicht": "",
+            }
+        ]
+    )
+
+    _, _, order_warnings = orders.copy_per_production_and_orders(
+        str(source),
+        str(dest),
+        bom_df,
+        selected_exts=[],
+        db=db,
+        override_map={},
+        doc_type_map={},
+        doc_num_map={},
+        remember_defaults=False,
+        client=client,
+    )
+
+    prod_dir = dest / "PROD-CORRUPT"
+    generated_pdfs = list(prod_dir.glob("*.pdf"))
+    assert generated_pdfs, "PDF-bestand is niet aangemaakt"
+    assert any(
+        "Logo niet toegevoegd aan PDF" in warning for warning in order_warnings
+    ), order_warnings
