@@ -295,10 +295,7 @@ def generate_pdf_order_platypus(
         )
         return stacked
 
-    if KeepTogether and len(left_elements) > 1:
-        left_cell = KeepTogether(left_elements)
-    else:
-        left_cell = _stack_left_elements(left_elements)
+    left_cell = _stack_left_elements(left_elements)
 
     right_lines: List[str] = []
     if delivery:
@@ -316,7 +313,7 @@ def generate_pdf_order_platypus(
     if doc_lines:
         story.append(Paragraph("<br/>".join(doc_lines), text_style))
     story.append(Spacer(0, 6))
-    header_tbl = LongTable(
+    header_tbl = Table(
         [
             [
                 left_cell,
