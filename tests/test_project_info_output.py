@@ -2,12 +2,13 @@ import datetime
 
 import pandas as pd
 import pytest
-pytest.importorskip("openpyxl")
-import pytest
+
+openpyxl = pytest.importorskip("openpyxl")
 from PyPDF2 import PdfReader
 
 import cli
 from cli import build_parser, cli_copy_per_prod
+from orders import copy_per_production_and_orders
 from models import Supplier
 from suppliers_db import SuppliersDB
 from clients_db import ClientsDB
@@ -80,3 +81,62 @@ def test_project_info_in_documents(tmp_path, monkeypatch):
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
     assert "Projectnummer: PRJ123" in text
     assert "Projectnaam: New Project" in text
+
+
+def test_documents_created_without_suppliers(tmp_path, monkeypatch):
+    pytest.importorskip("reportlab")
+
+    monkeypatch.chdir(tmp_path)
+    db = SuppliersDB()
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "PN1.pdf").write_text("dummy")
+
+    dest = tmp_path / "dest"
+    dest.mkdir()
+
+    bom_df = pd.DataFrame(
+        [
+            {
+                "PartNumber": "PN1",
+                "Description": "",
+                "Production": "Laser",
+                "Aantal": 1,
+            }
+        ]
+    )
+
+    cnt, chosen = copy_per_production_and_orders(
+        str(src),
+        str(dest),
+        bom_df,
+        [".pdf"],
+        db,
+        {},
+        {},
+        {},
+        False,
+        client=None,
+        delivery_map={},
+    )
+
+    assert cnt == 1
+    assert chosen == {"Laser": ""}
+
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    prod_folder = dest / "Laser"
+
+    xlsx_path = prod_folder / f"Bestelbon_Laser_{today}.xlsx"
+    assert xlsx_path.exists()
+    wb = openpyxl.load_workbook(xlsx_path)
+    ws = wb.active
+    header_values = {ws[f"A{i}"].value: ws[f"B{i}"].value for i in range(1, ws.max_row + 1)}
+    assert "Leverancier" in header_values
+    assert header_values["Leverancier"] in ("", None)
+
+    pdf_path = prod_folder / f"Bestelbon_Laser_{today}.pdf"
+    assert pdf_path.exists()
+    reader = PdfReader(pdf_path)
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    assert "Besteld bij:" in text

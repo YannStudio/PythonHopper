@@ -259,10 +259,11 @@ def generate_pdf_order_platypus(
         addr_parts.append(supplier.land)
     full_addr = ", ".join(addr_parts)
 
-    supp_lines = [f"<b>Besteld bij:</b> {supplier.supplier}"]
+    supplier_name = _to_str(supplier.supplier)
+    supp_lines = [f"<b>Besteld bij:</b> {supplier_name}".rstrip()]
     if full_addr:
         supp_lines.append(full_addr)
-    supp_lines.append(f"BTW: {supplier.btw or ''}")
+    supp_lines.append(f"BTW: {supplier.btw or ''}".rstrip())
     if supplier.contact_sales:
         supp_lines.append(f"Contact sales: {supplier.contact_sales}")
     if supplier.sales_email:
@@ -753,42 +754,41 @@ def copy_per_production_and_orders(
             "logo_path": client.logo_path if client else "",
             "logo_crop": client.logo_crop if client else None,
         }
-        if supplier.supplier:
-            excel_path = os.path.join(
-                prod_folder, f"{doc_type}{num_part}_{prod}_{today}.xlsx"
-            )
-            delivery = delivery_map.get(prod)
-            write_order_excel(
-                excel_path,
-                items,
+        excel_path = os.path.join(
+            prod_folder, f"{doc_type}{num_part}_{prod}_{today}.xlsx"
+        )
+        delivery = delivery_map.get(prod)
+        write_order_excel(
+            excel_path,
+            items,
+            company,
+            supplier,
+            delivery,
+            doc_type,
+            doc_num or None,
+            project_number=project_number,
+            project_name=project_name,
+        )
+
+        pdf_path = os.path.join(
+            prod_folder, f"{doc_type}{num_part}_{prod}_{today}.pdf"
+        )
+        try:
+            generate_pdf_order_platypus(
+                pdf_path,
                 company,
                 supplier,
-                delivery,
-                doc_type,
-                doc_num or None,
+                prod,
+                items,
+                doc_type=doc_type,
+                doc_number=doc_num or None,
+                footer_note=footer_note_text,
+                delivery=delivery,
                 project_number=project_number,
                 project_name=project_name,
             )
-
-            pdf_path = os.path.join(
-                prod_folder, f"{doc_type}{num_part}_{prod}_{today}.pdf"
-            )
-            try:
-                generate_pdf_order_platypus(
-                    pdf_path,
-                    company,
-                    supplier,
-                    prod,
-                    items,
-                    doc_type=doc_type,
-                    doc_number=doc_num or None,
-                    footer_note=footer_note_text,
-                    delivery=delivery,
-                    project_number=project_number,
-                    project_name=project_name,
-                )
-            except Exception as e:
-                print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
+        except Exception as e:
+            print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
 
     # Persist any (possibly unchanged) supplier defaults so that callers can rely on
     # the database reflecting the latest state on disk.
