@@ -13,9 +13,10 @@ import logo_resolver
 
 
 def test_clients_db_persists_logo_fields(tmp_path):
+    stored_logo_path = f"{logo_resolver.CLIENT_LOGO_DIR.name}/acme.png"
     client = Client(
         name="ACME",
-        logo_path="client_logos/acme.png",
+        logo_path=stored_logo_path,
         logo_crop={"left": 5, "top": 10, "right": 105, "bottom": 210},
     )
     db = ClientsDB([client])
@@ -25,7 +26,7 @@ def test_clients_db_persists_logo_fields(tmp_path):
     loaded = ClientsDB.load(path)
     assert loaded.clients
     saved = loaded.clients[0]
-    assert saved.logo_path == "client_logos/acme.png"
+    assert saved.logo_path == stored_logo_path
     assert saved.logo_crop == {"left": 5, "top": 10, "right": 105, "bottom": 210}
 
 
@@ -82,12 +83,12 @@ def test_generate_pdf_order_includes_logo(tmp_path):
 
 @pytest.mark.skipif(not REPORTLAB_OK, reason="ReportLab niet beschikbaar")
 def test_generate_pdf_order_logo_resolves_after_chdir(tmp_path, monkeypatch):
-    logo_dir = tmp_path / "client_logos"
+    logo_dir = (tmp_path / "shared_logos").resolve()
     logo_dir.mkdir()
-    logo_path = logo_dir / "temp.png"
-    Image.new("RGB", (160, 80), "blue").save(logo_path)
-
     monkeypatch.setattr(logo_resolver, "CLIENT_LOGO_DIR", logo_dir)
+
+    logo_path = logo_resolver.CLIENT_LOGO_DIR / "temp.png"
+    Image.new("RGB", (160, 80), "blue").save(logo_path)
 
     work_dir = tmp_path / "elsewhere"
     work_dir.mkdir()
@@ -99,7 +100,7 @@ def test_generate_pdf_order_logo_resolves_after_chdir(tmp_path, monkeypatch):
         "address": "Example Street 1",
         "vat": "BE0123456789",
         "email": "info@example.com",
-        "logo_path": "client_logos/temp.png",
+        "logo_path": f"{logo_resolver.CLIENT_LOGO_DIR.name}/{logo_path.name}",
     }
     supplier = Supplier(supplier="Supplier BV")
     items = [
