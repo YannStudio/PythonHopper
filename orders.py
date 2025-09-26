@@ -18,9 +18,16 @@ import pandas as pd
 try:
     from openpyxl.styles import Alignment
     from openpyxl.utils import get_column_letter
+    from openpyxl.drawing.image import Image as XLImage
 except Exception:  # pragma: no cover - optional dependency
     Alignment = None
     get_column_letter = None
+    XLImage = None
+
+try:  # pragma: no cover - Pillow is optional at runtime
+    from PIL import Image as PILImage
+except Exception:  # pragma: no cover - optional dependency
+    PILImage = None
 
 try:
     from PyPDF2 import PdfMerger
@@ -510,6 +517,32 @@ def write_order_excel(
                 ws.cell(row=r, column=1, value=label)
                 ws.cell(row=r, column=2, value=value)
 
+            logo_candidate = company_info.get("logo_path") if company_info else None
+            logo_path = resolve_logo_path(logo_candidate)
+            logo_buffer = None
+            if (
+                logo_path is not None
+                and XLImage is not None
+                and PILImage is not None
+            ):
+                try:
+                    with PILImage.open(logo_path) as pil_img:
+                        pil_img.load()
+                        logo_buffer = io.BytesIO()
+                        save_format = pil_img.format or "PNG"
+                        pil_img.save(logo_buffer, format=save_format)
+                    logo_buffer.seek(0)
+                    xl_image = XLImage(logo_buffer)
+                    xl_image.anchor = "A1"
+                    ws.add_image(xl_image)
+                    if not hasattr(ws, "_pythonhopper_logo_streams"):
+                        ws._pythonhopper_logo_streams = []  # type: ignore[attr-defined]
+                    ws._pythonhopper_logo_streams.append(logo_buffer)  # type: ignore[attr-defined]
+                except Exception:
+                    if logo_buffer is not None:
+                        logo_buffer.close()
+                    logo_buffer = None
+
             left_cols = {"PartNumber", "Description"}
             wrap_cols = {"PartNumber", "Description"}
             for col_idx, col_name in enumerate(df.columns, start=1):
@@ -522,6 +555,15 @@ def write_order_excel(
                     ws.column_dimensions[column_letter].width = 25
                 for row in range(startrow + 1, startrow + len(df) + 2):
                     ws.cell(row=row, column=col_idx).alignment = align
+
+        if "ws" in locals():
+            logo_streams = getattr(ws, "_pythonhopper_logo_streams", None)
+            if logo_streams:
+                for buffer in logo_streams:
+                    try:
+                        buffer.close()
+                    except Exception:
+                        pass
 
 
 def pick_supplier_for_production(
