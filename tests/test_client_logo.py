@@ -1,3 +1,6 @@
+import io
+import zipfile
+
 import pytest
 
 pytest.importorskip("PIL")
@@ -5,7 +8,7 @@ from PIL import Image
 
 from clients_db import ClientsDB
 from models import Client, Supplier
-from orders import generate_pdf_order_platypus, REPORTLAB_OK
+from orders import generate_pdf_order_platypus, REPORTLAB_OK, write_order_excel
 import logo_resolver
 
 
@@ -128,3 +131,39 @@ def test_generate_pdf_order_logo_resolves_after_chdir(tmp_path, monkeypatch):
     assert xobjects is not None
     widths = [int(obj.get_object().get("/Width")) for obj in xobjects.values()]
     assert any(w >= 150 for w in widths)
+
+
+def test_write_order_excel_embeds_logo(tmp_path):
+    logo_path = tmp_path / "logo.png"
+    Image.new("RGB", (120, 60), "green").save(logo_path)
+
+    xlsx_path = tmp_path / "order.xlsx"
+    company = {
+        "name": "ACME",
+        "address": "Example Street 1",
+        "vat": "BE0123456789",
+        "email": "info@example.com",
+        "logo_path": str(logo_path),
+    }
+    supplier = Supplier(supplier="Supplier BV")
+    items = [
+        {
+            "PartNumber": "PN-1",
+            "Description": "Onderdeel",
+            "Materiaal": "",
+            "Aantal": 1,
+            "Oppervlakte": "",
+            "Gewicht": "",
+        }
+    ]
+
+    write_order_excel(str(xlsx_path), items, company_info=company, supplier=supplier)
+
+    with zipfile.ZipFile(xlsx_path) as zf:
+        media_entries = [name for name in zf.namelist() if name.startswith("xl/media/")]
+        assert media_entries
+        image_data = zf.read(media_entries[0])
+
+    with Image.open(io.BytesIO(image_data)) as embedded:
+        embedded.load()
+        assert embedded.size == (120, 60)
