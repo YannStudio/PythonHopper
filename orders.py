@@ -673,6 +673,12 @@ def copy_per_production_and_orders(
     count_copied = 0
     chosen: Dict[str, str] = {}
     warnings: List[str] = []
+    pdf_generation_enabled = REPORTLAB_OK
+    if not pdf_generation_enabled:
+        warnings.append(
+            "PDF-export overgeslagen: ReportLab niet beschikbaar. "
+            "Installeer het 'reportlab'-pakket om PDF-bestanden te genereren."
+        )
     doc_type_map = doc_type_map or {}
     doc_num_map = doc_num_map or {}
 
@@ -837,25 +843,29 @@ def copy_per_production_and_orders(
             )
         )
 
-        pdf_path = os.path.join(
-            prod_folder, f"{doc_type}{num_part}_{prod}_{today}.pdf"
-        )
-        try:
-            generate_pdf_order_platypus(
-                pdf_path,
-                company,
-                supplier,
-                prod,
-                items,
-                doc_type=doc_type,
-                doc_number=doc_num or None,
-                footer_note=footer_note_text,
-                delivery=delivery,
-                project_number=project_number,
-                project_name=project_name,
+        if pdf_generation_enabled:
+            pdf_path = os.path.join(
+                prod_folder, f"{doc_type}{num_part}_{prod}_{today}.pdf"
             )
-        except Exception as e:
-            print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
+            try:
+                generate_pdf_order_platypus(
+                    pdf_path,
+                    company,
+                    supplier,
+                    prod,
+                    items,
+                    doc_type=doc_type,
+                    doc_number=doc_num or None,
+                    footer_note=footer_note_text,
+                    delivery=delivery,
+                    project_number=project_number,
+                    project_name=project_name,
+                )
+            except Exception as e:
+                print(
+                    f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}",
+                    file=sys.stderr,
+                )
 
     # Persist any (possibly unchanged) supplier defaults so that callers can rely on
     # the database reflecting the latest state on disk.
