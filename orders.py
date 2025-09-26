@@ -277,10 +277,28 @@ def generate_pdf_order_platypus(
     if logo_flowable is not None:
         left_elements.extend([logo_flowable, Spacer(0, 4)])
     left_elements.append(left_paragraph)
-    if len(left_elements) == 1 or not KeepTogether:
-        left_cell = left_elements[0]
-    else:
+
+    def _stack_left_elements(elements: List[object]) -> object:
+        if len(elements) == 1:
+            return elements[0]
+        stacked = Table([[el] for el in elements], colWidths=[(width - 2 * margin) / 2])
+        stacked.setStyle(
+            TableStyle(
+                [
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        return stacked
+
+    if KeepTogether and len(left_elements) > 1:
         left_cell = KeepTogether(left_elements)
+    else:
+        left_cell = _stack_left_elements(left_elements)
 
     right_lines: List[str] = []
     if delivery:
