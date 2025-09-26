@@ -28,6 +28,9 @@ except Exception:  # pragma: no cover - PyPDF2 might be absent
     PdfMerger = None
 
 # ReportLab (PDF). Script works without it (PDF generation is skipped).
+LongTable = None  # type: ignore[assignment]
+KeepTogether = None  # type: ignore[assignment]
+
 try:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
@@ -36,14 +39,25 @@ try:
     from reportlab.platypus import (
         SimpleDocTemplate,
         Paragraph,
-        LongTable,
         Table,
         TableStyle,
         Spacer,
         Image as RLImage,
-        KeepTogether,
     )
     from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    try:  # pragma: no cover - exercised via dedicated fallback test
+        from reportlab.platypus import LongTable as _LongTable  # type: ignore
+    except Exception:  # pragma: no cover - fallback when LongTable is absent
+        _LongTable = Table
+    LongTable = _LongTable
+
+    try:  # pragma: no cover - exercised via dedicated fallback test
+        from reportlab.platypus import KeepTogether as _KeepTogether  # type: ignore
+    except Exception:  # pragma: no cover - fallback when KeepTogether is absent
+        _KeepTogether = None
+    KeepTogether = _KeepTogether
+
     REPORTLAB_OK = True
 except Exception:
     REPORTLAB_OK = False
@@ -263,7 +277,7 @@ def generate_pdf_order_platypus(
     if logo_flowable is not None:
         left_elements.extend([logo_flowable, Spacer(0, 4)])
     left_elements.append(left_paragraph)
-    if len(left_elements) == 1:
+    if len(left_elements) == 1 or not KeepTogether:
         left_cell = left_elements[0]
     else:
         left_cell = KeepTogether(left_elements)
