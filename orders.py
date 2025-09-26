@@ -112,6 +112,7 @@ from helpers import (
     _material_nowrap,
     _build_file_index,
 )
+from logo_resolver import resolve_logo_path
 from models import Supplier, Client, DeliveryAddress
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from bom import load_bom  # noqa: F401 - imported for module dependency
@@ -205,17 +206,15 @@ def generate_pdf_order_platypus(
     logo_flowable = None
     logo_path_info = company_info.get("logo_path") if company_info else None
     if logo_path_info:
-        logo_path = str(logo_path_info)
-        if not os.path.isabs(logo_path):
-            logo_path = os.path.join(os.getcwd(), logo_path)
-        if os.path.exists(logo_path):
+        resolved_logo = resolve_logo_path(str(logo_path_info))
+        if resolved_logo and resolved_logo.exists():
             try:
                 from PIL import Image as PILImage  # type: ignore
             except Exception:  # pragma: no cover - Pillow missing during runtime
                 PILImage = None  # type: ignore
             if PILImage is not None:
                 try:
-                    with PILImage.open(logo_path) as src_logo:  # type: ignore[union-attr]
+                    with PILImage.open(resolved_logo) as src_logo:  # type: ignore[union-attr]
                         logo_img = src_logo.convert("RGBA")
                         crop_box = _normalize_crop_box(
                             company_info.get("logo_crop"),

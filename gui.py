@@ -27,6 +27,7 @@ from orders import (
     combine_pdfs_from_source,
     _prefix_for_doc_type,
 )
+from logo_resolver import resolve_logo_path as shared_resolve_logo_path
 
 
 CLIENT_LOGO_DIR = Path("client_logos")
@@ -175,21 +176,13 @@ def start_gui():
             )
             preview_label.grid(row=0, column=0, rowspan=4, sticky="nsew", padx=4, pady=4)
 
-            def resolve_logo_path(path_str: str) -> Optional[Path]:
-                if not path_str:
-                    return None
-                p = Path(path_str)
-                if not p.is_absolute():
-                    p = Path.cwd() / p
-                return p
-
             def update_preview() -> None:
                 path_str = logo_path_var.get().strip()
                 if not path_str or Image is None:
                     preview_label.configure(text="Geen logo", image="")
                     preview_label.image = None  # type: ignore[attr-defined]
                     return
-                abs_path = resolve_logo_path(path_str)
+                abs_path = shared_resolve_logo_path(path_str)
                 if not abs_path or not abs_path.exists():
                     preview_label.configure(text="Logo niet gevonden", image="")
                     preview_label.image = None  # type: ignore[attr-defined]
@@ -267,7 +260,7 @@ def start_gui():
                         parent=win,
                     )
                     return
-                abs_path = resolve_logo_path(path_str)
+                abs_path = shared_resolve_logo_path(path_str)
                 if not abs_path or not abs_path.exists():
                     messagebox.showerror(
                         "Onbekend pad",

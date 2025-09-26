@@ -1,9 +1,12 @@
 import pytest
+
+pytest.importorskip("PIL")
 from PIL import Image
 
 from clients_db import ClientsDB
 from models import Client, Supplier
 from orders import generate_pdf_order_platypus, REPORTLAB_OK
+import logo_resolver
 
 
 def test_clients_db_persists_logo_fields(tmp_path):
@@ -72,3 +75,56 @@ def test_generate_pdf_order_includes_logo(tmp_path):
             dims.append((int(xobj.get("/Width")), int(xobj.get("/Height"))))
     assert dims
     assert (300, 200) in dims
+
+
+@pytest.mark.skipif(not REPORTLAB_OK, reason="ReportLab niet beschikbaar")
+def test_generate_pdf_order_logo_resolves_after_chdir(tmp_path, monkeypatch):
+    logo_dir = tmp_path / "client_logos"
+    logo_dir.mkdir()
+    logo_path = logo_dir / "temp.png"
+    Image.new("RGB", (160, 80), "blue").save(logo_path)
+
+    monkeypatch.setattr(logo_resolver, "CLIENT_LOGO_DIR", logo_dir)
+
+    work_dir = tmp_path / "elsewhere"
+    work_dir.mkdir()
+    monkeypatch.chdir(work_dir)
+
+    pdf_path = tmp_path / "order_chdir.pdf"
+    company = {
+        "name": "ACME",
+        "address": "Example Street 1",
+        "vat": "BE0123456789",
+        "email": "info@example.com",
+        "logo_path": "client_logos/temp.png",
+    }
+    supplier = Supplier(supplier="Supplier BV")
+    items = [
+        {
+            "PartNumber": "PN-1",
+            "Description": "Onderdeel",
+            "Materiaal": "",
+            "Aantal": 1,
+            "Oppervlakte": "",
+            "Gewicht": "",
+        }
+    ]
+
+    generate_pdf_order_platypus(
+        str(pdf_path),
+        company,
+        supplier,
+        production="PROD-2",
+        items=items,
+    )
+
+    from PyPDF2 import PdfReader
+
+    reader = PdfReader(str(pdf_path))
+    page = reader.pages[0]
+    resources = page.get("/Resources")
+    assert resources is not None
+    xobjects = resources.get("/XObject")
+    assert xobjects is not None
+    widths = [int(obj.get_object().get("/Width")) for obj in xobjects.values()]
+    assert any(w >= 150 for w in widths)
