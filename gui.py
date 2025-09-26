@@ -1,5 +1,6 @@
 import os
 import datetime
+import re
 import shutil
 import subprocess
 import sys
@@ -26,6 +27,9 @@ from orders import (
     combine_pdfs_from_source,
     _prefix_for_doc_type,
 )
+
+
+CLIENT_LOGO_DIR = Path("client_logos")
 
 
 def _norm(text: str) -> str:
@@ -64,6 +68,16 @@ def start_gui():
     import tkinter as tk
     import tkinter.font as tkfont
     from tkinter import ttk, filedialog, messagebox, simpledialog
+    try:
+        from PIL import Image, ImageTk  # type: ignore
+        try:
+            RESAMPLE = Image.Resampling.LANCZOS  # type: ignore[attr-defined]
+        except AttributeError:  # pragma: no cover - Pillow < 9
+            RESAMPLE = Image.LANCZOS
+    except Exception:  # pragma: no cover - Pillow might be unavailable in minimal setups
+        Image = None  # type: ignore
+        ImageTk = None  # type: ignore
+        RESAMPLE = None
 
     TREE_ODD_BG = "#FFFFFF"
     TREE_EVEN_BG = "#F5F5F5"
@@ -112,26 +126,374 @@ def start_gui():
         def _open_edit_dialog(self, client: Optional[Client] = None):
             win = tk.Toplevel(self)
             win.title("Opdrachtgever")
+            win.columnconfigure(1, weight=1)
             fields = [
                 ("Naam", "name"),
                 ("Adres", "address"),
                 ("BTW", "vat"),
                 ("E-mail", "email"),
             ]
-            entries = {}
+            entries: Dict[str, tk.Entry] = {}
             for i, (lbl, key) in enumerate(fields):
                 tk.Label(win, text=lbl + ":").grid(row=i, column=0, sticky="e", padx=4, pady=2)
                 ent = tk.Entry(win, width=40)
-                ent.grid(row=i, column=1, padx=4, pady=2)
+                ent.grid(row=i, column=1, padx=4, pady=2, sticky="ew")
                 if client:
                     ent.insert(0, _to_str(getattr(client, key)))
                 entries[key] = ent
             fav_var = tk.BooleanVar(value=client.favorite if client else False)
-            tk.Checkbutton(win, text="Favoriet", variable=fav_var).grid(row=len(fields), column=1, sticky="w", padx=4, pady=2)
+            tk.Checkbutton(win, text="Favoriet", variable=fav_var).grid(
+                row=len(fields), column=1, sticky="w", padx=4, pady=2
+            )
+
+            logo_path_var = tk.StringVar(
+                value=(client.logo_path if client and client.logo_path else "")
+            )
+            logo_crop_state = (
+                dict(client.logo_crop) if client and client.logo_crop else None
+            )
+
+            logo_frame = tk.LabelFrame(win, text="Logo")
+            logo_frame.grid(
+                row=len(fields) + 1,
+                column=0,
+                columnspan=2,
+                sticky="ew",
+                padx=4,
+                pady=(6, 2),
+            )
+            logo_frame.columnconfigure(0, weight=1)
+
+            preview_label = tk.Label(
+                logo_frame,
+                text="Geen logo",
+                relief="sunken",
+                width=32,
+                height=8,
+                anchor="center",
+                justify="center",
+            )
+            preview_label.grid(row=0, column=0, rowspan=4, sticky="nsew", padx=4, pady=4)
+
+            def resolve_logo_path(path_str: str) -> Optional[Path]:
+                if not path_str:
+                    return None
+                p = Path(path_str)
+                if not p.is_absolute():
+                    p = Path.cwd() / p
+                return p
+
+            def update_preview() -> None:
+                path_str = logo_path_var.get().strip()
+                if not path_str or Image is None:
+                    preview_label.configure(text="Geen logo", image="")
+                    preview_label.image = None  # type: ignore[attr-defined]
+                    return
+                abs_path = resolve_logo_path(path_str)
+                if not abs_path or not abs_path.exists():
+                    preview_label.configure(text="Logo niet gevonden", image="")
+                    preview_label.image = None  # type: ignore[attr-defined]
+                    return
+                try:
+                    with Image.open(abs_path) as src:  # type: ignore[union-attr]
+                        img = src.convert("RGBA")
+                except Exception:
+                    preview_label.configure(text="Kan logo niet laden", image="")
+                    preview_label.image = None  # type: ignore[attr-defined]
+                    return
+                crop = logo_crop_state
+                if crop and all(k in crop for k in ("left", "top", "right", "bottom")):
+                    left = max(0, min(img.width, int(crop.get("left", 0))))
+                    top = max(0, min(img.height, int(crop.get("top", 0))))
+                    right = max(left + 1, min(img.width, int(crop.get("right", img.width))))
+                    bottom = max(top + 1, min(img.height, int(crop.get("bottom", img.height))))
+                    img = img.crop((left, top, right, bottom))
+                thumb = img.copy()
+                if RESAMPLE is not None:
+                    thumb.thumbnail((220, 120), RESAMPLE)
+                else:  # pragma: no cover - fallback without Pillow resampling enum
+                    thumb.thumbnail((220, 120))
+                photo = ImageTk.PhotoImage(thumb)  # type: ignore[union-attr]
+                preview_label.configure(image=photo, text="")
+                preview_label.image = photo  # type: ignore[attr-defined]
+
+            def upload_logo() -> None:
+                path = filedialog.askopenfilename(
+                    filetypes=[
+                        ("Afbeeldingen", "*.png;*.jpg;*.jpeg;*.gif;*.bmp"),
+                        ("Alle bestanden", "*.*"),
+                    ]
+                )
+                if not path:
+                    return
+                dest_dir = CLIENT_LOGO_DIR
+                dest_dir.mkdir(exist_ok=True)
+                ext = Path(path).suffix or ".png"
+                base = entries["name"].get().strip() or Path(path).stem
+                safe = re.sub(r"[^a-z0-9]+", "_", base.lower()).strip("_") or "logo"
+                timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+                dest = dest_dir / f"{safe}_{timestamp}{ext}"
+                try:
+                    shutil.copy2(path, dest)
+                except Exception as exc:
+                    messagebox.showerror(
+                        "Fout", f"Kan logo niet kopiëren: {exc}", parent=win
+                    )
+                    return
+                nonlocal logo_crop_state
+                logo_crop_state = None
+                logo_path_var.set(dest.as_posix())
+                update_preview()
+
+            def clear_logo() -> None:
+                nonlocal logo_crop_state
+                logo_path_var.set("")
+                logo_crop_state = None
+                update_preview()
+
+            def crop_logo() -> None:
+                if Image is None:
+                    messagebox.showwarning(
+                        "Niet beschikbaar",
+                        "Pillow is vereist om te kunnen bijsnijden.",
+                        parent=win,
+                    )
+                    return
+                path_str = logo_path_var.get().strip()
+                if not path_str:
+                    messagebox.showinfo(
+                        "Geen logo",
+                        "Upload eerst een logo voordat je gaat bijsnijden.",
+                        parent=win,
+                    )
+                    return
+                abs_path = resolve_logo_path(path_str)
+                if not abs_path or not abs_path.exists():
+                    messagebox.showerror(
+                        "Onbekend pad",
+                        "Het logobestand kan niet gevonden worden.",
+                        parent=win,
+                    )
+                    return
+                try:
+                    with Image.open(abs_path) as src_img:  # type: ignore[union-attr]
+                        base_img = src_img.convert("RGBA")
+                except Exception as exc:
+                    messagebox.showerror(
+                        "Fout", f"Kan logo niet openen: {exc}", parent=win
+                    )
+                    return
+
+                crop_win = tk.Toplevel(win)
+                crop_win.title("Bijsnijden logo")
+                crop_win.transient(win)
+                crop_win.resizable(False, False)
+
+                max_w, max_h = 600, 400
+                if base_img.width == 0 or base_img.height == 0:
+                    messagebox.showerror(
+                        "Fout", "Afbeelding heeft ongeldige afmetingen.", parent=win
+                    )
+                    crop_win.destroy()
+                    return
+                scale = min(max_w / base_img.width, max_h / base_img.height, 1.0)
+                disp_w = max(1, int(round(base_img.width * scale)))
+                disp_h = max(1, int(round(base_img.height * scale)))
+                if scale != 1.0:
+                    disp_img = base_img.resize(
+                        (disp_w, disp_h), RESAMPLE or Image.BICUBIC  # type: ignore[union-attr]
+                    )
+                else:
+                    disp_img = base_img.copy()
+                photo = ImageTk.PhotoImage(disp_img)  # type: ignore[union-attr]
+                canvas = tk.Canvas(
+                    crop_win, width=disp_w, height=disp_h, highlightthickness=0
+                )
+                canvas.pack(padx=8, pady=8)
+                canvas.create_image(0, 0, anchor="nw", image=photo)
+                canvas.image = photo  # type: ignore[attr-defined]
+                canvas.configure(cursor="crosshair")
+
+                ratio = base_img.width / base_img.height if base_img.height else 1.0
+                current_box = [0.0, 0.0, float(disp_w), float(disp_h)]
+                if logo_crop_state:
+                    left = max(0, min(base_img.width, int(logo_crop_state.get("left", 0))))
+                    top = max(0, min(base_img.height, int(logo_crop_state.get("top", 0))))
+                    right = max(
+                        left + 1,
+                        min(base_img.width, int(logo_crop_state.get("right", base_img.width))),
+                    )
+                    bottom = max(
+                        top + 1,
+                        min(
+                            base_img.height,
+                            int(logo_crop_state.get("bottom", base_img.height)),
+                        ),
+                    )
+                    current_box = [
+                        left / base_img.width * disp_w,
+                        top / base_img.height * disp_h,
+                        right / base_img.width * disp_w,
+                        bottom / base_img.height * disp_h,
+                    ]
+
+                rect_id = None
+                start_point = [0.0, 0.0]
+
+                def draw_rect() -> None:
+                    nonlocal rect_id
+                    if rect_id is not None:
+                        canvas.delete(rect_id)
+                    rect_id = canvas.create_rectangle(
+                        current_box[0],
+                        current_box[1],
+                        current_box[2],
+                        current_box[3],
+                        outline="#ff007f",
+                        width=2,
+                    )
+
+                def clamp(x: float, y: float) -> tuple[float, float]:
+                    return (
+                        max(0.0, min(float(disp_w), x)),
+                        max(0.0, min(float(disp_h), y)),
+                    )
+
+                def update_box(x0: float, y0: float, x1: float, y1: float) -> None:
+                    x1, y1 = clamp(x1, y1)
+                    dx = x1 - x0
+                    dy = y1 - y0
+                    if abs(dx) < 1 and abs(dy) < 1:
+                        return
+                    target_ratio = ratio if ratio > 0 else 1.0
+                    abs_dx = abs(dx)
+                    abs_dy = abs(dy)
+                    if abs_dx == 0 and abs_dy == 0:
+                        return
+                    if abs_dx / target_ratio >= abs_dy:
+                        width = dx
+                        height = (abs(dx) / target_ratio) * (1 if dy >= 0 else -1)
+                    else:
+                        height = dy
+                        width = (abs(dy) * target_ratio) * (1 if dx >= 0 else -1)
+                    x_min = x0 if width >= 0 else x0 + width
+                    x_max = x_min + abs(width)
+                    y_min = y0 if height >= 0 else y0 + height
+                    y_max = y_min + abs(height)
+                    if x_min < 0:
+                        shift = -x_min
+                        x_min = 0
+                        x_max += shift
+                    if x_max > disp_w:
+                        shift = x_max - disp_w
+                        x_max = disp_w
+                        x_min -= shift
+                    if y_min < 0:
+                        shift = -y_min
+                        y_min = 0
+                        y_max += shift
+                    if y_max > disp_h:
+                        shift = y_max - disp_h
+                        y_max = disp_h
+                        y_min -= shift
+                    x_min = max(0.0, min(float(disp_w), x_min))
+                    x_max = max(0.0, min(float(disp_w), x_max))
+                    y_min = max(0.0, min(float(disp_h), y_min))
+                    y_max = max(0.0, min(float(disp_h), y_max))
+                    if x_max - x_min < 1 or y_max - y_min < 1:
+                        return
+                    current_box[0] = x_min
+                    current_box[1] = y_min
+                    current_box[2] = x_max
+                    current_box[3] = y_max
+                    draw_rect()
+
+                def on_press(evt):
+                    start_point[0], start_point[1] = clamp(evt.x, evt.y)
+
+                def on_drag(evt):
+                    update_box(start_point[0], start_point[1], evt.x, evt.y)
+
+                canvas.bind("<Button-1>", on_press)
+                canvas.bind("<B1-Motion>", on_drag)
+                canvas.bind("<ButtonRelease-1>", on_drag)
+
+                draw_rect()
+
+                tk.Label(
+                    crop_win,
+                    text="Klik en sleep om het logo bij te snijden. Volledige selectie = geen crop.",
+                ).pack(padx=8, pady=(0, 6))
+
+                btns = tk.Frame(crop_win)
+                btns.pack(pady=6)
+
+                def reset_full() -> None:
+                    current_box[0] = 0.0
+                    current_box[1] = 0.0
+                    current_box[2] = float(disp_w)
+                    current_box[3] = float(disp_h)
+                    draw_rect()
+
+                def apply_crop() -> None:
+                    nonlocal logo_crop_state
+                    x_scale = base_img.width / disp_w
+                    y_scale = base_img.height / disp_h
+                    left = int(round(current_box[0] * x_scale))
+                    top = int(round(current_box[1] * y_scale))
+                    right = int(round(current_box[2] * x_scale))
+                    bottom = int(round(current_box[3] * y_scale))
+                    left = max(0, min(base_img.width, left))
+                    top = max(0, min(base_img.height, top))
+                    right = max(left + 1, min(base_img.width, right))
+                    bottom = max(top + 1, min(base_img.height, bottom))
+                    if (
+                        left <= 0
+                        and top <= 0
+                        and right >= base_img.width
+                        and bottom >= base_img.height
+                    ):
+                        logo_crop_state = None
+                    else:
+                        logo_crop_state = {
+                            "left": left,
+                            "top": top,
+                            "right": right,
+                            "bottom": bottom,
+                        }
+                    crop_win.destroy()
+                    update_preview()
+
+                tk.Button(btns, text="Volledige afbeelding", command=reset_full).pack(
+                    side="left", padx=4
+                )
+                tk.Button(btns, text="Opslaan", command=apply_crop).pack(
+                    side="left", padx=4
+                )
+                tk.Button(btns, text="Annuleer", command=crop_win.destroy).pack(
+                    side="left", padx=4
+                )
+
+                crop_win.grab_set()
+                crop_win.focus_set()
+
+            tk.Button(logo_frame, text="Upload", command=upload_logo).grid(
+                row=0, column=1, sticky="ew", padx=4, pady=2
+            )
+            tk.Button(logo_frame, text="Bijsnijden", command=crop_logo).grid(
+                row=1, column=1, sticky="ew", padx=4, pady=2
+            )
+            tk.Button(logo_frame, text="Verwijder", command=clear_logo).grid(
+                row=2, column=1, sticky="ew", padx=4, pady=2
+            )
+
+            update_preview()
 
             def _save():
                 rec = {k: e.get().strip() for k, e in entries.items()}
                 rec["favorite"] = fav_var.get()
+                rec["logo_path"] = logo_path_var.get().strip()
+                rec["logo_crop"] = logo_crop_state
                 if not rec["name"]:
                     messagebox.showwarning("Let op", "Naam is verplicht.", parent=win)
                     return
@@ -144,7 +506,7 @@ def start_gui():
                 win.destroy()
 
             btnf = tk.Frame(win)
-            btnf.grid(row=len(fields)+1, column=0, columnspan=2, pady=6)
+            btnf.grid(row=len(fields) + 2, column=0, columnspan=2, pady=6)
             tk.Button(btnf, text="Opslaan", command=_save).pack(side="left", padx=4)
             tk.Button(btnf, text="Annuleer", command=win.destroy).pack(side="left", padx=4)
             win.transient(self)

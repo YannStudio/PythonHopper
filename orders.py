@@ -40,6 +40,8 @@ try:
         Table,
         TableStyle,
         Spacer,
+        Image as RLImage,
+        KeepTogether,
     )
     from reportlab.pdfbase.pdfmetrics import stringWidth
     REPORTLAB_OK = True
@@ -53,6 +55,41 @@ DEFAULT_FOOTER_NOTE = (
     "Levertermijn in overleg. Betalingsvoorwaarden: 30 dagen netto. "
     "Vermeld onze productiereferentie bij levering."
 )
+
+
+def _normalize_crop_box(
+    crop: object, width: int, height: int
+) -> Optional[tuple[int, int, int, int]]:
+    """Validate and clamp crop data against an image size."""
+
+    if not crop or width <= 0 or height <= 0:
+        return None
+
+    left = top = 0
+    right, bottom = width, height
+
+    try:
+        if isinstance(crop, dict):
+            left = int(float(crop.get("left", 0)))
+            top = int(float(crop.get("top", 0)))
+            right = int(float(crop.get("right", width)))
+            bottom = int(float(crop.get("bottom", height)))
+        elif isinstance(crop, (list, tuple)) and len(crop) == 4:
+            left, top, right, bottom = [int(float(v)) for v in crop]
+        else:
+            return None
+    except Exception:
+        return None
+
+    left = max(0, min(width, left))
+    top = max(0, min(height, top))
+    right = max(left + 1, min(width, right))
+    bottom = max(top + 1, min(height, bottom))
+
+    if right <= left or bottom <= top:
+        return None
+    return left, top, right, bottom
+
 
 from helpers import (
     _to_str,
@@ -96,7 +133,7 @@ def _prefix_for_doc_type(doc_type: str) -> str:
 
 def generate_pdf_order_platypus(
     path: str,
-    company_info: Dict[str, str],
+    company_info: Dict[str, object],
     supplier: Supplier,
     production: str,
     items: List[Dict[str, str]],
@@ -151,6 +188,51 @@ def generate_pdf_order_platypus(
         f"E-mail: {company_info.get('email','')}",
     ]
 
+    logo_flowable = None
+    logo_path_info = company_info.get("logo_path") if company_info else None
+    if logo_path_info:
+        logo_path = str(logo_path_info)
+        if not os.path.isabs(logo_path):
+            logo_path = os.path.join(os.getcwd(), logo_path)
+        if os.path.exists(logo_path):
+            try:
+                from PIL import Image as PILImage  # type: ignore
+            except Exception:  # pragma: no cover - Pillow missing during runtime
+                PILImage = None  # type: ignore
+            if PILImage is not None:
+                try:
+                    with PILImage.open(logo_path) as src_logo:  # type: ignore[union-attr]
+                        logo_img = src_logo.convert("RGBA")
+                        crop_box = _normalize_crop_box(
+                            company_info.get("logo_crop"),
+                            logo_img.width,
+                            logo_img.height,
+                        )
+                        if crop_box:
+                            logo_img = logo_img.crop(crop_box)
+                        if logo_img.width > 0 and logo_img.height > 0:
+                            buffer = io.BytesIO()
+                            logo_img.save(buffer, format="PNG")
+                            buffer.seek(0)
+                            aspect = (
+                                logo_img.width / logo_img.height
+                                if logo_img.height
+                                else 1.0
+                            )
+                            max_width = 50 * mm
+                            max_height = 25 * mm
+                            width_pt = max_width
+                            height_pt = width_pt / aspect if aspect else max_height
+                            if height_pt > max_height:
+                                height_pt = max_height
+                                width_pt = height_pt * aspect
+                            logo_flowable = RLImage(
+                                buffer, width=width_pt, height=height_pt
+                            )
+                            logo_flowable.hAlign = "LEFT"
+                except Exception:
+                    logo_flowable = None
+
     # Supplier info with full address and contact details
     addr_parts = []
     if supplier.adres_1:
@@ -176,6 +258,15 @@ def generate_pdf_order_platypus(
         supp_lines.append(f"Tel: {supplier.phone}")
 
     left_lines = company_lines + [""] + supp_lines
+    left_paragraph = Paragraph("<br/>".join(left_lines), text_style)
+    left_elements: List[object] = []
+    if logo_flowable is not None:
+        left_elements.extend([logo_flowable, Spacer(0, 4)])
+    left_elements.append(left_paragraph)
+    if len(left_elements) == 1:
+        left_cell = left_elements[0]
+    else:
+        left_cell = KeepTogether(left_elements)
 
     right_lines: List[str] = []
     if delivery:
@@ -196,7 +287,7 @@ def generate_pdf_order_platypus(
     header_tbl = LongTable(
         [
             [
-                Paragraph("<br/>".join(left_lines), text_style),
+                left_cell,
                 Paragraph("<br/>".join(right_lines), text_style),
             ]
         ],
@@ -631,6 +722,8 @@ def copy_per_production_and_orders(
             "address": client.address if client else "",
             "vat": client.vat if client else "",
             "email": client.email if client else "",
+            "logo_path": client.logo_path if client else "",
+            "logo_crop": client.logo_crop if client else None,
         }
         if supplier.supplier:
             excel_path = os.path.join(
