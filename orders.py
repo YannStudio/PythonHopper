@@ -56,6 +56,8 @@ DEFAULT_FOOTER_NOTE = (
     "Vermeld onze productiereferentie bij levering."
 )
 
+STEP_EXTS = {".step", ".stp"}
+
 
 def _normalize_crop_box(
     crop: object, width: int, height: int
@@ -402,6 +404,85 @@ def generate_pdf_order_platypus(
     doc.build(story)
 
 
+def generate_packlist_pdf(
+    path: str,
+    production: str,
+    previews: List[dict],
+    doc_date: str | None = None,
+    columns: int = 2,
+) -> bool:
+    """Generate a packing list PDF containing thumbnails."""
+
+    if not REPORTLAB_OK or not previews:
+        return False
+    columns = max(1, int(columns))
+    doc = SimpleDocTemplate(
+        path,
+        pagesize=A4,
+        leftMargin=15 * mm,
+        rightMargin=15 * mm,
+        topMargin=20 * mm,
+        bottomMargin=20 * mm,
+        title=f"Paklijst {production}",
+    )
+    styles = getSampleStyleSheet()
+    title_style = styles["Heading1"]
+    subtitle_style = styles["Normal"]
+    subtitle_style.leading = 12
+    label_style = ParagraphStyle(
+        "PacklistLabel",
+        parent=styles["Normal"],
+        alignment=1,
+        leading=11,
+    )
+    story: List[object] = []
+    story.append(Paragraph(f"Paklijst – {production}", title_style))
+    if doc_date:
+        story.append(Paragraph(f"Datum: {doc_date}", subtitle_style))
+    story.append(Spacer(0, 8 * mm))
+
+    data: List[List[object]] = []
+    row: List[object] = []
+    usable_width = doc.width
+    col_width = usable_width / columns
+    image_width = col_width
+    image_height = col_width
+    for entry in previews:
+        thumb = entry.get("thumbnail")
+        label = entry.get("label") or os.path.basename(entry.get("source", ""))
+        try:
+            img = RLImage(thumb, width=image_width, height=image_height)
+        except Exception:
+            continue
+        cell = KeepTogether([img, Spacer(0, 4), Paragraph(label, label_style)])
+        row.append(cell)
+        if len(row) == columns:
+            data.append(row)
+            row = []
+    if row:
+        while len(row) < columns:
+            row.append(Spacer(0, 0))
+        data.append(row)
+
+    if not data:
+        return False
+
+    table = Table(data, colWidths=[col_width] * columns, hAlign="CENTER")
+    table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+    story.append(table)
+    doc.build(story)
+    return True
+
+
 def write_order_excel(
     path: str,
     items: List[Dict[str, str]],
@@ -583,6 +664,8 @@ def copy_per_production_and_orders(
     doc_num_map = doc_num_map or {}
 
     prod_to_rows: Dict[str, List[dict]] = defaultdict(list)
+    step_entries: Dict[str, List[tuple[str, str]]] = defaultdict(list)
+    step_seen: Dict[str, set[str]] = defaultdict(set)
     for _, row in bom_df.iterrows():
         prod = (row.get("Production") or "").strip() or "_Onbekend"
         prod_to_rows[prod].append(row)
@@ -686,6 +769,13 @@ def copy_per_production_and_orders(
                 if combo in processed_pairs:
                     continue
                 processed_pairs.add(combo)
+                ext = os.path.splitext(src_file)[1].lower()
+                if ext in STEP_EXTS:
+                    seen_paths = step_seen[prod]
+                    if src_file not in seen_paths:
+                        seen_paths.add(src_file)
+                        label = f"{pn} — {os.path.basename(src_file)}"
+                        step_entries[prod].append((label, src_file))
                 if zip_parts:
                     if zf is not None:
                         zf.write(src_file, arcname=transformed)
@@ -761,6 +851,36 @@ def copy_per_production_and_orders(
                 )
             except Exception as e:
                 print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
+
+        packlist_items = step_entries.get(prod, [])
+        if packlist_items and REPORTLAB_OK:
+            try:
+                with tempfile.TemporaryDirectory(prefix="previews_", dir=prod_folder) as preview_dir:
+                    rendered_previews = step_previews.render_step_files(
+                        packlist_items, preview_dir
+                    )
+                    if rendered_previews:
+                        packlist_path = os.path.join(
+                            prod_folder, f"Paklijst_{prod}_{today}.pdf"
+                        )
+                        try:
+                            if not generate_packlist_pdf(
+                                packlist_path,
+                                production=prod,
+                                previews=rendered_previews,
+                                doc_date=today,
+                            ) and os.path.exists(packlist_path):
+                                os.unlink(packlist_path)
+                        except Exception as exc:
+                            print(
+                                f"[WAARSCHUWING] Paklijst mislukt voor {prod}: {exc}",
+                                file=sys.stderr,
+                            )
+            except Exception as exc:
+                print(
+                    f"[WAARSCHUWING] Previews genereren mislukt voor {prod}: {exc}",
+                    file=sys.stderr,
+                )
 
     # Persist any (possibly unchanged) supplier defaults so that callers can rely on
     # the database reflecting the latest state on disk.
