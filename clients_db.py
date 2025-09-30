@@ -4,8 +4,9 @@ from dataclasses import asdict
 from typing import List, Optional
 
 from models import Client
+from app_paths import data_file
 
-CLIENTS_DB_FILE = "clients_db.json"
+CLIENTS_DB_FILE = data_file("clients_db.json")
 
 
 class ClientsDB:

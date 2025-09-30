@@ -5,8 +5,9 @@ from typing import List, Optional
 
 from models import DeliveryAddress
 from clients_db import ClientsDB, CLIENTS_DB_FILE
+from app_paths import data_file
 
-DELIVERY_DB_FILE = "delivery_addresses_db.json"
+DELIVERY_DB_FILE = data_file("delivery_addresses_db.json")
 
 
 class DeliveryAddressesDB:

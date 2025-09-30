@@ -4,8 +4,9 @@ from dataclasses import asdict
 from typing import List, Dict, Optional
 
 from models import Supplier
+from app_paths import data_file
 
-SUPPLIERS_DB_FILE = "suppliers_db.json"
+SUPPLIERS_DB_FILE = data_file("suppliers_db.json")
 
 
 class SuppliersDB:
