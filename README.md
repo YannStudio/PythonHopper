@@ -13,6 +13,38 @@ pip install tksheet
 
 Start vervolgens de applicatie met `python main.py` of `python -m gui`.
 
+## Zelfstandige executables bouwen
+
+Je kan zowel voor macOS als Windows een standalone-versie maken met behulp van
+PyInstaller. Installeer eerst de afhankelijkheden voor runtime en build:
+
+```bash
+pip install -r requirements.txt
+pip install -r requirements-build.txt
+```
+
+Bouw daarna de gewenste uitvoerbestanden. Op het doelplatform (macOS of
+Windows) voer je bijvoorbeeld uit:
+
+```bash
+python build_executable.py --target macos
+python build_executable.py --target windows
+```
+
+Standaard worden er twee varianten gemaakt:
+
+* `filehopper-<target>` — console-app met CLI-ondersteuning.
+* `filehopper-gui-<target>` — windowed app die rechtstreeks de GUI opent.
+
+De resultaten verschijnen in de map `dist/`.
+
+### Gebruikersgegevens
+
+Wanneer je een gebundelde versie gebruikt, worden de databestanden per gebruiker
+opgeslagen. Op Windows vind je ze in `%LOCALAPPDATA%\Filehopper`, op macOS in
+`~/Library/Application Support/Filehopper`. Hierdoor blijven gegevens behouden
+na updates.
+
 ## Voorbeelden
 
 ### Leverancier toevoegen

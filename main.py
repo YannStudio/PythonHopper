@@ -2,6 +2,7 @@ from __future__ import annotations
 import sys
 from typing import List, Optional
 
+from app_paths import ensure_runtime_files
 from cli import (
     build_parser,
     cli_suppliers,
@@ -12,9 +13,17 @@ from cli import (
     cli_delivery_addresses,
 )
 
+RUNTIME_DATA_FILES = [
+    "clients_db.json",
+    "suppliers_db.json",
+    "delivery_addresses_db.json",
+    "app_settings.json",
+]
+
 
 def main(argv: Optional[List[str]] = None) -> int:
     """Entry point for the Filehopper application."""
+    ensure_runtime_files(RUNTIME_DATA_FILES)
     argv = argv if argv is not None else sys.argv[1:]
     parser = build_parser()
     args = parser.parse_args(argv)
