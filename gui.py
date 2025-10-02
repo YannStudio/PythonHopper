@@ -2088,7 +2088,7 @@ def start_gui():
             ).pack(anchor="w", pady=2)
             tk.Checkbutton(
                 options_frame,
-                text="Afwerkingsmappen (Afwerking/<afwerking>/<RAL>)",
+                text="Finish export",
                 variable=self.finish_export_var,
                 anchor="w",
             ).pack(anchor="w", pady=2)

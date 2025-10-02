@@ -622,7 +622,7 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=None,
         help=(
-            "Maak extra afwerkingsmappen (Afwerking/<afwerking>/<RAL>). "
+            "Maak extra Finish exportmappen (Finish-<afwerking>[-<RAL>]). "
             "Gebruik --no-finish-folders om ze uit te schakelen."
         ),
     )
