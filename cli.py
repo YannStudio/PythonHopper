@@ -505,6 +505,11 @@ def cli_copy_per_prod(args):
         if args.finish_folders is None
         else bool(args.finish_folders)
     )
+    zip_finish_exports = (
+        settings.zip_finish_exports
+        if args.zip_finish_folders is None
+        else bool(args.zip_finish_folders)
+    )
 
     cnt, chosen = copy_per_production_and_orders(
         args.source,
@@ -522,6 +527,7 @@ def cli_copy_per_prod(args):
         project_number=args.project_number,
         project_name=args.project_name,
         copy_finish_exports=copy_finish_exports,
+        zip_finish_exports=zip_finish_exports,
         export_name_prefix_text=export_prefix_text,
         export_name_prefix_enabled=export_prefix_enabled,
         export_name_suffix_text=export_suffix_text,
@@ -746,6 +752,16 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Maak extra Finish exportmappen (Finish-<afwerking>[-<RAL>]). "
             "Gebruik --no-finish-folders om ze uit te schakelen."
+        ),
+    )
+    cpp.add_argument(
+        "--zip-finish-folders",
+        dest="zip_finish_folders",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Plaats finish exportbestanden in een ZIP-archief per afwerking. "
+            "Gebruik --no-zip-finish-folders om losse bestanden te bewaren."
         ),
     )
     cpp.add_argument(
