@@ -1,0 +1,142 @@
+import pandas as pd
+import pytest
+
+import cli
+from app_settings import AppSettings
+from cli import build_parser, cli_copy_per_prod
+from models import Supplier
+from orders import copy_per_production_and_orders, _normalize_finish_folder
+from suppliers_db import SuppliersDB
+from clients_db import ClientsDB
+from delivery_addresses_db import DeliveryAddressesDB
+
+
+def _make_db() -> SuppliersDB:
+    return SuppliersDB([Supplier.from_any({"supplier": "ACME"})])
+
+
+@pytest.mark.parametrize("zip_parts", [False, True])
+def test_finish_exports_written(tmp_path, zip_parts):
+    src = tmp_path / "src"
+    dest = tmp_path / "dest"
+    src.mkdir()
+    dest.mkdir()
+
+    (src / "PN1.pdf").write_text("one", encoding="utf-8")
+    (src / "PN2.pdf").write_text("two", encoding="utf-8")
+
+    df = pd.DataFrame(
+        [
+            {
+                "PartNumber": "PN1",
+                "Production": "Laser",
+                "Finish": "Poedercoating",
+                "RAL color": "RAL 9005",
+                "Aantal": 1,
+            },
+            {
+                "PartNumber": "PN2",
+                "Production": "Laser",
+                "Finish": "Anodized/Marine",
+                "RAL color": "RAL-9010",
+                "Aantal": 1,
+            },
+            {
+                "PartNumber": "PN1",
+                "Production": "Laser",
+                "Finish": "Poedercoating",
+                "RAL color": "RAL 9005",
+                "Aantal": 3,
+            },
+        ]
+    )
+
+    cnt, _ = copy_per_production_and_orders(
+        str(src),
+        str(dest),
+        df,
+        [".pdf"],
+        _make_db(),
+        {"Laser": "ACME"},
+        {},
+        {},
+        False,
+        zip_parts=zip_parts,
+        copy_finish_exports=True,
+    )
+
+    assert cnt == 2
+
+    finish_root = dest / "Afwerking"
+    finish_dir_1 = finish_root / _normalize_finish_folder("Poedercoating") / _normalize_finish_folder("RAL 9005")
+    finish_dir_2 = finish_root / _normalize_finish_folder("Anodized/Marine") / _normalize_finish_folder("RAL-9010")
+
+    assert (finish_dir_1 / "PN1.pdf").is_file()
+    assert sorted(p.name for p in finish_dir_1.iterdir()) == ["PN1.pdf"]
+    assert (finish_dir_2 / "PN2.pdf").is_file()
+
+
+@pytest.mark.parametrize(
+    "flag, settings_value, expected",
+    [
+        (None, True, True),
+        ("--finish-folders", False, True),
+        ("--no-finish-folders", True, False),
+    ],
+)
+def test_cli_finish_flag(monkeypatch, tmp_path, flag, settings_value, expected):
+    parser = build_parser()
+    args_list = [
+        "copy-per-prod",
+        "--source",
+        str(tmp_path / "src"),
+        "--dest",
+        str(tmp_path / "dst"),
+        "--bom",
+        str(tmp_path / "bom.xlsx"),
+        "--exts",
+        "pdf",
+    ]
+    if flag:
+        args_list.append(flag)
+    args = parser.parse_args(args_list)
+
+    (tmp_path / "src").mkdir()
+    (tmp_path / "dst").mkdir()
+
+    df = pd.DataFrame(
+        [
+            {
+                "PartNumber": "PN1",
+                "Description": "",
+                "Production": "Laser",
+                "Aantal": 1,
+            }
+        ]
+    )
+    monkeypatch.setattr(cli, "load_bom", lambda path: df)
+
+    sdb = _make_db()
+    monkeypatch.setattr(SuppliersDB, "load", classmethod(lambda cls, path: sdb))
+    cdb = ClientsDB([])
+    monkeypatch.setattr(ClientsDB, "load", classmethod(lambda cls, path: cdb))
+    ddb = DeliveryAddressesDB([])
+    monkeypatch.setattr(DeliveryAddressesDB, "load", classmethod(lambda cls, path: ddb))
+
+    monkeypatch.setattr(
+        AppSettings,
+        "load",
+        classmethod(lambda cls, path=...: AppSettings(copy_finish_exports=settings_value)),
+    )
+
+    captured = {}
+
+    def fake_copy(*_args, **kwargs):
+        captured.update(kwargs)
+        return 0, {}
+
+    monkeypatch.setattr(cli, "copy_per_production_and_orders", fake_copy)
+
+    cli_copy_per_prod(args)
+
+    assert captured["copy_finish_exports"] is expected

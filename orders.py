@@ -133,6 +133,21 @@ def _prefix_for_doc_type(doc_type: str) -> str:
     return ""
 
 
+def _normalize_finish_folder(value: object) -> str:
+    """Return a filesystem-friendly folder component for finish/RAL names."""
+
+    text = _to_str(value).strip()
+    if not text:
+        text = "_Onbekend"
+    text = re.sub(r"[\\/:]+", "-", text)
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"[^0-9A-Za-z._ \-]+", "_", text)
+    text = text.strip(" .-_")
+    if not text:
+        text = "_Onbekend"
+    return text
+
+
 def generate_pdf_order_platypus(
     path: str,
     company_info: Dict[str, object],
@@ -628,6 +643,7 @@ def copy_per_production_and_orders(
     export_name_prefix_enabled: bool | None = None,
     export_name_suffix_text: str = "",
     export_name_suffix_enabled: bool | None = None,
+    copy_finish_exports: bool = False,
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
 
@@ -655,6 +671,11 @@ def copy_per_production_and_orders(
     consistently to copied files and ZIP archive members. The enable flags
     default to active when the corresponding text is non-empty unless
     explicitly set to ``False``.
+
+    When ``copy_finish_exports`` is ``True`` each referenced export file is
+    additionally copied to ``Afwerking/<finish>/<ral>/`` where the folder
+    components are normalized versions of the BOM "Finish" and "RAL color"
+    values.
     """
     os.makedirs(dest, exist_ok=True)
     file_index = _build_file_index(source, selected_exts)
@@ -666,9 +687,16 @@ def copy_per_production_and_orders(
     prod_to_rows: Dict[str, List[dict]] = defaultdict(list)
     step_entries: Dict[str, List[tuple[str, str]]] = defaultdict(list)
     step_seen: Dict[str, set[str]] = defaultdict(set)
+    finish_combo_parts: Dict[tuple[str, str], set[str]] = defaultdict(set)
     for _, row in bom_df.iterrows():
         prod = (row.get("Production") or "").strip() or "_Onbekend"
         prod_to_rows[prod].append(row)
+        if copy_finish_exports:
+            pn = _to_str(row.get("PartNumber")).strip()
+            if pn:
+                finish_name = _normalize_finish_folder(row.get("Finish"))
+                ral_name = _normalize_finish_folder(row.get("RAL color"))
+                finish_combo_parts[(finish_name, ral_name)].add(pn)
 
     today_date = datetime.date.today()
     today = today_date.strftime("%Y-%m-%d")
@@ -881,6 +909,23 @@ def copy_per_production_and_orders(
                     f"[WAARSCHUWING] Previews genereren mislukt voor {prod}: {exc}",
                     file=sys.stderr,
                 )
+
+    if copy_finish_exports and finish_combo_parts:
+        finish_root = os.path.join(dest, "Afwerking")
+        finish_seen: Dict[tuple[str, str], set[tuple[str, str]]] = defaultdict(set)
+        for (finish_name, ral_name), part_numbers in finish_combo_parts.items():
+            target_dir = os.path.join(finish_root, finish_name, ral_name)
+            os.makedirs(target_dir, exist_ok=True)
+            seen_pairs = finish_seen[(finish_name, ral_name)]
+            for pn in sorted(part_numbers):
+                files = file_index.get(pn, [])
+                for src_file in files:
+                    transformed = _transform_export_name(os.path.basename(src_file))
+                    combo = (src_file, transformed)
+                    if combo in seen_pairs:
+                        continue
+                    seen_pairs.add(combo)
+                    shutil.copy2(src_file, os.path.join(target_dir, transformed))
 
     # Persist any (possibly unchanged) supplier defaults so that callers can rely on
     # the database reflecting the latest state on disk.

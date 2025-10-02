@@ -183,6 +183,7 @@ class AppSettings:
         default_factory=lambda: deepcopy(DEFAULT_FILE_EXTENSIONS)
     )
     zip_per_production: bool = True
+    copy_finish_exports: bool = False
     export_date_prefix: bool = False
     export_date_suffix: bool = False
     custom_prefix_enabled: bool = False
@@ -292,9 +293,14 @@ class AppSettings:
 
     def save(self, path: Optional[Any] = None) -> None:
         settings_path = Path(path) if path is not None else getattr(self, "_path", SETTINGS_FILE)
-        payload = {k: v for k, v in asdict(self).items() if k != "_path"}
+        payload = self.to_dict()
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         with open(settings_path, "w", encoding="utf-8") as fh:
             json.dump(payload, fh, indent=2, ensure_ascii=False)
         self._path = settings_path
+
+    def to_dict(self) -> Dict[str, Any]:
+        data = asdict(self)
+        data.pop("_path", None)
+        return data
 
