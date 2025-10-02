@@ -1,4 +1,5 @@
 import datetime
+import zipfile
 
 import pandas as pd
 import pytest
@@ -187,7 +188,7 @@ def test_finish_exports_written(tmp_path, zip_parts, zip_finish):
     finish_dir_2 = dest / finish_dir_2_name
     finish_dir_3_name = "Finish-" + _normalize_finish_folder("Geanodiseerd")
     finish_dir_3 = dest / finish_dir_3_name
-    finish_dir_4_name = (
+    missing_finish_dir_name = (
         "Finish-"
         + _normalize_finish_folder(" ")
         + "-"
@@ -220,8 +221,18 @@ def test_finish_exports_written(tmp_path, zip_parts, zip_finish):
         p.name for p in dest.iterdir() if p.is_dir() and p.name.startswith("Finish-")
     )
     assert finish_dirs == sorted(
-        [finish_dir_1_name, finish_dir_2_name, finish_dir_3_name, finish_dir_4_name]
+        [finish_dir_1_name, finish_dir_2_name, finish_dir_3_name]
     )
+    assert not (dest / missing_finish_dir_name).exists()
+
+    prod_dir = dest / "Laser"
+    if zip_parts:
+        archive = prod_dir / "Laser.zip"
+        assert archive.is_file()
+        with zipfile.ZipFile(archive) as zf:
+            assert any(name.endswith("PN3.pdf") for name in zf.namelist())
+    else:
+        assert (prod_dir / "PN3.pdf").is_file()
 
 
 @pytest.mark.parametrize(

@@ -818,19 +818,23 @@ def copy_per_production_and_orders(
         prod = (row.get("Production") or "").strip() or "_Onbekend"
         prod_to_rows[prod].append(row)
         pn = _to_str(row.get("PartNumber")).strip()
-        finish_meta = describe_finish_combo(row.get("Finish"), row.get("RAL color"))
-        finish_key = finish_meta["key"]
-        group = finish_groups.get(finish_key)
-        if group is None:
-            group = {
-                **finish_meta,
-                "rows": [],
-                "part_numbers": set(),
-            }
-            finish_groups[finish_key] = group
-        group["rows"].append(row)
-        if pn:
-            group["part_numbers"].add(pn)
+        finish_text = _to_str(row.get("Finish")).strip()
+        if finish_text:
+            finish_meta = describe_finish_combo(
+                row.get("Finish"), row.get("RAL color")
+            )
+            finish_key = finish_meta["key"]
+            group = finish_groups.get(finish_key)
+            if group is None:
+                group = {
+                    **finish_meta,
+                    "rows": [],
+                    "part_numbers": set(),
+                }
+                finish_groups[finish_key] = group
+            group["rows"].append(row)
+            if pn:
+                group["part_numbers"].add(pn)
 
     today_date = datetime.date.today()
     today = today_date.strftime("%Y-%m-%d")
