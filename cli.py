@@ -419,6 +419,11 @@ def cli_copy_per_prod(args):
     settings = AppSettings.load()
     settings_note = settings.footer_note
     footer_note = settings_note if args.note is None else args.note
+    copy_finish_exports = (
+        settings.copy_finish_exports
+        if args.finish_folders is None
+        else bool(args.finish_folders)
+    )
 
     cnt, chosen = copy_per_production_and_orders(
         args.source,
@@ -435,6 +440,7 @@ def cli_copy_per_prod(args):
         footer_note=footer_note if footer_note is not None else DEFAULT_FOOTER_NOTE,
         project_number=args.project_number,
         project_name=args.project_name,
+        copy_finish_exports=copy_finish_exports,
         export_name_prefix_text=export_prefix_text,
         export_name_prefix_enabled=export_prefix_enabled,
         export_name_suffix_text=export_suffix_text,
@@ -609,6 +615,16 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=None,
         help="Schakel de aangepaste suffix in of uit (standaard automatisch)",
+    )
+    cpp.add_argument(
+        "--finish-folders",
+        dest="finish_folders",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Maak extra afwerkingsmappen (Afwerking/<afwerking>/<RAL>). "
+            "Gebruik --no-finish-folders om ze uit te schakelen."
+        ),
     )
     cpp.add_argument(
         "--bundle-latest",

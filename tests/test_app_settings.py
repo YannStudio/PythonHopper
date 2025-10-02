@@ -26,6 +26,7 @@ def test_app_settings_roundtrip(tmp_path):
             ),
         ],
         zip_per_production=False,
+        copy_finish_exports=True,
         export_date_prefix=True,
         export_date_suffix=False,
         custom_prefix_enabled=True,

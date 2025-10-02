@@ -1909,6 +1909,9 @@ def start_gui():
             self.zip_var = tk.IntVar(
                 master=self, value=1 if self.settings.zip_per_production else 0
             )
+            self.finish_export_var = tk.IntVar(
+                master=self, value=1 if self.settings.copy_finish_exports else 0
+            )
             self.export_date_prefix_var = tk.IntVar(
                 master=self, value=1 if self.settings.export_date_prefix else 0
             )
@@ -1953,6 +1956,7 @@ def start_gui():
                 var.trace_add("write", self._save_settings)
             for var in (
                 self.zip_var,
+                self.finish_export_var,
                 self.export_date_prefix_var,
                 self.export_date_suffix_var,
                 self.export_name_custom_prefix_enabled_var,
@@ -2083,6 +2087,12 @@ def start_gui():
                 anchor="w",
             ).pack(anchor="w", pady=2)
             tk.Checkbutton(
+                options_frame,
+                text="Afwerkingsmappen (Afwerking/<afwerking>/<RAL>)",
+                variable=self.finish_export_var,
+                anchor="w",
+            ).pack(anchor="w", pady=2)
+            tk.Checkbutton(
                 export_name_inner,
                 text="Datumprefix (YYYYMMDD-)",
                 variable=self.export_date_prefix_var,
@@ -2206,6 +2216,7 @@ def start_gui():
             self.settings.project_number = self.project_number_var.get().strip()
             self.settings.project_name = self.project_name_var.get().strip()
             self.settings.zip_per_production = bool(self.zip_var.get())
+            self.settings.copy_finish_exports = bool(self.finish_export_var.get())
             self.settings.export_date_prefix = bool(self.export_date_prefix_var.get())
             self.settings.export_date_suffix = bool(self.export_date_suffix_var.get())
             self.settings.custom_prefix_enabled = bool(
@@ -2785,9 +2796,10 @@ def start_gui():
                     date_suffix_exports=bool(self.export_date_suffix_var.get()),
                     project_number=project_number,
                     project_name=project_name,
-                        export_name_prefix_text=token_prefix_text,
-                        export_name_prefix_enabled=token_prefix_enabled,
-                        export_name_suffix_text=token_suffix_text,
+                    copy_finish_exports=bool(self.finish_export_var.get()),
+                    export_name_prefix_text=token_prefix_text,
+                    export_name_prefix_enabled=token_prefix_enabled,
+                    export_name_suffix_text=token_suffix_text,
                         export_name_suffix_enabled=token_suffix_enabled,
                     )
 
