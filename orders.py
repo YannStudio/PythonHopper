@@ -751,6 +751,7 @@ def copy_per_production_and_orders(
     export_name_suffix_text: str = "",
     export_name_suffix_enabled: bool | None = None,
     copy_finish_exports: bool = False,
+    zip_finish_exports: bool = True,
     finish_override_map: Dict[str, str] | None = None,
     finish_doc_type_map: Dict[str, str] | None = None,
     finish_doc_num_map: Dict[str, str] | None = None,
@@ -787,7 +788,9 @@ def copy_per_production_and_orders(
     additionally copied to folders named ``Finish-<finish>`` with an optional
     ``-<ral>`` suffix when the BOM "RAL color" property is filled in. The
     folder components are normalized versions of the BOM "Finish" and
-    ``RAL color`` values.
+    ``RAL color`` values. When ``zip_finish_exports`` is ``True`` (default)
+    the finish folders receive a single ZIP archive containing the export
+    files instead of loose copies.
 
     Finish-specific overrides, document types/numbers and deliveries can be
     provided via the ``finish_*`` mappings. Keys correspond to the normalized
@@ -1054,6 +1057,33 @@ def copy_per_production_and_orders(
             target_dir = os.path.join(dest, folder_name)
             os.makedirs(target_dir, exist_ok=True)
             seen_pairs = finish_seen[finish_key]
+            zf = None
+            if zip_finish_exports:
+                zip_name = f"{folder_name}.zip"
+                zip_path = os.path.join(target_dir, zip_name)
+                try:
+                    zf = zipfile.ZipFile(
+                        zip_path,
+                        "w",
+                        compression=zipfile.ZIP_DEFLATED,
+                        compresslevel=6,
+                    )
+                except TypeError:
+                    zf = zipfile.ZipFile(
+                        zip_path,
+                        "w",
+                        compression=zipfile.ZIP_DEFLATED,
+                    )
+                except (RuntimeError, NotImplementedError):
+                    print(
+                        "[WAARSCHUWING] ZIP_DEFLATED niet beschikbaar, val terug op ZIP_STORED",
+                        file=sys.stderr,
+                    )
+                    zf = zipfile.ZipFile(
+                        zip_path,
+                        "w",
+                        compression=zipfile.ZIP_STORED,
+                    )
             for pn in sorted(part_numbers):
                 files = file_index.get(pn, [])
                 for src_file in files:
@@ -1062,7 +1092,13 @@ def copy_per_production_and_orders(
                     if combo in seen_pairs:
                         continue
                     seen_pairs.add(combo)
-                    shutil.copy2(src_file, os.path.join(target_dir, transformed))
+                    if zip_finish_exports:
+                        if zf is not None:
+                            zf.write(src_file, arcname=transformed)
+                    else:
+                        shutil.copy2(src_file, os.path.join(target_dir, transformed))
+            if zf is not None:
+                zf.close()
 
     if finish_groups:
         for finish_key, info in sorted(

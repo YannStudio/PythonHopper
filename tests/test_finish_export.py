@@ -2,6 +2,7 @@ import datetime
 
 import pandas as pd
 import pytest
+import zipfile
 
 import cli
 import orders
@@ -75,6 +76,7 @@ def test_load_bom_finish_columns_and_copy(tmp_path):
         {},
         False,
         copy_finish_exports=True,
+        zip_finish_exports=False,
     )
 
     assert cnt == 3
@@ -100,7 +102,8 @@ def test_load_bom_finish_columns_and_copy(tmp_path):
 
 
 @pytest.mark.parametrize("zip_parts", [False, True])
-def test_finish_exports_written(tmp_path, zip_parts):
+@pytest.mark.parametrize("zip_finish", [False, True])
+def test_finish_exports_written(tmp_path, zip_parts, zip_finish):
     src = tmp_path / "src"
     dest = tmp_path / "dest"
     src.mkdir()
@@ -163,6 +166,7 @@ def test_finish_exports_written(tmp_path, zip_parts):
         False,
         zip_parts=zip_parts,
         copy_finish_exports=True,
+        zip_finish_exports=zip_finish,
     )
 
     assert cnt == 4
@@ -190,12 +194,28 @@ def test_finish_exports_written(tmp_path, zip_parts):
         + _normalize_finish_folder("RAL 9016")
     )
 
-    assert (finish_dir_1 / "PN1.pdf").is_file()
     entries_finish_1 = sorted(p.name for p in finish_dir_1.iterdir())
-    assert "PN1.pdf" in entries_finish_1
+    if zip_finish:
+        zip_path_1 = finish_dir_1 / f"{finish_dir_1_name}.zip"
+        assert zip_path_1.is_file()
+        with zipfile.ZipFile(zip_path_1) as zf:
+            assert "PN1.pdf" in zf.namelist()
+    else:
+        assert (finish_dir_1 / "PN1.pdf").is_file()
+        assert "PN1.pdf" in entries_finish_1
     assert any(name.startswith("Bestelbon_") for name in entries_finish_1)
-    assert (finish_dir_2 / "PN2.pdf").is_file()
-    assert (finish_dir_3 / "PN4.pdf").is_file()
+    if zip_finish:
+        zip_path_2 = finish_dir_2 / f"{finish_dir_2_name}.zip"
+        assert zip_path_2.is_file()
+        with zipfile.ZipFile(zip_path_2) as zf:
+            assert "PN2.pdf" in zf.namelist()
+        zip_path_3 = finish_dir_3 / f"{finish_dir_3_name}.zip"
+        assert zip_path_3.is_file()
+        with zipfile.ZipFile(zip_path_3) as zf:
+            assert "PN4.pdf" in zf.namelist()
+    else:
+        assert (finish_dir_2 / "PN2.pdf").is_file()
+        assert (finish_dir_3 / "PN4.pdf").is_file()
     finish_dirs = sorted(
         p.name for p in dest.iterdir() if p.is_dir() and p.name.startswith("Finish-")
     )
@@ -254,7 +274,12 @@ def test_cli_finish_flag(monkeypatch, tmp_path, flag, settings_value, expected):
     monkeypatch.setattr(
         AppSettings,
         "load",
-        classmethod(lambda cls, path=...: AppSettings(copy_finish_exports=settings_value)),
+        classmethod(
+            lambda cls, path=...: AppSettings(
+                copy_finish_exports=settings_value,
+                zip_finish_exports=True,
+            )
+        ),
     )
 
     captured = {}
@@ -268,6 +293,77 @@ def test_cli_finish_flag(monkeypatch, tmp_path, flag, settings_value, expected):
     cli_copy_per_prod(args)
 
     assert captured["copy_finish_exports"] is expected
+
+
+@pytest.mark.parametrize(
+    "flag, settings_value, expected",
+    [
+        (None, True, True),
+        ("--zip-finish-folders", False, True),
+        ("--no-zip-finish-folders", True, False),
+    ],
+)
+def test_cli_zip_finish_flag(monkeypatch, tmp_path, flag, settings_value, expected):
+    parser = build_parser()
+    args_list = [
+        "copy-per-prod",
+        "--source",
+        str(tmp_path / "src"),
+        "--dest",
+        str(tmp_path / "dst"),
+        "--bom",
+        str(tmp_path / "bom.xlsx"),
+        "--exts",
+        "pdf",
+    ]
+    if flag:
+        args_list.append(flag)
+    args = parser.parse_args(args_list)
+
+    (tmp_path / "src").mkdir()
+    (tmp_path / "dst").mkdir()
+
+    df = pd.DataFrame(
+        [
+            {
+                "PartNumber": "PN1",
+                "Description": "",
+                "Production": "Laser",
+                "Aantal": 1,
+            }
+        ]
+    )
+    monkeypatch.setattr(cli, "load_bom", lambda path: df)
+
+    sdb = _make_db()
+    monkeypatch.setattr(SuppliersDB, "load", classmethod(lambda cls, path: sdb))
+    cdb = ClientsDB([])
+    monkeypatch.setattr(ClientsDB, "load", classmethod(lambda cls, path: cdb))
+    ddb = DeliveryAddressesDB([])
+    monkeypatch.setattr(DeliveryAddressesDB, "load", classmethod(lambda cls, path: ddb))
+
+    monkeypatch.setattr(
+        AppSettings,
+        "load",
+        classmethod(
+            lambda cls, path=...: AppSettings(
+                copy_finish_exports=True,
+                zip_finish_exports=settings_value,
+            )
+        ),
+    )
+
+    captured = {}
+
+    def fake_copy(*_args, **kwargs):
+        captured.update(kwargs)
+        return 0, {}
+
+    monkeypatch.setattr(cli, "copy_per_production_and_orders", fake_copy)
+
+    cli_copy_per_prod(args)
+
+    assert captured["zip_finish_exports"] is expected
 
 
 def test_finish_documents_and_defaults(tmp_path, monkeypatch):
