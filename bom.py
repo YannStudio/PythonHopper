@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 import re
+from numbers import Integral, Real
 from typing import List, Optional
 
 import pandas as pd
@@ -142,11 +143,23 @@ def load_bom(path: str) -> pd.DataFrame:
 
     df["Oppervlakte"] = "" if opp_col is None else df[opp_col]
     df["Gewicht"] = "" if gew_col is None else df[gew_col]
+    def _normalize_text_value(value: object) -> str:
+        if pd.isna(value):
+            return ""
+        if isinstance(value, Integral):
+            return str(int(value))
+        if isinstance(value, Real):
+            float_value = float(value)
+            if float_value.is_integer():
+                return str(int(float_value))
+            return str(value).strip()
+        return str(value).strip()
+
     def _text_column(col_name: Optional[str]) -> pd.Series:
         if col_name is None:
             return pd.Series([""] * len(df), index=df.index)
         series = df[col_name]
-        return series.fillna("").astype(str).str.strip()
+        return series.apply(_normalize_text_value)
 
     df["Materiaal"] = _text_column(mat_col)
 
