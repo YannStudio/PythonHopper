@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from helpers import _to_str
 
@@ -160,6 +160,8 @@ class Client:
     vat: Optional[str] = None
     email: Optional[str] = None
     favorite: bool = False
+    logo_path: Optional[str] = None
+    logo_crop: Optional[Dict[str, int]] = None
 
     @staticmethod
     def from_any(d: dict) -> "Client":
@@ -179,6 +181,12 @@ class Client:
             "favorite": "favorite",
             "favoriet": "favorite",
             "fav": "favorite",
+            "logo": "logo_path",
+            "logo_path": "logo_path",
+            "logo file": "logo_path",
+            "logo_file": "logo_path",
+            "logo crop": "logo_crop",
+            "logo_crop": "logo_crop",
         }
         norm = {}
         for k, v in d.items():
@@ -191,12 +199,51 @@ class Client:
         fav = norm.get("favorite", d.get("favorite", False))
         if isinstance(fav, str):
             fav = fav.strip().lower() in ("1", "true", "yes", "y", "ja")
+
+        def _parse_crop(val: Any) -> Optional[Dict[str, int]]:
+            if not val:
+                return None
+            if isinstance(val, dict):
+                norm_keys = {str(k).lower(): v for k, v in val.items()}
+                keys = {"left", "top", "right", "bottom"}
+                if not keys.issubset(norm_keys.keys()):
+                    return None
+                try:
+                    return {
+                        "left": int(float(norm_keys.get("left", 0))),
+                        "top": int(float(norm_keys.get("top", 0))),
+                        "right": int(float(norm_keys.get("right", 0))),
+                        "bottom": int(float(norm_keys.get("bottom", 0))),
+                    }
+                except Exception:
+                    return None
+            if isinstance(val, (list, tuple)) and len(val) == 4:
+                try:
+                    l, t, r, b = [int(float(x)) for x in val]
+                    return {"left": l, "top": t, "right": r, "bottom": b}
+                except Exception:
+                    return None
+            if isinstance(val, str):
+                parts = [p.strip() for p in val.replace(";", ",").split(",") if p.strip()]
+                if len(parts) == 4:
+                    try:
+                        l, t, r, b = [int(float(x)) for x in parts]
+                        return {"left": l, "top": t, "right": r, "bottom": b}
+                    except Exception:
+                        return None
+            return None
+
+        crop = _parse_crop(norm.get("logo_crop", d.get("logo_crop")))
+        logo_path = _to_str(norm.get("logo_path", d.get("logo_path")))
+        logo_path = logo_path.strip() or None if logo_path is not None else None
         return Client(
             name=name,
             address=_to_str(norm.get("address")).strip() or None if ("address" in norm) else None,
             vat=_to_str(norm.get("vat")).strip() or None if ("vat" in norm) else None,
             email=_to_str(norm.get("email")).strip() or None if ("email" in norm) else None,
             favorite=bool(fav),
+            logo_path=logo_path,
+            logo_crop=crop,
         )
 
 

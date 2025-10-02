@@ -24,6 +24,7 @@ from clients_db import ClientsDB, CLIENTS_DB_FILE
 from delivery_addresses_db import DeliveryAddressesDB, DELIVERY_DB_FILE
 from bom import read_csv_flex, load_bom
 from orders import copy_per_production_and_orders, DEFAULT_FOOTER_NOTE
+from app_settings import AppSettings
 
 DEFAULT_ALLOWED_EXTS = "pdf,dxf,dwg,step,stp"
 
@@ -415,6 +416,10 @@ def cli_copy_per_prod(args):
         print("Dry-run geactiveerd: geen bestanden gekopieerd.")
         return 0
 
+    settings = AppSettings.load()
+    settings_note = settings.footer_note
+    footer_note = settings_note if args.note is None else args.note
+
     cnt, chosen = copy_per_production_and_orders(
         args.source,
         bundle.bundle_dir,
@@ -427,7 +432,7 @@ def cli_copy_per_prod(args):
         remember_defaults=args.remember_defaults,
         client=client,
         delivery_map=delivery_map,
-        footer_note=args.note or DEFAULT_FOOTER_NOTE,
+        footer_note=footer_note if footer_note is not None else DEFAULT_FOOTER_NOTE,
         project_number=args.project_number,
         project_name=args.project_name,
         export_name_prefix_text=export_prefix_text,
@@ -545,7 +550,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     cpp.add_argument("--remember-defaults", action="store_true")
     cpp.add_argument(
-        "--note", help="Optioneel voetnootje op de bestelbon", default=""
+        "--note", help="Optioneel voetnootje op de bestelbon", default=None
     )
     cpp.add_argument("--client", help="Gebruik opdrachtgever met deze naam")
     cpp.add_argument(

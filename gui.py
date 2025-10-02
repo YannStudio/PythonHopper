@@ -1,5 +1,6 @@
 import os
 import datetime
+import re
 import shutil
 import subprocess
 import sys
@@ -11,7 +12,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from app_settings import AppSettings
+from app_settings import AppSettings, FileExtensionSetting, FILE_EXTENSION_PRESETS
 from helpers import _to_str, _build_file_index, create_export_bundle, ExportBundleResult
 from models import Supplier, Client, DeliveryAddress
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
@@ -26,6 +27,9 @@ from orders import (
     combine_pdfs_from_source,
     _prefix_for_doc_type,
 )
+
+
+CLIENT_LOGO_DIR = Path("client_logos")
 
 
 def _norm(text: str) -> str:
@@ -64,6 +68,16 @@ def start_gui():
     import tkinter as tk
     import tkinter.font as tkfont
     from tkinter import ttk, filedialog, messagebox, simpledialog
+    try:
+        from PIL import Image, ImageTk  # type: ignore
+        try:
+            RESAMPLE = Image.Resampling.LANCZOS  # type: ignore[attr-defined]
+        except AttributeError:  # pragma: no cover - Pillow < 9
+            RESAMPLE = Image.LANCZOS
+    except Exception:  # pragma: no cover - Pillow might be unavailable in minimal setups
+        Image = None  # type: ignore
+        ImageTk = None  # type: ignore
+        RESAMPLE = None
 
     TREE_ODD_BG = "#FFFFFF"
     TREE_EVEN_BG = "#F5F5F5"
@@ -112,26 +126,374 @@ def start_gui():
         def _open_edit_dialog(self, client: Optional[Client] = None):
             win = tk.Toplevel(self)
             win.title("Opdrachtgever")
+            win.columnconfigure(1, weight=1)
             fields = [
                 ("Naam", "name"),
                 ("Adres", "address"),
                 ("BTW", "vat"),
                 ("E-mail", "email"),
             ]
-            entries = {}
+            entries: Dict[str, tk.Entry] = {}
             for i, (lbl, key) in enumerate(fields):
                 tk.Label(win, text=lbl + ":").grid(row=i, column=0, sticky="e", padx=4, pady=2)
                 ent = tk.Entry(win, width=40)
-                ent.grid(row=i, column=1, padx=4, pady=2)
+                ent.grid(row=i, column=1, padx=4, pady=2, sticky="ew")
                 if client:
                     ent.insert(0, _to_str(getattr(client, key)))
                 entries[key] = ent
             fav_var = tk.BooleanVar(value=client.favorite if client else False)
-            tk.Checkbutton(win, text="Favoriet", variable=fav_var).grid(row=len(fields), column=1, sticky="w", padx=4, pady=2)
+            tk.Checkbutton(win, text="Favoriet", variable=fav_var).grid(
+                row=len(fields), column=1, sticky="w", padx=4, pady=2
+            )
+
+            logo_path_var = tk.StringVar(
+                value=(client.logo_path if client and client.logo_path else "")
+            )
+            logo_crop_state = (
+                dict(client.logo_crop) if client and client.logo_crop else None
+            )
+
+            logo_frame = tk.LabelFrame(win, text="Logo")
+            logo_frame.grid(
+                row=len(fields) + 1,
+                column=0,
+                columnspan=2,
+                sticky="ew",
+                padx=4,
+                pady=(6, 2),
+            )
+            logo_frame.columnconfigure(0, weight=1)
+
+            preview_label = tk.Label(
+                logo_frame,
+                text="Geen logo",
+                relief="sunken",
+                width=32,
+                height=8,
+                anchor="center",
+                justify="center",
+            )
+            preview_label.grid(row=0, column=0, rowspan=4, sticky="nsew", padx=4, pady=4)
+
+            def resolve_logo_path(path_str: str) -> Optional[Path]:
+                if not path_str:
+                    return None
+                p = Path(path_str)
+                if not p.is_absolute():
+                    p = Path.cwd() / p
+                return p
+
+            def update_preview() -> None:
+                path_str = logo_path_var.get().strip()
+                if not path_str or Image is None:
+                    preview_label.configure(text="Geen logo", image="")
+                    preview_label.image = None  # type: ignore[attr-defined]
+                    return
+                abs_path = resolve_logo_path(path_str)
+                if not abs_path or not abs_path.exists():
+                    preview_label.configure(text="Logo niet gevonden", image="")
+                    preview_label.image = None  # type: ignore[attr-defined]
+                    return
+                try:
+                    with Image.open(abs_path) as src:  # type: ignore[union-attr]
+                        img = src.convert("RGBA")
+                except Exception:
+                    preview_label.configure(text="Kan logo niet laden", image="")
+                    preview_label.image = None  # type: ignore[attr-defined]
+                    return
+                crop = logo_crop_state
+                if crop and all(k in crop for k in ("left", "top", "right", "bottom")):
+                    left = max(0, min(img.width, int(crop.get("left", 0))))
+                    top = max(0, min(img.height, int(crop.get("top", 0))))
+                    right = max(left + 1, min(img.width, int(crop.get("right", img.width))))
+                    bottom = max(top + 1, min(img.height, int(crop.get("bottom", img.height))))
+                    img = img.crop((left, top, right, bottom))
+                thumb = img.copy()
+                if RESAMPLE is not None:
+                    thumb.thumbnail((220, 120), RESAMPLE)
+                else:  # pragma: no cover - fallback without Pillow resampling enum
+                    thumb.thumbnail((220, 120))
+                photo = ImageTk.PhotoImage(thumb)  # type: ignore[union-attr]
+                preview_label.configure(image=photo, text="")
+                preview_label.image = photo  # type: ignore[attr-defined]
+
+            def upload_logo() -> None:
+                path = filedialog.askopenfilename(
+                    filetypes=[
+                        ("Afbeeldingen", "*.png;*.jpg;*.jpeg;*.gif;*.bmp"),
+                        ("Alle bestanden", "*.*"),
+                    ]
+                )
+                if not path:
+                    return
+                dest_dir = CLIENT_LOGO_DIR
+                dest_dir.mkdir(exist_ok=True)
+                ext = Path(path).suffix or ".png"
+                base = entries["name"].get().strip() or Path(path).stem
+                safe = re.sub(r"[^a-z0-9]+", "_", base.lower()).strip("_") or "logo"
+                timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+                dest = dest_dir / f"{safe}_{timestamp}{ext}"
+                try:
+                    shutil.copy2(path, dest)
+                except Exception as exc:
+                    messagebox.showerror(
+                        "Fout", f"Kan logo niet kopiëren: {exc}", parent=win
+                    )
+                    return
+                nonlocal logo_crop_state
+                logo_crop_state = None
+                logo_path_var.set(dest.as_posix())
+                update_preview()
+
+            def clear_logo() -> None:
+                nonlocal logo_crop_state
+                logo_path_var.set("")
+                logo_crop_state = None
+                update_preview()
+
+            def crop_logo() -> None:
+                if Image is None:
+                    messagebox.showwarning(
+                        "Niet beschikbaar",
+                        "Pillow is vereist om te kunnen bijsnijden.",
+                        parent=win,
+                    )
+                    return
+                path_str = logo_path_var.get().strip()
+                if not path_str:
+                    messagebox.showinfo(
+                        "Geen logo",
+                        "Upload eerst een logo voordat je gaat bijsnijden.",
+                        parent=win,
+                    )
+                    return
+                abs_path = resolve_logo_path(path_str)
+                if not abs_path or not abs_path.exists():
+                    messagebox.showerror(
+                        "Onbekend pad",
+                        "Het logobestand kan niet gevonden worden.",
+                        parent=win,
+                    )
+                    return
+                try:
+                    with Image.open(abs_path) as src_img:  # type: ignore[union-attr]
+                        base_img = src_img.convert("RGBA")
+                except Exception as exc:
+                    messagebox.showerror(
+                        "Fout", f"Kan logo niet openen: {exc}", parent=win
+                    )
+                    return
+
+                crop_win = tk.Toplevel(win)
+                crop_win.title("Bijsnijden logo")
+                crop_win.transient(win)
+                crop_win.resizable(False, False)
+
+                max_w, max_h = 600, 400
+                if base_img.width == 0 or base_img.height == 0:
+                    messagebox.showerror(
+                        "Fout", "Afbeelding heeft ongeldige afmetingen.", parent=win
+                    )
+                    crop_win.destroy()
+                    return
+                scale = min(max_w / base_img.width, max_h / base_img.height, 1.0)
+                disp_w = max(1, int(round(base_img.width * scale)))
+                disp_h = max(1, int(round(base_img.height * scale)))
+                if scale != 1.0:
+                    disp_img = base_img.resize(
+                        (disp_w, disp_h), RESAMPLE or Image.BICUBIC  # type: ignore[union-attr]
+                    )
+                else:
+                    disp_img = base_img.copy()
+                photo = ImageTk.PhotoImage(disp_img)  # type: ignore[union-attr]
+                canvas = tk.Canvas(
+                    crop_win, width=disp_w, height=disp_h, highlightthickness=0
+                )
+                canvas.pack(padx=8, pady=8)
+                canvas.create_image(0, 0, anchor="nw", image=photo)
+                canvas.image = photo  # type: ignore[attr-defined]
+                canvas.configure(cursor="crosshair")
+
+                ratio = base_img.width / base_img.height if base_img.height else 1.0
+                current_box = [0.0, 0.0, float(disp_w), float(disp_h)]
+                if logo_crop_state:
+                    left = max(0, min(base_img.width, int(logo_crop_state.get("left", 0))))
+                    top = max(0, min(base_img.height, int(logo_crop_state.get("top", 0))))
+                    right = max(
+                        left + 1,
+                        min(base_img.width, int(logo_crop_state.get("right", base_img.width))),
+                    )
+                    bottom = max(
+                        top + 1,
+                        min(
+                            base_img.height,
+                            int(logo_crop_state.get("bottom", base_img.height)),
+                        ),
+                    )
+                    current_box = [
+                        left / base_img.width * disp_w,
+                        top / base_img.height * disp_h,
+                        right / base_img.width * disp_w,
+                        bottom / base_img.height * disp_h,
+                    ]
+
+                rect_id = None
+                start_point = [0.0, 0.0]
+
+                def draw_rect() -> None:
+                    nonlocal rect_id
+                    if rect_id is not None:
+                        canvas.delete(rect_id)
+                    rect_id = canvas.create_rectangle(
+                        current_box[0],
+                        current_box[1],
+                        current_box[2],
+                        current_box[3],
+                        outline="#ff007f",
+                        width=2,
+                    )
+
+                def clamp(x: float, y: float) -> tuple[float, float]:
+                    return (
+                        max(0.0, min(float(disp_w), x)),
+                        max(0.0, min(float(disp_h), y)),
+                    )
+
+                def update_box(x0: float, y0: float, x1: float, y1: float) -> None:
+                    x1, y1 = clamp(x1, y1)
+                    dx = x1 - x0
+                    dy = y1 - y0
+                    if abs(dx) < 1 and abs(dy) < 1:
+                        return
+                    target_ratio = ratio if ratio > 0 else 1.0
+                    abs_dx = abs(dx)
+                    abs_dy = abs(dy)
+                    if abs_dx == 0 and abs_dy == 0:
+                        return
+                    if abs_dx / target_ratio >= abs_dy:
+                        width = dx
+                        height = (abs(dx) / target_ratio) * (1 if dy >= 0 else -1)
+                    else:
+                        height = dy
+                        width = (abs(dy) * target_ratio) * (1 if dx >= 0 else -1)
+                    x_min = x0 if width >= 0 else x0 + width
+                    x_max = x_min + abs(width)
+                    y_min = y0 if height >= 0 else y0 + height
+                    y_max = y_min + abs(height)
+                    if x_min < 0:
+                        shift = -x_min
+                        x_min = 0
+                        x_max += shift
+                    if x_max > disp_w:
+                        shift = x_max - disp_w
+                        x_max = disp_w
+                        x_min -= shift
+                    if y_min < 0:
+                        shift = -y_min
+                        y_min = 0
+                        y_max += shift
+                    if y_max > disp_h:
+                        shift = y_max - disp_h
+                        y_max = disp_h
+                        y_min -= shift
+                    x_min = max(0.0, min(float(disp_w), x_min))
+                    x_max = max(0.0, min(float(disp_w), x_max))
+                    y_min = max(0.0, min(float(disp_h), y_min))
+                    y_max = max(0.0, min(float(disp_h), y_max))
+                    if x_max - x_min < 1 or y_max - y_min < 1:
+                        return
+                    current_box[0] = x_min
+                    current_box[1] = y_min
+                    current_box[2] = x_max
+                    current_box[3] = y_max
+                    draw_rect()
+
+                def on_press(evt):
+                    start_point[0], start_point[1] = clamp(evt.x, evt.y)
+
+                def on_drag(evt):
+                    update_box(start_point[0], start_point[1], evt.x, evt.y)
+
+                canvas.bind("<Button-1>", on_press)
+                canvas.bind("<B1-Motion>", on_drag)
+                canvas.bind("<ButtonRelease-1>", on_drag)
+
+                draw_rect()
+
+                tk.Label(
+                    crop_win,
+                    text="Klik en sleep om het logo bij te snijden. Volledige selectie = geen crop.",
+                ).pack(padx=8, pady=(0, 6))
+
+                btns = tk.Frame(crop_win)
+                btns.pack(pady=6)
+
+                def reset_full() -> None:
+                    current_box[0] = 0.0
+                    current_box[1] = 0.0
+                    current_box[2] = float(disp_w)
+                    current_box[3] = float(disp_h)
+                    draw_rect()
+
+                def apply_crop() -> None:
+                    nonlocal logo_crop_state
+                    x_scale = base_img.width / disp_w
+                    y_scale = base_img.height / disp_h
+                    left = int(round(current_box[0] * x_scale))
+                    top = int(round(current_box[1] * y_scale))
+                    right = int(round(current_box[2] * x_scale))
+                    bottom = int(round(current_box[3] * y_scale))
+                    left = max(0, min(base_img.width, left))
+                    top = max(0, min(base_img.height, top))
+                    right = max(left + 1, min(base_img.width, right))
+                    bottom = max(top + 1, min(base_img.height, bottom))
+                    if (
+                        left <= 0
+                        and top <= 0
+                        and right >= base_img.width
+                        and bottom >= base_img.height
+                    ):
+                        logo_crop_state = None
+                    else:
+                        logo_crop_state = {
+                            "left": left,
+                            "top": top,
+                            "right": right,
+                            "bottom": bottom,
+                        }
+                    crop_win.destroy()
+                    update_preview()
+
+                tk.Button(btns, text="Volledige afbeelding", command=reset_full).pack(
+                    side="left", padx=4
+                )
+                tk.Button(btns, text="Opslaan", command=apply_crop).pack(
+                    side="left", padx=4
+                )
+                tk.Button(btns, text="Annuleer", command=crop_win.destroy).pack(
+                    side="left", padx=4
+                )
+
+                crop_win.grab_set()
+                crop_win.focus_set()
+
+            tk.Button(logo_frame, text="Upload", command=upload_logo).grid(
+                row=0, column=1, sticky="ew", padx=4, pady=2
+            )
+            tk.Button(logo_frame, text="Bijsnijden", command=crop_logo).grid(
+                row=1, column=1, sticky="ew", padx=4, pady=2
+            )
+            tk.Button(logo_frame, text="Verwijder", command=clear_logo).grid(
+                row=2, column=1, sticky="ew", padx=4, pady=2
+            )
+
+            update_preview()
 
             def _save():
                 rec = {k: e.get().strip() for k, e in entries.items()}
                 rec["favorite"] = fav_var.get()
+                rec["logo_path"] = logo_path_var.get().strip()
+                rec["logo_crop"] = logo_crop_state
                 if not rec["name"]:
                     messagebox.showwarning("Let op", "Naam is verplicht.", parent=win)
                     return
@@ -144,7 +506,7 @@ def start_gui():
                 win.destroy()
 
             btnf = tk.Frame(win)
-            btnf.grid(row=len(fields)+1, column=0, columnspan=2, pady=6)
+            btnf.grid(row=len(fields) + 2, column=0, columnspan=2, pady=6)
             tk.Button(btnf, text="Opslaan", command=_save).pack(side="left", padx=4)
             tk.Button(btnf, text="Annuleer", command=win.destroy).pack(side="left", padx=4)
             win.transient(self)
@@ -1036,10 +1398,433 @@ def start_gui():
         def __init__(self, master, app: "App"):
             super().__init__(master)
             self.app = app
-
-            tk.Label(self, text="Instellingen volgen…").pack(
-                fill="both", expand=True, padx=8, pady=8
+            self.extensions: List[FileExtensionSetting] = deepcopy(
+                self.app.settings.file_extensions
             )
+
+            self.configure(padx=12, pady=12)
+            self.columnconfigure(0, weight=1)
+            self.rowconfigure(2, weight=1)
+
+            export_options = tk.LabelFrame(
+                self, text="Exportopties", labelanchor="n"
+            )
+            export_options.grid(row=0, column=0, sticky="ew")
+            export_options.columnconfigure(0, weight=1)
+
+            def _add_option(
+                parent: tk.Widget,
+                text: str,
+                description: str,
+                variable: "tk.IntVar",
+            ) -> None:
+                row = parent.grid_size()[1]
+                container = tk.Frame(parent)
+                container.grid(row=row, column=0, sticky="ew", padx=12, pady=(6, 2))
+                container.columnconfigure(0, weight=1)
+                tk.Checkbutton(
+                    container,
+                    text=text,
+                    variable=variable,
+                    anchor="w",
+                    justify="left",
+                ).grid(row=0, column=0, sticky="w")
+                tk.Label(
+                    container,
+                    text=description,
+                    justify="left",
+                    anchor="w",
+                    wraplength=520,
+                    foreground="#555555",
+                ).grid(row=1, column=0, sticky="ew", padx=(28, 0))
+
+            _add_option(
+                export_options,
+                "Maak snelkoppeling naar nieuwste exportmap",
+                (
+                    "Na het exporteren wordt er een snelkoppeling met de naam 'latest'"
+                    " geplaatst in de exportmap. Deze verwijst altijd naar de"
+                    " meest recente export zodat je die snel kunt openen."
+                ),
+                self.app.bundle_latest_var,
+            )
+            _add_option(
+                export_options,
+                "Testrun: toon alleen doelmap (niets wordt gekopieerd)",
+                (
+                    "Voer een proefrun uit zonder bestanden te kopiëren. Je ziet"
+                    " welke doelmap gebruikt zou worden, maar er worden geen"
+                    " bestanden aangemaakt of overschreven."
+                ),
+                self.app.bundle_dry_run_var,
+            )
+
+            footer_frame = tk.LabelFrame(
+                self,
+                text="Bestelbon/offerte onderschrift",
+                labelanchor="n",
+            )
+            footer_frame.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
+            footer_frame.columnconfigure(0, weight=1)
+            footer_frame.rowconfigure(1, weight=1)
+
+            tk.Label(
+                footer_frame,
+                text=(
+                    "Pas hier het onderschrift aan dat onderaan de bestelbon of"
+                    " offerteaanvraag wordt geplaatst."
+                ),
+                justify="left",
+                anchor="w",
+                wraplength=520,
+            ).grid(row=0, column=0, sticky="ew", padx=12, pady=(8, 4))
+
+            self.footer_note_text = tk.Text(
+                footer_frame,
+                height=5,
+                wrap="word",
+            )
+            self.footer_note_text.grid(
+                row=1,
+                column=0,
+                sticky="nsew",
+                padx=12,
+                pady=(0, 4),
+            )
+            self._reload_footer_note()
+
+            footer_btns = tk.Frame(footer_frame)
+            footer_btns.grid(row=2, column=0, sticky="e", padx=12, pady=(0, 8))
+            tk.Button(footer_btns, text="Opslaan", command=self._save_footer_note).pack(
+                side="left", padx=4
+            )
+            tk.Button(
+                footer_btns,
+                text="Reset naar standaard",
+                command=self._reset_footer_note,
+            ).pack(side="left", padx=4)
+
+            extensions_frame = tk.LabelFrame(
+                self, text="Bestandstypen", labelanchor="n"
+            )
+            extensions_frame.grid(row=2, column=0, sticky="nsew", pady=(12, 0))
+            extensions_frame.columnconfigure(0, weight=1)
+            extensions_frame.rowconfigure(1, weight=1)
+
+            tk.Label(
+                extensions_frame,
+                text=(
+                    "Beheer hier welke bestandstypen beschikbaar zijn op het hoofdscherm.\n"
+                    "Voeg extensies toe of verwijder ze naar wens."
+                ),
+                justify="left",
+                anchor="w",
+                wraplength=520,
+            ).grid(row=0, column=0, columnspan=2, sticky="ew", padx=12, pady=(8, 4))
+
+            list_container = tk.Frame(extensions_frame)
+            list_container.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=12)
+            list_container.columnconfigure(0, weight=1)
+            list_container.rowconfigure(0, weight=1)
+
+            list_frame = tk.Frame(list_container)
+            list_frame.grid(row=0, column=0, sticky="nsew")
+            list_frame.columnconfigure(0, weight=1)
+
+            self.listbox = tk.Listbox(list_frame, activestyle="none")
+            self.listbox.grid(row=0, column=0, sticky="nsew")
+            scrollbar = tk.Scrollbar(list_frame, command=self.listbox.yview)
+            scrollbar.grid(row=0, column=1, sticky="ns")
+            self.listbox.configure(yscrollcommand=scrollbar.set)
+            self.listbox.bind("<Double-Button-1>", lambda _e: self._edit_selected())
+
+            move_btns = tk.Frame(list_container)
+            move_btns.grid(row=0, column=1, sticky="ns", padx=(8, 0))
+            move_btns.grid_rowconfigure(0, weight=1)
+            move_btns.grid_rowconfigure(3, weight=1)
+            move_btns.grid_columnconfigure(0, weight=1)
+            tk.Button(
+                move_btns,
+                text="▲",
+                width=3,
+                command=lambda: self._move_selected(-1),
+            ).grid(row=1, column=0, pady=2, sticky="nsew")
+            tk.Button(
+                move_btns,
+                text="▼",
+                width=3,
+                command=lambda: self._move_selected(1),
+            ).grid(row=2, column=0, pady=2, sticky="nsew")
+
+            btns = tk.Frame(extensions_frame)
+            btns.grid(row=2, column=0, columnspan=2, sticky="ew", padx=12, pady=(8, 12))
+            tk.Button(btns, text="Toevoegen", command=self._add_extension).pack(
+                side="left", padx=4
+            )
+            tk.Button(btns, text="Bewerken", command=self._edit_selected).pack(
+                side="left", padx=4
+            )
+            tk.Button(btns, text="Verwijderen", command=self._remove_selected).pack(
+                side="left", padx=4
+            )
+
+            self._refresh_list()
+
+        def _refresh_list(self) -> None:
+            self.listbox.delete(0, tk.END)
+            if not self.extensions:
+                self.listbox.insert(0, "Geen bestandstypen gedefinieerd.")
+                self.listbox.itemconfig(0, foreground="#777777")
+                self._update_listbox_height(1)
+                self._update_listbox_width()
+                return
+            for ext in self.extensions:
+                status = "✓" if ext.enabled else "✗"
+                patterns = ", ".join(ext.patterns)
+                self.listbox.insert(tk.END, f"{status} {ext.label} — {patterns}")
+            self._update_listbox_height(len(self.extensions))
+            self._update_listbox_width()
+
+        def _reload_footer_note(self) -> None:
+            text = self.app.footer_note_var.get()
+            self.footer_note_text.delete("1.0", "end")
+            if text:
+                self.footer_note_text.insert("1.0", text)
+
+        def _current_footer_text(self) -> str:
+            raw = self.footer_note_text.get("1.0", "end-1c")
+            return raw.replace("\r\n", "\n")
+
+        def _save_footer_note(self) -> None:
+            note = self._current_footer_text().strip()
+            self.app.update_footer_note(note)
+            self._reload_footer_note()
+
+        def _reset_footer_note(self) -> None:
+            self.app.update_footer_note(DEFAULT_FOOTER_NOTE)
+            self._reload_footer_note()
+
+        def _update_listbox_height(self, item_count: int) -> None:
+            visible = max(1, item_count)
+            height = min(max(visible, 3), 10)
+            self.listbox.configure(height=height)
+
+        def _update_listbox_width(self) -> None:
+            items = self.listbox.get(0, tk.END)
+            if not items:
+                self.listbox.configure(width=28)
+                return
+            max_len = max(len(item) for item in items)
+            width = max(28, min(64, max_len + 4))
+            self.listbox.configure(width=width)
+
+        def _selected_index(self) -> Optional[int]:
+            if not self.extensions:
+                return None
+            sel = self.listbox.curselection()
+            if not sel:
+                return None
+            idx = int(sel[0])
+            if idx >= len(self.extensions):
+                return None
+            return idx
+
+        def _selected_extension(self) -> Optional[FileExtensionSetting]:
+            idx = self._selected_index()
+            if idx is None:
+                return None
+            return self.extensions[idx]
+
+        def _ensure_unique_key(self, key: str, exclude_index: Optional[int] = None) -> str:
+            existing = {
+                ext.key
+                for idx, ext in enumerate(self.extensions)
+                if exclude_index is None or idx != exclude_index
+            }
+            if key not in existing:
+                return key
+            base = key
+            suffix = 2
+            while True:
+                candidate = f"{base}_{suffix}"
+                if candidate not in existing:
+                    return candidate
+                suffix += 1
+
+        def _persist(self) -> None:
+            self.app.apply_file_extensions(deepcopy(self.extensions))
+            self.extensions = deepcopy(self.app.settings.file_extensions)
+            self._refresh_list()
+
+        def _add_extension(self) -> None:
+            self._open_extension_dialog("Bestandstype toevoegen", None)
+
+        def _edit_selected(self) -> None:
+            ext = self._selected_extension()
+            if ext is None:
+                return
+            self._open_extension_dialog("Bestandstype bewerken", ext)
+
+        def _remove_selected(self) -> None:
+            idx = self._selected_index()
+            if idx is None:
+                return
+            ext = self.extensions[idx]
+            if not messagebox.askyesno(
+                "Bevestigen",
+                f"Verwijder '{ext.label}' van de lijst?",
+                parent=self,
+            ):
+                return
+            del self.extensions[idx]
+            self._persist()
+
+        def _move_selected(self, offset: int) -> None:
+            idx = self._selected_index()
+            if idx is None:
+                return
+            new_idx = idx + offset
+            if new_idx < 0 or new_idx >= len(self.extensions):
+                return
+            self.extensions[idx], self.extensions[new_idx] = (
+                self.extensions[new_idx],
+                self.extensions[idx],
+            )
+            self._persist()
+            if 0 <= new_idx < len(self.extensions):
+                self.listbox.selection_clear(0, tk.END)
+                self.listbox.selection_set(new_idx)
+                self.listbox.activate(new_idx)
+                self.listbox.see(new_idx)
+
+        def _open_extension_dialog(
+            self, title: str, existing: Optional[FileExtensionSetting]
+        ) -> None:
+            win = tk.Toplevel(self)
+            win.title(title)
+            win.transient(self)
+            win.grab_set()
+
+            def _normalize_extensions(values) -> List[str]:
+                cleaned: List[str] = []
+                seen = set()
+                for raw in values:
+                    if not isinstance(raw, str):
+                        continue
+                    ext = raw.strip().lower()
+                    if not ext:
+                        continue
+                    ext = ext.lstrip(".")
+                    if not ext or ext in seen:
+                        continue
+                    cleaned.append(ext)
+                    seen.add(ext)
+                return cleaned
+
+            tk.Label(win, text="Naam:").grid(row=0, column=0, sticky="e", padx=4, pady=4)
+            name_var = tk.StringVar(value=existing.label if existing else "")
+            tk.Entry(win, textvariable=name_var, width=40).grid(
+                row=0, column=1, padx=4, pady=4
+            )
+
+            tk.Label(win, text="Extensies (komma of spatie gescheiden):").grid(
+                row=1, column=0, sticky="e", padx=4, pady=4
+            )
+            patterns_text = ", ".join(existing.patterns) if existing else ""
+            patterns_var = tk.StringVar(value=patterns_text)
+            tk.Entry(win, textvariable=patterns_var, width=28).grid(
+                row=1, column=1, padx=(4, 12), pady=(4, 8)
+            )
+
+            tk.Label(win, text="Preset:").grid(row=2, column=0, sticky="e", padx=4, pady=4)
+            no_preset_label = "(Geen preset)"
+            preset_choices = [no_preset_label, *FILE_EXTENSION_PRESETS.keys()]
+            preset_var = tk.StringVar(value=no_preset_label)
+            preset_combo = ttk.Combobox(
+                win,
+                textvariable=preset_var,
+                values=preset_choices,
+                state="readonly",
+                width=32,
+            )
+            preset_combo.grid(row=2, column=1, sticky="we", padx=4, pady=4)
+            preset_info_var = tk.StringVar(value="Selecteer een preset")
+            tk.Label(win, textvariable=preset_info_var, anchor="w").grid(
+                row=2, column=2, sticky="w", padx=(4, 0), pady=4
+            )
+
+            enabled_var = tk.BooleanVar(value=existing.enabled if existing else True)
+            tk.Checkbutton(
+                win,
+                text="Standaard aangevinkt",
+                variable=enabled_var,
+            ).grid(row=3, column=1, sticky="w", padx=4, pady=4)
+
+            def _update_preset_info(name: str) -> None:
+                if name in FILE_EXTENSION_PRESETS:
+                    count = len(_normalize_extensions(FILE_EXTENSION_PRESETS[name]))
+                    suffix = "s" if count != 1 else ""
+                    preset_info_var.set(f"Preset bevat {count} extensie{suffix}")
+                else:
+                    preset_info_var.set("Selecteer een preset")
+
+            def _on_preset_selected(_event=None) -> None:
+                name = preset_var.get()
+                if name in FILE_EXTENSION_PRESETS:
+                    normalized = _normalize_extensions(FILE_EXTENSION_PRESETS[name])
+                    if normalized:
+                        patterns_var.set(", ".join(f".{ext}" for ext in normalized))
+                        if existing is None or not name_var.get().strip():
+                            name_var.set(name)
+                _update_preset_info(name)
+
+            preset_combo.bind("<<ComboboxSelected>>", _on_preset_selected)
+
+            def _save() -> None:
+                try:
+                    new_ext = FileExtensionSetting.from_user_input(
+                        name_var.get(),
+                        patterns_var.get(),
+                        enabled_var.get(),
+                        key=existing.key if existing else None,
+                    )
+                except ValueError as exc:
+                    messagebox.showerror("Fout", str(exc), parent=win)
+                    return
+                if existing is None:
+                    new_ext.key = self._ensure_unique_key(new_ext.key)
+                    self.extensions.append(new_ext)
+                else:
+                    idx = self.extensions.index(existing)
+                    new_ext.key = self._ensure_unique_key(new_ext.key, exclude_index=idx)
+                    self.extensions[idx] = new_ext
+                self._persist()
+                win.destroy()
+
+            if existing:
+                existing_norm = set(_normalize_extensions(existing.patterns))
+                for preset_name, preset_exts in FILE_EXTENSION_PRESETS.items():
+                    if existing_norm == set(_normalize_extensions(preset_exts)):
+                        preset_var.set(preset_name)
+                        break
+
+            preset_combo.set(preset_var.get())
+            _update_preset_info(preset_var.get())
+
+            btns = tk.Frame(win)
+            btns.grid(row=4, column=0, columnspan=3, pady=(8, 4))
+            tk.Button(btns, text="Opslaan", command=_save).pack(side="left", padx=4)
+            tk.Button(btns, text="Annuleer", command=win.destroy).pack(
+                side="left", padx=4
+            )
+
+            win.columnconfigure(1, weight=1)
+            win.columnconfigure(2, weight=1)
+            name_var.set(name_var.get())
+            win.resizable(False, False)
+            win.wait_visibility()
+            win.focus_set()
+            win.wait_window()
 
     class App(tk.Tk):
         def __init__(self):
@@ -1105,6 +1890,7 @@ def start_gui():
             self.delivery_db = DeliveryAddressesDB.load(DELIVERY_DB_FILE)
 
             self.settings = AppSettings.load()
+            self._suspend_save = False
 
             self.source_folder_var = tk.StringVar(
                 master=self, value=self.settings.source_folder
@@ -1118,10 +1904,8 @@ def start_gui():
             self.project_name_var = tk.StringVar(
                 master=self, value=self.settings.project_name
             )
-            self.pdf_var = tk.IntVar(master=self, value=1 if self.settings.pdf else 0)
-            self.step_var = tk.IntVar(master=self, value=1 if self.settings.step else 0)
-            self.dxf_var = tk.IntVar(master=self, value=1 if self.settings.dxf else 0)
-            self.dwg_var = tk.IntVar(master=self, value=1 if self.settings.dwg else 0)
+            self.extension_vars: Dict[str, tk.IntVar] = {}
+            self._sync_extension_vars_from_settings()
             self.zip_var = tk.IntVar(
                 master=self, value=1 if self.settings.zip_per_production else 0
             )
@@ -1149,6 +1933,9 @@ def start_gui():
             self.bundle_dry_run_var = tk.IntVar(
                 master=self, value=1 if self.settings.bundle_dry_run else 0
             )
+            self.footer_note_var = tk.StringVar(
+                master=self, value=self.settings.footer_note or ""
+            )
 
             self.source_folder = self.source_folder_var.get().strip()
             self.dest_folder = self.dest_folder_var.get().strip()
@@ -1165,10 +1952,6 @@ def start_gui():
             ):
                 var.trace_add("write", self._save_settings)
             for var in (
-                self.pdf_var,
-                self.step_var,
-                self.dxf_var,
-                self.dwg_var,
                 self.zip_var,
                 self.export_date_prefix_var,
                 self.export_date_suffix_var,
@@ -1285,25 +2068,14 @@ def start_gui():
             export_name_frame.grid(row=0, column=2, sticky="nsew")
             export_name_frame.grid_columnconfigure(0, weight=1)
 
-            ext_frame = tk.Frame(filt)
-            ext_frame.grid(row=0, column=0, sticky="nw", padx=8, pady=4)
+            self.ext_frame = tk.Frame(filt)
+            self.ext_frame.grid(row=0, column=0, sticky="nw", padx=8, pady=4)
             options_frame = tk.Frame(options_frame_parent)
             options_frame.grid(row=0, column=0, sticky="nw", padx=8, pady=4)
             export_name_inner = tk.Frame(export_name_frame)
             export_name_inner.grid(row=0, column=0, sticky="nw", padx=8, pady=4)
 
-            tk.Checkbutton(ext_frame, text="PDF (.pdf)", variable=self.pdf_var, anchor="w").pack(
-                anchor="w", pady=2
-            )
-            tk.Checkbutton(
-                ext_frame, text="STEP (.step, .stp)", variable=self.step_var, anchor="w"
-            ).pack(anchor="w", pady=2)
-            tk.Checkbutton(ext_frame, text="DXF (.dxf)", variable=self.dxf_var, anchor="w").pack(
-                anchor="w", pady=2
-            )
-            tk.Checkbutton(ext_frame, text="DWG (.dwg)", variable=self.dwg_var, anchor="w").pack(
-                anchor="w", pady=2
-            )
+            self._rebuild_extension_checkbuttons()
             tk.Checkbutton(
                 options_frame,
                 text="Zip per productie",
@@ -1344,18 +2116,7 @@ def start_gui():
                 suffix_row,
                 textvariable=self.export_name_custom_suffix_text,
             ).pack(side="left", fill="x", expand=True)
-            tk.Checkbutton(
-                options_frame,
-                text="Maak snelkoppeling naar nieuwste exportmap",
-                variable=self.bundle_latest_var,
-                anchor="w",
-            ).pack(anchor="w", pady=2)
-            tk.Checkbutton(
-                options_frame,
-                text="Testrun: toon alleen doelmap (niets wordt gekopieerd)",
-                variable=self.bundle_dry_run_var,
-                anchor="w",
-            ).pack(anchor="w", pady=2)
+            # Legacy options moved to settings tab
 
             # BOM controls
             bf = tk.Frame(main); bf.pack(fill="x", padx=8, pady=6)
@@ -1436,16 +2197,14 @@ def start_gui():
                 self.client_combo.set(opts[0])
 
         def _save_settings(self, *_args):
+            if getattr(self, "_suspend_save", False):
+                return
             self.source_folder = self.source_folder_var.get().strip()
             self.dest_folder = self.dest_folder_var.get().strip()
             self.settings.source_folder = self.source_folder
             self.settings.dest_folder = self.dest_folder
             self.settings.project_number = self.project_number_var.get().strip()
             self.settings.project_name = self.project_name_var.get().strip()
-            self.settings.pdf = bool(self.pdf_var.get())
-            self.settings.step = bool(self.step_var.get())
-            self.settings.dxf = bool(self.dxf_var.get())
-            self.settings.dwg = bool(self.dwg_var.get())
             self.settings.zip_per_production = bool(self.zip_var.get())
             self.settings.export_date_prefix = bool(self.export_date_prefix_var.get())
             self.settings.export_date_suffix = bool(self.export_date_suffix_var.get())
@@ -1459,10 +2218,104 @@ def start_gui():
             self.settings.custom_suffix_text = self.export_name_custom_suffix_text.get().strip()
             self.settings.bundle_latest = bool(self.bundle_latest_var.get())
             self.settings.bundle_dry_run = bool(self.bundle_dry_run_var.get())
+            self.settings.footer_note = self.footer_note_var.get().replace("\r\n", "\n")
+            for ext in self.settings.file_extensions:
+                var = self.extension_vars.get(ext.key)
+                if var is not None:
+                    ext.enabled = bool(var.get())
             try:
                 self.settings.save()
             except Exception as exc:
                 print(f"Kon instellingen niet opslaan: {exc}", file=sys.stderr)
+
+        def _sync_extension_vars_from_settings(self) -> None:
+            prev = getattr(self, "_suspend_save", False)
+            self._suspend_save = True
+            new_vars: Dict[str, tk.IntVar] = {}
+            try:
+                for ext in self.settings.file_extensions:
+                    var = self.extension_vars.get(ext.key)
+                    if var is None:
+                        var = tk.IntVar(master=self, value=1 if ext.enabled else 0)
+                        var.trace_add("write", self._save_settings)
+                    else:
+                        desired = 1 if ext.enabled else 0
+                        if var.get() != desired:
+                            var.set(desired)
+                    new_vars[ext.key] = var
+            finally:
+                self._suspend_save = prev
+            self.extension_vars = new_vars
+
+        def _rebuild_extension_checkbuttons(self) -> None:
+            if not hasattr(self, "ext_frame"):
+                return
+            for child in self.ext_frame.winfo_children():
+                child.destroy()
+            if not self.settings.file_extensions:
+                tk.Label(
+                    self.ext_frame,
+                    text="Geen bestandstypen beschikbaar. Voeg ze toe via instellingen.",
+                    anchor="w",
+                    justify="left",
+                ).pack(anchor="w", pady=2)
+                return
+            for ext in self.settings.file_extensions:
+                var = self.extension_vars.get(ext.key)
+                if var is None:
+                    var = tk.IntVar(master=self, value=1 if ext.enabled else 0)
+                    var.trace_add("write", self._save_settings)
+                    self.extension_vars[ext.key] = var
+                tk.Checkbutton(
+                    self.ext_frame, text=ext.label, variable=var, anchor="w"
+                ).pack(anchor="w", pady=2)
+
+        def apply_file_extensions(self, extensions: List[FileExtensionSetting]) -> None:
+            normalized: List[FileExtensionSetting] = []
+            seen_keys = set()
+            for ext in extensions:
+                if isinstance(ext, FileExtensionSetting):
+                    ext_obj = FileExtensionSetting(
+                        key=ext.key,
+                        label=ext.label,
+                        patterns=list(ext.patterns),
+                        enabled=bool(ext.enabled),
+                    )
+                else:
+                    try:
+                        ext_obj = FileExtensionSetting.from_any(ext)
+                    except ValueError:
+                        continue
+                base_key = ext_obj.key or "ext"
+                key = base_key
+                suffix = 2
+                while key in seen_keys:
+                    key = f"{base_key}_{suffix}"
+                    suffix += 1
+                if key != ext_obj.key:
+                    ext_obj = FileExtensionSetting(
+                        key=key,
+                        label=ext_obj.label,
+                        patterns=list(ext_obj.patterns),
+                        enabled=ext_obj.enabled,
+                    )
+                normalized.append(ext_obj)
+                seen_keys.add(key)
+
+            self.settings.file_extensions = normalized
+            self._sync_extension_vars_from_settings()
+            self._rebuild_extension_checkbuttons()
+            self._save_settings()
+
+        def update_footer_note(self, text: str) -> None:
+            normalized = (text or "").replace("\r\n", "\n")
+            prev = getattr(self, "_suspend_save", False)
+            self._suspend_save = True
+            try:
+                self.footer_note_var.set(normalized)
+            finally:
+                self._suspend_save = prev
+            self._save_settings()
 
         def _pick_src(self):
             from tkinter import filedialog
@@ -1479,12 +2332,23 @@ def start_gui():
                 self._save_settings()
 
         def _selected_exts(self) -> Optional[List[str]]:
-            exts = []
-            if self.pdf_var.get(): exts.append(".pdf")
-            if self.step_var.get(): exts += [".step",".stp"]
-            if self.dxf_var.get(): exts.append(".dxf")
-            if self.dwg_var.get(): exts.append(".dwg")
-            return exts or None
+            selected: List[str] = []
+            for ext in self.settings.file_extensions:
+                var = self.extension_vars.get(ext.key)
+                if var is None:
+                    continue
+                if var.get():
+                    selected.extend(ext.patterns)
+            return selected or None
+
+        def _ensure_bom_loaded(self) -> bool:
+            from tkinter import messagebox
+
+            bom_df = self.bom_df
+            if bom_df is None or bom_df.empty:
+                messagebox.showwarning("Let op", "Laad eerst een BOM.")
+                return False
+            return True
 
         def _load_bom_from_path(self, path: str) -> None:
             df = load_bom(path)
@@ -1635,8 +2499,8 @@ def start_gui():
 
         def _check_files(self):
             from tkinter import messagebox
-            if self.bom_df is None:
-                messagebox.showwarning("Let op", "Laad eerst een BOM."); return
+            if not self._ensure_bom_loaded():
+                return
             if not self.source_folder:
                 messagebox.showwarning("Let op", "Selecteer een bronmap."); return
             exts = self._selected_exts()
@@ -1685,6 +2549,8 @@ def start_gui():
 
         def _copy_flat(self):
             from tkinter import messagebox
+            if not self._ensure_bom_loaded():
+                return
             exts = self._selected_exts()
             if not exts or not self.source_folder or not self.dest_folder:
                 messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies."); return
@@ -1798,9 +2664,9 @@ def start_gui():
         def _copy_per_prod(self):
             from tkinter import messagebox
 
+            if not self._ensure_bom_loaded():
+                return
             bom_df = self.bom_df
-            if bom_df is None or bom_df.empty:
-                messagebox.showwarning("Let op", "Laad eerst een BOM."); return
             exts = self._selected_exts()
             if not exts or not self.source_folder or not self.dest_folder:
                 messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies."); return
@@ -1822,10 +2688,9 @@ def start_gui():
                 project_name: str,
                 remember: bool,
             ):
-                current_bom = self.bom_df
-                if current_bom is None or current_bom.empty:
-                    messagebox.showwarning("Let op", "Laad eerst een BOM.")
+                if not self._ensure_bom_loaded():
                     return
+                current_bom = self.bom_df
 
                 custom_prefix_text = self.export_name_custom_prefix_text.get().strip()
                 custom_prefix_enabled = bool(
@@ -1911,15 +2776,15 @@ def start_gui():
                         sel_map,
                         doc_map,
                         doc_num_map,
-                        remember,
-                        client=client,
-                        delivery_map=resolved_delivery_map,
-                        footer_note=DEFAULT_FOOTER_NOTE,
-                        zip_parts=bool(self.zip_var.get()),
-                        date_prefix_exports=bool(self.export_date_prefix_var.get()),
-                        date_suffix_exports=bool(self.export_date_suffix_var.get()),
-                        project_number=project_number,
-                        project_name=project_name,
+                    remember,
+                    client=client,
+                    delivery_map=resolved_delivery_map,
+                    footer_note=self.footer_note_var.get(),
+                    zip_parts=bool(self.zip_var.get()),
+                    date_prefix_exports=bool(self.export_date_prefix_var.get()),
+                    date_suffix_exports=bool(self.export_date_suffix_var.get()),
+                    project_number=project_number,
+                    project_name=project_name,
                         export_name_prefix_text=token_prefix_text,
                         export_name_prefix_enabled=token_prefix_enabled,
                         export_name_suffix_text=token_suffix_text,
@@ -1975,6 +2840,8 @@ def start_gui():
 
         def _combine_pdf(self):
             from tkinter import messagebox
+            if not self._ensure_bom_loaded():
+                return
             bom_df = self.bom_df
             if self.source_folder and bom_df is not None:
                 def work():
@@ -1994,24 +2861,9 @@ def start_gui():
                     self.status_var.set(f"Gecombineerde pdf's: {cnt}")
                     messagebox.showinfo("Klaar", "PDF's gecombineerd.")
                 threading.Thread(target=work, daemon=True).start()
-            elif self.dest_folder:
-                def work():
-                    self.status_var.set("PDF's combineren...")
-                    try:
-                        cnt = combine_pdfs_per_production(self.dest_folder)
-                    except ModuleNotFoundError:
-                        self.status_var.set("PyPDF2 ontbreekt")
-                        messagebox.showwarning(
-                            "PyPDF2 ontbreekt",
-                            "Installeer PyPDF2 om PDF's te combineren.",
-                        )
-                        return
-                    self.status_var.set(f"Gecombineerde pdf's: {cnt}")
-                    messagebox.showinfo("Klaar", "PDF's gecombineerd.")
-                threading.Thread(target=work, daemon=True).start()
             else:
                 messagebox.showwarning(
-                    "Let op", "Selecteer bron + BOM of bestemmingsmap."
+                    "Let op", "Selecteer bronmap en laad een BOM."
                 )
 
     App().mainloop()

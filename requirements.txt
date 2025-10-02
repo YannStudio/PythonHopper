@@ -2,3 +2,5 @@ PyPDF2
 pandas
 openpyxl
 tksheet
+Pillow
+# optional: pythonocc-core

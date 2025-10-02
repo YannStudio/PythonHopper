@@ -12,7 +12,7 @@ import re
 import zipfile
 import io
 from collections import defaultdict
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 try:
@@ -40,6 +40,8 @@ try:
         Table,
         TableStyle,
         Spacer,
+        Image as RLImage,
+        KeepTogether,
     )
     from reportlab.pdfbase.pdfmetrics import stringWidth
     REPORTLAB_OK = True
@@ -53,6 +55,43 @@ DEFAULT_FOOTER_NOTE = (
     "Levertermijn in overleg. Betalingsvoorwaarden: 30 dagen netto. "
     "Vermeld onze productiereferentie bij levering."
 )
+
+STEP_EXTS = {".step", ".stp"}
+
+
+def _normalize_crop_box(
+    crop: object, width: int, height: int
+) -> Optional[tuple[int, int, int, int]]:
+    """Validate and clamp crop data against an image size."""
+
+    if not crop or width <= 0 or height <= 0:
+        return None
+
+    left = top = 0
+    right, bottom = width, height
+
+    try:
+        if isinstance(crop, dict):
+            left = int(float(crop.get("left", 0)))
+            top = int(float(crop.get("top", 0)))
+            right = int(float(crop.get("right", width)))
+            bottom = int(float(crop.get("bottom", height)))
+        elif isinstance(crop, (list, tuple)) and len(crop) == 4:
+            left, top, right, bottom = [int(float(v)) for v in crop]
+        else:
+            return None
+    except Exception:
+        return None
+
+    left = max(0, min(width, left))
+    top = max(0, min(height, top))
+    right = max(left + 1, min(width, right))
+    bottom = max(top + 1, min(height, bottom))
+
+    if right <= left or bottom <= top:
+        return None
+    return left, top, right, bottom
+
 
 from helpers import (
     _to_str,
@@ -96,13 +135,13 @@ def _prefix_for_doc_type(doc_type: str) -> str:
 
 def generate_pdf_order_platypus(
     path: str,
-    company_info: Dict[str, str],
+    company_info: Dict[str, object],
     supplier: Supplier,
     production: str,
     items: List[Dict[str, str]],
     doc_type: str = "Bestelbon",
     doc_number: str | None = None,
-    footer_note: str = "",
+    footer_note: Optional[str] = None,
     delivery: DeliveryAddress | None = None,
     project_number: str | None = None,
     project_name: str | None = None,
@@ -151,6 +190,51 @@ def generate_pdf_order_platypus(
         f"E-mail: {company_info.get('email','')}",
     ]
 
+    logo_flowable = None
+    logo_path_info = company_info.get("logo_path") if company_info else None
+    if logo_path_info:
+        logo_path = str(logo_path_info)
+        if not os.path.isabs(logo_path):
+            logo_path = os.path.join(os.getcwd(), logo_path)
+        if os.path.exists(logo_path):
+            try:
+                from PIL import Image as PILImage  # type: ignore
+            except Exception:  # pragma: no cover - Pillow missing during runtime
+                PILImage = None  # type: ignore
+            if PILImage is not None:
+                try:
+                    with PILImage.open(logo_path) as src_logo:  # type: ignore[union-attr]
+                        logo_img = src_logo.convert("RGBA")
+                        crop_box = _normalize_crop_box(
+                            company_info.get("logo_crop"),
+                            logo_img.width,
+                            logo_img.height,
+                        )
+                        if crop_box:
+                            logo_img = logo_img.crop(crop_box)
+                        if logo_img.width > 0 and logo_img.height > 0:
+                            buffer = io.BytesIO()
+                            logo_img.save(buffer, format="PNG")
+                            buffer.seek(0)
+                            aspect = (
+                                logo_img.width / logo_img.height
+                                if logo_img.height
+                                else 1.0
+                            )
+                            max_width = 50 * mm
+                            max_height = 25 * mm
+                            width_pt = max_width
+                            height_pt = width_pt / aspect if aspect else max_height
+                            if height_pt > max_height:
+                                height_pt = max_height
+                                width_pt = height_pt * aspect
+                            logo_flowable = RLImage(
+                                buffer, width=width_pt, height=height_pt
+                            )
+                            logo_flowable.hAlign = "LEFT"
+                except Exception:
+                    logo_flowable = None
+
     # Supplier info with full address and contact details
     addr_parts = []
     if supplier.adres_1:
@@ -176,6 +260,15 @@ def generate_pdf_order_platypus(
         supp_lines.append(f"Tel: {supplier.phone}")
 
     left_lines = company_lines + [""] + supp_lines
+    left_paragraph = Paragraph("<br/>".join(left_lines), text_style)
+    left_elements: List[object] = []
+    if logo_flowable is not None:
+        left_elements.extend([logo_flowable, Spacer(0, 4)])
+    left_elements.append(left_paragraph)
+    if len(left_elements) == 1:
+        left_cell = left_elements[0]
+    else:
+        left_cell = KeepTogether(left_elements)
 
     right_lines: List[str] = []
     if delivery:
@@ -196,7 +289,7 @@ def generate_pdf_order_platypus(
     header_tbl = LongTable(
         [
             [
-                Paragraph("<br/>".join(left_lines), text_style),
+                left_cell,
                 Paragraph("<br/>".join(right_lines), text_style),
             ]
         ],
@@ -300,12 +393,94 @@ def generate_pdf_order_platypus(
     )
     story.append(tbl)
 
-    note = footer_note or DEFAULT_FOOTER_NOTE
+    if footer_note is None:
+        note = DEFAULT_FOOTER_NOTE
+    else:
+        note = _to_str(footer_note)
     if note:
         story.append(Spacer(0, 8))
         story.append(Paragraph(note, small_style))
 
     doc.build(story)
+
+
+def generate_packlist_pdf(
+    path: str,
+    production: str,
+    previews: List[dict],
+    doc_date: str | None = None,
+    columns: int = 2,
+) -> bool:
+    """Generate a packing list PDF containing thumbnails."""
+
+    if not REPORTLAB_OK or not previews:
+        return False
+    columns = max(1, int(columns))
+    doc = SimpleDocTemplate(
+        path,
+        pagesize=A4,
+        leftMargin=15 * mm,
+        rightMargin=15 * mm,
+        topMargin=20 * mm,
+        bottomMargin=20 * mm,
+        title=f"Paklijst {production}",
+    )
+    styles = getSampleStyleSheet()
+    title_style = styles["Heading1"]
+    subtitle_style = styles["Normal"]
+    subtitle_style.leading = 12
+    label_style = ParagraphStyle(
+        "PacklistLabel",
+        parent=styles["Normal"],
+        alignment=1,
+        leading=11,
+    )
+    story: List[object] = []
+    story.append(Paragraph(f"Paklijst – {production}", title_style))
+    if doc_date:
+        story.append(Paragraph(f"Datum: {doc_date}", subtitle_style))
+    story.append(Spacer(0, 8 * mm))
+
+    data: List[List[object]] = []
+    row: List[object] = []
+    usable_width = doc.width
+    col_width = usable_width / columns
+    image_width = col_width
+    image_height = col_width
+    for entry in previews:
+        thumb = entry.get("thumbnail")
+        label = entry.get("label") or os.path.basename(entry.get("source", ""))
+        try:
+            img = RLImage(thumb, width=image_width, height=image_height)
+        except Exception:
+            continue
+        cell = KeepTogether([img, Spacer(0, 4), Paragraph(label, label_style)])
+        row.append(cell)
+        if len(row) == columns:
+            data.append(row)
+            row = []
+    if row:
+        while len(row) < columns:
+            row.append(Spacer(0, 0))
+        data.append(row)
+
+    if not data:
+        return False
+
+    table = Table(data, colWidths=[col_width] * columns, hAlign="CENTER")
+    table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+    story.append(table)
+    doc.build(story)
+    return True
 
 
 def write_order_excel(
@@ -443,7 +618,7 @@ def copy_per_production_and_orders(
     remember_defaults: bool,
     client: Client | None = None,
     delivery_map: Dict[str, DeliveryAddress] | None = None,
-    footer_note: str = "",
+    footer_note: Optional[str] = None,
     zip_parts: bool = False,
     date_prefix_exports: bool = False,
     date_suffix_exports: bool = False,
@@ -489,6 +664,8 @@ def copy_per_production_and_orders(
     doc_num_map = doc_num_map or {}
 
     prod_to_rows: Dict[str, List[dict]] = defaultdict(list)
+    step_entries: Dict[str, List[tuple[str, str]]] = defaultdict(list)
+    step_seen: Dict[str, set[str]] = defaultdict(set)
     for _, row in bom_df.iterrows():
         prod = (row.get("Production") or "").strip() or "_Onbekend"
         prod_to_rows[prod].append(row)
@@ -534,6 +711,12 @@ def copy_per_production_and_orders(
         new_stem = "-".join(prefix_parts + [stem] + suffix_parts)
         return f"{new_stem}{ext}"
     suppliers_sorted = db.suppliers_sorted()
+
+    footer_note_text = (
+        DEFAULT_FOOTER_NOTE
+        if footer_note is None
+        else _to_str(footer_note).replace("\r\n", "\n")
+    )
 
     for prod, rows in prod_to_rows.items():
         prod_folder = os.path.join(dest, prod)
@@ -586,6 +769,13 @@ def copy_per_production_and_orders(
                 if combo in processed_pairs:
                     continue
                 processed_pairs.add(combo)
+                ext = os.path.splitext(src_file)[1].lower()
+                if ext in STEP_EXTS:
+                    seen_paths = step_seen[prod]
+                    if src_file not in seen_paths:
+                        seen_paths.add(src_file)
+                        label = f"{pn} — {os.path.basename(src_file)}"
+                        step_entries[prod].append((label, src_file))
                 if zip_parts:
                     if zf is not None:
                         zf.write(src_file, arcname=transformed)
@@ -622,6 +812,8 @@ def copy_per_production_and_orders(
             "address": client.address if client else "",
             "vat": client.vat if client else "",
             "email": client.email if client else "",
+            "logo_path": client.logo_path if client else "",
+            "logo_crop": client.logo_crop if client else None,
         }
         if supplier.supplier:
             excel_path = os.path.join(
@@ -652,13 +844,43 @@ def copy_per_production_and_orders(
                     items,
                     doc_type=doc_type,
                     doc_number=doc_num or None,
-                    footer_note=footer_note or DEFAULT_FOOTER_NOTE,
+                    footer_note=footer_note_text,
                     delivery=delivery,
                     project_number=project_number,
                     project_name=project_name,
                 )
             except Exception as e:
                 print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
+
+        packlist_items = step_entries.get(prod, [])
+        if packlist_items and REPORTLAB_OK:
+            try:
+                with tempfile.TemporaryDirectory(prefix="previews_", dir=prod_folder) as preview_dir:
+                    rendered_previews = step_previews.render_step_files(
+                        packlist_items, preview_dir
+                    )
+                    if rendered_previews:
+                        packlist_path = os.path.join(
+                            prod_folder, f"Paklijst_{prod}_{today}.pdf"
+                        )
+                        try:
+                            if not generate_packlist_pdf(
+                                packlist_path,
+                                production=prod,
+                                previews=rendered_previews,
+                                doc_date=today,
+                            ) and os.path.exists(packlist_path):
+                                os.unlink(packlist_path)
+                        except Exception as exc:
+                            print(
+                                f"[WAARSCHUWING] Paklijst mislukt voor {prod}: {exc}",
+                                file=sys.stderr,
+                            )
+            except Exception as exc:
+                print(
+                    f"[WAARSCHUWING] Previews genereren mislukt voor {prod}: {exc}",
+                    file=sys.stderr,
+                )
 
     # Persist any (possibly unchanged) supplier defaults so that callers can rely on
     # the database reflecting the latest state on disk.
