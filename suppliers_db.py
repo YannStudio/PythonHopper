@@ -10,9 +10,15 @@ SUPPLIERS_DB_FILE = data_file("suppliers_db.json")
 
 
 class SuppliersDB:
-    def __init__(self, suppliers: List[Supplier] = None, defaults_by_production: Dict[str, str] = None):
+    def __init__(
+        self,
+        suppliers: List[Supplier] = None,
+        defaults_by_production: Dict[str, str] = None,
+        defaults_by_finish: Dict[str, str] = None,
+    ):
         self.suppliers: List[Supplier] = suppliers or []
         self.defaults_by_production: Dict[str, str] = defaults_by_production or {}
+        self.defaults_by_finish: Dict[str, str] = defaults_by_finish or {}
 
     @staticmethod
     def load(path: str = SUPPLIERS_DB_FILE) -> "SuppliersDB":
@@ -23,7 +29,7 @@ class SuppliersDB:
                 data = json.load(f)
             if isinstance(data, list):  # backward compat
                 sups = [Supplier(supplier=s) for s in data]
-                return SuppliersDB(sups, {})
+                return SuppliersDB(sups, {}, {})
             sups_raw = data.get("suppliers", [])
             sups = []
             for rec in sups_raw:
@@ -32,7 +38,8 @@ class SuppliersDB:
                 except Exception:
                     pass
             defaults = data.get("defaults_by_production", {}) or {}
-            return SuppliersDB(sups, defaults)
+            finish_defaults = data.get("defaults_by_finish", {}) or {}
+            return SuppliersDB(sups, defaults, finish_defaults)
         except Exception:
             return SuppliersDB()
 
@@ -40,6 +47,7 @@ class SuppliersDB:
         data = {
             "suppliers": [asdict(s) for s in self.suppliers],
             "defaults_by_production": self.defaults_by_production,
+            "defaults_by_finish": self.defaults_by_finish,
         }
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
@@ -103,13 +111,19 @@ class SuppliersDB:
         i = self._idx_by_name(name)
         if i >= 0:
             self.suppliers.pop(i)
-            self.defaults_by_production = {k: v for k, v in self.defaults_by_production.items() if v.lower() != name.lower()}
+            self.defaults_by_production = {
+                k: v for k, v in self.defaults_by_production.items() if v.lower() != name.lower()
+            }
+            self.defaults_by_finish = {
+                k: v for k, v in self.defaults_by_finish.items() if v.lower() != name.lower()
+            }
             return True
         return False
 
     def clear_all(self):
         self.suppliers = []
         self.defaults_by_production = {}
+        self.defaults_by_finish = {}
 
     def toggle_fav(self, name: str) -> bool:
         i = self._idx_by_name(name)
@@ -125,3 +139,11 @@ class SuppliersDB:
 
     def get_default(self, production: str) -> Optional[str]:
         return self.defaults_by_production.get(str(production))
+
+    def set_default_finish(self, finish_key: str, supplier_name: str) -> None:
+        if self._idx_by_name(supplier_name) < 0:
+            raise ValueError(f"Supplier '{supplier_name}' not found")
+        self.defaults_by_finish[str(finish_key)] = supplier_name
+
+    def get_default_finish(self, finish_key: str) -> Optional[str]:
+        return self.defaults_by_finish.get(str(finish_key))

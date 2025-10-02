@@ -133,6 +133,10 @@ def _prefix_for_doc_type(doc_type: str) -> str:
     return ""
 
 
+FINISH_KEY_PREFIX = "finish::"
+PRODUCTION_KEY_PREFIX = "production::"
+
+
 def _normalize_finish_folder(value: object) -> str:
     """Return a filesystem-friendly folder component for finish/RAL names."""
 
@@ -148,6 +152,74 @@ def _normalize_finish_folder(value: object) -> str:
     return text
 
 
+def _selection_key(kind: str, identifier: str) -> str:
+    """Return a disambiguated key for supplier/doc selections."""
+
+    identifier = _to_str(identifier)
+    if kind == "finish":
+        return f"{FINISH_KEY_PREFIX}{identifier}"
+    return f"{PRODUCTION_KEY_PREFIX}{identifier}"
+
+
+def make_production_selection_key(name: str) -> str:
+    """Return a stable selection key for a production name."""
+
+    return _selection_key("production", name)
+
+
+def make_finish_selection_key(finish_key: str) -> str:
+    """Return a stable selection key for a finish combination."""
+
+    return _selection_key("finish", finish_key)
+
+
+def parse_selection_key(key: str) -> Tuple[str, str]:
+    """Return the kind (``"production"``/``"finish"``) and identifier."""
+
+    if key.startswith(FINISH_KEY_PREFIX):
+        return "finish", key[len(FINISH_KEY_PREFIX) :]
+    if key.startswith(PRODUCTION_KEY_PREFIX):
+        return "production", key[len(PRODUCTION_KEY_PREFIX) :]
+    # Fallback for legacy keys without explicit prefix.
+    return "production", key
+
+
+def describe_finish_combo(
+    finish_value: object,
+    ral_value: object,
+) -> Dict[str, str]:
+    """Return normalized metadata for a finish/RAL combination."""
+
+    finish_text = _to_str(finish_value).strip()
+    ral_text = _to_str(ral_value).strip()
+    finish_norm = _normalize_finish_folder(finish_text)
+    if not finish_norm:
+        finish_norm = "_Onbekend"
+    finish_display = finish_text if finish_text else "Onbekend"
+    ral_norm = _normalize_finish_folder(ral_text) if ral_text else ""
+    ral_display = ral_text
+    folder_name = f"Finish-{finish_norm}"
+    if ral_norm:
+        folder_name = f"{folder_name}-{ral_norm}"
+    label = finish_display
+    if ral_display:
+        label = f"{finish_display} – {ral_display}"
+    filename_component = _normalize_finish_folder(label)
+    if not filename_component:
+        suffix = f"-{ral_norm}" if ral_norm else ""
+        filename_component = f"{finish_norm}{suffix}"
+    return {
+        "finish_display": finish_display,
+        "finish_norm": finish_norm,
+        "ral_display": ral_display,
+        "ral_norm": ral_norm,
+        "folder_name": folder_name,
+        "label": label,
+        "filename_component": filename_component,
+        "key": folder_name,
+    }
+
+
 def generate_pdf_order_platypus(
     path: str,
     company_info: Dict[str, object],
@@ -160,6 +232,7 @@ def generate_pdf_order_platypus(
     delivery: DeliveryAddress | None = None,
     project_number: str | None = None,
     project_name: str | None = None,
+    label_kind: str = "productie",
 ) -> None:
     """Generate a PDF order using ReportLab if available.
 
@@ -193,6 +266,10 @@ def generate_pdf_order_platypus(
         doc_lines.append(f"Nummer: {doc_number}")
     today = datetime.date.today().strftime("%Y-%m-%d")
     doc_lines.append(f"Datum: {today}")
+    label_kind_clean = (_to_str(label_kind) or "productie").strip() or "productie"
+    label_title = label_kind_clean[0].upper() + label_kind_clean[1:]
+    if production:
+        doc_lines.append(f"{label_title}: {production}")
     if project_number:
         doc_lines.append(f"Projectnummer: {project_number}")
     if project_name:
@@ -296,7 +373,7 @@ def generate_pdf_order_platypus(
             right_lines.append(delivery.remarks)
 
     story = []
-    title = f"{doc_type} productie: {production}"
+    title = f"{doc_type} {label_kind_clean}: {production}" if production else f"{doc_type}"
     story.append(Paragraph(title, title_style))
     if doc_lines:
         story.append(Paragraph("<br/>".join(doc_lines), text_style))
@@ -508,6 +585,8 @@ def write_order_excel(
     doc_number: str | None = None,
     project_number: str | None = None,
     project_name: str | None = None,
+    context_label: str | None = None,
+    context_kind: str = "productie",
 ) -> None:
     """Write order information to an Excel file with header info."""
     df = pd.DataFrame(
@@ -520,6 +599,9 @@ def write_order_excel(
     if doc_number:
         header_lines.append(("Nummer", str(doc_number)))
     header_lines.append(("Datum", today))
+    if context_label:
+        kind_clean = (_to_str(context_kind) or "productie").strip() or "productie"
+        header_lines.append((kind_clean.capitalize(), context_label))
     if project_number:
         header_lines.append(("Projectnummer", project_number))
     if project_name:
@@ -621,6 +703,31 @@ def pick_supplier_for_production(
     return sups[0] if sups else Supplier(supplier="")
 
 
+def pick_supplier_for_finish(
+    finish_key: str,
+    db: SuppliersDB,
+    override_map: Dict[str, str],
+    suppliers_sorted: List[Supplier] | None = None,
+) -> Supplier:
+    """Select a supplier for a finish combination."""
+
+    name = override_map.get(finish_key)
+    sups = suppliers_sorted if suppliers_sorted is not None else db.suppliers_sorted()
+    if name is not None:
+        if not name.strip():
+            return Supplier(supplier="")
+        for s in sups:
+            if s.supplier.lower() == name.lower():
+                return s
+        return Supplier(supplier=name)
+    default = db.get_default_finish(finish_key)
+    if default:
+        for s in sups:
+            if s.supplier.lower() == default.lower():
+                return s
+    return sups[0] if sups else Supplier(supplier="")
+
+
 def copy_per_production_and_orders(
     source: str,
     dest: str,
@@ -644,6 +751,10 @@ def copy_per_production_and_orders(
     export_name_suffix_text: str = "",
     export_name_suffix_enabled: bool | None = None,
     copy_finish_exports: bool = False,
+    finish_override_map: Dict[str, str] | None = None,
+    finish_doc_type_map: Dict[str, str] | None = None,
+    finish_doc_num_map: Dict[str, str] | None = None,
+    finish_delivery_map: Dict[str, DeliveryAddress | None] | None = None,
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
 
@@ -676,7 +787,14 @@ def copy_per_production_and_orders(
     additionally copied to folders named ``Finish-<finish>`` with an optional
     ``-<ral>`` suffix when the BOM "RAL color" property is filled in. The
     folder components are normalized versions of the BOM "Finish" and
-    "RAL color" values.
+    ``RAL color`` values.
+
+    Finish-specific overrides, document types/numbers and deliveries can be
+    provided via the ``finish_*`` mappings. Keys correspond to the normalized
+    ``Finish-...`` folder names produced by :func:`describe_finish_combo`.
+
+    The returned ``chosen`` mapping uses prefixed selection keys produced by
+    :func:`make_production_selection_key` and :func:`make_finish_selection_key`.
     """
     os.makedirs(dest, exist_ok=True)
     file_index = _build_file_index(source, selected_exts)
@@ -684,26 +802,32 @@ def copy_per_production_and_orders(
     chosen: Dict[str, str] = {}
     doc_type_map = doc_type_map or {}
     doc_num_map = doc_num_map or {}
+    finish_override_map = finish_override_map or {}
+    finish_doc_type_map = finish_doc_type_map or {}
+    finish_doc_num_map = finish_doc_num_map or {}
+    finish_delivery_map = finish_delivery_map or {}
 
     prod_to_rows: Dict[str, List[dict]] = defaultdict(list)
     step_entries: Dict[str, List[tuple[str, str]]] = defaultdict(list)
     step_seen: Dict[str, set[str]] = defaultdict(set)
-    finish_combo_parts: Dict[tuple[str, str], set[str]] = defaultdict(set)
+    finish_groups: Dict[str, Dict[str, object]] = {}
     for _, row in bom_df.iterrows():
         prod = (row.get("Production") or "").strip() or "_Onbekend"
         prod_to_rows[prod].append(row)
-        if copy_finish_exports:
-            pn = _to_str(row.get("PartNumber")).strip()
-            finish_value = _to_str(row.get("Finish")).strip()
-            if pn and finish_value:
-                finish_name = _normalize_finish_folder(finish_value)
-                ral_value = _to_str(row.get("RAL color")).strip()
-                ral_name = (
-                    _normalize_finish_folder(ral_value)
-                    if ral_value
-                    else ""
-                )
-                finish_combo_parts[(finish_name, ral_name)].add(pn)
+        pn = _to_str(row.get("PartNumber")).strip()
+        finish_meta = describe_finish_combo(row.get("Finish"), row.get("RAL color"))
+        finish_key = finish_meta["key"]
+        group = finish_groups.get(finish_key)
+        if group is None:
+            group = {
+                **finish_meta,
+                "rows": [],
+                "part_numbers": set(),
+            }
+            finish_groups[finish_key] = group
+        group["rows"].append(row)
+        if pn:
+            group["part_numbers"].add(pn)
 
     today_date = datetime.date.today()
     today = today_date.strftime("%Y-%m-%d")
@@ -825,7 +949,7 @@ def copy_per_production_and_orders(
         supplier = pick_supplier_for_production(
             prod, db, override_map, suppliers_sorted=suppliers_sorted
         )
-        chosen[prod] = supplier.supplier
+        chosen[make_production_selection_key(prod)] = supplier.supplier
         if remember_defaults and supplier.supplier not in ("", "Onbekend"):
             db.set_default(prod, supplier.supplier)
 
@@ -865,6 +989,8 @@ def copy_per_production_and_orders(
                 doc_num or None,
                 project_number=project_number,
                 project_name=project_name,
+                context_label=prod,
+                context_kind="Productie",
             )
 
             pdf_path = os.path.join(
@@ -883,6 +1009,7 @@ def copy_per_production_and_orders(
                     delivery=delivery,
                     project_number=project_number,
                     project_name=project_name,
+                    label_kind="productie",
                 )
             except Exception as e:
                 print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
@@ -917,15 +1044,16 @@ def copy_per_production_and_orders(
                     file=sys.stderr,
                 )
 
-    if copy_finish_exports and finish_combo_parts:
-        finish_seen: Dict[tuple[str, str], set[tuple[str, str]]] = defaultdict(set)
-        for (finish_name, ral_name), part_numbers in finish_combo_parts.items():
-            folder_name = f"Finish-{finish_name}"
-            if ral_name:
-                folder_name = f"{folder_name}-{ral_name}"
+    if copy_finish_exports and finish_groups:
+        finish_seen: Dict[str, set[tuple[str, str]]] = defaultdict(set)
+        for finish_key, info in finish_groups.items():
+            part_numbers = info.get("part_numbers") or set()
+            if not part_numbers:
+                continue
+            folder_name = info.get("folder_name", finish_key)
             target_dir = os.path.join(dest, folder_name)
             os.makedirs(target_dir, exist_ok=True)
-            seen_pairs = finish_seen[(finish_name, ral_name)]
+            seen_pairs = finish_seen[finish_key]
             for pn in sorted(part_numbers):
                 files = file_index.get(pn, [])
                 for src_file in files:
@@ -935,6 +1063,90 @@ def copy_per_production_and_orders(
                         continue
                     seen_pairs.add(combo)
                     shutil.copy2(src_file, os.path.join(target_dir, transformed))
+
+    if finish_groups:
+        for finish_key, info in sorted(
+            finish_groups.items(), key=lambda item: _to_str(item[1].get("label", "")).lower()
+        ):
+            rows = list(info.get("rows", []))
+            if not rows:
+                continue
+            supplier = pick_supplier_for_finish(
+                finish_key, db, finish_override_map, suppliers_sorted=suppliers_sorted
+            )
+            chosen[make_finish_selection_key(finish_key)] = supplier.supplier
+            if remember_defaults and supplier.supplier not in ("", "Onbekend"):
+                db.set_default_finish(finish_key, supplier.supplier)
+            if not supplier.supplier:
+                continue
+
+            raw_doc_type = finish_doc_type_map.get(finish_key, "Bestelbon")
+            doc_type = _to_str(raw_doc_type).strip() or "Bestelbon"
+            doc_num = _to_str(finish_doc_num_map.get(finish_key, "")).strip()
+            prefix = _prefix_for_doc_type(doc_type)
+            if doc_num and prefix and not doc_num.upper().startswith(prefix.upper()):
+                doc_num = f"{prefix}{doc_num}"
+            num_part = f"_{doc_num}" if doc_num else ""
+
+            folder_name = info.get("folder_name", finish_key)
+            target_dir = os.path.join(dest, folder_name)
+            os.makedirs(target_dir, exist_ok=True)
+
+            items = []
+            for row in rows:
+                items.append(
+                    {
+                        "PartNumber": row.get("PartNumber", ""),
+                        "Description": row.get("Description", ""),
+                        "Materiaal": row.get("Materiaal", ""),
+                        "Aantal": _parse_qty(row.get("Aantal", "")),
+                        "Oppervlakte": row.get("Oppervlakte", ""),
+                        "Gewicht": row.get("Gewicht", ""),
+                    }
+                )
+
+            label = _to_str(info.get("label")) or finish_key
+            filename_component = info.get("filename_component") or finish_key
+            delivery = finish_delivery_map.get(finish_key)
+
+            excel_path = os.path.join(
+                target_dir,
+                f"{doc_type}{num_part}_{filename_component}_{today}.xlsx",
+            )
+            write_order_excel(
+                excel_path,
+                items,
+                company,
+                supplier,
+                delivery,
+                doc_type,
+                doc_num or None,
+                project_number=project_number,
+                project_name=project_name,
+                context_label=label,
+                context_kind="Afwerking",
+            )
+
+            pdf_path = os.path.join(
+                target_dir, f"{doc_type}{num_part}_{filename_component}_{today}.pdf"
+            )
+            try:
+                generate_pdf_order_platypus(
+                    pdf_path,
+                    company,
+                    supplier,
+                    label,
+                    items,
+                    doc_type=doc_type,
+                    doc_number=doc_num or None,
+                    footer_note=footer_note_text,
+                    delivery=delivery,
+                    project_number=project_number,
+                    project_name=project_name,
+                    label_kind="afwerking",
+                )
+            except Exception as e:
+                print(f"[WAARSCHUWING] PDF mislukt voor {label}: {e}", file=sys.stderr)
 
     # Persist any (possibly unchanged) supplier defaults so that callers can rely on
     # the database reflecting the latest state on disk.

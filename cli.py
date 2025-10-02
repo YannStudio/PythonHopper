@@ -6,7 +6,7 @@
 import os
 import shutil
 import argparse
-from typing import Iterable, List, Optional, Union
+from typing import Dict, Iterable, List, Optional, Union
 
 import pandas as pd
 from dataclasses import asdict
@@ -23,7 +23,12 @@ from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from clients_db import ClientsDB, CLIENTS_DB_FILE
 from delivery_addresses_db import DeliveryAddressesDB, DELIVERY_DB_FILE
 from bom import read_csv_flex, load_bom
-from orders import copy_per_production_and_orders, DEFAULT_FOOTER_NOTE
+from orders import (
+    copy_per_production_and_orders,
+    DEFAULT_FOOTER_NOTE,
+    describe_finish_combo,
+    parse_selection_key,
+)
 from app_settings import AppSettings
 
 DEFAULT_ALLOWED_EXTS = "pdf,dxf,dwg,step,stp"
@@ -342,6 +347,31 @@ def cli_copy_per_prod(args):
     exts = parse_exts(args.exts, args.allowed_exts)
     df = load_bom(args.bom)
     db = SuppliersDB.load(SUPPLIERS_DB_FILE)
+    finish_meta_lookup: Dict[str, Dict[str, str]] = {}
+    finish_lookup: Dict[str, str] = {}
+    for _, row in df.iterrows():
+        meta = describe_finish_combo(row.get("Finish"), row.get("RAL color"))
+        key = meta["key"]
+        if key in finish_meta_lookup:
+            continue
+        finish_meta_lookup[key] = meta
+        key_lower = key.lower()
+        finish_lookup[key_lower] = key
+        label = _to_str(meta.get("label"))
+        if label:
+            finish_lookup[label.lower()] = key
+        filename_component = _to_str(meta.get("filename_component"))
+        if filename_component:
+            finish_lookup[filename_component.lower()] = key
+        if key_lower.startswith("finish-") and len(key) > len("Finish-"):
+            finish_lookup[key[len("Finish-") :].lower()] = key
+
+    def resolve_finish_key(token: str) -> str:
+        name = (token or "").strip()
+        if not name:
+            return name
+        return finish_lookup.get(name.lower(), name)
+
     override_map = dict(kv.split("=", 1) for kv in (args.supplier or []))
     cdb = ClientsDB.load(CLIENTS_DB_FILE)
     ddb = DeliveryAddressesDB.load(DELIVERY_DB_FILE)
@@ -354,7 +384,7 @@ def cli_copy_per_prod(args):
     else:
         cl = cdb.clients_sorted()
         client = cl[0] if cl else None
-    delivery_map = {}
+    delivery_map: Dict[str, DeliveryAddress | None] = {}
     if args.delivery:
         for kv in args.delivery:
             if "=" not in kv:
@@ -380,7 +410,7 @@ def cli_copy_per_prod(args):
                     print("Leveradres niet gevonden")
                     return 2
                 delivery_map[prod] = addr
-    doc_type_map = {}
+    doc_type_map: Dict[str, str] = {}
     if args.doc_type:
         for kv in args.doc_type:
             if "=" not in kv:
@@ -388,7 +418,7 @@ def cli_copy_per_prod(args):
                 return 2
             prod, dtyp = kv.split("=", 1)
             doc_type_map[prod.strip()] = dtyp.strip()
-    doc_num_map = {}
+    doc_num_map: Dict[str, str] = {}
     if args.doc_number:
         for kv in args.doc_number:
             if "=" not in kv:
@@ -396,6 +426,57 @@ def cli_copy_per_prod(args):
                 return 2
             prod, num = kv.split("=", 1)
             doc_num_map[prod.strip()] = num.strip()
+    finish_override_map: Dict[str, str] = {}
+    if args.finish_supplier:
+        for kv in args.finish_supplier:
+            if "=" not in kv:
+                print("Afwerking override moet FINISH=LEVERANCIER zijn")
+                return 2
+            key, name = kv.split("=", 1)
+            finish_override_map[resolve_finish_key(key)] = name.strip()
+    finish_doc_type_map: Dict[str, str] = {}
+    if args.finish_doc_type:
+        for kv in args.finish_doc_type:
+            if "=" not in kv:
+                print("Afwerking documenttype optie moet FINISH=TYPE zijn")
+                return 2
+            key, value = kv.split("=", 1)
+            finish_doc_type_map[resolve_finish_key(key)] = value.strip()
+    finish_doc_num_map: Dict[str, str] = {}
+    if args.finish_doc_number:
+        for kv in args.finish_doc_number:
+            if "=" not in kv:
+                print("Afwerking documentnummer optie moet FINISH=NUM zijn")
+                return 2
+            key, value = kv.split("=", 1)
+            finish_doc_num_map[resolve_finish_key(key)] = value.strip()
+    finish_delivery_map: Dict[str, DeliveryAddress | None] = {}
+    if args.finish_delivery:
+        for kv in args.finish_delivery:
+            if "=" not in kv:
+                print("Afwerking leveradres optie moet FINISH=NAAM zijn")
+                return 2
+            key, name = kv.split("=", 1)
+            finish_key = resolve_finish_key(key)
+            name = name.strip()
+            lname = name.lower()
+            if lname == "none":
+                finish_delivery_map[finish_key] = None
+            elif lname == "pickup":
+                finish_delivery_map[finish_key] = DeliveryAddress(
+                    name="Bestelling wordt opgehaald"
+                )
+            elif lname == "tbd":
+                finish_delivery_map[finish_key] = DeliveryAddress(
+                    name="Leveradres wordt nog meegedeeld"
+                )
+            else:
+                addr = ddb.get(name)
+                if not addr:
+                    print("Leveradres niet gevonden")
+                    return 2
+                finish_delivery_map[finish_key] = addr
+
     export_prefix_text = (args.export_prefix_text or "").strip()
     export_suffix_text = (args.export_suffix_text or "").strip()
     export_prefix_enabled = args.export_prefix_enabled
@@ -445,10 +526,21 @@ def cli_copy_per_prod(args):
         export_name_prefix_enabled=export_prefix_enabled,
         export_name_suffix_text=export_suffix_text,
         export_name_suffix_enabled=export_suffix_enabled,
+        finish_override_map=finish_override_map,
+        finish_doc_type_map=finish_doc_type_map,
+        finish_doc_num_map=finish_doc_num_map,
+        finish_delivery_map=finish_delivery_map,
     )
     print("Gekopieerd:", cnt)
     for k, v in chosen.items():
-        print(f"  {k} → {v}")
+        kind, ident = parse_selection_key(k)
+        if kind == "finish":
+            display = finish_meta_lookup.get(ident, {}).get("label", ident)
+            prefix = "Afwerking"
+        else:
+            display = ident
+            prefix = "Productie"
+        print(f"  {prefix} {display} → {v}")
     return 0
 
 
@@ -579,6 +671,36 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         metavar="PROD=NUM",
         help="Documentnummer per productie (meerdere keren mogelijk)",
+    )
+    cpp.add_argument(
+        "--finish-supplier",
+        action="append",
+        metavar="FINISH=SUPPLIER",
+        help=(
+            "Override: Afwerking=Leverancier (gebruik Finish-mapnaam of label,"
+            " meerdere keren mogelijk)"
+        ),
+    )
+    cpp.add_argument(
+        "--finish-doc-type",
+        action="append",
+        metavar="FINISH=TYPE",
+        help="Documenttype per afwerking (meerdere keren mogelijk)",
+    )
+    cpp.add_argument(
+        "--finish-doc-number",
+        action="append",
+        metavar="FINISH=NUM",
+        help="Documentnummer per afwerking (meerdere keren mogelijk)",
+    )
+    cpp.add_argument(
+        "--finish-delivery",
+        action="append",
+        metavar="FINISH=NAAM",
+        help=(
+            "Leveradres voor afwerking: FINISH=NAAM. Speciale waarden: "
+            "none, pickup, tbd (meerdere keren mogelijk)"
+        ),
     )
     cpp.add_argument(
         "--project-number",
