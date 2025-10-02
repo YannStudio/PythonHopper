@@ -673,9 +673,10 @@ def copy_per_production_and_orders(
     explicitly set to ``False``.
 
     When ``copy_finish_exports`` is ``True`` each referenced export file is
-    additionally copied to ``Afwerking/<finish>/<ral>/`` where the folder
-    components are normalized versions of the BOM "Finish" and "RAL color"
-    values.
+    additionally copied to folders named ``Finish-<finish>`` with an optional
+    ``-<ral>`` suffix when the BOM "RAL color" property is filled in. The
+    folder components are normalized versions of the BOM "Finish" and
+    "RAL color" values.
     """
     os.makedirs(dest, exist_ok=True)
     file_index = _build_file_index(source, selected_exts)
@@ -693,9 +694,15 @@ def copy_per_production_and_orders(
         prod_to_rows[prod].append(row)
         if copy_finish_exports:
             pn = _to_str(row.get("PartNumber")).strip()
-            if pn:
-                finish_name = _normalize_finish_folder(row.get("Finish"))
-                ral_name = _normalize_finish_folder(row.get("RAL color"))
+            finish_value = _to_str(row.get("Finish")).strip()
+            if pn and finish_value:
+                finish_name = _normalize_finish_folder(finish_value)
+                ral_value = _to_str(row.get("RAL color")).strip()
+                ral_name = (
+                    _normalize_finish_folder(ral_value)
+                    if ral_value
+                    else ""
+                )
                 finish_combo_parts[(finish_name, ral_name)].add(pn)
 
     today_date = datetime.date.today()
@@ -911,10 +918,12 @@ def copy_per_production_and_orders(
                 )
 
     if copy_finish_exports and finish_combo_parts:
-        finish_root = os.path.join(dest, "Afwerking")
         finish_seen: Dict[tuple[str, str], set[tuple[str, str]]] = defaultdict(set)
         for (finish_name, ral_name), part_numbers in finish_combo_parts.items():
-            target_dir = os.path.join(finish_root, finish_name, ral_name)
+            folder_name = f"Finish-{finish_name}"
+            if ral_name:
+                folder_name = f"{folder_name}-{ral_name}"
+            target_dir = os.path.join(dest, folder_name)
             os.makedirs(target_dir, exist_ok=True)
             seen_pairs = finish_seen[(finish_name, ral_name)]
             for pn in sorted(part_numbers):

@@ -24,6 +24,8 @@ def test_finish_exports_written(tmp_path, zip_parts):
 
     (src / "PN1.pdf").write_text("one", encoding="utf-8")
     (src / "PN2.pdf").write_text("two", encoding="utf-8")
+    (src / "PN3.pdf").write_text("three", encoding="utf-8")
+    (src / "PN4.pdf").write_text("four", encoding="utf-8")
 
     df = pd.DataFrame(
         [
@@ -48,6 +50,20 @@ def test_finish_exports_written(tmp_path, zip_parts):
                 "RAL color": "RAL 9005",
                 "Aantal": 3,
             },
+            {
+                "PartNumber": "PN3",
+                "Production": "Laser",
+                "Finish": " ",
+                "RAL color": "RAL 9016",
+                "Aantal": 2,
+            },
+            {
+                "PartNumber": "PN4",
+                "Production": "Laser",
+                "Finish": "Geanodiseerd",
+                "RAL color": "",
+                "Aantal": 1,
+            },
         ]
     )
 
@@ -65,15 +81,35 @@ def test_finish_exports_written(tmp_path, zip_parts):
         copy_finish_exports=True,
     )
 
-    assert cnt == 2
+    assert cnt == 4
 
-    finish_root = dest / "Afwerking"
-    finish_dir_1 = finish_root / _normalize_finish_folder("Poedercoating") / _normalize_finish_folder("RAL 9005")
-    finish_dir_2 = finish_root / _normalize_finish_folder("Anodized/Marine") / _normalize_finish_folder("RAL-9010")
+    finish_dir_1_name = (
+        "Finish-"
+        + _normalize_finish_folder("Poedercoating")
+        + "-"
+        + _normalize_finish_folder("RAL 9005")
+    )
+    finish_dir_2_name = (
+        "Finish-"
+        + _normalize_finish_folder("Anodized/Marine")
+        + "-"
+        + _normalize_finish_folder("RAL-9010")
+    )
+    finish_dir_1 = dest / finish_dir_1_name
+    finish_dir_2 = dest / finish_dir_2_name
+    finish_dir_3_name = "Finish-" + _normalize_finish_folder("Geanodiseerd")
+    finish_dir_3 = dest / finish_dir_3_name
 
     assert (finish_dir_1 / "PN1.pdf").is_file()
     assert sorted(p.name for p in finish_dir_1.iterdir()) == ["PN1.pdf"]
     assert (finish_dir_2 / "PN2.pdf").is_file()
+    assert (finish_dir_3 / "PN4.pdf").is_file()
+    finish_dirs = sorted(
+        p.name for p in dest.iterdir() if p.is_dir() and p.name.startswith("Finish-")
+    )
+    assert finish_dirs == sorted(
+        [finish_dir_1_name, finish_dir_2_name, finish_dir_3_name]
+    )
 
 
 @pytest.mark.parametrize(
