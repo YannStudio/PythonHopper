@@ -1,0 +1,51 @@
+{
+  "source_folder": "",
+  "dest_folder": "",
+  "project_number": "",
+  "project_name": "",
+  "file_extensions": [
+    {
+      "key": "pdf",
+      "label": "PDF (.pdf)",
+      "patterns": [
+        ".pdf"
+      ],
+      "enabled": false
+    },
+    {
+      "key": "step",
+      "label": "STEP (.step, .stp)",
+      "patterns": [
+        ".step",
+        ".stp"
+      ],
+      "enabled": false
+    },
+    {
+      "key": "dxf",
+      "label": "DXF (.dxf)",
+      "patterns": [
+        ".dxf"
+      ],
+      "enabled": false
+    },
+    {
+      "key": "dwg",
+      "label": "DWG (.dwg)",
+      "patterns": [
+        ".dwg"
+      ],
+      "enabled": false
+    }
+  ],
+  "zip_per_production": true,
+  "export_date_prefix": false,
+  "export_date_suffix": false,
+  "custom_prefix_enabled": false,
+  "custom_prefix_text": "",
+  "custom_suffix_enabled": false,
+  "custom_suffix_text": "",
+  "bundle_latest": false,
+  "bundle_dry_run": false,
+  "footer_note": "Gelieve afwijkingen schriftelijk te bevestigen. Levertermijn in overleg. Betalingsvoorwaarden: 30 dagen netto. Vermeld onze productiereferentie bij levering."
+}
