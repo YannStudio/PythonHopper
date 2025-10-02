@@ -2752,6 +2752,9 @@ def start_gui():
             finish_meta_map: Dict[str, Dict[str, str]] = {}
             finish_part_numbers: Dict[str, set[str]] = defaultdict(set)
             for _, row in bom_df.iterrows():
+                finish_text = _to_str(row.get("Finish")).strip()
+                if not finish_text:
+                    continue
                 meta = describe_finish_combo(row.get("Finish"), row.get("RAL color"))
                 key = meta["key"]
                 if key not in finish_meta_map:

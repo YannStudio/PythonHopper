@@ -350,6 +350,9 @@ def cli_copy_per_prod(args):
     finish_meta_lookup: Dict[str, Dict[str, str]] = {}
     finish_lookup: Dict[str, str] = {}
     for _, row in df.iterrows():
+        finish_text = _to_str(row.get("Finish")).strip()
+        if not finish_text:
+            continue
         meta = describe_finish_combo(row.get("Finish"), row.get("RAL color"))
         key = meta["key"]
         if key in finish_meta_lookup:
