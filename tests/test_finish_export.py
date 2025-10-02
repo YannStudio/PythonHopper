@@ -3,6 +3,7 @@ import pytest
 
 import cli
 from app_settings import AppSettings
+from bom import load_bom
 from cli import build_parser, cli_copy_per_prod
 from models import Supplier
 from orders import copy_per_production_and_orders, _normalize_finish_folder
@@ -13,6 +14,67 @@ from delivery_addresses_db import DeliveryAddressesDB
 
 def _make_db() -> SuppliersDB:
     return SuppliersDB([Supplier.from_any({"supplier": "ACME"})])
+
+
+def test_load_bom_finish_columns_and_copy(tmp_path):
+    bom_path = tmp_path / "bom.csv"
+    src = tmp_path / "src"
+    dest = tmp_path / "dest"
+    src.mkdir()
+    dest.mkdir()
+
+    pd.DataFrame(
+        [
+            {
+                "PartNumber": "PN1",
+                "Production": "Laser",
+                "finish": "Poedercoating",
+                "RAL COLOR": "RAL 9005",
+                "Aantal": 2,
+            },
+            {
+                "PartNumber": "PN2",
+                "Production": "Laser",
+                "finish": "Geanodiseerd",
+                "RAL COLOR": None,
+                "Aantal": 1,
+            },
+        ]
+    ).to_csv(bom_path, index=False)
+
+    for pn, content in {"PN1": "one", "PN2": "two"}.items():
+        (src / f"{pn}.pdf").write_text(content, encoding="utf-8")
+
+    loaded = load_bom(str(bom_path))
+
+    assert list(loaded["Finish"]) == ["Poedercoating", "Geanodiseerd"]
+    assert list(loaded["RAL color"]) == ["RAL 9005", ""]
+
+    cnt, _ = copy_per_production_and_orders(
+        str(src),
+        str(dest),
+        loaded,
+        [".pdf"],
+        _make_db(),
+        {"Laser": "ACME"},
+        {},
+        {},
+        False,
+        copy_finish_exports=True,
+    )
+
+    assert cnt == 2
+
+    finish_dir_1 = dest / (
+        "Finish-"
+        + _normalize_finish_folder("Poedercoating")
+        + "-"
+        + _normalize_finish_folder("RAL 9005")
+    )
+    finish_dir_2 = dest / ("Finish-" + _normalize_finish_folder("Geanodiseerd"))
+
+    assert (finish_dir_1 / "PN1.pdf").is_file()
+    assert (finish_dir_2 / "PN2.pdf").is_file()
 
 
 @pytest.mark.parametrize("zip_parts", [False, True])

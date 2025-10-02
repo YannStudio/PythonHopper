@@ -68,8 +68,8 @@ def load_bom(path: str) -> pd.DataFrame:
     """Load a BOM spreadsheet and normalize expected columns.
 
     Returns a DataFrame with canonical column names: PartNumber, Description,
-    Production, Bestanden gevonden, Status, Materiaal, Aantal, Oppervlakte,
-    Gewicht.
+    Production, Bestanden gevonden, Status, Materiaal, Finish, RAL color,
+    Aantal, Oppervlakte, Gewicht.
     """
 
     if path.lower().endswith(".csv"):
@@ -142,9 +142,23 @@ def load_bom(path: str) -> pd.DataFrame:
 
     df["Oppervlakte"] = "" if opp_col is None else df[opp_col]
     df["Gewicht"] = "" if gew_col is None else df[gew_col]
-    df["Materiaal"] = (
-        "" if mat_col is None else df[mat_col].astype(str).fillna("").str.strip()
-    )
+    def _text_column(col_name: Optional[str]) -> pd.Series:
+        if col_name is None:
+            return pd.Series([""] * len(df), index=df.index)
+        series = df[col_name]
+        return series.fillna("").astype(str).str.strip()
+
+    df["Materiaal"] = _text_column(mat_col)
+
+    finish_col = find_any(["Finish"])
+    if finish_col is None:
+        finish_col = _find_col_by_regex(df, [r"\bfinish\b"])
+    ral_col = find_any(["RAL color", "RAL colour"])
+    if ral_col is None:
+        ral_col = _find_col_by_regex(df, [r"\bral\s*(?:color|colour)\b", r"\bral\b"])
+
+    df["Finish"] = _text_column(finish_col)
+    df["RAL color"] = _text_column(ral_col)
 
     if "Bestanden gevonden" not in df.columns:
         df["Bestanden gevonden"] = ""
@@ -159,6 +173,8 @@ def load_bom(path: str) -> pd.DataFrame:
             "Bestanden gevonden",
             "Status",
             "Materiaal",
+            "Finish",
+            "RAL color",
             "Aantal",
             "Oppervlakte",
             "Gewicht",
