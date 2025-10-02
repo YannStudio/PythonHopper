@@ -86,7 +86,10 @@ def load_bom(path: str) -> pd.DataFrame:
         return low[lc]
 
     pn_c = need("PartNumber")
-    ds_c = need("Description")
+    try:
+        ds_c = need("Description")
+    except ValueError:
+        ds_c = None
     pr_c = need("Production")
 
     def find_any(names: List[str]) -> Optional[str]:
@@ -123,7 +126,12 @@ def load_bom(path: str) -> pd.DataFrame:
         mat_col = _find_col_by_regex(df, [r"\bmaterial", r"\bmateriaal", r"\bgrade\b"])
 
     df["PartNumber"] = df[pn_c].astype(str).str.strip()
-    df["Description"] = df[ds_c].astype(str).str.strip()
+    if ds_c is not None:
+        df["Description"] = df[ds_c].astype(str).fillna("").str.strip()
+    else:
+        # Fallback to PartNumber when no description column is present so that
+        # downstream code keeps working with a consistent schema.
+        df["Description"] = df["PartNumber"]
     df["Production"] = df[pr_c].astype(str).str.strip()
 
     if aantal_col is None:
