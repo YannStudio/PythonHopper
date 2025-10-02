@@ -26,6 +26,10 @@ from orders import (
     combine_pdfs_per_production,
     combine_pdfs_from_source,
     _prefix_for_doc_type,
+    describe_finish_combo,
+    make_finish_selection_key,
+    make_production_selection_key,
+    parse_selection_key,
 )
 
 
@@ -869,6 +873,7 @@ def start_gui():
             self,
             master,
             productions: List[str],
+            finishes: List[Dict[str, str]],
             db: SuppliersDB,
             delivery_db: DeliveryAddressesDB,
             callback,
@@ -882,12 +887,14 @@ def start_gui():
             self.project_number_var = project_number_var
             self.project_name_var = project_name_var
             self._preview_supplier: Optional[Supplier] = None
-            self._active_prod: Optional[str] = None  # laatst gefocuste rij
+            self._active_key: Optional[str] = None  # laatst gefocuste rij
             self.sel_vars: Dict[str, tk.StringVar] = {}
             self.doc_vars: Dict[str, tk.StringVar] = {}
             self.doc_num_vars: Dict[str, tk.StringVar] = {}
             self.delivery_vars: Dict[str, tk.StringVar] = {}
             self.delivery_combos: Dict[str, ttk.Combobox] = {}
+            self.row_meta: Dict[str, Dict[str, str]] = {}
+            self.finish_entries = finishes
 
             # Grid layout: content (row=0, weight=1), buttons (row=1)
             self.grid_columnconfigure(0, weight=1)
@@ -1059,21 +1066,33 @@ def start_gui():
                 background=left.cget("bg"),
             ).pack(side="left", padx=6)
 
+            self.finish_label_by_key: Dict[str, str] = {
+                entry.get("key", ""): _to_str(entry.get("label")) or _to_str(entry.get("key"))
+                for entry in finishes
+            }
+
             self.rows = []
-            for prod in productions:
+            self.combo_by_key: Dict[str, ttk.Combobox] = {}
+
+            def add_row(display_text: str, sel_key: str, metadata: Dict[str, str]):
                 row = tk.Frame(left)
                 row.pack(fill="x", pady=3)
-                tk.Label(row, text=prod, width=18, anchor="w").pack(side="left")
+                tk.Label(row, text=display_text, width=18, anchor="w").pack(side="left")
                 var = tk.StringVar()
-                self.sel_vars[prod] = var
+                self.sel_vars[sel_key] = var
                 combo = ttk.Combobox(row, textvariable=var, state="normal", width=50)
                 combo.pack(side="left", padx=6)
                 combo.bind("<<ComboboxSelected>>", self._on_combo_change)
-                combo.bind("<FocusIn>", lambda _e, p=prod: self._on_focus_prod(p))
-                combo.bind("<KeyRelease>", lambda ev, p=prod, c=combo: self._on_combo_type(ev, p, c))
+                combo.bind(
+                    "<FocusIn>", lambda _e, key=sel_key: self._on_focus_key(key)
+                )
+                combo.bind(
+                    "<KeyRelease>",
+                    lambda ev, key=sel_key, c=combo: self._on_combo_type(ev, key, c),
+                )
 
                 doc_var = tk.StringVar(value="Bestelbon")
-                self.doc_vars[prod] = doc_var
+                self.doc_vars[sel_key] = doc_var
                 doc_combo = ttk.Combobox(
                     row,
                     textvariable=doc_var,
@@ -1084,15 +1103,15 @@ def start_gui():
                 doc_combo.pack(side="left", padx=6)
                 doc_combo.bind(
                     "<<ComboboxSelected>>",
-                    lambda _e, p=prod: self._on_doc_type_change(p),
+                    lambda _e, key=sel_key: self._on_doc_type_change(key),
                 )
 
                 doc_num_var = tk.StringVar()
-                self.doc_num_vars[prod] = doc_num_var
+                self.doc_num_vars[sel_key] = doc_num_var
                 tk.Entry(row, textvariable=doc_num_var, width=12).pack(side="left", padx=6)
 
                 dvar = tk.StringVar(value="Geen")
-                self.delivery_vars[prod] = dvar
+                self.delivery_vars[sel_key] = dvar
                 dcombo = ttk.Combobox(
                     row,
                     textvariable=dvar,
@@ -1101,9 +1120,44 @@ def start_gui():
                     width=50,
                 )
                 dcombo.pack(side="left", padx=6)
-                self.delivery_combos[prod] = dcombo
+                self.delivery_combos[sel_key] = dcombo
 
-                self.rows.append((prod, combo))
+                self.rows.append((sel_key, combo))
+                self.combo_by_key[sel_key] = combo
+                self.row_meta[sel_key] = metadata
+
+            for prod in productions:
+                key = make_production_selection_key(prod)
+                add_row(
+                    prod,
+                    key,
+                    {"kind": "production", "identifier": prod, "display": prod},
+                )
+
+            if finishes:
+                ttk.Separator(left, orient="horizontal").pack(fill="x", pady=(12, 6))
+                tk.Label(
+                    left,
+                    text="Afwerkingen",
+                    anchor="w",
+                    background=left.cget("bg"),
+                    font=("TkDefaultFont", 10, "bold"),
+                ).pack(fill="x", padx=2)
+                for entry in finishes:
+                    finish_key = entry.get("key", "")
+                    if not finish_key:
+                        continue
+                    sel_key = make_finish_selection_key(finish_key)
+                    label_text = _to_str(entry.get("label")) or finish_key
+                    add_row(
+                        label_text,
+                        sel_key,
+                        {
+                            "kind": "finish",
+                            "identifier": finish_key,
+                            "display": label_text,
+                        },
+                    )
 
             # Container voor kaarten
             preview_frame = tk.LabelFrame(
@@ -1118,15 +1172,15 @@ def start_gui():
             self.cards_frame = tk.Frame(preview_frame)
             self.cards_frame.grid(row=0, column=0, sticky="nsew")
 
-            # Mapping voor combobox per productie
-            self.combo_by_prod = {prod: combo for prod, combo in self.rows}
+            # Mapping voor combobox per selectie
+            self.combo_by_key = getattr(self, "combo_by_key", {})
 
             # Buttons bar (altijd zichtbaar)
             btns = tk.Frame(self)
             btns.grid(row=1, column=0, sticky="ew", padx=10, pady=(6,10))
             btns.grid_columnconfigure(0, weight=1)
             self.remember_var = tk.BooleanVar(value=True)
-            tk.Checkbutton(btns, text="Onthoud keuze per productie", variable=self.remember_var).grid(row=0, column=0, sticky="w")
+            tk.Checkbutton(btns, text="Onthoud keuze per selectie", variable=self.remember_var).grid(row=0, column=0, sticky="w")
             tk.Button(btns, text="Annuleer", command=self._cancel).grid(row=0, column=1, sticky="e", padx=(4,0))
             tk.Button(btns, text="Bevestig", command=self._confirm).grid(row=0, column=2, sticky="e")
 
@@ -1134,8 +1188,8 @@ def start_gui():
             self._refresh_options(initial=True)
             self._update_preview_from_any_combo()
 
-        def _on_focus_prod(self, prod: str):
-            self._active_prod = prod
+        def _on_focus_key(self, sel_key: str):
+            self._active_key = sel_key
 
         def _display_list(self) -> List[str]:
             sups = self.db.suppliers_sorted()
@@ -1150,17 +1204,21 @@ def start_gui():
             for s in src:
                 self._disp_to_name[self.db.display_name(s)] = s.supplier
 
-            for prod, combo in self.rows:
+            for sel_key, combo in self.rows:
                 typed = combo.get()
                 combo["values"] = self._base_options
-                lower_prod = prod.strip().lower()
-                if lower_prod in ("dummy part", "nan", "spare part"):
-                    combo.set(self._base_options[0])
-                    continue
+                kind, identifier = parse_selection_key(sel_key)
+                if kind == "production":
+                    lower_name = identifier.strip().lower()
+                    if lower_name in ("dummy part", "nan", "spare part"):
+                        combo.set(self._base_options[0])
+                        continue
+                    name = self.db.get_default(identifier)
+                else:
+                    name = self.db.get_default_finish(identifier)
                 if typed:
                     combo.set(typed)
                     continue
-                name = self.db.get_default(prod)
                 if not name and initial:
                     favs = [x for x in src if x.favorite]
                     name = (
@@ -1190,15 +1248,15 @@ def start_gui():
                 self.delivery_db.display_name(a)
                 for a in self.delivery_db.addresses_sorted()
             ]
-            for prod, dcombo in self.delivery_combos.items():
+            for sel_key, dcombo in self.delivery_combos.items():
                 cur = dcombo.get()
                 dcombo["values"] = delivery_opts
                 if cur:
                     dcombo.set(cur)
 
         def _on_combo_change(self, _evt=None):
-            for prod, combo in self.rows:
-                doc_var = self.doc_vars.get(prod)
+            for sel_key, combo in self.rows:
+                doc_var = self.doc_vars.get(sel_key)
                 if not doc_var:
                     continue
                 val = combo.get().strip().lower()
@@ -1206,12 +1264,12 @@ def start_gui():
                     doc_var.set("Geen")
                 else:
                     doc_var.set("Bestelbon")
-                self._on_doc_type_change(prod)
+                self._on_doc_type_change(sel_key)
             self._update_preview_from_any_combo()
 
-        def _on_doc_type_change(self, prod: str):
-            doc_var = self.doc_vars.get(prod)
-            doc_num_var = self.doc_num_vars.get(prod)
+        def _on_doc_type_change(self, sel_key: str):
+            doc_var = self.doc_vars.get(sel_key)
+            doc_num_var = self.doc_num_vars.get(sel_key)
             if not doc_var or not doc_num_var:
                 return
             cur = doc_num_var.get()
@@ -1220,8 +1278,8 @@ def start_gui():
             if not cur or cur in prefixes:
                 doc_num_var.set(prefix)
 
-        def _on_combo_type(self, evt, production: str, combo):
-            self._active_prod = production
+        def _on_combo_type(self, evt, sel_key: str, combo):
+            self._active_key = sel_key
             text = _norm(combo.get().strip())
             if not hasattr(self, "_base_options"):
                 return
@@ -1240,7 +1298,7 @@ def start_gui():
                 filtered, self.db.suppliers, getattr(self, "_disp_to_name", {})
             )
             combo["values"] = filtered
-            self._populate_cards(filtered, production)
+            self._populate_cards(filtered, sel_key)
             if evt.keysym == "Return" and len(filtered) == 1:
                 combo.set(filtered[0])
                 self._update_preview_for_text(filtered[0])
@@ -1277,25 +1335,25 @@ def start_gui():
             self._preview_supplier = s
 
         def _update_preview_from_any_combo(self):
-            for prod, combo in self.rows:
+            for sel_key, combo in self.rows:
                 t = combo.get()
                 if t:
-                    self._active_prod = prod
+                    self._active_key = sel_key
                     self._update_preview_for_text(t)
-                    self._populate_cards([t], prod)
+                    self._populate_cards([t], sel_key)
                     return
             self._preview_supplier = None
-            self._populate_cards([], self._active_prod if self._active_prod else None)
+            self._populate_cards([], self._active_key if self._active_key else None)
 
-        def _on_card_click(self, option: str, production: str):
-            combo = self.combo_by_prod.get(production)
+        def _on_card_click(self, option: str, sel_key: str):
+            combo = self.combo_by_key.get(sel_key)
             if combo:
                 combo.set(option)
-            self._active_prod = production
+            self._active_key = sel_key
             self._update_preview_for_text(option)
-            self._populate_cards([option], production)
+            self._populate_cards([option], sel_key)
 
-        def _populate_cards(self, options, production):
+        def _populate_cards(self, options, sel_key):
             for ch in self.cards_frame.winfo_children():
                 ch.destroy()
             if not options:
@@ -1343,7 +1401,7 @@ def start_gui():
                     addr_lbl = tk.Label(card, text=addr_line, justify="left", anchor="w")
                     addr_lbl.pack(anchor="w", padx=4, pady=(0, 4))
                     widgets.append(addr_lbl)
-                handler = lambda _e, o=opt, p=production: self._on_card_click(o, p)
+                handler = lambda _e, o=opt, key=sel_key: self._on_card_click(o, key)
                 card.bind("<Button-1>", handler)
                 for w in widgets:
                     w.bind("<Button-1>", handler)
@@ -1364,22 +1422,24 @@ def start_gui():
             """Collect selected suppliers per production and return via callback."""
             sel_map: Dict[str, str] = {}
             doc_map: Dict[str, str] = {}
-            for prod, combo in self.rows:
+            for sel_key, combo in self.rows:
                 typed = combo.get().strip()
                 if not typed or typed.lower() in ("(geen)", "geen"):
-                    sel_map[prod] = ""
+                    sel_map[sel_key] = ""
                 else:
                     s = self._resolve_text_to_supplier(typed)
                     if s:
-                        sel_map[prod] = s.supplier
-                doc_var = self.doc_vars.get(prod)
-                doc_map[prod] = doc_var.get() if doc_var else "Bestelbon"
+                        sel_map[sel_key] = s.supplier
+                doc_var = self.doc_vars.get(sel_key)
+                doc_map[sel_key] = doc_var.get() if doc_var else "Bestelbon"
 
             doc_num_map: Dict[str, str] = {}
             delivery_map: Dict[str, str] = {}
-            for prod, _combo in self.rows:
-                doc_num_map[prod] = self.doc_num_vars[prod].get().strip()
-                delivery_map[prod] = self.delivery_vars.get(prod, tk.StringVar(value="Geen")).get()
+            for sel_key, _combo in self.rows:
+                doc_num_map[sel_key] = self.doc_num_vars[sel_key].get().strip()
+                delivery_map[sel_key] = self.delivery_vars.get(
+                    sel_key, tk.StringVar(value="Geen")
+                ).get()
 
             project_number = self.project_number_var.get().strip()
             project_name = self.project_name_var.get().strip()
@@ -2688,6 +2748,33 @@ def start_gui():
                     for _, r in bom_df.iterrows()
                 )
             )
+            finish_meta_map: Dict[str, Dict[str, str]] = {}
+            finish_part_numbers: Dict[str, set[str]] = defaultdict(set)
+            for _, row in bom_df.iterrows():
+                meta = describe_finish_combo(row.get("Finish"), row.get("RAL color"))
+                key = meta["key"]
+                if key not in finish_meta_map:
+                    finish_meta_map[key] = meta
+                pn = _to_str(row.get("PartNumber")).strip()
+                if pn:
+                    finish_part_numbers[key].add(pn)
+            finish_entries = []
+            for key, meta in finish_meta_map.items():
+                if not finish_part_numbers.get(key):
+                    continue
+                entry = meta.copy()
+                entry["key"] = key
+                finish_entries.append(entry)
+            finish_entries.sort(
+                key=lambda e: (
+                    (_to_str(e.get("label")) or "").lower(),
+                    (_to_str(e.get("key")) or "").lower(),
+                )
+            )
+            finish_label_lookup = {
+                entry["key"]: _to_str(entry.get("label")) or entry["key"]
+                for entry in finish_entries
+            }
             sel_frame = None
 
             def on_sel(
@@ -2702,6 +2789,52 @@ def start_gui():
                 if not self._ensure_bom_loaded():
                     return
                 current_bom = self.bom_df
+
+                prod_override_map: Dict[str, str] = {}
+                finish_override_map: Dict[str, str] = {}
+                for key, value in sel_map.items():
+                    kind, identifier = parse_selection_key(key)
+                    if kind == "finish":
+                        finish_override_map[identifier] = value
+                    else:
+                        prod_override_map[identifier] = value
+
+                doc_type_map: Dict[str, str] = {}
+                finish_doc_type_map: Dict[str, str] = {}
+                for key, value in doc_map.items():
+                    kind, identifier = parse_selection_key(key)
+                    if kind == "finish":
+                        finish_doc_type_map[identifier] = value
+                    else:
+                        doc_type_map[identifier] = value
+
+                prod_doc_num_map: Dict[str, str] = {}
+                finish_doc_num_map: Dict[str, str] = {}
+                for key, value in doc_num_map.items():
+                    kind, identifier = parse_selection_key(key)
+                    if kind == "finish":
+                        finish_doc_num_map[identifier] = value
+                    else:
+                        prod_doc_num_map[identifier] = value
+
+                production_delivery_map: Dict[str, DeliveryAddress | None] = {}
+                finish_delivery_map: Dict[str, DeliveryAddress | None] = {}
+                for key, name in delivery_map_raw.items():
+                    clean = name.replace("★ ", "", 1)
+                    if clean == "Geen":
+                        resolved = None
+                    elif clean in (
+                        "Bestelling wordt opgehaald",
+                        "Leveradres wordt nog meegedeeld",
+                    ):
+                        resolved = DeliveryAddress(name=clean)
+                    else:
+                        resolved = self.delivery_db.get(clean)
+                    kind, identifier = parse_selection_key(key)
+                    if kind == "finish":
+                        finish_delivery_map[identifier] = resolved
+                    else:
+                        production_delivery_map[identifier] = resolved
 
                 custom_prefix_text = self.export_name_custom_prefix_text.get().strip()
                 custom_prefix_enabled = bool(
@@ -2765,47 +2898,53 @@ def start_gui():
                     client = self.client_db.get(
                         self.client_var.get().replace("★ ", "", 1)
                     )
-                    resolved_delivery_map: Dict[str, DeliveryAddress | None] = {}
-                    for prod, name in delivery_map_raw.items():
-                        clean = name.replace("★ ", "", 1)
-                        if clean == "Geen":
-                            resolved_delivery_map[prod] = None
-                        elif clean in (
-                            "Bestelling wordt opgehaald",
-                            "Leveradres wordt nog meegedeeld",
-                        ):
-                            resolved_delivery_map[prod] = DeliveryAddress(name=clean)
-                        else:
-                            addr = self.delivery_db.get(clean)
-                            resolved_delivery_map[prod] = addr
                     cnt, chosen = copy_per_production_and_orders(
                         self.source_folder,
                         bundle_dest,
                         current_bom,
                         exts,
                         self.db,
-                        sel_map,
-                        doc_map,
-                        doc_num_map,
-                    remember,
-                    client=client,
-                    delivery_map=resolved_delivery_map,
-                    footer_note=self.footer_note_var.get(),
-                    zip_parts=bool(self.zip_var.get()),
-                    date_prefix_exports=bool(self.export_date_prefix_var.get()),
-                    date_suffix_exports=bool(self.export_date_suffix_var.get()),
-                    project_number=project_number,
-                    project_name=project_name,
-                    copy_finish_exports=bool(self.finish_export_var.get()),
-                    export_name_prefix_text=token_prefix_text,
-                    export_name_prefix_enabled=token_prefix_enabled,
-                    export_name_suffix_text=token_suffix_text,
+                        prod_override_map,
+                        doc_type_map,
+                        prod_doc_num_map,
+                        remember,
+                        client=client,
+                        delivery_map=production_delivery_map,
+                        footer_note=self.footer_note_var.get(),
+                        zip_parts=bool(self.zip_var.get()),
+                        date_prefix_exports=bool(self.export_date_prefix_var.get()),
+                        date_suffix_exports=bool(self.export_date_suffix_var.get()),
+                        project_number=project_number,
+                        project_name=project_name,
+                        copy_finish_exports=bool(self.finish_export_var.get()),
+                        export_name_prefix_text=token_prefix_text,
+                        export_name_prefix_enabled=token_prefix_enabled,
+                        export_name_suffix_text=token_suffix_text,
                         export_name_suffix_enabled=token_suffix_enabled,
+                        finish_override_map=finish_override_map,
+                        finish_doc_type_map=finish_doc_type_map,
+                        finish_doc_num_map=finish_doc_num_map,
+                        finish_delivery_map=finish_delivery_map,
                     )
 
                     def on_done():
+                        friendly_pairs = []
+                        for key, value in chosen.items():
+                            kind, identifier = parse_selection_key(key)
+                            if kind == "finish":
+                                label = finish_label_lookup.get(identifier, identifier)
+                                prefix = "Afwerking"
+                            else:
+                                label = identifier
+                                prefix = "Productie"
+                            friendly_pairs.append(f"{prefix} {label}: {value}")
+                        suppliers_text = (
+                            "; ".join(friendly_pairs)
+                            if friendly_pairs
+                            else str(chosen)
+                        )
                         self.status_var.set(
-                            f"Klaar. Gekopieerd: {cnt}. Leveranciers: {chosen}. → {bundle_dest}"
+                            f"Klaar. Gekopieerd: {cnt}. Leveranciers: {suppliers_text}. → {bundle_dest}"
                         )
                         info_lines = ["Bestelbonnen aangemaakt in:", bundle_dest]
                         if bundle.latest_symlink:
@@ -2840,6 +2979,7 @@ def start_gui():
             sel_frame = SupplierSelectionFrame(
                 self.nb,
                 prods,
+                finish_entries,
                 self.db,
                 self.delivery_db,
                 on_sel,

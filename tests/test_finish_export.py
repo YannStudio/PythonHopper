@@ -1,12 +1,19 @@
+import datetime
+
 import pandas as pd
 import pytest
 
 import cli
+import orders
 from app_settings import AppSettings
 from bom import load_bom
 from cli import build_parser, cli_copy_per_prod
 from models import Supplier
-from orders import copy_per_production_and_orders, _normalize_finish_folder
+from orders import (
+    copy_per_production_and_orders,
+    _normalize_finish_folder,
+    make_finish_selection_key,
+)
 from suppliers_db import SuppliersDB
 from clients_db import ClientsDB
 from delivery_addresses_db import DeliveryAddressesDB
@@ -176,16 +183,24 @@ def test_finish_exports_written(tmp_path, zip_parts):
     finish_dir_2 = dest / finish_dir_2_name
     finish_dir_3_name = "Finish-" + _normalize_finish_folder("Geanodiseerd")
     finish_dir_3 = dest / finish_dir_3_name
+    finish_dir_4_name = (
+        "Finish-"
+        + _normalize_finish_folder(" ")
+        + "-"
+        + _normalize_finish_folder("RAL 9016")
+    )
 
     assert (finish_dir_1 / "PN1.pdf").is_file()
-    assert sorted(p.name for p in finish_dir_1.iterdir()) == ["PN1.pdf"]
+    entries_finish_1 = sorted(p.name for p in finish_dir_1.iterdir())
+    assert "PN1.pdf" in entries_finish_1
+    assert any(name.startswith("Bestelbon_") for name in entries_finish_1)
     assert (finish_dir_2 / "PN2.pdf").is_file()
     assert (finish_dir_3 / "PN4.pdf").is_file()
     finish_dirs = sorted(
         p.name for p in dest.iterdir() if p.is_dir() and p.name.startswith("Finish-")
     )
     assert finish_dirs == sorted(
-        [finish_dir_1_name, finish_dir_2_name, finish_dir_3_name]
+        [finish_dir_1_name, finish_dir_2_name, finish_dir_3_name, finish_dir_4_name]
     )
 
 
@@ -253,3 +268,70 @@ def test_cli_finish_flag(monkeypatch, tmp_path, flag, settings_value, expected):
     cli_copy_per_prod(args)
 
     assert captured["copy_finish_exports"] is expected
+
+
+def test_finish_documents_and_defaults(tmp_path, monkeypatch):
+    pytest.importorskip("reportlab")
+    pytest.importorskip("openpyxl")
+    from openpyxl import load_workbook
+    from PyPDF2 import PdfReader
+
+    monkeypatch.setattr(orders, "SUPPLIERS_DB_FILE", str(tmp_path / "suppliers.json"))
+
+    db = SuppliersDB([Supplier.from_any({"supplier": "ACME"})])
+    src = tmp_path / "src"
+    dest = tmp_path / "dest"
+    src.mkdir()
+    dest.mkdir()
+    (src / "PN1.pdf").write_text("pdf", encoding="utf-8")
+
+    df = pd.DataFrame(
+        [
+            {
+                "PartNumber": "PN1",
+                "Production": "Laser",
+                "Finish": "Poedercoating",
+                "RAL color": "RAL 9005",
+                "Aantal": 1,
+            }
+        ]
+    )
+
+    finish_key = "Finish-" + _normalize_finish_folder("Poedercoating") + "-" + _normalize_finish_folder("RAL 9005")
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    label = "Poedercoating – RAL 9005"
+    filename_component = _normalize_finish_folder(label)
+
+    cnt, chosen = copy_per_production_and_orders(
+        str(src),
+        str(dest),
+        df,
+        [".pdf"],
+        db,
+        {"Laser": "ACME"},
+        {},
+        {},
+        True,
+        copy_finish_exports=True,
+        finish_override_map={finish_key: "ACME"},
+    )
+
+    assert cnt == 1
+    assert chosen[make_finish_selection_key(finish_key)] == "ACME"
+    assert db.get_default_finish(finish_key) == "ACME"
+
+    finish_dir = dest / finish_key
+    assert finish_dir.is_dir()
+    excel_path = finish_dir / f"Bestelbon_{filename_component}_{today}.xlsx"
+    pdf_path = finish_dir / f"Bestelbon_{filename_component}_{today}.pdf"
+    assert excel_path.exists()
+    assert pdf_path.exists()
+
+    wb = load_workbook(excel_path)
+    ws = wb.active
+    values = {ws[f"A{i}"].value: ws[f"B{i}"].value for i in range(1, 10)}
+    assert values.get("Afwerking") == label
+
+    reader = PdfReader(str(pdf_path))
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    assert "Afwerking: Poedercoating – RAL 9005" in text
