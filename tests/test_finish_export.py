@@ -39,16 +39,23 @@ def test_load_bom_finish_columns_and_copy(tmp_path):
                 "RAL COLOR": None,
                 "Aantal": 1,
             },
+            {
+                "PartNumber": "PN3",
+                "Production": "Laser",
+                "finish": "Gelakt",
+                "RAL COLOR": 7016,
+                "Aantal": 1,
+            },
         ]
     ).to_csv(bom_path, index=False)
 
-    for pn, content in {"PN1": "one", "PN2": "two"}.items():
+    for pn, content in {"PN1": "one", "PN2": "two", "PN3": "three"}.items():
         (src / f"{pn}.pdf").write_text(content, encoding="utf-8")
 
     loaded = load_bom(str(bom_path))
 
-    assert list(loaded["Finish"]) == ["Poedercoating", "Geanodiseerd"]
-    assert list(loaded["RAL color"]) == ["RAL 9005", ""]
+    assert list(loaded["Finish"]) == ["Poedercoating", "Geanodiseerd", "Gelakt"]
+    assert list(loaded["RAL color"]) == ["RAL 9005", "", "7016"]
 
     cnt, _ = copy_per_production_and_orders(
         str(src),
@@ -63,7 +70,7 @@ def test_load_bom_finish_columns_and_copy(tmp_path):
         copy_finish_exports=True,
     )
 
-    assert cnt == 2
+    assert cnt == 3
 
     finish_dir_1 = dest / (
         "Finish-"
@@ -72,9 +79,17 @@ def test_load_bom_finish_columns_and_copy(tmp_path):
         + _normalize_finish_folder("RAL 9005")
     )
     finish_dir_2 = dest / ("Finish-" + _normalize_finish_folder("Geanodiseerd"))
+    finish_dir_3 = dest / (
+        "Finish-"
+        + _normalize_finish_folder("Gelakt")
+        + "-"
+        + _normalize_finish_folder("7016")
+    )
 
     assert (finish_dir_1 / "PN1.pdf").is_file()
     assert (finish_dir_2 / "PN2.pdf").is_file()
+    assert (finish_dir_3 / "PN3.pdf").is_file()
+    assert finish_dir_3.name.endswith("-7016")
 
 
 @pytest.mark.parametrize("zip_parts", [False, True])
