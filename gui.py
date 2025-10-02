@@ -6,6 +6,7 @@ import subprocess
 import sys
 import threading
 import unicodedata
+from collections import defaultdict
 from copy import deepcopy
 from pathlib import Path
 from typing import Dict, List, Optional
