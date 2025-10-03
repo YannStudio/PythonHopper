@@ -1045,37 +1045,24 @@ def start_gui():
                 background=left.cget("bg"),
             )
             header_font = ("TkDefaultFont", 10, "bold")
-            tk.Label(
-                header_row,
-                text="Producttype",
-                width=self.LABEL_COLUMN_WIDTH,
-                font=header_font,
-                **header_label_kwargs,
-            ).pack(side="left", padx=(0, 6))
-            tk.Label(
-                header_row,
-                text="Leverancier",
-                width=50,
-                **header_label_kwargs,
-            ).pack(side="left", padx=(0, 6))
-            tk.Label(
-                header_row,
-                text="Documenttype",
-                width=18,
-                **header_label_kwargs,
-            ).pack(side="left", padx=(0, 6))
-            tk.Label(
-                header_row,
-                text="Nr.",
-                width=12,
-                **header_label_kwargs,
-            ).pack(side="left", padx=(0, 6))
-            tk.Label(
-                header_row,
-                text="Leveradres",
-                width=50,
-                **header_label_kwargs,
-            ).pack(side="left", padx=(0, 6))
+            header_columns = [
+                ("Producttype", self.LABEL_COLUMN_WIDTH, header_font),
+                ("Leverancier", 50, None),
+                ("Documenttype", 18, None),
+                ("Nr.", 12, None),
+                ("Leveradres", 50, None),
+            ]
+
+            for text, width, font in header_columns:
+                label_kwargs = dict(header_label_kwargs)
+                if font is not None:
+                    label_kwargs["font"] = font
+                tk.Label(
+                    header_row,
+                    text=text,
+                    width=width,
+                    **label_kwargs,
+                ).pack(side="left", padx=(0, 6), fill="x")
 
             self.finish_label_by_key: Dict[str, str] = {
                 entry.get("key", ""): _to_str(entry.get("label")) or _to_str(entry.get("key"))
