@@ -915,14 +915,24 @@ def start_gui():
             left.grid(row=0, column=0, sticky="nw")
 
             # Project info entries above production rows
+            proj_container = tk.Frame(left)
+            proj_container.pack(fill="x", pady=(0, 6))
+
             proj_frame = tk.LabelFrame(
-                left,
+                proj_container,
                 text="Projectgegevens",
                 labelanchor="n",
                 padx=12,
                 pady=10,
             )
-            proj_frame.pack(pady=(0, 6), anchor="w")
+            proj_frame.pack(side="left", anchor="w")
+
+            tk.Button(
+                proj_container,
+                text="Clear list",
+                command=self._clear_saved_suppliers,
+            ).pack(side="right", padx=(8, 0))
+
             readonly_bg = "#f0f0f0"
 
             pn_row = tk.Frame(proj_frame)
@@ -1198,6 +1208,22 @@ def start_gui():
             # Init
             self._refresh_options(initial=True)
             self._update_preview_from_any_combo()
+
+        def _clear_saved_suppliers(self) -> None:
+            self.db.defaults_by_production.clear()
+            self.db.defaults_by_finish.clear()
+            self.db.save()
+
+            for _sel_key, combo in self.rows:
+                combo.set("(geen)")
+
+            for sel_key in self.doc_vars:
+                self.doc_vars[sel_key].set("Geen")
+
+            for dcombo in self.delivery_combos.values():
+                dcombo.set("Geen")
+
+            self._on_combo_change()
 
         def _on_focus_key(self, sel_key: str):
             self._active_key = sel_key
