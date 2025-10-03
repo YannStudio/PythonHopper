@@ -917,6 +917,8 @@ def start_gui():
             # Project info entries above production rows
             proj_container = tk.Frame(left)
             proj_container.pack(fill="x", pady=(0, 6))
+            proj_container.grid_columnconfigure(0, weight=0)
+            proj_container.grid_columnconfigure(1, weight=1)
 
             proj_frame = tk.LabelFrame(
                 proj_container,
@@ -925,13 +927,17 @@ def start_gui():
                 padx=12,
                 pady=10,
             )
-            proj_frame.pack(side="left", anchor="w")
+            proj_frame.grid(row=0, column=0, sticky="nw")
+
+            clear_btn_container = tk.Frame(proj_container)
+            clear_btn_container.grid(row=0, column=1, sticky="new", padx=(12, 0))
+            clear_btn_container.grid_columnconfigure(0, weight=1)
 
             tk.Button(
-                proj_container,
+                clear_btn_container,
                 text="Clear list",
                 command=self._clear_saved_suppliers,
-            ).pack(side="right", padx=(8, 0))
+            ).grid(row=0, column=0, sticky="e", pady=(2, 0))
 
             readonly_bg = "#f0f0f0"
 
@@ -1018,7 +1024,7 @@ def start_gui():
             else:
                 total_inner_pad = sum(pad_values)
             target_width = max(width_candidates) + desired_padding + total_inner_pad
-            proj_frame.pack_propagate(False)
+            proj_frame.grid_propagate(False)
             proj_frame.configure(width=target_width, height=required_height)
 
             ttk.Separator(left, orient="horizontal").pack(fill="x", pady=(0, 6))
