@@ -1032,7 +1032,12 @@ def start_gui():
                 for a in self.delivery_db.addresses_sorted()
             ]
 
-            doc_type_opts = ["Geen", "Bestelbon", "Offerteaanvraag"]
+            doc_type_opts = [
+                "Geen",
+                "Bestelbon",
+                "Standaard bon",
+                "Offerteaanvraag",
+            ]
             self._doc_type_prefixes = {
                 _prefix_for_doc_type(t) for t in doc_type_opts
             }

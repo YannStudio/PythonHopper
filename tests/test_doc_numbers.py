@@ -66,6 +66,7 @@ def test_doc_number_in_name_and_header(tmp_path):
 
 def test_prefix_helper():
     assert _prefix_for_doc_type("Bestelbon") == "BB-"
+    assert _prefix_for_doc_type("Standaard bon") == "BB-"
     assert _prefix_for_doc_type("Offerteaanvraag") == "OFF-"
     assert _prefix_for_doc_type("Onbekend") == ""
 
