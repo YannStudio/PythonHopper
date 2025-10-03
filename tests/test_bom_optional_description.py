@@ -22,11 +22,21 @@ def test_load_bom_without_description(tmp_path):
         "Bestanden gevonden",
         "Status",
         "Materiaal",
+        "Supplier",
+        "Supplier code",
+        "Manufacturer",
+        "Manufacturer code",
+        "Finish",
+        "RAL color",
         "Aantal",
         "Oppervlakte",
         "Gewicht",
     ]
     assert df["Description"].tolist() == ["PN1", "PN2"]
+    assert df["Supplier"].tolist() == ["", ""]
+    assert df["Supplier code"].tolist() == ["", ""]
+    assert df["Manufacturer"].tolist() == ["", ""]
+    assert df["Manufacturer code"].tolist() == ["", ""]
 
     grouped = df.groupby("PartNumber")["Aantal"].sum().to_dict()
     assert grouped == {"PN1": 2, "PN2": 1}
