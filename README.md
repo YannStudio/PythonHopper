@@ -95,8 +95,8 @@ python cli.py clients export-csv clients_export.csv
 
 ### Documentnummer prefixen
 
-Bestelbonnen gebruiken doorgaans een nummer dat begint met `BB-`, terwijl
-offerteaanvragen `OFF-` gebruiken. De helperfunctie
+Bestelbonnen gebruiken doorgaans een nummer dat begint met `BB-`,
+standaard bonnen met `SB-` en offerteaanvragen met `OFF-`. De helperfunctie
 `_prefix_for_doc_type("Bestelbon")` geeft bijvoorbeeld `BB-` terug zodat deze
 prefix automatisch kan worden ingevuld.
 

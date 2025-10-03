@@ -126,6 +126,8 @@ def _prefix_for_doc_type(doc_type: str) -> str:
     Unknown types return an empty prefix.
     """
     t = (doc_type or "").strip().lower()
+    if t.startswith("standaard"):
+        return "SB-"
     if t.startswith("bestel"):
         return "BB-"
     if t.startswith("offerte"):

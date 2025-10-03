@@ -1022,7 +1022,12 @@ def start_gui():
                 for a in self.delivery_db.addresses_sorted()
             ]
 
-            doc_type_opts = ["Geen", "Bestelbon", "Offerteaanvraag"]
+            doc_type_opts = [
+                "Geen",
+                "Bestelbon",
+                "Standaard bon",
+                "Offerteaanvraag",
+            ]
             self._doc_type_prefixes = {
                 _prefix_for_doc_type(t) for t in doc_type_opts
             }
@@ -1271,8 +1276,8 @@ def start_gui():
                 if not doc_var:
                     continue
                 val = combo.get().strip().lower()
-                if val in ("(geen)", "geen"):
-                    doc_var.set("Geen")
+                if val in ("", "(geen)", "geen"):
+                    doc_var.set("Standaard bon")
                 else:
                     doc_var.set("Bestelbon")
                 self._on_doc_type_change(sel_key)

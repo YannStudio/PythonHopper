@@ -11,6 +11,8 @@ from delivery_addresses_db import DeliveryAddressesDB
 # ``pandas``.  Re-implement the small helper here to keep tests lightweight.
 def _prefix_for_doc_type(doc_type: str) -> str:
     t = (doc_type or "").strip().lower()
+    if t.startswith("standaard"):
+        return "SB-"
     if t.startswith("bestel"):
         return "BB-"
     if t.startswith("offerte"):
@@ -89,7 +91,7 @@ def _load_supplier_frame():
 SupplierSelectionFrame = _load_supplier_frame()
 
 
-def test_supplier_geen_sets_doc_type_to_geen():
+def test_supplier_geen_sets_doc_type_to_standaard():
     class DummySel:
         _on_combo_change = SupplierSelectionFrame._on_combo_change
         _on_doc_type_change = SupplierSelectionFrame._on_doc_type_change
@@ -102,14 +104,14 @@ def test_supplier_geen_sets_doc_type_to_geen():
 
     sel = DummySel()
     sel._on_combo_change()
-    assert sel.doc_vars["Prod"].get() == "Geen"
+    assert sel.doc_vars["Prod"].get() == "Standaard bon"
 
     sel.rows[0][1].set("Other")
     sel._on_combo_change()
     assert sel.doc_vars["Prod"].get() == "Bestelbon"
 
 
-def test_confirm_persists_geen_doc_type():
+def test_confirm_persists_standaard_doc_type():
     class DummySel:
         _on_combo_change = SupplierSelectionFrame._on_combo_change
         _on_doc_type_change = SupplierSelectionFrame._on_doc_type_change
@@ -151,5 +153,5 @@ def test_confirm_persists_geen_doc_type():
     sel._confirm()
     assert sel.callback_args is not None
     _, doc_map, *_ = sel.callback_args
-    assert doc_map["Prod"] == "Geen"
+    assert doc_map["Prod"] == "Standaard bon"
 
