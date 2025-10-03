@@ -1555,6 +1555,36 @@ def start_gui():
                 self.app.bundle_dry_run_var,
             )
 
+            template_frame = tk.LabelFrame(
+                export_options,
+                text="BOM-template",
+            )
+            template_frame.grid(
+                row=export_options.grid_size()[1],
+                column=0,
+                sticky="ew",
+                padx=12,
+                pady=(10, 12),
+            )
+            template_frame.columnconfigure(0, weight=1)
+
+            tk.Label(
+                template_frame,
+                text=(
+                    "Download een leeg Excel-sjabloon met alle kolommen van de BOM."
+                    " Handig om gegevens vooraf in te vullen of te delen met collega's."
+                ),
+                justify="left",
+                anchor="w",
+                wraplength=480,
+            ).grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 4))
+
+            tk.Button(
+                template_frame,
+                text="Download BOM template",
+                command=self._download_bom_template,
+            ).grid(row=1, column=0, sticky="w", padx=10, pady=(0, 10))
+
             footer_frame = tk.LabelFrame(
                 self,
                 text="Bestelbon/offerte onderschrift",
@@ -1699,6 +1729,33 @@ def start_gui():
         def _reset_footer_note(self) -> None:
             self.app.update_footer_note(DEFAULT_FOOTER_NOTE)
             self._reload_footer_note()
+
+        def _download_bom_template(self) -> None:
+            path_str = filedialog.asksaveasfilename(
+                parent=self,
+                title="BOM-template opslaan",
+                defaultextension=".xlsx",
+                filetypes=(("Excel-werkboek", "*.xlsx"), ("Alle bestanden", "*.*")),
+            )
+            if not path_str:
+                return
+
+            target_path = Path(path_str)
+            try:
+                BOMCustomTab.write_template_workbook(target_path)
+            except Exception as exc:
+                messagebox.showerror("Opslaan mislukt", str(exc), parent=self)
+                return
+
+            messagebox.showinfo(
+                "Template opgeslagen",
+                (
+                    "Het lege BOM-sjabloon is opgeslagen. Vul het formulier in en"
+                    " importeer de gegevens later in de Custom BOM-tab.\n\n"
+                    f"Locatie: {target_path}"
+                ),
+                parent=self,
+            )
 
         def _update_listbox_height(self, item_count: int) -> None:
             visible = max(1, item_count)
