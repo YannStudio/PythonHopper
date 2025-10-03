@@ -870,6 +870,9 @@ def start_gui():
         """Per productie: type-to-filter of dropdown; rechts detailkaart (klik = selecteer).
            Knoppen altijd zichtbaar onderaan.
         """
+
+        LABEL_COLUMN_WIDTH = 30
+
         def __init__(
             self,
             master,
@@ -1025,47 +1028,44 @@ def start_gui():
             }
 
             header_row = tk.Frame(left)
-            header_row.pack(fill="x", pady=(8,3))
-            tk.Label(
-                header_row,
-                text="Producttype",
-                width=18,
+            header_row.pack(fill="x", pady=(8, 3))
+            header_label_kwargs = dict(
                 anchor="w",
                 justify="left",
                 background=left.cget("bg"),
-            ).pack(side="left")
+            )
+            header_font = ("TkDefaultFont", 10, "bold")
+            tk.Label(
+                header_row,
+                text="Producttype",
+                width=self.LABEL_COLUMN_WIDTH,
+                font=header_font,
+                **header_label_kwargs,
+            ).pack(side="left", padx=(0, 6))
             tk.Label(
                 header_row,
                 text="Leverancier",
                 width=50,
-                anchor="w",
-                justify="left",
-                background=left.cget("bg"),
-            ).pack(side="left", padx=6)
+                **header_label_kwargs,
+            ).pack(side="left", padx=(0, 6))
             tk.Label(
                 header_row,
                 text="Documenttype",
                 width=18,
-                anchor="w",
-                justify="left",
-                background=left.cget("bg"),
-            ).pack(side="left", padx=6)
+                **header_label_kwargs,
+            ).pack(side="left", padx=(0, 6))
             tk.Label(
                 header_row,
                 text="Nr.",
                 width=12,
-                anchor="w",
-                justify="left",
-                background=left.cget("bg"),
-            ).pack(side="left", padx=6)
+                **header_label_kwargs,
+            ).pack(side="left", padx=(0, 6))
             tk.Label(
                 header_row,
                 text="Leveradres",
                 width=50,
-                anchor="w",
-                justify="left",
-                background=left.cget("bg"),
-            ).pack(side="left", padx=6)
+                **header_label_kwargs,
+            ).pack(side="left", padx=(0, 6))
 
             self.finish_label_by_key: Dict[str, str] = {
                 entry.get("key", ""): _to_str(entry.get("label")) or _to_str(entry.get("key"))
@@ -1078,11 +1078,16 @@ def start_gui():
             def add_row(display_text: str, sel_key: str, metadata: Dict[str, str]):
                 row = tk.Frame(left)
                 row.pack(fill="x", pady=3)
-                tk.Label(row, text=display_text, width=18, anchor="w").pack(side="left")
+                tk.Label(
+                    row,
+                    text=display_text,
+                    width=self.LABEL_COLUMN_WIDTH,
+                    anchor="w",
+                ).pack(side="left", padx=(0, 6))
                 var = tk.StringVar()
                 self.sel_vars[sel_key] = var
                 combo = ttk.Combobox(row, textvariable=var, state="normal", width=50)
-                combo.pack(side="left", padx=6)
+                combo.pack(side="left", padx=(0, 6))
                 combo.bind("<<ComboboxSelected>>", self._on_combo_change)
                 combo.bind(
                     "<FocusIn>", lambda _e, key=sel_key: self._on_focus_key(key)
@@ -1101,7 +1106,7 @@ def start_gui():
                     state="readonly",
                     width=18,
                 )
-                doc_combo.pack(side="left", padx=6)
+                doc_combo.pack(side="left", padx=(0, 6))
                 doc_combo.bind(
                     "<<ComboboxSelected>>",
                     lambda _e, key=sel_key: self._on_doc_type_change(key),
@@ -1109,7 +1114,9 @@ def start_gui():
 
                 doc_num_var = tk.StringVar()
                 self.doc_num_vars[sel_key] = doc_num_var
-                tk.Entry(row, textvariable=doc_num_var, width=12).pack(side="left", padx=6)
+                tk.Entry(row, textvariable=doc_num_var, width=12).pack(
+                    side="left", padx=(0, 6)
+                )
 
                 dvar = tk.StringVar(value="Geen")
                 self.delivery_vars[sel_key] = dvar
@@ -1120,7 +1127,7 @@ def start_gui():
                     state="readonly",
                     width=50,
                 )
-                dcombo.pack(side="left", padx=6)
+                dcombo.pack(side="left", padx=(0, 6))
                 self.delivery_combos[sel_key] = dcombo
 
                 self.rows.append((sel_key, combo))
@@ -1137,13 +1144,16 @@ def start_gui():
 
             if finishes:
                 ttk.Separator(left, orient="horizontal").pack(fill="x", pady=(12, 6))
+                finishes_header = tk.Frame(left)
+                finishes_header.pack(fill="x")
                 tk.Label(
-                    left,
+                    finishes_header,
                     text="Afwerkingen",
+                    width=self.LABEL_COLUMN_WIDTH,
                     anchor="w",
                     background=left.cget("bg"),
                     font=("TkDefaultFont", 10, "bold"),
-                ).pack(fill="x", padx=2)
+                ).pack(side="left", padx=(0, 6))
                 for entry in finishes:
                     finish_key = entry.get("key", "")
                     if not finish_key:
