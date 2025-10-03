@@ -35,7 +35,7 @@ wordt door ``Ctrl+Z`` in omgekeerde volgorde verwerkt.
 CSV-schema
 ==========
 Er worden zestien vaste kolommen geëxporteerd in deze volgorde:
-``PartNumber, Description, QTY., Profile, Length profile, Thickness, Production, Material, Supplier, Supplier code, Manufacturer, Manufacturer code, Finish, RAL color, Weight (kg), Surface Area (m²)``.
+``PartNumber, Description, QTY., Profile, Length profile, Thickness, Production, Material, Finish, RAL color, Weight (kg), Surface Area (m²), Supplier, Supplier code, Manufacturer, Manufacturer code``.
 Velden worden met een komma gescheiden en automatisch gequote door ``csv.writer``.
 
 Notebook-integratie
@@ -124,14 +124,14 @@ class BOMCustomTab(ttk.Frame):
         "Thickness",
         "Production",
         "Material",
-        "Supplier",
-        "Supplier code",
-        "Manufacturer",
-        "Manufacturer code",
         "Finish",
         "RAL color",
         "Weight (kg)",
         "Surface Area (m²)",
+        "Supplier",
+        "Supplier code",
+        "Manufacturer",
+        "Manufacturer code",
     )
     DEFAULT_EMPTY_ROWS: int = 20
     COLUMN_PADDING: int = 24

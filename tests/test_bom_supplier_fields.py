@@ -64,14 +64,14 @@ def test_custom_bom_export_includes_supplier_columns(tmp_path):
             "5",
             "Laser",
             "Steel",
-            " Supplier BV ",
-            " SUP-42 ",
-            " Maker BV ",
-            " M-007 ",
             "Anodized",
             "RAL9005",
             "12",
             "3.4",
+            " Supplier BV ",
+            " SUP-42 ",
+            " Maker BV ",
+            " M-007 ",
         ]
     ]
 
@@ -82,5 +82,11 @@ def test_custom_bom_export_includes_supplier_columns(tmp_path):
         header = next(reader)
         data = next(reader)
 
+    assert list(BOMCustomTab.HEADERS[-4:]) == [
+        "Supplier",
+        "Supplier code",
+        "Manufacturer",
+        "Manufacturer code",
+    ]
     assert header == list(BOMCustomTab.HEADERS)
-    assert data[8:12] == ["Supplier BV", "SUP-42", "Maker BV", "M-007"]
+    assert data[-4:] == ["Supplier BV", "SUP-42", "Maker BV", "M-007"]
