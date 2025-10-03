@@ -91,7 +91,7 @@ def _load_supplier_frame():
 SupplierSelectionFrame = _load_supplier_frame()
 
 
-def test_supplier_geen_sets_doc_type_to_geen():
+def test_supplier_none_sets_doc_type_to_standard():
     class DummySel:
         _on_combo_change = SupplierSelectionFrame._on_combo_change
         _on_doc_type_change = SupplierSelectionFrame._on_doc_type_change
@@ -104,14 +104,14 @@ def test_supplier_geen_sets_doc_type_to_geen():
 
     sel = DummySel()
     sel._on_combo_change()
-    assert sel.doc_vars["Prod"].get() == "Geen"
+    assert sel.doc_vars["Prod"].get() == "Standaard bon"
 
     sel.rows[0][1].set("Other")
     sel._on_combo_change()
     assert sel.doc_vars["Prod"].get() == "Bestelbon"
 
 
-def test_confirm_persists_geen_doc_type():
+def test_confirm_persists_standard_doc_type():
     class DummySel:
         _on_combo_change = SupplierSelectionFrame._on_combo_change
         _on_doc_type_change = SupplierSelectionFrame._on_doc_type_change
@@ -153,5 +153,59 @@ def test_confirm_persists_geen_doc_type():
     sel._confirm()
     assert sel.callback_args is not None
     _, doc_map, *_ = sel.callback_args
-    assert doc_map["Prod"] == "Geen"
+    assert doc_map["Prod"] == "Standaard bon"
+
+
+def test_supplier_empty_string_sets_doc_type_to_standard():
+    class DummySel:
+        _on_combo_change = SupplierSelectionFrame._on_combo_change
+        _on_doc_type_change = SupplierSelectionFrame._on_doc_type_change
+
+        def __init__(self):
+            self.rows = [("Prod", DummyCombo(""))]
+            self.doc_vars = {"Prod": DummyVar("Bestelbon")}
+            self.doc_num_vars = {"Prod": DummyVar("")}
+            self._update_preview_from_any_combo = lambda: None
+
+    sel = DummySel()
+    sel._on_combo_change()
+    assert sel.doc_vars["Prod"].get() == "Standaard bon"
+
+
+def test_clear_saved_suppliers_sets_doc_type_to_standard():
+    class DummyDB:
+        def __init__(self):
+            self.defaults_by_production = {"Prod": "Some"}
+            self.defaults_by_finish = {"Fin": "Other"}
+            self.saved = False
+
+        def save(self):
+            self.saved = True
+
+        def suppliers_sorted(self):
+            return []
+
+    class DummySel:
+        _clear_saved_suppliers = SupplierSelectionFrame._clear_saved_suppliers
+        _on_combo_change = SupplierSelectionFrame._on_combo_change
+        _on_doc_type_change = SupplierSelectionFrame._on_doc_type_change
+
+        def __init__(self):
+            self.db = DummyDB()
+            combo = DummyCombo("Leverancier")
+            self.rows = [("Prod", combo)]
+            self.doc_vars = {"Prod": DummyVar("Bestelbon")}
+            self.doc_num_vars = {"Prod": DummyVar("")}
+            self.delivery_combos = {"Prod": DummyCombo("Leveradres wordt nog meegedeeld")}
+            self.delivery_vars = {"Prod": DummyVar("Leveradres wordt nog meegedeeld")}
+            self._update_preview_from_any_combo = lambda: None
+            self._doc_type_prefixes = {"BB-"}
+
+    sel = DummySel()
+    sel._clear_saved_suppliers()
+
+    assert sel.db.saved is True
+    assert sel.rows[0][1].get() == "(geen)"
+    assert sel.doc_vars["Prod"].get() == "Standaard bon"
+    assert sel.delivery_combos["Prod"].get() == "Geen"
 
