@@ -1508,6 +1508,14 @@ def start_gui():
             export_options.grid(row=0, column=0, sticky="ew")
             export_options.columnconfigure(0, weight=1)
 
+            ttk.Label(
+                export_options,
+                text=BOMCustomTab.template_help_summary(),
+                wraplength=520,
+                justify="left",
+                anchor="w",
+            ).grid(row=0, column=0, sticky="ew", padx=12, pady=(8, 0))
+
             def _add_option(
                 parent: tk.Widget,
                 text: str,

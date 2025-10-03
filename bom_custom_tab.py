@@ -127,9 +127,41 @@ class BOMCustomTab(ttk.Frame):
         "Weight (kg)",
         "Surface Area (m²)",
     )
+    SUPPLIER_FIELDS: Tuple[str, ...] = (
+        "Supplier code",
+        "Manufacturer code",
+    )
     DEFAULT_EMPTY_ROWS: int = 20
     COLUMN_PADDING: int = 24
     TRAILING_GUTTER: int = 12
+
+    @classmethod
+    def template_help_text(cls, app_name: str) -> str:
+        column_lines = "\n".join(f"• {header}" for header in cls.HEADERS)
+        supplier_lines = "\n".join(f"  - {field}" for field in cls.SUPPLIER_FIELDS)
+        return (
+            "Beschikbare kolommen in de Custom BOM:\n"
+            f"{column_lines}\n"
+            "Nieuwe velden voor leverancier/fabrikant:\n"
+            f"{supplier_lines}\n\n"
+            "Sjabloonrichtlijnen:\n"
+            "- Start vanuit deze tab of de download in Settings zodat de kolomnamen gelijk blijven.\n"
+            "- Voeg eigen kolommen alleen toe achteraan wanneer alle tools die kennen.\n\n"
+            "Exportgedrag:\n"
+            f"- 'Exporteren' schrijft naar een tijdelijke CSV in de {app_name}-map en overschrijft de vorige export.\n"
+            "- Een callback of <<CustomBOMReady>>-event krijgt pad en rij-aantal terug.\n\n"
+            "Tip: gebruik vaste codering (bijv. hoofdletters, vaste scheidingstekens) voor leverancier- en fabrikantcodes "
+            "zodat matching en import elders consistent blijft."
+        )
+
+    @classmethod
+    def template_help_summary(cls) -> str:
+        base_preview = ", ".join(cls.HEADERS[:4]) + ", …"
+        supplier_preview = " & ".join(cls.SUPPLIER_FIELDS)
+        return (
+            f"Downloadknop: haalt het sjabloon met kolommen ({base_preview}) plus nieuwe {supplier_preview}. "
+            "Bewaar de kolomnamen en gebruik eenduidige leverancier-/fabrikantcodes (bijv. vaste hoofdletters) zodat exports naadloos blijven aansluiten."
+        )
 
     def __init__(
         self,
@@ -172,7 +204,21 @@ class BOMCustomTab(ttk.Frame):
         export_btn = ttk.Button(bar, text="Exporteren", command=self._export_temp)
         export_btn.pack(side="left", padx=(0, 6))
 
-        ttk.Label(bar, textvariable=self.status_var, anchor="w").pack(side="left", fill="x", expand=True)
+        ttk.Label(bar, textvariable=self.status_var, anchor="w").pack(
+            side="left", fill="x", expand=True
+        )
+
+        ttk.Button(bar, text="Kolom-info", command=self._show_template_help).pack(
+            side="right", padx=(6, 0)
+        )
+
+    def _show_template_help(self) -> None:
+        parent = self.winfo_toplevel() if self.winfo_exists() else None
+        messagebox.showinfo(
+            "Custom BOM-sjabloon",
+            self.template_help_text(self.app_name),
+            parent=parent,
+        )
 
     def _build_sheet(self) -> None:
         container = ttk.Frame(self)
