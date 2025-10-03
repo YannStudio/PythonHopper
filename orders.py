@@ -127,7 +127,7 @@ def _prefix_for_doc_type(doc_type: str) -> str:
     """
     t = (doc_type or "").strip().lower()
     if t.startswith("standaard"):
-        return "BB-"
+        return "BOM-"
     if t.startswith("bestel"):
         return "BB-"
     if t.startswith("offerte"):
