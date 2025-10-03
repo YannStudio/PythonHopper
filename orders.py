@@ -126,6 +126,8 @@ def _prefix_for_doc_type(doc_type: str) -> str:
     Unknown types return an empty prefix.
     """
     t = (doc_type or "").strip().lower()
+    if t.startswith("standaard"):
+        return "BB-"
     if t.startswith("bestel"):
         return "BB-"
     if t.startswith("offerte"):
@@ -223,7 +225,7 @@ def describe_finish_combo(
 def generate_pdf_order_platypus(
     path: str,
     company_info: Dict[str, object],
-    supplier: Supplier,
+    supplier: Supplier | None,
     production: str,
     items: List[Dict[str, str]],
     doc_type: str = "Bestelbon",
@@ -260,6 +262,9 @@ def generate_pdf_order_platypus(
     text_style = styles["Normal"]
     text_style.leading = 13
     small_style = ParagraphStyle("small", parent=text_style, fontSize=8.5, leading=10.5)
+
+    doc_type_text = (_to_str(doc_type).strip() or "Bestelbon")
+    is_standaard_doc = doc_type_text.lower().startswith("standaard")
 
     doc_lines: List[str] = []
     if doc_number:
@@ -327,31 +332,35 @@ def generate_pdf_order_platypus(
                 except Exception:
                     logo_flowable = None
 
-    # Supplier info with full address and contact details
-    addr_parts = []
-    if supplier.adres_1:
-        addr_parts.append(supplier.adres_1)
-    if supplier.adres_2:
-        addr_parts.append(supplier.adres_2)
-    pc_gem = " ".join(x for x in [supplier.postcode, supplier.gemeente] if x)
-    if pc_gem:
-        addr_parts.append(pc_gem)
-    if supplier.land:
-        addr_parts.append(supplier.land)
-    full_addr = ", ".join(addr_parts)
+    supp_lines: List[str] = []
+    if supplier is not None and not is_standaard_doc:
+        addr_parts = []
+        if supplier.adres_1:
+            addr_parts.append(supplier.adres_1)
+        if supplier.adres_2:
+            addr_parts.append(supplier.adres_2)
+        pc_gem = " ".join(x for x in [supplier.postcode, supplier.gemeente] if x)
+        if pc_gem:
+            addr_parts.append(pc_gem)
+        if supplier.land:
+            addr_parts.append(supplier.land)
+        full_addr = ", ".join(addr_parts)
 
-    supp_lines = [f"<b>Besteld bij:</b> {supplier.supplier}"]
-    if full_addr:
-        supp_lines.append(full_addr)
-    supp_lines.append(f"BTW: {supplier.btw or ''}")
-    if supplier.contact_sales:
-        supp_lines.append(f"Contact sales: {supplier.contact_sales}")
-    if supplier.sales_email:
-        supp_lines.append(f"E-mail: {supplier.sales_email}")
-    if supplier.phone:
-        supp_lines.append(f"Tel: {supplier.phone}")
+        supp_lines = [f"<b>Besteld bij:</b> {supplier.supplier}"]
+        if full_addr:
+            supp_lines.append(full_addr)
+        supp_lines.append(f"BTW: {supplier.btw or ''}")
+        if supplier.contact_sales:
+            supp_lines.append(f"Contact sales: {supplier.contact_sales}")
+        if supplier.sales_email:
+            supp_lines.append(f"E-mail: {supplier.sales_email}")
+        if supplier.phone:
+            supp_lines.append(f"Tel: {supplier.phone}")
 
-    left_lines = company_lines + [""] + supp_lines
+    left_lines = list(company_lines)
+    if supp_lines:
+        left_lines.append("")
+        left_lines.extend(supp_lines)
     left_paragraph = Paragraph("<br/>".join(left_lines), text_style)
     left_elements: List[object] = []
     if logo_flowable is not None:
@@ -363,7 +372,7 @@ def generate_pdf_order_platypus(
         left_cell = KeepTogether(left_elements)
 
     right_lines: List[str] = []
-    if delivery:
+    if delivery and not is_standaard_doc:
         # Delivery address block with each piece of information on its own line
         right_lines.append("<b>Leveradres:</b>")
         right_lines.append(delivery.name)
@@ -373,7 +382,11 @@ def generate_pdf_order_platypus(
             right_lines.append(delivery.remarks)
 
     story = []
-    title = f"{doc_type} {label_kind_clean}: {production}" if production else f"{doc_type}"
+    title = (
+        f"{doc_type_text} {label_kind_clean}: {production}"
+        if production
+        else f"{doc_type_text}"
+    )
     story.append(Paragraph(title, title_style))
     if doc_lines:
         story.append(Paragraph("<br/>".join(doc_lines), text_style))
@@ -594,6 +607,9 @@ def write_order_excel(
         columns=["PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht"],
     )
 
+    doc_type_text = (_to_str(doc_type).strip() or "Bestelbon")
+    is_standaard_doc = doc_type_text.lower().startswith("standaard")
+
     header_lines: List[Tuple[str, str]] = []
     today = datetime.date.today().strftime("%Y-%m-%d")
     if doc_number:
@@ -617,7 +633,11 @@ def write_order_excel(
                 ("", ""),
             ]
         )
-    if supplier:
+    supplier_name = _to_str(supplier.supplier).strip() if supplier else ""
+    include_supplier_block = supplier is not None and (
+        not is_standaard_doc or bool(supplier_name)
+    )
+    if include_supplier_block:
         addr_parts = []
         if supplier.adres_1:
             addr_parts.append(supplier.adres_1)
@@ -639,7 +659,14 @@ def write_order_excel(
                 ("", ""),
             ]
         )
-    if delivery:
+    include_delivery_block = False
+    if delivery is not None:
+        delivery_has_content = any(
+            _to_str(value).strip()
+            for value in (delivery.name, delivery.address, delivery.remarks)
+        )
+        include_delivery_block = not is_standaard_doc or delivery_has_content
+    if include_delivery_block and delivery:
         header_lines.extend(
             [
                 ("Leveradres", ""),
@@ -895,6 +922,8 @@ def copy_per_production_and_orders(
         if doc_num and prefix and not doc_num.upper().startswith(prefix.upper()):
             doc_num = f"{prefix}{doc_num}"
         num_part = f"_{doc_num}" if doc_num else ""
+        doc_type_lower = doc_type.lower()
+        is_standaard_doc = doc_type_lower.startswith("standaard")
 
         zf = None
         if zip_parts:
@@ -981,17 +1010,24 @@ def copy_per_production_and_orders(
             "logo_path": client.logo_path if client else "",
             "logo_crop": client.logo_crop if client else None,
         }
-        if supplier.supplier:
+        supplier_name_clean = _to_str(supplier.supplier).strip()
+        delivery = delivery_map.get(prod)
+        supplier_for_docs: Supplier | None = supplier
+        delivery_for_docs = delivery
+        if is_standaard_doc and not supplier_name_clean:
+            supplier_for_docs = None
+            delivery_for_docs = None
+
+        if supplier_name_clean or is_standaard_doc:
             excel_path = os.path.join(
                 prod_folder, f"{doc_type}{num_part}_{prod}_{today}.xlsx"
             )
-            delivery = delivery_map.get(prod)
             write_order_excel(
                 excel_path,
                 items,
                 company,
-                supplier,
-                delivery,
+                supplier_for_docs,
+                delivery_for_docs,
                 doc_type,
                 doc_num or None,
                 project_number=project_number,
@@ -1007,13 +1043,13 @@ def copy_per_production_and_orders(
                 generate_pdf_order_platypus(
                     pdf_path,
                     company,
-                    supplier,
+                    supplier_for_docs,
                     prod,
                     items,
                     doc_type=doc_type,
                     doc_number=doc_num or None,
                     footer_note=footer_note_text,
-                    delivery=delivery,
+                    delivery=delivery_for_docs,
                     project_number=project_number,
                     project_name=project_name,
                     label_kind="productie",
@@ -1117,11 +1153,16 @@ def copy_per_production_and_orders(
             chosen[make_finish_selection_key(finish_key)] = supplier.supplier
             if remember_defaults and supplier.supplier not in ("", "Onbekend"):
                 db.set_default_finish(finish_key, supplier.supplier)
-            if not supplier.supplier:
-                continue
 
             raw_doc_type = finish_doc_type_map.get(finish_key, "Bestelbon")
             doc_type = _to_str(raw_doc_type).strip() or "Bestelbon"
+            doc_type_lower = doc_type.lower()
+            is_standaard_doc = doc_type_lower.startswith("standaard")
+
+            supplier_name_clean = _to_str(supplier.supplier).strip()
+            if not supplier_name_clean and not is_standaard_doc:
+                continue
+
             doc_num = _to_str(finish_doc_num_map.get(finish_key, "")).strip()
             prefix = _prefix_for_doc_type(doc_type)
             if doc_num and prefix and not doc_num.upper().startswith(prefix.upper()):
@@ -1148,6 +1189,11 @@ def copy_per_production_and_orders(
             label = _to_str(info.get("label")) or finish_key
             filename_component = info.get("filename_component") or finish_key
             delivery = finish_delivery_map.get(finish_key)
+            supplier_for_docs: Supplier | None = supplier
+            delivery_for_docs = delivery
+            if is_standaard_doc and not supplier_name_clean:
+                supplier_for_docs = None
+                delivery_for_docs = None
 
             excel_path = os.path.join(
                 target_dir,
@@ -1157,8 +1203,8 @@ def copy_per_production_and_orders(
                 excel_path,
                 items,
                 company,
-                supplier,
-                delivery,
+                supplier_for_docs,
+                delivery_for_docs,
                 doc_type,
                 doc_num or None,
                 project_number=project_number,
@@ -1174,13 +1220,13 @@ def copy_per_production_and_orders(
                 generate_pdf_order_platypus(
                     pdf_path,
                     company,
-                    supplier,
+                    supplier_for_docs,
                     label,
                     items,
                     doc_type=doc_type,
                     doc_number=doc_num or None,
                     footer_note=footer_note_text,
-                    delivery=delivery,
+                    delivery=delivery_for_docs,
                     project_number=project_number,
                     project_name=project_name,
                     label_kind="afwerking",
