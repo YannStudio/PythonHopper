@@ -1210,7 +1210,7 @@ def start_gui():
                 combo.set("(geen)")
 
             for sel_key in self.doc_vars:
-                self.doc_vars[sel_key].set("Geen")
+                self.doc_vars[sel_key].set("Standaard bon")
 
             for dcombo in self.delivery_combos.values():
                 dcombo.set("Geen")
@@ -1288,9 +1288,10 @@ def start_gui():
                 doc_var = self.doc_vars.get(sel_key)
                 if not doc_var:
                     continue
-                val = combo.get().strip().lower()
-                if val in ("(geen)", "geen"):
-                    doc_var.set("Geen")
+                raw_val = combo.get().strip()
+                norm_val = raw_val.lower()
+                if not raw_val or norm_val in ("(geen)", "geen"):
+                    doc_var.set("Standaard bon")
                 else:
                     doc_var.set("Bestelbon")
                 self._on_doc_type_change(sel_key)
