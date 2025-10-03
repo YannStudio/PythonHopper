@@ -62,7 +62,9 @@ from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import tkinter as tk
 import tkinter.font as tkfont
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
+
+import pandas as pd
 
 try:
     import tksheet
@@ -176,6 +178,9 @@ class BOMCustomTab(ttk.Frame):
         export_btn = ttk.Button(bar, text="Exporteren", command=self._export_temp)
         export_btn.pack(side="left", padx=(0, 6))
 
+        template_btn = ttk.Button(bar, text="Download template", command=self._download_template)
+        template_btn.pack(side="left", padx=(0, 6))
+
         ttk.Label(bar, textvariable=self.status_var, anchor="w").pack(side="left", fill="x", expand=True)
 
     def _build_sheet(self) -> None:
@@ -226,6 +231,36 @@ class BOMCustomTab(ttk.Frame):
     # Helpers
     def _update_status(self, text: str) -> None:
         self.status_var.set(text)
+
+    # ------------------------------------------------------------------
+    # Template
+    def _download_template(self) -> None:
+        """Vraag een doelpad en schrijf een leeg Excel-sjabloon."""
+
+        path_str = filedialog.asksaveasfilename(
+            parent=self,
+            title="BOM-template opslaan",
+            defaultextension=".xlsx",
+            filetypes=(("Excel-werkboek", "*.xlsx"), ("Alle bestanden", "*.*")),
+        )
+        if not path_str:
+            self._update_status("Download geannuleerd.")
+            return
+
+        target_path = Path(path_str)
+        try:
+            self.write_template_workbook(target_path)
+        except Exception as exc:
+            messagebox.showerror("Opslaan mislukt", str(exc), parent=self)
+            self._update_status("Fout bij opslaan van template.")
+            return
+
+        messagebox.showinfo(
+            "Template opgeslagen",
+            f"Leeg BOM-sjabloon opgeslagen als:\n{target_path}",
+            parent=self,
+        )
+        self._update_status(f"Template opgeslagen naar {target_path}.")
 
     def _snapshot_data(self) -> List[List[str]]:
         data = self.sheet.get_sheet_data()
@@ -662,6 +697,16 @@ class BOMCustomTab(ttk.Frame):
                 while len(cells) < len(self.HEADERS):
                     cells.append("")
                 writer.writerow(cells[: len(self.HEADERS)])
+
+    @classmethod
+    def write_template_workbook(cls, target: Path) -> None:
+        """Schrijf een leeg Excel-sjabloon met de standaardkolommen."""
+
+        normalized = Path(target)
+        if not normalized.parent.exists():
+            normalized.parent.mkdir(parents=True, exist_ok=True)
+        df = pd.DataFrame(columns=cls.HEADERS)
+        df.to_excel(normalized, index=False)
 
     # ------------------------------------------------------------------
     # API
