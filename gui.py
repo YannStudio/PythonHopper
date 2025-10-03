@@ -1178,12 +1178,12 @@ def start_gui():
                 text="Leverancier details\n(klik om te selecteren)",
                 labelanchor="n",
             )
-            preview_frame.grid(row=1, column=0, sticky="nsew")
+            preview_frame.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
             preview_frame.grid_rowconfigure(0, weight=1)
             preview_frame.grid_columnconfigure(0, weight=1)
 
             self.cards_frame = tk.Frame(preview_frame)
-            self.cards_frame.grid(row=0, column=0, sticky="nsew")
+            self.cards_frame.grid(row=0, column=0, sticky="nsew", pady=(8, 0))
 
             # Mapping voor combobox per selectie
             self.combo_by_key = getattr(self, "combo_by_key", {})
