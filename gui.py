@@ -2252,28 +2252,16 @@ def start_gui():
             self._rebuild_extension_checkbuttons()
             tk.Checkbutton(
                 options_frame,
-                text="Zip per productie",
-                variable=self.zip_var,
+                text="Zip per productie/finish",
+                variable=self.zip_per_finish_var,
                 anchor="w",
+                command=self._toggle_zip_per_finish,
             ).pack(anchor="w", pady=2)
             tk.Checkbutton(
                 options_frame,
                 text="Finish export",
                 variable=self.finish_export_var,
                 anchor="w",
-            ).pack(anchor="w", pady=2)
-            tk.Checkbutton(
-                options_frame,
-                text="Zip finish export",
-                variable=self.zip_finish_var,
-                anchor="w",
-            ).pack(anchor="w", pady=2)
-            tk.Checkbutton(
-                options_frame,
-                text="Zip per productie/finish",
-                variable=self.zip_per_finish_var,
-                anchor="w",
-                command=self._toggle_zip_per_finish,
             ).pack(anchor="w", pady=2)
             tk.Checkbutton(
                 export_name_inner,
