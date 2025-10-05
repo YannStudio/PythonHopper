@@ -150,6 +150,7 @@ class BOMCustomTab(ttk.Frame):
         _ensure_tksheet_available()
 
         super().__init__(master)
+        self.configure(padding=(12, 12))
         self.app_name = app_name
         self.on_custom_bom_ready = on_custom_bom_ready
         self.event_target = event_target
