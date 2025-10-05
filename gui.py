@@ -92,6 +92,7 @@ def start_gui():
     class ClientsManagerFrame(tk.Frame):
         def __init__(self, master, db: ClientsDB, on_change=None):
             super().__init__(master)
+            self.configure(padx=12, pady=12)
             self.db = db
             self.on_change = on_change
 
@@ -585,6 +586,7 @@ def start_gui():
     class DeliveryAddressesManagerFrame(tk.Frame):
         def __init__(self, master, db: DeliveryAddressesDB, on_change=None):
             super().__init__(master)
+            self.configure(padx=12, pady=12)
             self.db = db
             self.on_change = on_change
 
@@ -700,6 +702,7 @@ def start_gui():
     class SuppliersManagerFrame(tk.Frame):
         def __init__(self, master, db: SuppliersDB, on_change=None):
             super().__init__(master)
+            self.configure(padx=12, pady=12)
             self.db = db
             self.on_change = on_change
             search = tk.Frame(self)
@@ -887,6 +890,7 @@ def start_gui():
             project_name_var: tk.StringVar,
         ):
             super().__init__(master)
+            self.configure(padx=12, pady=12)
             self.db = db
             self.delivery_db = delivery_db
             self.callback = callback
@@ -2152,8 +2156,6 @@ def start_gui():
 
             self.nb = ttk.Notebook(tabs_container)
             self.nb.pack(fill="both", expand=True)
-            tab_padding = (12, 12)
-            self.tab_padding = tab_padding
             self.custom_bom_tab = BOMCustomTab(
                 self.nb,
                 app_name="Filehopper",
@@ -2161,24 +2163,29 @@ def start_gui():
                 event_target=self,
             )
             main = tk.Frame(self.nb)
-            self.nb.add(main, text="Main", padding=tab_padding)
-            self.nb.add(self.custom_bom_tab, text="Custom BOM", padding=tab_padding)
+            main.configure(padx=12, pady=12)
+            self.nb.add(main, text="Main")
+            self.nb.add(self.custom_bom_tab, text="Custom BOM")
             self.main_frame = main
             self.clients_frame = ClientsManagerFrame(
                 self.nb, self.client_db, on_change=self._on_db_change
             )
-            self.nb.add(self.clients_frame, text="Klant beheer", padding=tab_padding)
+            self.clients_frame.configure(padx=12, pady=12)
+            self.nb.add(self.clients_frame, text="Klant beheer")
             self.delivery_frame = DeliveryAddressesManagerFrame(
                 self.nb, self.delivery_db, on_change=self._on_db_change
             )
-            self.nb.add(self.delivery_frame, text="Leveradres beheer", padding=tab_padding)
+            self.delivery_frame.configure(padx=12, pady=12)
+            self.nb.add(self.delivery_frame, text="Leveradres beheer")
             self.suppliers_frame = SuppliersManagerFrame(
                 self.nb, self.db, on_change=self._on_db_change
             )
-            self.nb.add(self.suppliers_frame, text="Leverancier beheer", padding=tab_padding)
+            self.suppliers_frame.configure(padx=12, pady=12)
+            self.nb.add(self.suppliers_frame, text="Leverancier beheer")
 
             self.settings_frame = SettingsFrame(self.nb, self)
-            self.nb.add(self.settings_frame, text="⚙ Settings", padding=tab_padding)
+            self.settings_frame.configure(padx=12, pady=12)
+            self.nb.add(self.settings_frame, text="⚙ Settings")
 
             # Top folders
             top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
@@ -2915,7 +2922,6 @@ def start_gui():
                 for entry in finish_entries
             }
             sel_frame = None
-            tab_padding = getattr(self, "tab_padding", (12, 12))
 
             def on_sel(
                 sel_map: Dict[str, str],
@@ -3128,7 +3134,7 @@ def start_gui():
                 self.project_name_var,
             )
             self.sel_frame = sel_frame
-            self.nb.add(sel_frame, padding=tab_padding, state="hidden")
+            self.nb.add(sel_frame, state="hidden")
             self.nb.select(sel_frame)
 
         def _combine_pdf(self):
