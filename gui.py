@@ -35,6 +35,7 @@ from orders import (
 
 
 CLIENT_LOGO_DIR = Path("client_logos")
+MANUFACT_BRAND_COLOR = "#F7A600"
 
 
 def _norm(text: str) -> str:
@@ -2339,17 +2340,24 @@ def start_gui():
 
             # Actions
             act = tk.Frame(main); act.pack(fill="x", padx=8, pady=8)
-            tk.Button(act, text="Kopieer zonder submappen", command=self._copy_flat).pack(
-                side="left", padx=6
+            button_style = dict(
+                bg=MANUFACT_BRAND_COLOR,
+                activebackground=MANUFACT_BRAND_COLOR,
+                fg="white",
+                activeforeground="white",
             )
+            tk.Button(
+                act, text="Kopieer zonder submappen", command=self._copy_flat, **button_style
+            ).pack(side="left", padx=6)
             tk.Button(
                 act,
                 text="Kopieer per productie + bestelbonnen",
                 command=self._copy_per_prod,
+                **button_style,
             ).pack(side="left", padx=6)
-            tk.Button(act, text="Combine pdf", command=self._combine_pdf).pack(
-                side="left", padx=6
-            )
+            tk.Button(
+                act, text="Combine pdf", command=self._combine_pdf, **button_style
+            ).pack(side="left", padx=6)
 
             # Status
             self.status_var = tk.StringVar(value="Klaar")
