@@ -1736,6 +1736,7 @@ def start_gui():
                 title="BOM-template opslaan",
                 defaultextension=".xlsx",
                 filetypes=(("Excel-werkboek", "*.xlsx"), ("Alle bestanden", "*.*")),
+                initialfile=BOMCustomTab.default_template_filename(),
             )
             if not path_str:
                 return

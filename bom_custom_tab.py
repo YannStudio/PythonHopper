@@ -133,6 +133,7 @@ class BOMCustomTab(ttk.Frame):
         "Manufacturer",
         "Manufacturer code",
     )
+    TEMPLATE_DEFAULT_FILENAME: str = "BOM-FileHopper-Temp.xlsx"
     DEFAULT_EMPTY_ROWS: int = 20
     COLUMN_PADDING: int = 24
     TRAILING_GUTTER: int = 12
@@ -242,6 +243,7 @@ class BOMCustomTab(ttk.Frame):
             title="BOM-template opslaan",
             defaultextension=".xlsx",
             filetypes=(("Excel-werkboek", "*.xlsx"), ("Alle bestanden", "*.*")),
+            initialfile=self.default_template_filename(),
         )
         if not path_str:
             self._update_status("Download geannuleerd.")
@@ -707,6 +709,12 @@ class BOMCustomTab(ttk.Frame):
             normalized.parent.mkdir(parents=True, exist_ok=True)
         df = pd.DataFrame(columns=cls.HEADERS)
         df.to_excel(normalized, index=False)
+
+    @classmethod
+    def default_template_filename(cls) -> str:
+        """Geef de standaard bestandsnaam voor het templatesjabloon terug."""
+
+        return cls.TEMPLATE_DEFAULT_FILENAME
 
     # ------------------------------------------------------------------
     # API
