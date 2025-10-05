@@ -2069,6 +2069,14 @@ def start_gui():
             self.zip_finish_var = tk.IntVar(
                 master=self, value=1 if self.settings.zip_finish_exports else 0
             )
+            self.zip_per_finish_var = tk.IntVar(
+                master=self,
+                value=
+                1
+                if self.settings.zip_per_production
+                and self.settings.zip_finish_exports
+                else 0,
+            )
             self.export_date_prefix_var = tk.IntVar(
                 master=self, value=1 if self.settings.export_date_prefix else 0
             )
@@ -2123,6 +2131,10 @@ def start_gui():
                 self.bundle_dry_run_var,
             ):
                 var.trace_add("write", self._save_settings)
+
+            self.zip_var.trace_add("write", self._update_zip_per_finish_var)
+            self.zip_finish_var.trace_add("write", self._update_zip_per_finish_var)
+            self._update_zip_per_finish_var()
 
             tabs_wrapper = tk.Frame(self)
             tabs_wrapper.pack(fill="both", expand=True, padx=8, pady=(4, 0))
@@ -2257,6 +2269,13 @@ def start_gui():
                 anchor="w",
             ).pack(anchor="w", pady=2)
             tk.Checkbutton(
+                options_frame,
+                text="Zip per productie/finish",
+                variable=self.zip_per_finish_var,
+                anchor="w",
+                command=self._toggle_zip_per_finish,
+            ).pack(anchor="w", pady=2)
+            tk.Checkbutton(
                 export_name_inner,
                 text="Datumprefix (YYYYMMDD-)",
                 variable=self.export_date_prefix_var,
@@ -2369,6 +2388,19 @@ def start_gui():
                 self.client_combo.set(cur)
             elif opts:
                 self.client_combo.set(opts[0])
+
+        def _toggle_zip_per_finish(self):
+            enabled = bool(self.zip_per_finish_var.get())
+            desired = 1 if enabled else 0
+            if self.zip_var.get() != desired:
+                self.zip_var.set(desired)
+            if self.zip_finish_var.get() != desired:
+                self.zip_finish_var.set(desired)
+
+        def _update_zip_per_finish_var(self, *_args):
+            desired = 1 if (self.zip_var.get() and self.zip_finish_var.get()) else 0
+            if self.zip_per_finish_var.get() != desired:
+                self.zip_per_finish_var.set(desired)
 
         def _save_settings(self, *_args):
             if getattr(self, "_suspend_save", False):
