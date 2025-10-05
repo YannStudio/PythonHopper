@@ -2138,7 +2138,7 @@ def start_gui():
             self._update_zip_per_finish_var()
 
             tabs_wrapper = tk.Frame(self)
-            tabs_wrapper.pack(fill="both", expand=True, padx=8, pady=(4, 0))
+            tabs_wrapper.pack(fill="both", expand=True, padx=8, pady=(12, 0))
 
             tabs_background = (
                 style.lookup("TNotebook", "background")
@@ -2151,6 +2151,8 @@ def start_gui():
 
             self.nb = ttk.Notebook(tabs_container)
             self.nb.pack(fill="both", expand=True)
+            tab_padding = (12, 12)
+            self.tab_padding = tab_padding
             self.custom_bom_tab = BOMCustomTab(
                 self.nb,
                 app_name="Filehopper",
@@ -2158,24 +2160,24 @@ def start_gui():
                 event_target=self,
             )
             main = tk.Frame(self.nb)
-            self.nb.add(main, text="Main")
-            self.nb.add(self.custom_bom_tab, text="Custom BOM")
+            self.nb.add(main, text="Main", padding=tab_padding)
+            self.nb.add(self.custom_bom_tab, text="Custom BOM", padding=tab_padding)
             self.main_frame = main
             self.clients_frame = ClientsManagerFrame(
                 self.nb, self.client_db, on_change=self._on_db_change
             )
-            self.nb.add(self.clients_frame, text="Klant beheer")
+            self.nb.add(self.clients_frame, text="Klant beheer", padding=tab_padding)
             self.delivery_frame = DeliveryAddressesManagerFrame(
                 self.nb, self.delivery_db, on_change=self._on_db_change
             )
-            self.nb.add(self.delivery_frame, text="Leveradres beheer")
+            self.nb.add(self.delivery_frame, text="Leveradres beheer", padding=tab_padding)
             self.suppliers_frame = SuppliersManagerFrame(
                 self.nb, self.db, on_change=self._on_db_change
             )
-            self.nb.add(self.suppliers_frame, text="Leverancier beheer")
+            self.nb.add(self.suppliers_frame, text="Leverancier beheer", padding=tab_padding)
 
             self.settings_frame = SettingsFrame(self.nb, self)
-            self.nb.add(self.settings_frame, text="⚙ Settings")
+            self.nb.add(self.settings_frame, text="⚙ Settings", padding=tab_padding)
 
             # Top folders
             top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
@@ -2912,6 +2914,7 @@ def start_gui():
                 for entry in finish_entries
             }
             sel_frame = None
+            tab_padding = getattr(self, "tab_padding", (12, 12))
 
             def on_sel(
                 sel_map: Dict[str, str],
@@ -3124,7 +3127,7 @@ def start_gui():
                 self.project_name_var,
             )
             self.sel_frame = sel_frame
-            self.nb.add(sel_frame, state="hidden")
+            self.nb.add(sel_frame, padding=tab_padding, state="hidden")
             self.nb.select(sel_frame)
 
         def _combine_pdf(self):
