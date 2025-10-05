@@ -1500,7 +1500,7 @@ def start_gui():
 
             self.configure(padx=12, pady=12)
             self.columnconfigure(0, weight=1)
-            self.rowconfigure(2, weight=1)
+            self.rowconfigure(3, weight=1)
 
             export_options = tk.LabelFrame(
                 self, text="Exportopties", labelanchor="n"
@@ -1556,15 +1556,15 @@ def start_gui():
             )
 
             template_frame = tk.LabelFrame(
-                export_options,
+                self,
                 text="BOM-template",
             )
             template_frame.grid(
-                row=export_options.grid_size()[1],
+                row=1,
                 column=0,
                 sticky="ew",
-                padx=12,
-                pady=(10, 12),
+                padx=0,
+                pady=(12, 0),
             )
             template_frame.columnconfigure(0, weight=1)
 
@@ -1590,7 +1590,7 @@ def start_gui():
                 text="Bestelbon/offerte onderschrift",
                 labelanchor="n",
             )
-            footer_frame.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
+            footer_frame.grid(row=2, column=0, sticky="nsew", pady=(12, 0))
             footer_frame.columnconfigure(0, weight=1)
             footer_frame.rowconfigure(1, weight=1)
 
@@ -1633,7 +1633,7 @@ def start_gui():
             extensions_frame = tk.LabelFrame(
                 self, text="Bestandstypen", labelanchor="n"
             )
-            extensions_frame.grid(row=2, column=0, sticky="nsew", pady=(12, 0))
+            extensions_frame.grid(row=3, column=0, sticky="nsew", pady=(12, 0))
             extensions_frame.columnconfigure(0, weight=1)
             extensions_frame.rowconfigure(1, weight=1)
 
