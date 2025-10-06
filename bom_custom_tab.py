@@ -211,13 +211,7 @@ class BOMCustomTab(ttk.Frame):
         self.table_model = _UndoableTableModel(initial_df.copy(deep=True), self._on_model_change)
         self.table = Table(
             container,
-            model=self.table_model,
-            showtoolbar=False,
-            showstatusbar=False,
-        )
-        self.table.show()
-        self.table.bind("<Control-z>", self._on_undo)
-        self.table.bind("<Control-Z>", self._on_undo)
+
 
     # ------------------------------------------------------------------
     # Helpers
@@ -305,6 +299,7 @@ class BOMCustomTab(ttk.Frame):
             parent=self,
         )
         self._update_status(f"Template opgeslagen naar {target_path}.")
+
 
     def _confirm_clear(self) -> None:
         before_df = self.table_model.df.copy(deep=True)
