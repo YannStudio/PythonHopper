@@ -161,6 +161,7 @@ class BOMCustomTab(ttk.Frame):
         self.last_temp_csv_path: Optional[Path] = None
         self._sheet_container: Optional[tk.Widget] = None
         self._in_container_resize = False
+        self._single_click_after_id: Optional[str] = None
 
         self.status_var = tk.StringVar(value="")
 
@@ -219,9 +220,20 @@ class BOMCustomTab(ttk.Frame):
 
         self.sheet.bind("<Control-v>", self._on_paste)
         self.sheet.bind("<Control-V>", self._on_paste)
+        self.sheet.bind("<Command-v>", self._on_paste)
+        self.sheet.bind("<Command-V>", self._on_paste)
+        self.sheet.bind("<Control-c>", self._on_copy)
+        self.sheet.bind("<Control-C>", self._on_copy)
+        self.sheet.bind("<Command-c>", self._on_copy)
+        self.sheet.bind("<Command-C>", self._on_copy)
+        self.sheet.bind("<Control-x>", self._on_cut)
+        self.sheet.bind("<Control-X>", self._on_cut)
+        self.sheet.bind("<Command-x>", self._on_cut)
+        self.sheet.bind("<Command-X>", self._on_cut)
         self.sheet.bind("<Delete>", self._on_delete)
         self.sheet.bind("<Control-z>", self._on_undo)
         self.sheet.bind("<Control-Z>", self._on_undo)
+        self.sheet.MT.bind("<ButtonRelease-1>", self._on_single_click_release, add="+")
 
         self.sheet.extra_bindings("begin_edit_cell", self._on_begin_edit_cell)
         self.sheet.extra_bindings("end_edit_cell", self._on_end_edit_cell)
@@ -488,6 +500,49 @@ class BOMCustomTab(ttk.Frame):
             return cells[0]
         return 0, 0
 
+    def _get_selection_bounds(self) -> Optional[Tuple[int, int, int, int]]:
+        boxes = self.sheet.get_all_selection_boxes()
+        if boxes:
+            start_row, start_col, end_row, end_col = boxes[0]
+        else:
+            row, col = self._get_selection_start()
+            start_row = row
+            start_col = col
+            end_row = row
+            end_col = col
+
+        if start_row is None or start_col is None:
+            return None
+        if start_row < 0 or start_col < 0:
+            return None
+
+        total_rows = self.sheet.get_total_rows()
+        max_row_index = max(0, total_rows - 1)
+        max_col_index = max(0, len(self.HEADERS) - 1)
+
+        start_row = min(max(start_row, 0), max_row_index)
+        end_row = min(max(end_row, 0), max_row_index)
+        start_col = min(max(start_col, 0), max_col_index)
+        end_col = min(max(end_col, 0), max_col_index)
+
+        if start_row > end_row:
+            start_row, end_row = end_row, start_row
+        if start_col > end_col:
+            start_col, end_col = end_col, start_col
+
+        return start_row, start_col, end_row, end_col
+
+    def _selection_to_matrix(self, bounds: Tuple[int, int, int, int]) -> List[List[str]]:
+        start_row, start_col, end_row, end_col = bounds
+        matrix: List[List[str]] = []
+        for row in range(start_row, end_row + 1):
+            row_values: List[str] = []
+            for col in range(start_col, end_col + 1):
+                value = self._coerce_to_str(self.sheet.get_cell_data(row, col))
+                row_values.append(value)
+            matrix.append(row_values)
+        return matrix
+
     def _ensure_row_capacity(self, required_rows: int) -> None:
         current = self.sheet.get_total_rows()
         if required_rows > current:
@@ -574,6 +629,60 @@ class BOMCustomTab(ttk.Frame):
             self._update_status("Geen wijzigingen tijdens plakken.")
         return "break"
 
+    def _on_copy(self, event=None):
+        bounds = self._get_selection_bounds()
+        if not bounds:
+            return "break"
+
+        data = self._selection_to_matrix(bounds)
+        text = "\n".join("\t".join(row) for row in data)
+        self.clipboard_clear()
+        self.clipboard_append(text)
+
+        start_row, start_col, end_row, end_col = bounds
+        cell_count = (end_row - start_row + 1) * (end_col - start_col + 1)
+        suffix = "cel" if cell_count == 1 else "cellen"
+        self._update_status(f"{cell_count} {suffix} gekopieerd naar klembord.")
+        return "break"
+
+    def _on_cut(self, event=None):
+        bounds = self._get_selection_bounds()
+        if not bounds:
+            return "break"
+
+        before = self._snapshot_data()
+        data = self._selection_to_matrix(bounds)
+        text = "\n".join("\t".join(row) for row in data)
+        self.clipboard_clear()
+        self.clipboard_append(text)
+
+        start_row, start_col, end_row, end_col = bounds
+        changed: List[CellCoord] = []
+        for row in range(start_row, end_row + 1):
+            for col in range(start_col, end_col + 1):
+                old_val = self._coerce_to_str(self.sheet.get_cell_data(row, col))
+                if old_val == "":
+                    continue
+                self.sheet.set_cell_data(row, col, "", redraw=False)
+                changed.append((row, col))
+
+        if changed:
+            self.sheet.refresh()
+            self._auto_resize_columns({col for _, col in changed})
+        self._apply_row_striping()
+
+        after = self._snapshot_data()
+        self._push_undo("cut", before, after, changed)
+
+        if changed:
+            self._flash_cells(changed)
+            cell_count = len(changed)
+            suffix = "cel" if cell_count == 1 else "cellen"
+            self._update_status(f"{cell_count} {suffix} geknipt.")
+        else:
+            self._update_status("Geen waarden om te knippen.")
+        return "break"
+
     def _on_delete(self, event=None):
         cells = list(dict.fromkeys(self.sheet.get_selected_cells()))
         if not cells:
@@ -598,6 +707,41 @@ class BOMCustomTab(ttk.Frame):
         else:
             self._update_status("Geen cellen om te wissen.")
         return "break"
+
+    def _on_single_click_release(self, event) -> None:
+        if event is not None:
+            if event.state & 0x0001 or event.state & 0x0004 or event.state & 0x0008:
+                return
+        if self._single_click_after_id is not None:
+            try:
+                self.after_cancel(self._single_click_after_id)
+            except Exception:
+                pass
+            self._single_click_after_id = None
+        self._single_click_after_id = self.after(75, self._start_single_click_edit)
+
+    def _start_single_click_edit(self) -> None:
+        self._single_click_after_id = None
+        text_editor = getattr(self.sheet.MT, "text_editor", None)
+        if text_editor is not None and getattr(text_editor, "open", False):
+            return
+
+        bounds = self._get_selection_bounds()
+        if not bounds:
+            return
+        start_row, start_col, end_row, end_col = bounds
+        if start_row != end_row or start_col != end_col:
+            return
+
+        try:
+            self.sheet.focus_set()
+            self.sheet.MT.focus_set()
+        except Exception:
+            pass
+        try:
+            self.sheet.MT.open_cell(ignore_existing_editor=True)
+        except Exception:
+            pass
 
     def _confirm_clear(self) -> None:
         data_before = self._snapshot_data()
