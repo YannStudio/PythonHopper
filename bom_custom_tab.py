@@ -198,20 +198,18 @@ class BOMCustomTab(ttk.Frame):
             show_index=False,
         )
         self.sheet.enable_bindings(
-            (
-                "single_select",
-                "drag_select",
-                "select_all",
-                "column_select",
-                "column_width_resize",
-                "double_click_column_resize",
-                "double_click_select",
-                "copy",
-                "edit_cell",
-                "tab_key",
-                "arrowkeys",
-                "enter_key",
-            )
+            "single_select",
+            "drag_select",
+            "select_all",
+            "column_select",
+            "column_width_resize",
+            "double_click_column_resize",
+            "double_click_select",
+            "copy",
+            "edit_cell",
+            "tab_key",
+            "arrowkeys",
+            "enter_key",
         )
         self.sheet.set_sheet_data([])
         self._ensure_minimum_rows(self.DEFAULT_EMPTY_ROWS)
