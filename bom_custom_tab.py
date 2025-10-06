@@ -162,6 +162,7 @@ class BOMCustomTab(ttk.Frame):
         self._sheet_container: Optional[tk.Widget] = None
         self._in_container_resize = False
         self._single_click_after_id: Optional[str] = None
+        self._single_click_delay_ms = self._determine_single_click_delay()
 
         self.status_var = tk.StringVar(value="")
 
@@ -233,7 +234,9 @@ class BOMCustomTab(ttk.Frame):
         self.sheet.bind("<Delete>", self._on_delete)
         self.sheet.bind("<Control-z>", self._on_undo)
         self.sheet.bind("<Control-Z>", self._on_undo)
+        self.sheet.MT.bind("<ButtonPress-1>", self._on_single_click_press, add="+")
         self.sheet.MT.bind("<ButtonRelease-1>", self._on_single_click_release, add="+")
+        self.sheet.MT.bind("<Double-Button-1>", self._on_single_click_cancel, add="+")
 
         self.sheet.extra_bindings("begin_edit_cell", self._on_begin_edit_cell)
         self.sheet.extra_bindings("end_edit_cell", self._on_end_edit_cell)
@@ -712,13 +715,9 @@ class BOMCustomTab(ttk.Frame):
         if event is not None:
             if event.state & 0x0001 or event.state & 0x0004 or event.state & 0x0008:
                 return
-        if self._single_click_after_id is not None:
-            try:
-                self.after_cancel(self._single_click_after_id)
-            except Exception:
-                pass
-            self._single_click_after_id = None
-        self._single_click_after_id = self.after(75, self._start_single_click_edit)
+        self._cancel_pending_single_click()
+        delay = max(1, int(self._single_click_delay_ms))
+        self._single_click_after_id = self.after(delay, self._start_single_click_edit)
 
     def _start_single_click_edit(self) -> None:
         self._single_click_after_id = None
@@ -742,6 +741,30 @@ class BOMCustomTab(ttk.Frame):
             self.sheet.MT.open_cell(ignore_existing_editor=True)
         except Exception:
             pass
+
+    def _on_single_click_press(self, event) -> None:
+        self._cancel_pending_single_click()
+
+    def _on_single_click_cancel(self, event=None) -> None:
+        self._cancel_pending_single_click()
+
+    def _cancel_pending_single_click(self) -> None:
+        if self._single_click_after_id is None:
+            return
+        try:
+            self.after_cancel(self._single_click_after_id)
+        except Exception:
+            pass
+        self._single_click_after_id = None
+
+    def _determine_single_click_delay(self) -> int:
+        try:
+            value = int(self.tk.call("tk", "getdoubleclicktime"))
+            if value <= 0:
+                raise ValueError("invalid double-click time")
+            return value
+        except Exception:
+            return 300
 
     def _confirm_clear(self) -> None:
         data_before = self._snapshot_data()
