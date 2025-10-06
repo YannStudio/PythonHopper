@@ -44,7 +44,7 @@ def _pyinstaller_cmd(entry: str, name: str, *, windowed: bool, data_files: Itera
         "--specpath",
         str(SPEC_DIR),
         "--collect-submodules",
-        "tksheet",
+        "pandastable",
     ]
     cmd.append("--windowed" if windowed else "--console")
 
