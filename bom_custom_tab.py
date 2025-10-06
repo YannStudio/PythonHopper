@@ -198,20 +198,18 @@ class BOMCustomTab(ttk.Frame):
             show_index=False,
         )
         self.sheet.enable_bindings(
-            (
-                "single_select",
-                "drag_select",
-                "select_all",
-                "column_select",
-                "column_width_resize",
-                "double_click_column_resize",
-                "double_click_select",
-                "copy",
-                "edit_cell",
-                "tab_key",
-                "arrowkeys",
-                "enter_key",
-            )
+            "single_select",
+            "drag_select",
+            "select_all",
+            "column_select",
+            "column_width_resize",
+            "double_click_column_resize",
+            "double_click_select",
+            "copy",
+            "edit_cell",
+            "tab_key",
+            "arrowkeys",
+            "enter_key",
         )
         self.sheet.set_sheet_data([])
         self._ensure_minimum_rows(self.DEFAULT_EMPTY_ROWS)
@@ -237,9 +235,18 @@ class BOMCustomTab(ttk.Frame):
         self.sheet.MT.bind("<ButtonPress-1>", self._on_single_click_press, add="+")
         self.sheet.MT.bind("<ButtonRelease-1>", self._on_single_click_release, add="+")
         self.sheet.MT.bind("<Double-Button-1>", self._on_single_click_cancel, add="+")
+        self.sheet.MT.bind("<KeyPress>", self._on_key_press_start_edit, add="+")
 
         self.sheet.extra_bindings("begin_edit_cell", self._on_begin_edit_cell)
         self.sheet.extra_bindings("end_edit_cell", self._on_end_edit_cell)
+
+        self.sheet.popup_menu_add_command(
+            "Entry op de geselecteerde cel plaatsen",
+            self._open_entry_on_selected_cell,
+            index_menu=False,
+            header_menu=False,
+            empty_space_menu=False,
+        )
 
         self._auto_resize_columns(range(len(self.HEADERS)))
         self._apply_row_striping()
@@ -756,6 +763,58 @@ class BOMCustomTab(ttk.Frame):
         except Exception:
             pass
         self._single_click_after_id = None
+
+    def _on_key_press_start_edit(self, event) -> Optional[str]:
+        text_editor = getattr(self.sheet.MT, "text_editor", None)
+        if text_editor is not None and getattr(text_editor, "open", False):
+            return None
+
+        if event is None:
+            return None
+
+        keysym = getattr(event, "keysym", "")
+        char = getattr(event, "char", "")
+        printable = bool(char and ord(char) >= 32)
+        special_keys = {"BackSpace", "Return", "KP_Enter", "F2"}
+
+        if not printable and keysym not in special_keys:
+            return None
+
+        state = getattr(event, "state", 0)
+        if state & 0x0004 or state & 0x0008:
+            # Control/Alt ingedrukt: laat standaard bindings hun werk doen.
+            return None
+
+        self._cancel_pending_single_click()
+
+        try:
+            self.sheet.MT.open_cell(event=event, ignore_existing_editor=True)
+        except Exception:
+            return None
+
+        return "break"
+
+    def _open_entry_on_selected_cell(self) -> None:
+        bounds = self._get_selection_bounds()
+        if not bounds:
+            return
+
+        start_row, start_col, end_row, end_col = bounds
+        if start_row != end_row or start_col != end_col:
+            self.sheet.select_cell(start_row, start_col, redraw=True)
+
+        try:
+            self.sheet.focus_set()
+            self.sheet.MT.focus_set()
+        except Exception:
+            pass
+
+        try:
+            self.sheet.open_cell(ignore_existing_editor=True)
+        except Exception:
+            return
+
+        self._update_status(f"Cel ({start_row + 1}, {start_col + 1}) klaar voor invoer.")
 
     def _determine_single_click_delay(self) -> int:
         try:
