@@ -823,8 +823,9 @@ def copy_per_production_and_orders(
     provided via the ``finish_*`` mappings. Keys correspond to the normalized
     ``Finish-...`` folder names produced by :func:`describe_finish_combo`.
 
-    The returned ``chosen`` mapping uses prefixed selection keys produced by
-    :func:`make_production_selection_key` and :func:`make_finish_selection_key`.
+    The returned ``chosen`` mapping uses the plain production names as keys and
+    prefixed finish keys produced by :func:`make_finish_selection_key` for
+    finish selections.
     """
     os.makedirs(dest, exist_ok=True)
     file_index = _build_file_index(source, selected_exts)
@@ -985,7 +986,7 @@ def copy_per_production_and_orders(
         supplier = pick_supplier_for_production(
             prod, db, override_map, suppliers_sorted=suppliers_sorted
         )
-        chosen[make_production_selection_key(prod)] = supplier.supplier
+        chosen[prod] = supplier.supplier
         if remember_defaults and supplier.supplier not in ("", "Onbekend"):
             db.set_default(prod, supplier.supplier)
 

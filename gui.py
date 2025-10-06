@@ -1238,6 +1238,22 @@ def start_gui():
             opts.insert(0, "(geen)")
             return opts
 
+        @staticmethod
+        def _parse_selection_key(key: str) -> tuple[str, str]:
+            """Safely resolve a selection key even when helper imports are missing."""
+
+            try:
+                return parse_selection_key(key)
+            except Exception:
+                pass
+
+            if "::" in key:
+                prefix, identifier = key.split("::", 1)
+                if prefix in ("production", "finish"):
+                    return prefix, identifier
+
+            return "production", key
+
         def _refresh_options(self, initial=False):
             self._base_options = self._display_list()
             self._disp_to_name = {}
@@ -1248,7 +1264,12 @@ def start_gui():
             for sel_key, combo in self.rows:
                 typed = combo.get()
                 combo["values"] = self._base_options
-                kind, identifier = parse_selection_key(sel_key)
+                parser = getattr(
+                    self,
+                    "_parse_selection_key",
+                    SupplierSelectionFrame._parse_selection_key,
+                )
+                kind, identifier = parser(sel_key)
                 if kind == "production":
                     lower_name = identifier.strip().lower()
                     if lower_name in ("dummy part", "nan", "spare part"):
