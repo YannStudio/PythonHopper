@@ -121,13 +121,43 @@ class _UndoableTableModel(TableModel):
         self._on_change = on_change
 
     def setValueAt(self, value, rowIndex, columnIndex) -> bool:  # type: ignore[override]
-        before = self.df.copy(deep=True)
+        row = int(rowIndex)
+        col = int(columnIndex)
+        if row < 0 or col < 0:
+            return False
+        if row >= len(self.df) or col >= len(self.df.columns):
+            return False
+
         str_value = "" if value is None else str(value)
-        changed = super().setValueAt(str_value, rowIndex, columnIndex)
-        if changed and self._on_change is not None:
-            after = self.df.copy(deep=True)
-            self._on_change(before, after, (int(rowIndex), int(columnIndex)))
-        return changed
+        before_snapshot = self.df.copy(deep=True)
+
+        current_value = before_snapshot.iat[row, col]
+        normalized_current = "" if pd.isna(current_value) else str(current_value)
+        if normalized_current == str_value:
+            return False
+
+        self.df.iat[row, col] = str_value
+        if self._on_change is not None:
+            after_snapshot = self.df.copy(deep=True)
+            self._on_change(before_snapshot, after_snapshot, (row, col))
+        return True
+
+
+class _UndoAwareTable(Table):
+    """Tabel die undo-/paste-acties doorverwijst naar :class:`BOMCustomTab`."""
+
+    def __init__(self, parent: tk.Widget, owner: "BOMCustomTab", **kwargs) -> None:
+        super().__init__(parent, **kwargs)
+        self._owner = owner
+
+    def paste(self, event=None):  # type: ignore[override]
+        return self._owner._on_paste(event)
+
+    def clearData(self, event=None):  # type: ignore[override]
+        return self._owner._clear_selection(event)
+
+    def undo(self, event=None):  # type: ignore[override]
+        return self._owner._on_undo(event)
 
 
 class BOMCustomTab(ttk.Frame):
@@ -203,14 +233,28 @@ class BOMCustomTab(ttk.Frame):
     def _build_sheet(self) -> None:
         container = ttk.Frame(self)
         container.pack(fill="both", expand=True, padx=8, pady=(0, 8))
-        container.rowconfigure(0, weight=1)
-        container.columnconfigure(0, weight=1)
+        container.rowconfigure(1, weight=1)
+        container.columnconfigure(1, weight=1)
 
         initial_df = self._create_empty_dataframe(self.DEFAULT_EMPTY_ROWS)
         self._dataframe = initial_df
-        self.table_model = _UndoableTableModel(initial_df.copy(deep=True), self._on_model_change)
-        self.table = Table(
+        self.table_model = _UndoableTableModel(
+            initial_df.copy(deep=True), self._on_model_change
+        )
+        self.table = _UndoAwareTable(
             container,
+            self,
+            model=self.table_model,
+            showstatusbar=False,
+            enable_menus=False,
+            editable=True,
+        )
+        self.table.show()
+        # Zorg dat hoofdlettervarianten van de sneltoetsen ook werken
+        self.table.bind("<Control-V>", self._on_paste)
+        self.table.bind("<Control-Z>", self._on_undo)
+        self.table.bind("<Delete>", self._clear_selection)
+        self.table.bind("<BackSpace>", self._clear_selection)
 
 
     # ------------------------------------------------------------------
@@ -227,11 +271,22 @@ class BOMCustomTab(ttk.Frame):
         self._suspend_history = True
         try:
             self.table_model.df = normalized
-            self.table.updateModel(self.table_model)
-            self.table.redraw()
+            self._refresh_table()
         finally:
             self._suspend_history = False
         self._dataframe = self.table_model.df.copy(deep=True)
+
+    def _refresh_table(self) -> None:
+        self.table.updateModel(self.table_model)
+        self.table.redraw()
+
+    def _append_empty_rows(self, count: int) -> None:
+        if count <= 0:
+            return
+        extension = self._create_empty_dataframe(count)
+        self.table_model.df = pd.concat(
+            [self.table_model.df, extension], ignore_index=True
+        )
 
     def _ensure_minimum_rows(self, minimum: int = 1) -> None:
         if minimum <= 0:
@@ -255,6 +310,41 @@ class BOMCustomTab(ttk.Frame):
         if len(self.undo_stack) > self.max_undo:
             self.undo_stack.pop(0)
 
+    def _collect_selection(self) -> Tuple[List[int], List[int]]:
+        table = self.table
+        rows = list(dict.fromkeys(table.multiplerowlist)) if table.multiplerowlist else []
+        cols = list(dict.fromkeys(table.multiplecollist)) if table.multiplecollist else []
+        last_src = getattr(table, "_Table__last_left_click_src", "")
+        row_count = len(self.table_model.df)
+
+        if last_src == "row":
+            if not rows:
+                current = table.currentrow
+                if current is not None:
+                    rows = [int(current)]
+            if not cols:
+                cols = list(range(len(self.HEADERS)))
+        elif last_src == "column":
+            if not cols:
+                current = table.currentcol
+                if current is not None:
+                    cols = [int(current)]
+            if not rows:
+                rows = list(range(row_count))
+        else:
+            if not rows:
+                current = table.currentrow
+                if current is not None:
+                    rows = [int(current)]
+            if not cols:
+                current = table.currentcol
+                if current is not None:
+                    cols = [int(current)]
+
+        rows = [r for r in rows if 0 <= r < row_count]
+        cols = [c for c in cols if 0 <= c < len(self.HEADERS)]
+        return rows, cols
+
     def _on_model_change(
         self, before: pd.DataFrame, after: pd.DataFrame, cell: CellCoord
     ) -> None:
@@ -268,6 +358,114 @@ class BOMCustomTab(ttk.Frame):
         self._ensure_minimum_rows(target_minimum)
         row, col = cell
         self._update_status(f"Cel ({row + 1}, {col + 1}) bijgewerkt.")
+
+    def _clear_selection(self, event=None):
+        rows, cols = self._collect_selection()
+        if not rows or not cols:
+            self._update_status("Geen cellen geselecteerd om te legen.")
+            return "break"
+
+        before = self.table_model.df.copy(deep=True)
+        changed: List[CellCoord] = []
+        self._suspend_history = True
+        try:
+            for row in rows:
+                for col in cols:
+                    current = self.table_model.df.iat[row, col]
+                    normalized = "" if pd.isna(current) else str(current)
+                    if normalized:
+                        self.table_model.df.iat[row, col] = ""
+                        changed.append((row, col))
+        finally:
+            self._suspend_history = False
+
+        after = self.table_model.df.copy(deep=True)
+        if changed and not before.equals(after):
+            self._push_undo("leegmaken", before, changed)
+            self._dataframe = after
+            self._refresh_table()
+            self._ensure_minimum_rows(self.DEFAULT_EMPTY_ROWS)
+            self._update_status(f"{len(changed)} cellen geleegd.")
+        else:
+            self._update_status("Geen wijzigingen bij legen.")
+        return "break"
+
+    def _parse_clipboard_text(self, text: str) -> List[List[str]]:
+        import io
+
+        delimiter = "\t"
+        if "\t" not in text:
+            if ";" in text:
+                delimiter = ";"
+            elif "," in text:
+                delimiter = ","
+        reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+        rows: List[List[str]] = []
+        for row in reader:
+            if not row:
+                rows.append([""])
+                continue
+            rows.append([cell.strip() for cell in row])
+        return rows
+
+    def _on_paste(self, event=None):
+        try:
+            raw = self.table.clipboard_get()
+        except tk.TclError:
+            self._update_status("Klembordinhoud kon niet gelezen worden.")
+            return "break"
+
+        parsed = self._parse_clipboard_text(raw)
+        while parsed and all(cell.strip() == "" for cell in parsed[-1]):
+            parsed.pop()
+        if not parsed:
+            self._update_status("Geen gegevens gevonden om te plakken.")
+            return "break"
+        if not any(cell.strip() for row in parsed for cell in row):
+            self._update_status("Klembord bevat alleen lege waarden.")
+            return "break"
+
+        rows, cols = self._collect_selection()
+        start_row = min(rows) if rows else int(self.table.currentrow or 0)
+        start_col = min(cols) if cols else int(self.table.currentcol or 0)
+        start_row = max(start_row, 0)
+        start_col = max(start_col, 0)
+
+        required_rows = max(self.DEFAULT_EMPTY_ROWS, start_row + len(parsed))
+        self._ensure_minimum_rows(required_rows)
+
+        before = self.table_model.df.copy(deep=True)
+        changed: List[CellCoord] = []
+        self._suspend_history = True
+        try:
+            for r_offset, row_values in enumerate(parsed):
+                target_row = start_row + r_offset
+                if target_row >= len(self.table_model.df):
+                    self._append_empty_rows(target_row + 1 - len(self.table_model.df))
+                for c_offset, raw_value in enumerate(row_values):
+                    target_col = start_col + c_offset
+                    if target_col >= len(self.HEADERS):
+                        continue
+                    normalized = raw_value.strip()
+                    current = self.table_model.df.iat[target_row, target_col]
+                    normalized_current = "" if pd.isna(current) else str(current)
+                    if normalized_current != normalized:
+                        self.table_model.df.iat[target_row, target_col] = normalized
+                        changed.append((target_row, target_col))
+        finally:
+            self._suspend_history = False
+
+        after = self.table_model.df.copy(deep=True)
+        if changed and not before.equals(after):
+            self._push_undo("plakken", before, changed)
+            self._dataframe = after
+            self._refresh_table()
+            max_row = max(row for row, _ in changed)
+            self._ensure_minimum_rows(max(self.DEFAULT_EMPTY_ROWS, max_row + 2))
+            self._update_status(f"{len(changed)} cellen geplakt.")
+        else:
+            self._update_status("Geen nieuwe waarden geplakt.")
+        return "break"
 
     # ------------------------------------------------------------------
     # Template
