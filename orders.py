@@ -823,8 +823,9 @@ def copy_per_production_and_orders(
     provided via the ``finish_*`` mappings. Keys correspond to the normalized
     ``Finish-...`` folder names produced by :func:`describe_finish_combo`.
 
-    The returned ``chosen`` mapping uses prefixed selection keys produced by
-    :func:`make_production_selection_key` and :func:`make_finish_selection_key`.
+    The returned ``chosen`` mapping uses selection keys produced by
+    :func:`make_production_selection_key` for productions and
+    :func:`make_finish_selection_key` for finish selections.
     """
     os.makedirs(dest, exist_ok=True)
     file_index = _build_file_index(source, selected_exts)

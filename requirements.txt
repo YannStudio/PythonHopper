@@ -1,6 +1,6 @@
 PyPDF2
 pandas
 openpyxl
-tksheet
+pandastable
 Pillow
 # optional: pythonocc-core
