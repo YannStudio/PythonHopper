@@ -66,11 +66,22 @@ import pandas as pd
 
 try:
     from pandastable import Table, TableModel
-    _PANDASTABLE_IMPORT_ERROR: Optional[BaseException] = None
 except ModuleNotFoundError as exc:  # pragma: no cover - afhankelijk van installatie
-    Table = None  # type: ignore[assignment]
-    TableModel = object  # type: ignore[assignment]
-    _PANDASTABLE_IMPORT_ERROR = exc
+    class _TableStub:
+        def __init__(self, *args, **kwargs) -> None:
+            raise RuntimeError(_PANDASTABLE_ERROR) from exc
+
+    class _TableModelStub:
+        def __init__(self, *args, **kwargs) -> None:
+            raise RuntimeError(_PANDASTABLE_ERROR) from exc
+
+    Table = _TableStub  # type: ignore[assignment]
+    TableModel = _TableModelStub  # type: ignore[assignment]
+    _PANDASTABLE_IMPORT_ERROR: Optional[BaseException] = exc
+    _PANDASTABLE_AVAILABLE = False
+else:
+    _PANDASTABLE_IMPORT_ERROR = None
+    _PANDASTABLE_AVAILABLE = True
 
 _PANDASTABLE_ERROR = (
     "De module 'pandastable' is niet geïnstalleerd. "
@@ -81,7 +92,7 @@ CellCoord = Tuple[int, int]
 
 
 def _ensure_pandastable_available() -> None:
-    if Table is not None:
+    if _PANDASTABLE_AVAILABLE:
         return
 
     try:
@@ -150,7 +161,7 @@ class _UndoableTableModel(TableModel):
         current_value = target_df.iat[row, col]
         normalized_current = "" if pd.isna(current_value) else str(current_value)
         if normalized_current == normalized_value:
-            return False
+            return True
 
         before_snapshot = self.df.copy(deep=True)
 
@@ -199,6 +210,39 @@ class _UndoAwareTable(Table):
         self._active_edit: Optional[CellCoord] = None
         self._skip_focus_commit = False
 
+        self.bind("<KeyPress>", self._on_table_keypress, add="+")
+        for sequence in (
+            "<Control-c>",
+            "<Control-C>",
+            "<Control-Insert>",
+            "<Command-c>",
+            "<Command-C>",
+            "<Meta-c>",
+            "<Meta-C>",
+        ):
+            self.bind(sequence, self._on_copy_shortcut, add="+")
+        for sequence in (
+            "<Control-x>",
+            "<Control-X>",
+            "<Shift-Delete>",
+            "<Command-x>",
+            "<Command-X>",
+            "<Meta-x>",
+            "<Meta-X>",
+        ):
+            self.bind(sequence, self.cut, add="+")
+        for sequence in (
+            "<Control-v>",
+            "<Control-V>",
+            "<Command-v>",
+            "<Command-V>",
+            "<Meta-v>",
+            "<Meta-V>",
+            "<<Paste>>",
+            "<Shift-Insert>",
+        ):
+            self.bind(sequence, self.paste, add="+")
+
     def paste(self, event=None):  # type: ignore[override]
         return self._owner._on_paste(event)
 
@@ -212,9 +256,40 @@ class _UndoAwareTable(Table):
         result = super().drawCellEntry(row, col, text=text)
         entry = getattr(self, "cellentry", None)
         if entry is not None:
-            entry.bind("<FocusOut>", self._on_entry_focus_out, add="+")
+            self._ensure_entry_bindings(entry)
         self._active_edit = (row, col)
         return result
+
+    def _ensure_entry_bindings(self, entry: tk.Widget) -> None:
+        if getattr(entry, "_undoaware_bindings", False):  # pragma: no cover - Tk internals
+            return
+
+        entry.bind("<FocusOut>", self._on_entry_focus_out, add="+")
+        entry.bind("<Return>", self._on_entry_return)
+        entry.bind("<KP_Enter>", self._on_entry_return)
+        entry.bind("<Tab>", self._on_entry_tab)
+        entry.bind("<ISO_Left_Tab>", self._on_entry_shift_tab)
+        entry.bind("<Shift-Tab>", self._on_entry_shift_tab)
+        for sequence in (
+            "<Control-v>",
+            "<Control-V>",
+            "<Command-v>",
+            "<Command-V>",
+            "<Meta-v>",
+            "<Meta-V>",
+            "<<Paste>>",
+            "<Shift-Insert>",
+        ):
+            entry.bind(sequence, self._on_entry_clipboard_paste, add="+")
+        setattr(entry, "_undoaware_bindings", True)
+
+    def handle_left_click(self, event):  # type: ignore[override]
+        if self._active_edit is not None:
+            committed = self._commit_active_edit()
+            if not committed:
+                return
+
+        return super().handle_left_click(event)
 
     def handleCellEntry(self, row, col):  # type: ignore[override]
         self._skip_focus_commit = True
@@ -230,11 +305,52 @@ class _UndoAwareTable(Table):
     def _on_entry_focus_out(self, event: tk.Event) -> None:
         if self._skip_focus_commit:
             return
+        self._commit_active_edit(trigger_widget=event.widget)
+
+    def _on_entry_clipboard_paste(self, event: tk.Event) -> Optional[str]:
+        try:
+            text = event.widget.clipboard_get()
+        except tk.TclError:
+            try:
+                text = self.clipboard_get()
+            except tk.TclError:
+                return None
+
+        parsed = self._owner._parse_clipboard_text(text)
+        while parsed and all(cell.strip() == "" for cell in parsed[-1]):
+            parsed.pop()
+
+        if not parsed:
+            return None
+
+        if len(parsed) == 1 and len(parsed[0]) == 1:
+            return None
+
+        if not self._commit_active_edit(trigger_widget=event.widget):
+            return "break"
+
+        try:
+            self.focus_set()
+        except Exception:  # pragma: no cover - focus issues only in GUI
+            pass
+        return self._owner._on_paste(None, clipboard_text=text)
+
+    def cut(self, event=None):  # type: ignore[override]
+        self._on_copy_shortcut(event)
+        self._owner._clear_selection(event)
+        return "break"
+
+    def _commit_active_edit(self, trigger_widget: Optional[tk.Widget] = None) -> bool:
         if self._active_edit is None:
-            return
+            return True
+
         entry = getattr(self, "cellentry", None)
-        if entry is None or event.widget is not entry:
-            return
+        if entry is None:
+            self._active_edit = None
+            return True
+
+        if trigger_widget is not None and trigger_widget is not entry:
+            return True
 
         row, col = self._active_edit
         value = getattr(self, "cellentryvar", tk.StringVar()).get()
@@ -242,7 +358,7 @@ class _UndoAwareTable(Table):
         if self.filtered == 1:
             self.delete("entry")
             self._active_edit = None
-            return
+            return True
 
         result = self.model.setValueAt(value, row, col, df=None)
         if result is False:
@@ -255,11 +371,155 @@ class _UndoAwareTable(Table):
                 "Incompatible type", msg, parent=self.parentframe
             )
             entry.after_idle(entry.focus_set)
-            return
+            return False
 
         self.drawText(row, col, value, align=self.align)
         self.delete("entry")
         self._active_edit = None
+        return True
+
+    def _on_table_keypress(self, event: tk.Event) -> Optional[str]:
+        if event.keysym in {"Return", "KP_Enter"}:
+            if self._active_edit is None:
+                if self._begin_edit(select_all=True):
+                    return "break"
+                return None
+            if not self._commit_active_edit():
+                return "break"
+            self._move_vertical(1)
+            return "break"
+
+        if not event.char:
+            return None
+        if not self._should_start_direct_edit(event):
+            return None
+        if self._start_edit_with_char(event.char):
+            return "break"
+        return None
+
+    def _should_start_direct_edit(self, event: tk.Event) -> bool:
+        if not event.char or not event.char.isprintable():
+            return False
+        state = event.state or 0
+        # Control (0x4) and Command/Meta modifiers (0x10 and 0x20000) should not trigger typing
+        modifier_mask = 0x4 | 0x10 | 0x20000
+        if state & modifier_mask:
+            return False
+        return event.keysym not in {"BackSpace", "Delete"}
+
+    def _start_edit_with_char(self, char: str) -> bool:
+        if not self._commit_active_edit():
+            return True
+        entry = self._begin_edit(initial_text=char)
+        return entry is not None
+
+    def _begin_edit(
+        self,
+        *,
+        initial_text: Optional[str] = None,
+        select_all: bool = False,
+    ) -> Optional[tk.Widget]:
+        row = self.currentrow
+        col = self.currentcol
+        if row is None or col is None:
+            return None
+        self.drawCellEntry(int(row), int(col))
+        entry = getattr(self, "cellentry", None)
+        if entry is None:
+            return None
+        var = getattr(self, "cellentryvar", None)
+        if initial_text is not None and var is not None:
+            var.set(initial_text)
+            try:
+                entry.icursor("end")
+            except Exception:
+                pass
+        elif select_all:
+            try:
+                entry.selection_range(0, "end")
+            except Exception:
+                pass
+        try:
+            entry.focus_set()
+        except Exception:
+            pass
+        return entry
+
+    def _on_entry_return(self, event: tk.Event) -> str:
+        if not self._commit_active_edit(trigger_widget=event.widget):
+            return "break"
+        self._move_vertical(1)
+        return "break"
+
+    def _on_entry_tab(self, event: tk.Event) -> str:
+        if not self._commit_active_edit(trigger_widget=event.widget):
+            return "break"
+        self._move_horizontal(1)
+        return "break"
+
+    def _on_entry_shift_tab(self, event: tk.Event) -> str:
+        if not self._commit_active_edit(trigger_widget=event.widget):
+            return "break"
+        self._move_horizontal(-1)
+        return "break"
+
+    def _move_horizontal(self, delta: int) -> None:
+        if self.rows <= 0 or self.cols <= 0:
+            return
+        row = int(self.currentrow or 0)
+        col = int(self.currentcol or 0) + delta
+        if col >= self.cols:
+            col = 0
+            if row < self.rows - 1:
+                row += 1
+        elif col < 0:
+            col = self.cols - 1
+            if row > 0:
+                row -= 1
+        self._select_cell(row, col)
+
+    def _move_vertical(self, delta: int) -> None:
+        if self.rows <= 0:
+            return
+        row = int(self.currentrow or 0) + delta
+        row = min(max(row, 0), self.rows - 1)
+        col = int(self.currentcol or 0)
+        self._select_cell(row, col)
+
+    def _select_cell(self, row: int, col: int) -> None:
+        row = min(max(int(row), 0), max(self.rows - 1, 0))
+        col = min(max(int(col), 0), max(self.cols - 1, 0))
+        self.setSelectedRow(row)
+        self.setSelectedCol(col)
+        self.drawSelectedRect(row, col)
+        self.drawSelectedRow()
+        try:
+            self.rowheader.drawSelectedRows(row)
+        except Exception:  # pragma: no cover - Tk internals
+            pass
+        try:
+            self.colheader.delete("rect")
+        except Exception:  # pragma: no cover - Tk internals
+            pass
+        try:
+            self.focus_set()
+        except Exception:  # pragma: no cover - focus issues only in GUI
+            pass
+
+    def _on_copy_shortcut(self, event=None) -> str:
+        if not self._commit_active_edit():
+            return "break"
+        rows = list(dict.fromkeys(self.multiplerowlist)) if self.multiplerowlist else []
+        cols = list(dict.fromkeys(self.multiplecollist)) if self.multiplecollist else []
+        if not rows:
+            if self.currentrow is not None:
+                rows = [int(self.currentrow)]
+        if not cols:
+            if self.currentcol is not None:
+                cols = [int(self.currentcol)]
+        if rows and cols:
+            super().copy(rows, cols)
+        return "break"
 
 
 class BOMCustomTab(ttk.Frame):
@@ -352,11 +612,17 @@ class BOMCustomTab(ttk.Frame):
             editable=True,
         )
         self.table.show()
-        # Zorg dat hoofdlettervarianten van de sneltoetsen ook werken
-        self.table.bind("<Control-V>", self._on_paste)
-        self.table.bind("<Control-Z>", self._on_undo)
-        self.table.bind("<Delete>", self._clear_selection)
-        self.table.bind("<BackSpace>", self._clear_selection)
+        for sequence in (
+            "<Control-z>",
+            "<Control-Z>",
+            "<Command-z>",
+            "<Command-Z>",
+            "<Meta-z>",
+            "<Meta-Z>",
+        ):
+            self.table.bind(sequence, self._on_undo, add="+")
+        for sequence in ("<Delete>", "<BackSpace>"):
+            self.table.bind(sequence, self._clear_selection, add="+")
 
 
     # ------------------------------------------------------------------
@@ -462,6 +728,8 @@ class BOMCustomTab(ttk.Frame):
         self._update_status(f"Cel ({row + 1}, {col + 1}) bijgewerkt.")
 
     def _clear_selection(self, event=None):
+        if not self.table._commit_active_edit():
+            return "break"
         rows, cols = self._collect_selection()
         if not rows or not cols:
             self._update_status("Geen cellen geselecteerd om te legen.")
@@ -510,12 +778,17 @@ class BOMCustomTab(ttk.Frame):
             rows.append([cell.strip() for cell in row])
         return rows
 
-    def _on_paste(self, event=None):
-        try:
-            raw = self.table.clipboard_get()
-        except tk.TclError:
-            self._update_status("Klembordinhoud kon niet gelezen worden.")
+    def _on_paste(self, event=None, *, clipboard_text: Optional[str] = None):
+        if not self.table._commit_active_edit():
             return "break"
+        if clipboard_text is None:
+            try:
+                raw = self.table.clipboard_get()
+            except tk.TclError:
+                self._update_status("Klembordinhoud kon niet gelezen worden.")
+                return "break"
+        else:
+            raw = clipboard_text
 
         parsed = self._parse_clipboard_text(raw)
         while parsed and all(cell.strip() == "" for cell in parsed[-1]):
