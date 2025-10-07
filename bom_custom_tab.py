@@ -216,6 +216,34 @@ class _UndoAwareTable(Table):
         self._active_edit = (row, col)
         return result
 
+    def handle_left_click(self, event):  # type: ignore[override]
+        target_row = self.get_row_clicked(event)
+        target_col = self.get_col_clicked(event)
+
+        if self._active_edit is not None:
+            committed = self._commit_active_edit()
+            if not committed:
+                return
+
+        result = super().handle_left_click(event)
+
+        if (
+            target_row is None
+            or target_col is None
+            or not (0 <= target_row < self.rows and 0 <= target_col < self.cols)
+        ):
+            return result
+
+        self.drawCellEntry(target_row, target_col)
+        entry = getattr(self, "cellentry", None)
+        if entry is not None:
+            entry.focus_set()
+            try:
+                entry.selection_range(0, "end")
+            except Exception:
+                pass
+        return result
+
     def handleCellEntry(self, row, col):  # type: ignore[override]
         self._skip_focus_commit = True
         try:
@@ -230,11 +258,19 @@ class _UndoAwareTable(Table):
     def _on_entry_focus_out(self, event: tk.Event) -> None:
         if self._skip_focus_commit:
             return
+        self._commit_active_edit(trigger_widget=event.widget)
+
+    def _commit_active_edit(self, trigger_widget: Optional[tk.Widget] = None) -> bool:
         if self._active_edit is None:
-            return
+            return True
+
         entry = getattr(self, "cellentry", None)
-        if entry is None or event.widget is not entry:
-            return
+        if entry is None:
+            self._active_edit = None
+            return True
+
+        if trigger_widget is not None and trigger_widget is not entry:
+            return True
 
         row, col = self._active_edit
         value = getattr(self, "cellentryvar", tk.StringVar()).get()
@@ -242,7 +278,7 @@ class _UndoAwareTable(Table):
         if self.filtered == 1:
             self.delete("entry")
             self._active_edit = None
-            return
+            return True
 
         result = self.model.setValueAt(value, row, col, df=None)
         if result is False:
@@ -255,11 +291,12 @@ class _UndoAwareTable(Table):
                 "Incompatible type", msg, parent=self.parentframe
             )
             entry.after_idle(entry.focus_set)
-            return
+            return False
 
         self.drawText(row, col, value, align=self.align)
         self.delete("entry")
         self._active_edit = None
+        return True
 
 
 class BOMCustomTab(ttk.Frame):
