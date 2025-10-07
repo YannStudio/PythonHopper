@@ -196,6 +196,8 @@ class _UndoAwareTable(Table):
     def __init__(self, parent: tk.Widget, owner: "BOMCustomTab", **kwargs) -> None:
         super().__init__(parent, **kwargs)
         self._owner = owner
+        self._active_edit: Optional[CellCoord] = None
+        self._skip_focus_commit = False
 
     def paste(self, event=None):  # type: ignore[override]
         return self._owner._on_paste(event)
@@ -205,6 +207,59 @@ class _UndoAwareTable(Table):
 
     def undo(self, event=None):  # type: ignore[override]
         return self._owner._on_undo(event)
+
+    def drawCellEntry(self, row, col, text=None):  # type: ignore[override]
+        result = super().drawCellEntry(row, col, text=text)
+        entry = getattr(self, "cellentry", None)
+        if entry is not None:
+            entry.bind("<FocusOut>", self._on_entry_focus_out, add="+")
+        self._active_edit = (row, col)
+        return result
+
+    def handleCellEntry(self, row, col):  # type: ignore[override]
+        self._skip_focus_commit = True
+        try:
+            return super().handleCellEntry(row, col)
+        finally:
+            self.after_idle(self._reset_focus_commit_guard)
+            self._active_edit = None
+
+    def _reset_focus_commit_guard(self) -> None:
+        self._skip_focus_commit = False
+
+    def _on_entry_focus_out(self, event: tk.Event) -> None:
+        if self._skip_focus_commit:
+            return
+        if self._active_edit is None:
+            return
+        entry = getattr(self, "cellentry", None)
+        if entry is None or event.widget is not entry:
+            return
+
+        row, col = self._active_edit
+        value = getattr(self, "cellentryvar", tk.StringVar()).get()
+
+        if self.filtered == 1:
+            self.delete("entry")
+            self._active_edit = None
+            return
+
+        result = self.model.setValueAt(value, row, col, df=None)
+        if result is False:
+            dtype = self.model.getColumnType(col)
+            msg = (
+                f"This column is {dtype} and is not compatible with the value {value}."
+                " Change data type first."
+            )
+            messagebox.showwarning(
+                "Incompatible type", msg, parent=self.parentframe
+            )
+            entry.after_idle(entry.focus_set)
+            return
+
+        self.drawText(row, col, value, align=self.align)
+        self.delete("entry")
+        self._active_edit = None
 
 
 class BOMCustomTab(ttk.Frame):
