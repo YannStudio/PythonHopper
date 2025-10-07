@@ -120,26 +120,73 @@ class _UndoableTableModel(TableModel):
         super().__init__(dataframe=dataframe)
         self._on_change = on_change
 
-    def setValueAt(self, value, rowIndex, columnIndex) -> bool:  # type: ignore[override]
+    def setValueAt(  # type: ignore[override]
+        self,
+        value,
+        rowIndex,
+        columnIndex,
+        df: Optional[pd.DataFrame] = None,
+    ) -> bool:
+        """Sla waarden op en informeer de undo-structuur bij wijzigingen."""
+
+        target_df = self.df if df is None else df
+
         row = int(rowIndex)
         col = int(columnIndex)
         if row < 0 or col < 0:
             return False
-        if row >= len(self.df) or col >= len(self.df.columns):
+        if row >= len(target_df) or col >= len(target_df.columns):
             return False
 
-        str_value = "" if value is None else str(value)
+        if value is None:
+            normalized_value = ""
+        elif isinstance(value, float) and pd.isna(value):
+            normalized_value = ""
+        elif isinstance(value, str):
+            normalized_value = value
+        else:
+            normalized_value = str(value)
+
+        current_value = target_df.iat[row, col]
+        normalized_current = "" if pd.isna(current_value) else str(current_value)
+        if normalized_current == normalized_value:
+            return False
+
         before_snapshot = self.df.copy(deep=True)
 
-        current_value = before_snapshot.iat[row, col]
-        normalized_current = "" if pd.isna(current_value) else str(current_value)
-        if normalized_current == str_value:
-            return False
+        target_df.iat[row, col] = normalized_value
 
-        self.df.iat[row, col] = str_value
+        if target_df is not self.df:
+            row_label = target_df.index[row]
+            col_label = target_df.columns[col]
+            try:
+                self.df.loc[row_label, col_label] = normalized_value
+            except Exception:
+                # Fallback voor niet-unieke indexen of ontbrekende labels
+                loc = self.df.index.get_loc(row_label)
+                if isinstance(loc, slice):
+                    base_row = loc.start
+                else:
+                    try:
+                        base_row = int(loc)
+                    except TypeError:
+                        base_row = int(loc[0])
+                self.df.iat[base_row, col] = normalized_value
+
+            loc = self.df.index.get_loc(row_label)
+            if isinstance(loc, slice):
+                effective_row = int(loc.start)
+            else:
+                try:
+                    effective_row = int(loc)
+                except TypeError:
+                    effective_row = int(loc[0])
+        else:
+            effective_row = row
+
         if self._on_change is not None:
             after_snapshot = self.df.copy(deep=True)
-            self._on_change(before_snapshot, after_snapshot, (row, col))
+            self._on_change(before_snapshot, after_snapshot, (effective_row, col))
         return True
 
 
