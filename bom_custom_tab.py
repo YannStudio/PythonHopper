@@ -57,7 +57,7 @@ import csv
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Iterable, List, Optional, Sequence, Tuple
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -298,16 +298,12 @@ class _UndoAwareTable(Table):
     # Custom binding helpers
 
     def _install_custom_bindings(self) -> None:
-        self.bind("<Button-1>", self._on_primary_button, add="+")
-        self.bind("<B1-Motion>", self._extend_drag_selection, add="+")
-        self.bind("<ButtonRelease-1>", self._finalise_drag_selection, add="+")
+
 
         self.bind("<Key>", self._handle_table_key, add="+")
         self.bind("<Return>", self._on_return_key, add="+")
         self.bind("<KP_Enter>", self._on_return_key, add="+")
-        self.bind("<Tab>", self._on_tab_key, add="+")
-        self.bind("<ISO_Left_Tab>", self._on_shift_tab_key, add="+")
-        self.bind("<Shift-Tab>", self._on_shift_tab_key, add="+")
+
 
     def _ensure_entry_bindings(self, entry: tk.Entry) -> None:
         if getattr(entry, "_fh_bindings", False):
@@ -315,10 +311,6 @@ class _UndoAwareTable(Table):
         entry.bind("<FocusOut>", self._on_entry_focus_out, add="+")
         entry.bind("<Return>", self._on_entry_return, add="+")
         entry.bind("<KP_Enter>", self._on_entry_return, add="+")
-        entry.bind("<Tab>", self._on_entry_tab, add="+")
-        entry.bind("<ISO_Left_Tab>", self._on_entry_shift_tab, add="+")
-        entry.bind("<Shift-Tab>", self._on_entry_shift_tab, add="+")
-        entry._fh_bindings = True  # type: ignore[attr-defined]
 
     # ------------------------------------------------------------------
     # Mouse helpers
