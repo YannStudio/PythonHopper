@@ -298,26 +298,12 @@ class _UndoAwareTable(Table):
     # Custom binding helpers
 
     def _install_custom_bindings(self) -> None:
-        self._bind_sequences(
-            self,
-            (
-                ("<Button-1>", self._on_primary_button),
-                ("<B1-Motion>", self._extend_drag_selection),
-                ("<ButtonRelease-1>", self._finalise_drag_selection),
-            ),
-        )
+
 
         self.bind("<Key>", self._handle_table_key, add="+")
         self.bind("<Return>", self._on_return_key, add="+")
         self.bind("<KP_Enter>", self._on_return_key, add="+")
-        self._bind_sequences(
-            self,
-            (
-                ("<Tab>", self._on_tab_key),
-                ("<ISO_Left_Tab>", self._on_shift_tab_key),
-                ("<Shift-Tab>", self._on_shift_tab_key),
-            ),
-        )
+
 
     def _ensure_entry_bindings(self, entry: tk.Entry) -> None:
         if getattr(entry, "_fh_bindings", False):
@@ -325,26 +311,6 @@ class _UndoAwareTable(Table):
         entry.bind("<FocusOut>", self._on_entry_focus_out, add="+")
         entry.bind("<Return>", self._on_entry_return, add="+")
         entry.bind("<KP_Enter>", self._on_entry_return, add="+")
-        self._bind_sequences(
-            entry,
-            (
-                ("<Tab>", self._on_entry_tab),
-                ("<ISO_Left_Tab>", self._on_entry_shift_tab),
-                ("<Shift-Tab>", self._on_entry_shift_tab),
-            ),
-        )
-        entry._fh_bindings = True  # type: ignore[attr-defined]
-
-    def _bind_sequences(
-        self,
-        widget: tk.Misc,
-        bindings: Iterable[Tuple[str, Callable[[tk.Event], Any]]],
-    ) -> None:
-        for sequence, handler in bindings:
-            try:
-                widget.bind(sequence, handler, add="+")
-            except tk.TclError:
-                continue
 
     # ------------------------------------------------------------------
     # Mouse helpers
