@@ -210,6 +210,39 @@ class _UndoAwareTable(Table):
         self._active_edit: Optional[CellCoord] = None
         self._skip_focus_commit = False
 
+        self.bind("<KeyPress>", self._on_table_keypress, add="+")
+        for sequence in (
+            "<Control-c>",
+            "<Control-C>",
+            "<Control-Insert>",
+            "<Command-c>",
+            "<Command-C>",
+            "<Meta-c>",
+            "<Meta-C>",
+        ):
+            self.bind(sequence, self._on_copy_shortcut, add="+")
+        for sequence in (
+            "<Control-x>",
+            "<Control-X>",
+            "<Shift-Delete>",
+            "<Command-x>",
+            "<Command-X>",
+            "<Meta-x>",
+            "<Meta-X>",
+        ):
+            self.bind(sequence, self.cut, add="+")
+        for sequence in (
+            "<Control-v>",
+            "<Control-V>",
+            "<Command-v>",
+            "<Command-V>",
+            "<Meta-v>",
+            "<Meta-V>",
+            "<<Paste>>",
+            "<Shift-Insert>",
+        ):
+            self.bind(sequence, self.paste, add="+")
+
     def paste(self, event=None):  # type: ignore[override]
         return self._owner._on_paste(event)
 
@@ -228,33 +261,10 @@ class _UndoAwareTable(Table):
         return result
 
 
-    def handle_left_click(self, event):  # type: ignore[override]
-        target_row = self.get_row_clicked(event)
-        target_col = self.get_col_clicked(event)
-
         if self._active_edit is not None:
             committed = self._commit_active_edit()
             if not committed:
                 return
-
-        result = super().handle_left_click(event)
-
-        if (
-            target_row is None
-            or target_col is None
-            or not (0 <= target_row < self.rows and 0 <= target_col < self.cols)
-        ):
-            return result
-
-        self.drawCellEntry(target_row, target_col)
-        entry = getattr(self, "cellentry", None)
-        if entry is not None:
-            entry.focus_set()
-            try:
-                entry.selection_range(0, "end")
-            except Exception:
-                pass
-        return result
 
     def handleCellEntry(self, row, col):  # type: ignore[override]
         self._skip_focus_commit = True
@@ -402,11 +412,17 @@ class BOMCustomTab(ttk.Frame):
             editable=True,
         )
         self.table.show()
-        # Zorg dat hoofdlettervarianten van de sneltoetsen ook werken
-        self.table.bind("<Control-V>", self._on_paste)
-        self.table.bind("<Control-Z>", self._on_undo)
-        self.table.bind("<Delete>", self._clear_selection)
-        self.table.bind("<BackSpace>", self._clear_selection)
+        for sequence in (
+            "<Control-z>",
+            "<Control-Z>",
+            "<Command-z>",
+            "<Command-Z>",
+            "<Meta-z>",
+            "<Meta-Z>",
+        ):
+            self.table.bind(sequence, self._on_undo, add="+")
+        for sequence in ("<Delete>", "<BackSpace>"):
+            self.table.bind(sequence, self._clear_selection, add="+")
 
 
     # ------------------------------------------------------------------
@@ -512,6 +528,8 @@ class BOMCustomTab(ttk.Frame):
         self._update_status(f"Cel ({row + 1}, {col + 1}) bijgewerkt.")
 
     def _clear_selection(self, event=None):
+        if not self.table._commit_active_edit():
+            return "break"
         rows, cols = self._collect_selection()
         if not rows or not cols:
             self._update_status("Geen cellen geselecteerd om te legen.")
@@ -560,12 +578,17 @@ class BOMCustomTab(ttk.Frame):
             rows.append([cell.strip() for cell in row])
         return rows
 
-    def _on_paste(self, event=None):
-        try:
-            raw = self.table.clipboard_get()
-        except tk.TclError:
-            self._update_status("Klembordinhoud kon niet gelezen worden.")
+    def _on_paste(self, event=None, *, clipboard_text: Optional[str] = None):
+        if not self.table._commit_active_edit():
             return "break"
+        if clipboard_text is None:
+            try:
+                raw = self.table.clipboard_get()
+            except tk.TclError:
+                self._update_status("Klembordinhoud kon niet gelezen worden.")
+                return "break"
+        else:
+            raw = clipboard_text
 
         parsed = self._parse_clipboard_text(raw)
         while parsed and all(cell.strip() == "" for cell in parsed[-1]):
