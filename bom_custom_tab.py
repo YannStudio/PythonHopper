@@ -209,6 +209,7 @@ class _UndoAwareTable(Table):
         self._owner = owner
         self._active_edit: Optional[CellCoord] = None
         self._skip_focus_commit = False
+        self._drag_selection_active = False
 
         for sequence in (
             "<Control-c>",
@@ -242,6 +243,32 @@ class _UndoAwareTable(Table):
         ):
             self.bind(sequence, self.paste, add="+")
 
+        self._install_custom_bindings()
+
+    # ------------------------------------------------------------------
+    # Pandastable overrides delegating to BOMCustomTab
+
+    def copy(self, event=None):  # type: ignore[override]
+        if not self._commit_active_edit():
+            return "break"
+        base = super()
+        copy_func = getattr(base, "copy", None)
+        if callable(copy_func):
+            return copy_func(event)
+        return "break"
+
+    def cut(self, event=None):  # type: ignore[override]
+        if not self._commit_active_edit():
+            return "break"
+        base = super()
+        cut_func = getattr(base, "cut", None)
+        if callable(cut_func):
+            return cut_func(event)
+        # Fallback: copy and clear selection when Pandastable lacks cut().
+        self.copy(event)
+        self.clearData(event)
+        return "break"
+
     def paste(self, event=None):  # type: ignore[override]
         return self._owner._on_paste(event)
 
@@ -259,13 +286,6 @@ class _UndoAwareTable(Table):
         self._active_edit = (row, col)
         return result
 
-
-        if self._active_edit is not None:
-            committed = self._commit_active_edit()
-            if not committed:
-                return
-
-
     def handleCellEntry(self, row, col):  # type: ignore[override]
         self._skip_focus_commit = True
         try:
@@ -274,6 +294,150 @@ class _UndoAwareTable(Table):
             self.after_idle(self._reset_focus_commit_guard)
             self._active_edit = None
 
+    # ------------------------------------------------------------------
+    # Custom binding helpers
+
+    def _install_custom_bindings(self) -> None:
+        self.bind("<Button-1>", self._on_primary_button, add="+")
+        self.bind("<B1-Motion>", self._extend_drag_selection, add="+")
+        self.bind("<ButtonRelease-1>", self._finalise_drag_selection, add="+")
+
+        self.bind("<Key>", self._handle_table_key, add="+")
+        self.bind("<Return>", self._on_return_key, add="+")
+        self.bind("<KP_Enter>", self._on_return_key, add="+")
+        self.bind("<Tab>", self._on_tab_key, add="+")
+        self.bind("<ISO_Left_Tab>", self._on_shift_tab_key, add="+")
+        self.bind("<Shift-Tab>", self._on_shift_tab_key, add="+")
+
+    def _ensure_entry_bindings(self, entry: tk.Entry) -> None:
+        if getattr(entry, "_fh_bindings", False):
+            return
+        entry.bind("<FocusOut>", self._on_entry_focus_out, add="+")
+        entry.bind("<Return>", self._on_entry_return, add="+")
+        entry.bind("<KP_Enter>", self._on_entry_return, add="+")
+        entry.bind("<Tab>", self._on_entry_tab, add="+")
+        entry.bind("<ISO_Left_Tab>", self._on_entry_shift_tab, add="+")
+        entry.bind("<Shift-Tab>", self._on_entry_shift_tab, add="+")
+        entry._fh_bindings = True  # type: ignore[attr-defined]
+
+    # ------------------------------------------------------------------
+    # Mouse helpers
+
+    def _on_primary_button(self, event: tk.Event):
+        if self._active_edit is not None:
+            committed = self._commit_active_edit()
+            if not committed:
+                return "break"
+        self._drag_selection_active = True
+        return None
+
+    def _extend_drag_selection(self, event: tk.Event) -> None:
+        if not self._drag_selection_active:
+            return
+        if self.multiplerowlist and self.multiplecollist:
+            self.drawMultipleCells()
+
+    def _finalise_drag_selection(self, event: tk.Event) -> None:
+        if self._drag_selection_active and self.multiplerowlist and self.multiplecollist:
+            self.drawMultipleCells()
+        self._drag_selection_active = False
+
+    # ------------------------------------------------------------------
+    # Keyboard helpers
+
+    def _modifier_is_pressed(self, event: tk.Event) -> bool:
+        state = getattr(event, "state", 0)
+        control_mask = 0x0004
+        meta_mask = 0x0008
+        command_mask = 0x100000
+        if state & (control_mask | meta_mask | command_mask):
+            return True
+        if event.keysym in {
+            "Control_L",
+            "Control_R",
+            "Alt_L",
+            "Alt_R",
+            "Meta_L",
+            "Meta_R",
+            "Command",
+            "Option_L",
+            "Option_R",
+        }:
+            return True
+        return False
+
+    def _handle_table_key(self, event: tk.Event):
+        if self._modifier_is_pressed(event):
+            return None
+        if event.keysym in {"Shift_L", "Shift_R", "Caps_Lock"}:
+            return None
+        if event.keysym in {"Left", "Right", "Up", "Down"}:
+            return None
+        if event.keysym in {"Return", "KP_Enter", "Tab"}:
+            return None
+
+        if event.char and event.char.isprintable():
+            return self._start_direct_edit(event.char)
+        if event.keysym in {"BackSpace", "Delete"}:
+            return self._start_direct_edit("")
+        return None
+
+    def _start_direct_edit(self, initial: str):
+        row = self.currentrow if self.currentrow is not None else 0
+        col = self.currentcol if self.currentcol is not None else 0
+        self.setSelectedRow(row)
+        self.setSelectedCol(col)
+        self.drawSelectedRow()
+        self.drawSelectedRect(row, col)
+        self.drawCellEntry(row, col)
+        entry = getattr(self, "cellentry", None)
+        if entry is not None:
+            entry.delete(0, tk.END)
+            if initial:
+                entry.insert(0, initial)
+            entry.icursor(tk.END)
+            entry.focus_set()
+        return "break"
+
+    def _on_return_key(self, event: tk.Event):
+        if self._active_edit is None:
+            if self.currentrow is None or self.currentcol is None:
+                return None
+            self.drawCellEntry(self.currentrow, self.currentcol)
+            return "break"
+        self._commit_active_edit()
+        self.focus_set()
+        return "break"
+
+    def _on_tab_key(self, event: tk.Event):
+        if not self._commit_active_edit():
+            return "break"
+        self._move_selection(0, 1)
+        return "break"
+
+    def _on_shift_tab_key(self, event: tk.Event):
+        if not self._commit_active_edit():
+            return "break"
+        self._move_selection(0, -1)
+        return "break"
+
+    def _on_entry_return(self, event: tk.Event):
+        self._commit_active_edit(trigger_widget=event.widget)
+        self.focus_set()
+        return "break"
+
+    def _on_entry_tab(self, event: tk.Event):
+        if self._commit_active_edit(trigger_widget=event.widget):
+            self.focus_set()
+            self._move_selection(0, 1)
+        return "break"
+
+    def _on_entry_shift_tab(self, event: tk.Event):
+        if self._commit_active_edit(trigger_widget=event.widget):
+            self.focus_set()
+            self._move_selection(0, -1)
+        return "break"
+
     def _reset_focus_commit_guard(self) -> None:
         self._skip_focus_commit = False
 
@@ -281,8 +445,6 @@ class _UndoAwareTable(Table):
         if self._skip_focus_commit:
             return
         self._commit_active_edit(trigger_widget=event.widget)
-
-
 
     def _commit_active_edit(self, trigger_widget: Optional[tk.Widget] = None) -> bool:
         if self._active_edit is None:
@@ -321,6 +483,40 @@ class _UndoAwareTable(Table):
         self.delete("entry")
         self._active_edit = None
         return True
+
+    def _move_selection(self, delta_row: int, delta_col: int) -> None:
+        total_rows = self.rows or self.model.getRowCount()
+        total_cols = self.cols or self.model.getColumnCount()
+        if total_rows <= 0 or total_cols <= 0:
+            return
+
+        current_row = self.currentrow if self.currentrow is not None else 0
+        current_col = self.currentcol if self.currentcol is not None else 0
+
+        new_row = max(0, min(total_rows - 1, current_row + delta_row))
+        new_col = current_col + delta_col
+
+        if new_col >= total_cols:
+            new_col = 0
+            new_row = min(total_rows - 1, new_row + 1)
+        elif new_col < 0:
+            new_col = total_cols - 1
+            new_row = max(0, new_row - 1)
+
+        self.setSelectedRow(new_row)
+        self.setSelectedCol(new_col)
+        self.drawSelectedRow()
+        self.drawSelectedRect(new_row, new_col)
+        self.rowheader.drawSelectedRows(new_row)
+
+    def _on_copy_shortcut(self, event=None):
+        if not self._commit_active_edit():
+            return "break"
+        base = super()
+        copy_func = getattr(base, "copy", None)
+        if callable(copy_func):
+            return copy_func(event)
+        return "break"
 
 
 
