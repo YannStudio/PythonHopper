@@ -210,7 +210,6 @@ class _UndoAwareTable(Table):
         self._active_edit: Optional[CellCoord] = None
         self._skip_focus_commit = False
 
-        self.bind("<KeyPress>", self._on_table_keypress, add="+")
         for sequence in (
             "<Control-c>",
             "<Control-C>",
@@ -266,6 +265,7 @@ class _UndoAwareTable(Table):
             if not committed:
                 return
 
+
     def handleCellEntry(self, row, col):  # type: ignore[override]
         self._skip_focus_commit = True
         try:
@@ -281,6 +281,7 @@ class _UndoAwareTable(Table):
         if self._skip_focus_commit:
             return
         self._commit_active_edit(trigger_widget=event.widget)
+
 
 
     def _commit_active_edit(self, trigger_widget: Optional[tk.Widget] = None) -> bool:
@@ -320,6 +321,7 @@ class _UndoAwareTable(Table):
         self.delete("entry")
         self._active_edit = None
         return True
+
 
 
 class BOMCustomTab(ttk.Frame):
