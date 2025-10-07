@@ -150,7 +150,7 @@ class _UndoableTableModel(TableModel):
         current_value = target_df.iat[row, col]
         normalized_current = "" if pd.isna(current_value) else str(current_value)
         if normalized_current == normalized_value:
-            return False
+            return True
 
         before_snapshot = self.df.copy(deep=True)
 
