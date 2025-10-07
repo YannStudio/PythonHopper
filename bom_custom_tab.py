@@ -66,11 +66,22 @@ import pandas as pd
 
 try:
     from pandastable import Table, TableModel
-    _PANDASTABLE_IMPORT_ERROR: Optional[BaseException] = None
 except ModuleNotFoundError as exc:  # pragma: no cover - afhankelijk van installatie
-    Table = None  # type: ignore[assignment]
-    TableModel = object  # type: ignore[assignment]
-    _PANDASTABLE_IMPORT_ERROR = exc
+    class _TableStub:
+        def __init__(self, *args, **kwargs) -> None:
+            raise RuntimeError(_PANDASTABLE_ERROR) from exc
+
+    class _TableModelStub:
+        def __init__(self, *args, **kwargs) -> None:
+            raise RuntimeError(_PANDASTABLE_ERROR) from exc
+
+    Table = _TableStub  # type: ignore[assignment]
+    TableModel = _TableModelStub  # type: ignore[assignment]
+    _PANDASTABLE_IMPORT_ERROR: Optional[BaseException] = exc
+    _PANDASTABLE_AVAILABLE = False
+else:
+    _PANDASTABLE_IMPORT_ERROR = None
+    _PANDASTABLE_AVAILABLE = True
 
 _PANDASTABLE_ERROR = (
     "De module 'pandastable' is niet geïnstalleerd. "
@@ -81,7 +92,7 @@ CellCoord = Tuple[int, int]
 
 
 def _ensure_pandastable_available() -> None:
-    if Table is not None:
+    if _PANDASTABLE_AVAILABLE:
         return
 
     try:
@@ -212,9 +223,10 @@ class _UndoAwareTable(Table):
         result = super().drawCellEntry(row, col, text=text)
         entry = getattr(self, "cellentry", None)
         if entry is not None:
-            entry.bind("<FocusOut>", self._on_entry_focus_out, add="+")
+            self._ensure_entry_bindings(entry)
         self._active_edit = (row, col)
         return result
+
 
     def handle_left_click(self, event):  # type: ignore[override]
         target_row = self.get_row_clicked(event)
@@ -259,6 +271,7 @@ class _UndoAwareTable(Table):
         if self._skip_focus_commit:
             return
         self._commit_active_edit(trigger_widget=event.widget)
+
 
     def _commit_active_edit(self, trigger_widget: Optional[tk.Widget] = None) -> bool:
         if self._active_edit is None:
