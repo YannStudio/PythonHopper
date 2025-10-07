@@ -66,7 +66,6 @@ import pandas as pd
 
 try:
     from pandastable import Table, TableModel
-    _PANDASTABLE_IMPORT_ERROR: Optional[BaseException] = None
 except ModuleNotFoundError as exc:  # pragma: no cover - afhankelijk van installatie
     class _TableStub:
         def __init__(self, *args, **kwargs) -> None:
@@ -78,7 +77,11 @@ except ModuleNotFoundError as exc:  # pragma: no cover - afhankelijk van install
 
     Table = _TableStub  # type: ignore[assignment]
     TableModel = _TableModelStub  # type: ignore[assignment]
-    _PANDASTABLE_IMPORT_ERROR = exc
+    _PANDASTABLE_IMPORT_ERROR: Optional[BaseException] = exc
+    _PANDASTABLE_AVAILABLE = False
+else:
+    _PANDASTABLE_IMPORT_ERROR = None
+    _PANDASTABLE_AVAILABLE = True
 
 _PANDASTABLE_ERROR = (
     "De module 'pandastable' is niet geïnstalleerd. "
@@ -89,7 +92,7 @@ CellCoord = Tuple[int, int]
 
 
 def _ensure_pandastable_available() -> None:
-    if Table is not None:
+    if _PANDASTABLE_AVAILABLE:
         return
 
     try:
@@ -220,11 +223,18 @@ class _UndoAwareTable(Table):
         result = super().drawCellEntry(row, col, text=text)
         entry = getattr(self, "cellentry", None)
         if entry is not None:
-            entry.bind("<FocusOut>", self._on_entry_focus_out, add="+")
-            entry.bind("<Control-v>", self._on_entry_clipboard_paste, add="+")
-            entry.bind("<Control-V>", self._on_entry_clipboard_paste, add="+")
+            self._ensure_entry_bindings(entry)
         self._active_edit = (row, col)
         return result
+
+    def _ensure_entry_bindings(self, entry: tk.Widget) -> None:
+        if getattr(entry, "_undoaware_bindings", False):  # pragma: no cover - Tk internals
+            return
+
+        entry.bind("<FocusOut>", self._on_entry_focus_out, add="+")
+        for sequence in ("<Control-v>", "<Control-V>", "<<Paste>>", "<Shift-Insert>"):
+            entry.bind(sequence, self._on_entry_clipboard_paste, add="+")
+        setattr(entry, "_undoaware_bindings", True)
 
     def handle_left_click(self, event):  # type: ignore[override]
         target_row = self.get_row_clicked(event)
@@ -274,7 +284,10 @@ class _UndoAwareTable(Table):
         try:
             text = event.widget.clipboard_get()
         except tk.TclError:
-            return None
+            try:
+                text = self.clipboard_get()
+            except tk.TclError:
+                return None
 
         parsed = self._owner._parse_clipboard_text(text)
         while parsed and all(cell.strip() == "" for cell in parsed[-1]):
@@ -289,7 +302,11 @@ class _UndoAwareTable(Table):
         if not self._commit_active_edit(trigger_widget=event.widget):
             return "break"
 
-        return self._owner._on_paste(event)
+        try:
+            self.focus_set()
+        except Exception:  # pragma: no cover - focus issues only in GUI
+            pass
+        return self._owner._on_paste(None)
 
     def _commit_active_edit(self, trigger_widget: Optional[tk.Widget] = None) -> bool:
         if self._active_edit is None:
