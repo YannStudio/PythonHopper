@@ -227,14 +227,6 @@ class _UndoAwareTable(Table):
         self._active_edit = (row, col)
         return result
 
-    def _ensure_entry_bindings(self, entry: tk.Widget) -> None:
-        if getattr(entry, "_undoaware_bindings", False):  # pragma: no cover - Tk internals
-            return
-
-        entry.bind("<FocusOut>", self._on_entry_focus_out, add="+")
-        for sequence in ("<Control-v>", "<Control-V>", "<<Paste>>", "<Shift-Insert>"):
-            entry.bind(sequence, self._on_entry_clipboard_paste, add="+")
-        setattr(entry, "_undoaware_bindings", True)
 
     def handle_left_click(self, event):  # type: ignore[override]
         target_row = self.get_row_clicked(event)
@@ -280,33 +272,6 @@ class _UndoAwareTable(Table):
             return
         self._commit_active_edit(trigger_widget=event.widget)
 
-    def _on_entry_clipboard_paste(self, event: tk.Event) -> Optional[str]:
-        try:
-            text = event.widget.clipboard_get()
-        except tk.TclError:
-            try:
-                text = self.clipboard_get()
-            except tk.TclError:
-                return None
-
-        parsed = self._owner._parse_clipboard_text(text)
-        while parsed and all(cell.strip() == "" for cell in parsed[-1]):
-            parsed.pop()
-
-        if not parsed:
-            return None
-
-        if len(parsed) == 1 and len(parsed[0]) == 1:
-            return None
-
-        if not self._commit_active_edit(trigger_widget=event.widget):
-            return "break"
-
-        try:
-            self.focus_set()
-        except Exception:  # pragma: no cover - focus issues only in GUI
-            pass
-        return self._owner._on_paste(None)
 
     def _commit_active_edit(self, trigger_widget: Optional[tk.Widget] = None) -> bool:
         if self._active_edit is None:
