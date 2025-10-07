@@ -120,26 +120,73 @@ class _UndoableTableModel(TableModel):
         super().__init__(dataframe=dataframe)
         self._on_change = on_change
 
-    def setValueAt(self, value, rowIndex, columnIndex) -> bool:  # type: ignore[override]
+    def setValueAt(  # type: ignore[override]
+        self,
+        value,
+        rowIndex,
+        columnIndex,
+        df: Optional[pd.DataFrame] = None,
+    ) -> bool:
+        """Sla waarden op en informeer de undo-structuur bij wijzigingen."""
+
+        target_df = self.df if df is None else df
+
         row = int(rowIndex)
         col = int(columnIndex)
         if row < 0 or col < 0:
             return False
-        if row >= len(self.df) or col >= len(self.df.columns):
+        if row >= len(target_df) or col >= len(target_df.columns):
             return False
 
-        str_value = "" if value is None else str(value)
+        if value is None:
+            normalized_value = ""
+        elif isinstance(value, float) and pd.isna(value):
+            normalized_value = ""
+        elif isinstance(value, str):
+            normalized_value = value
+        else:
+            normalized_value = str(value)
+
+        current_value = target_df.iat[row, col]
+        normalized_current = "" if pd.isna(current_value) else str(current_value)
+        if normalized_current == normalized_value:
+            return False
+
         before_snapshot = self.df.copy(deep=True)
 
-        current_value = before_snapshot.iat[row, col]
-        normalized_current = "" if pd.isna(current_value) else str(current_value)
-        if normalized_current == str_value:
-            return False
+        target_df.iat[row, col] = normalized_value
 
-        self.df.iat[row, col] = str_value
+        if target_df is not self.df:
+            row_label = target_df.index[row]
+            col_label = target_df.columns[col]
+            try:
+                self.df.loc[row_label, col_label] = normalized_value
+            except Exception:
+                # Fallback voor niet-unieke indexen of ontbrekende labels
+                loc = self.df.index.get_loc(row_label)
+                if isinstance(loc, slice):
+                    base_row = loc.start
+                else:
+                    try:
+                        base_row = int(loc)
+                    except TypeError:
+                        base_row = int(loc[0])
+                self.df.iat[base_row, col] = normalized_value
+
+            loc = self.df.index.get_loc(row_label)
+            if isinstance(loc, slice):
+                effective_row = int(loc.start)
+            else:
+                try:
+                    effective_row = int(loc)
+                except TypeError:
+                    effective_row = int(loc[0])
+        else:
+            effective_row = row
+
         if self._on_change is not None:
             after_snapshot = self.df.copy(deep=True)
-            self._on_change(before_snapshot, after_snapshot, (row, col))
+            self._on_change(before_snapshot, after_snapshot, (effective_row, col))
         return True
 
 
@@ -149,6 +196,8 @@ class _UndoAwareTable(Table):
     def __init__(self, parent: tk.Widget, owner: "BOMCustomTab", **kwargs) -> None:
         super().__init__(parent, **kwargs)
         self._owner = owner
+        self._active_edit: Optional[CellCoord] = None
+        self._skip_focus_commit = False
 
     def paste(self, event=None):  # type: ignore[override]
         return self._owner._on_paste(event)
@@ -158,6 +207,59 @@ class _UndoAwareTable(Table):
 
     def undo(self, event=None):  # type: ignore[override]
         return self._owner._on_undo(event)
+
+    def drawCellEntry(self, row, col, text=None):  # type: ignore[override]
+        result = super().drawCellEntry(row, col, text=text)
+        entry = getattr(self, "cellentry", None)
+        if entry is not None:
+            entry.bind("<FocusOut>", self._on_entry_focus_out, add="+")
+        self._active_edit = (row, col)
+        return result
+
+    def handleCellEntry(self, row, col):  # type: ignore[override]
+        self._skip_focus_commit = True
+        try:
+            return super().handleCellEntry(row, col)
+        finally:
+            self.after_idle(self._reset_focus_commit_guard)
+            self._active_edit = None
+
+    def _reset_focus_commit_guard(self) -> None:
+        self._skip_focus_commit = False
+
+    def _on_entry_focus_out(self, event: tk.Event) -> None:
+        if self._skip_focus_commit:
+            return
+        if self._active_edit is None:
+            return
+        entry = getattr(self, "cellentry", None)
+        if entry is None or event.widget is not entry:
+            return
+
+        row, col = self._active_edit
+        value = getattr(self, "cellentryvar", tk.StringVar()).get()
+
+        if self.filtered == 1:
+            self.delete("entry")
+            self._active_edit = None
+            return
+
+        result = self.model.setValueAt(value, row, col, df=None)
+        if result is False:
+            dtype = self.model.getColumnType(col)
+            msg = (
+                f"This column is {dtype} and is not compatible with the value {value}."
+                " Change data type first."
+            )
+            messagebox.showwarning(
+                "Incompatible type", msg, parent=self.parentframe
+            )
+            entry.after_idle(entry.focus_set)
+            return
+
+        self.drawText(row, col, value, align=self.align)
+        self.delete("entry")
+        self._active_edit = None
 
 
 class BOMCustomTab(ttk.Frame):
