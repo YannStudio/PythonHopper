@@ -2367,7 +2367,18 @@ def start_gui():
             style.configure("Treeview", rowheight=24)
             treef = tk.Frame(main)
             treef.pack(fill="both", expand=True, padx=8, pady=6)
-            self.tree = ttk.Treeview(treef, columns=("PartNumber","Description","Production","Bestanden gevonden","Status"), show="headings")
+            self.tree = ttk.Treeview(
+                treef,
+                columns=(
+                    "PartNumber",
+                    "Description",
+                    "Production",
+                    "Bestanden gevonden",
+                    "Status",
+                ),
+                show="headings",
+                selectmode="extended",
+            )
             for col in ("PartNumber","Description","Production","Bestanden gevonden","Status"):
                 w = 140
                 if col=="Description": w=320
@@ -2382,6 +2393,11 @@ def start_gui():
             tree_scroll.pack(side="left", fill="y")
             self.tree.bind("<Button-1>", self._on_tree_click)
             self.tree.bind("<Delete>", self._delete_selected_bom_rows)
+            self.tree.bind("<Down>", lambda event: self._move_tree_focus(1))
+            self.tree.bind("<Up>", lambda event: self._move_tree_focus(-1))
+            self.tree.bind("<Control-Tab>", self._select_next_with_ctrl_tab)
+            self.tree.bind("<Control-Shift-Tab>", self._select_prev_with_ctrl_tab)
+            self.tree.bind("<Control-ISO_Left_Tab>", self._select_prev_with_ctrl_tab)
             self.item_links: Dict[str, str] = {}
 
             # Actions
@@ -2714,6 +2730,50 @@ def start_gui():
                 self.status_var.set(msg)
 
             return "break" if event is not None else None
+
+        def _move_tree_focus(self, direction: int) -> str:
+            items = list(self.tree.get_children())
+            if not items:
+                return "break"
+
+            focus = self.tree.focus()
+            if focus in items:
+                idx = items.index(focus)
+            else:
+                idx = -1 if direction >= 0 else len(items)
+
+            idx = max(0, min(len(items) - 1, idx + direction))
+            target = items[idx]
+            self.tree.selection_set(target)
+            self.tree.focus(target)
+            self.tree.see(target)
+            return "break"
+
+        def _extend_tree_selection(self, direction: int) -> str:
+            items = list(self.tree.get_children())
+            if not items:
+                return "break"
+
+            focus = self.tree.focus()
+            if focus not in items:
+                focus = items[0] if direction >= 0 else items[-1]
+                self.tree.focus(focus)
+
+            self.tree.selection_add(focus)
+
+            idx = items.index(focus)
+            idx = max(0, min(len(items) - 1, idx + direction))
+            target = items[idx]
+            self.tree.selection_add(target)
+            self.tree.focus(target)
+            self.tree.see(target)
+            return "break"
+
+        def _select_next_with_ctrl_tab(self, _event) -> str:
+            return self._extend_tree_selection(1)
+
+        def _select_prev_with_ctrl_tab(self, _event) -> str:
+            return self._extend_tree_selection(-1)
 
         def _clear_bom(self):
             from tkinter import messagebox
