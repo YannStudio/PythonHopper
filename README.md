@@ -3,12 +3,12 @@ Filehopper in Python
 
 ## Installatie
 
-De GUI-componenten gebruiken het externe pakket [`tksheet`](https://github.com/ragardner/tksheet).
-Installeer eerst de basisvereisten en daarna `tksheet`:
+De GUI-componenten vertrouwen op [`pandastable`](https://github.com/dmnfarrell/pandastable)
+voor het spreadsheet-gedeelte van de custom BOM-tab. Alle runtime
+afhankelijkheden worden via `requirements.txt` geïnstalleerd:
 
 ```bash
 pip install -r requirements.txt
-pip install tksheet
 ```
 
 Start vervolgens de applicatie met `python main.py` of `python -m gui`.

@@ -35,6 +35,8 @@ from orders import (
 
 
 CLIENT_LOGO_DIR = Path("client_logos")
+# A softer brand accent for manufacturing-focused actions.
+MANUFACT_BRAND_COLOR = "#F9C74F"
 
 
 def _norm(text: str) -> str:
@@ -90,6 +92,7 @@ def start_gui():
     class ClientsManagerFrame(tk.Frame):
         def __init__(self, master, db: ClientsDB, on_change=None):
             super().__init__(master)
+            self.configure(padx=12, pady=12)
             self.db = db
             self.on_change = on_change
 
@@ -583,6 +586,7 @@ def start_gui():
     class DeliveryAddressesManagerFrame(tk.Frame):
         def __init__(self, master, db: DeliveryAddressesDB, on_change=None):
             super().__init__(master)
+            self.configure(padx=12, pady=12)
             self.db = db
             self.on_change = on_change
 
@@ -698,6 +702,7 @@ def start_gui():
     class SuppliersManagerFrame(tk.Frame):
         def __init__(self, master, db: SuppliersDB, on_change=None):
             super().__init__(master)
+            self.configure(padx=12, pady=12)
             self.db = db
             self.on_change = on_change
             search = tk.Frame(self)
@@ -885,6 +890,7 @@ def start_gui():
             project_name_var: tk.StringVar,
         ):
             super().__init__(master)
+            self.configure(padx=12, pady=12)
             self.db = db
             self.delivery_db = delivery_db
             self.callback = callback
@@ -1232,6 +1238,22 @@ def start_gui():
             opts.insert(0, "(geen)")
             return opts
 
+        @staticmethod
+        def _parse_selection_key(key: str) -> tuple[str, str]:
+            """Safely resolve a selection key even when helper imports are missing."""
+
+            try:
+                return parse_selection_key(key)
+            except Exception:
+                pass
+
+            if "::" in key:
+                prefix, identifier = key.split("::", 1)
+                if prefix in ("production", "finish"):
+                    return prefix, identifier
+
+            return "production", key
+
         def _refresh_options(self, initial=False):
             self._base_options = self._display_list()
             self._disp_to_name = {}
@@ -1242,7 +1264,12 @@ def start_gui():
             for sel_key, combo in self.rows:
                 typed = combo.get()
                 combo["values"] = self._base_options
-                kind, identifier = parse_selection_key(sel_key)
+                parser = getattr(
+                    self,
+                    "_parse_selection_key",
+                    SupplierSelectionFrame._parse_selection_key,
+                )
+                kind, identifier = parser(sel_key)
                 if kind == "production":
                     lower_name = identifier.strip().lower()
                     if lower_name in ("dummy part", "nan", "spare part"):
@@ -1500,7 +1527,7 @@ def start_gui():
 
             self.configure(padx=12, pady=12)
             self.columnconfigure(0, weight=1)
-            self.rowconfigure(2, weight=1)
+            self.rowconfigure(3, weight=1)
 
             export_options = tk.LabelFrame(
                 self, text="Exportopties", labelanchor="n"
@@ -1536,6 +1563,17 @@ def start_gui():
 
             _add_option(
                 export_options,
+                "Exporteer bewerkte BOM naar exportmap",
+                (
+                    "Bewaar automatisch een Excel-bestand van de huidige BOM in de "
+                    "hoofdfolder van elke export. Alle wijzigingen die je in Filehopper "
+                    "hebt aangebracht, zoals verwijderde rijen, worden meegeschreven."
+                ),
+                self.app.export_bom_var,
+            )
+
+            _add_option(
+                export_options,
                 "Maak snelkoppeling naar nieuwste exportmap",
                 (
                     "Na het exporteren wordt er een snelkoppeling met de naam 'latest'"
@@ -1555,12 +1593,42 @@ def start_gui():
                 self.app.bundle_dry_run_var,
             )
 
+            template_frame = tk.LabelFrame(
+                self,
+                text="BOM-template",
+            )
+            template_frame.grid(
+                row=1,
+                column=0,
+                sticky="ew",
+                padx=0,
+                pady=(12, 0),
+            )
+            template_frame.columnconfigure(0, weight=1)
+
+            tk.Label(
+                template_frame,
+                text=(
+                    "Download een leeg Excel-sjabloon met alle kolommen van de BOM."
+                    " Handig om gegevens vooraf in te vullen of te delen met collega's."
+                ),
+                justify="left",
+                anchor="w",
+                wraplength=480,
+            ).grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 4))
+
+            tk.Button(
+                template_frame,
+                text="Download BOM template",
+                command=self._download_bom_template,
+            ).grid(row=1, column=0, sticky="w", padx=10, pady=(0, 10))
+
             footer_frame = tk.LabelFrame(
                 self,
                 text="Bestelbon/offerte onderschrift",
                 labelanchor="n",
             )
-            footer_frame.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
+            footer_frame.grid(row=2, column=0, sticky="nsew", pady=(12, 0))
             footer_frame.columnconfigure(0, weight=1)
             footer_frame.rowconfigure(1, weight=1)
 
@@ -1603,7 +1671,7 @@ def start_gui():
             extensions_frame = tk.LabelFrame(
                 self, text="Bestandstypen", labelanchor="n"
             )
-            extensions_frame.grid(row=2, column=0, sticky="nsew", pady=(12, 0))
+            extensions_frame.grid(row=3, column=0, sticky="nsew", pady=(12, 0))
             extensions_frame.columnconfigure(0, weight=1)
             extensions_frame.rowconfigure(1, weight=1)
 
@@ -1699,6 +1767,34 @@ def start_gui():
         def _reset_footer_note(self) -> None:
             self.app.update_footer_note(DEFAULT_FOOTER_NOTE)
             self._reload_footer_note()
+
+        def _download_bom_template(self) -> None:
+            path_str = filedialog.asksaveasfilename(
+                parent=self,
+                title="BOM-template opslaan",
+                defaultextension=".xlsx",
+                filetypes=(("Excel-werkboek", "*.xlsx"), ("Alle bestanden", "*.*")),
+                initialfile=BOMCustomTab.default_template_filename(),
+            )
+            if not path_str:
+                return
+
+            target_path = Path(path_str)
+            try:
+                BOMCustomTab.write_template_workbook(target_path)
+            except Exception as exc:
+                messagebox.showerror("Opslaan mislukt", str(exc), parent=self)
+                return
+
+            messagebox.showinfo(
+                "Template opgeslagen",
+                (
+                    "Het lege BOM-sjabloon is opgeslagen. Vul het formulier in en"
+                    " importeer de gegevens later in de Custom BOM-tab.\n\n"
+                    f"Locatie: {target_path}"
+                ),
+                parent=self,
+            )
 
         def _update_listbox_height(self, item_count: int) -> None:
             visible = max(1, item_count)
@@ -2011,6 +2107,17 @@ def start_gui():
             self.zip_finish_var = tk.IntVar(
                 master=self, value=1 if self.settings.zip_finish_exports else 0
             )
+            self.export_bom_var = tk.IntVar(
+                master=self, value=1 if self.settings.export_processed_bom else 0
+            )
+            self.zip_per_finish_var = tk.IntVar(
+                master=self,
+                value=
+                1
+                if self.settings.zip_per_production
+                and self.settings.zip_finish_exports
+                else 0,
+            )
             self.export_date_prefix_var = tk.IntVar(
                 master=self, value=1 if self.settings.export_date_prefix else 0
             )
@@ -2057,6 +2164,7 @@ def start_gui():
                 self.zip_var,
                 self.finish_export_var,
                 self.zip_finish_var,
+                self.export_bom_var,
                 self.export_date_prefix_var,
                 self.export_date_suffix_var,
                 self.export_name_custom_prefix_enabled_var,
@@ -2066,8 +2174,12 @@ def start_gui():
             ):
                 var.trace_add("write", self._save_settings)
 
+            self.zip_var.trace_add("write", self._update_zip_per_finish_var)
+            self.zip_finish_var.trace_add("write", self._update_zip_per_finish_var)
+            self._update_zip_per_finish_var()
+
             tabs_wrapper = tk.Frame(self)
-            tabs_wrapper.pack(fill="both", expand=True, padx=8, pady=(4, 0))
+            tabs_wrapper.pack(fill="both", expand=True, padx=8, pady=(12, 0))
 
             tabs_background = (
                 style.lookup("TNotebook", "background")
@@ -2087,23 +2199,28 @@ def start_gui():
                 event_target=self,
             )
             main = tk.Frame(self.nb)
+            main.configure(padx=12, pady=12)
             self.nb.add(main, text="Main")
             self.nb.add(self.custom_bom_tab, text="Custom BOM")
             self.main_frame = main
             self.clients_frame = ClientsManagerFrame(
                 self.nb, self.client_db, on_change=self._on_db_change
             )
+            self.clients_frame.configure(padx=12, pady=12)
             self.nb.add(self.clients_frame, text="Klant beheer")
             self.delivery_frame = DeliveryAddressesManagerFrame(
                 self.nb, self.delivery_db, on_change=self._on_db_change
             )
+            self.delivery_frame.configure(padx=12, pady=12)
             self.nb.add(self.delivery_frame, text="Leveradres beheer")
             self.suppliers_frame = SuppliersManagerFrame(
                 self.nb, self.db, on_change=self._on_db_change
             )
+            self.suppliers_frame.configure(padx=12, pady=12)
             self.nb.add(self.suppliers_frame, text="Leverancier beheer")
 
             self.settings_frame = SettingsFrame(self.nb, self)
+            self.settings_frame.configure(padx=12, pady=12)
             self.nb.add(self.settings_frame, text="⚙ Settings")
 
             # Top folders
@@ -2182,20 +2299,15 @@ def start_gui():
             self._rebuild_extension_checkbuttons()
             tk.Checkbutton(
                 options_frame,
-                text="Zip per productie",
-                variable=self.zip_var,
+                text="Zip per productie/finish",
+                variable=self.zip_per_finish_var,
                 anchor="w",
+                command=self._toggle_zip_per_finish,
             ).pack(anchor="w", pady=2)
             tk.Checkbutton(
                 options_frame,
                 text="Finish export",
                 variable=self.finish_export_var,
-                anchor="w",
-            ).pack(anchor="w", pady=2)
-            tk.Checkbutton(
-                options_frame,
-                text="Zip finish export",
-                variable=self.zip_finish_var,
                 anchor="w",
             ).pack(anchor="w", pady=2)
             tk.Checkbutton(
@@ -2255,7 +2367,18 @@ def start_gui():
             style.configure("Treeview", rowheight=24)
             treef = tk.Frame(main)
             treef.pack(fill="both", expand=True, padx=8, pady=6)
-            self.tree = ttk.Treeview(treef, columns=("PartNumber","Description","Production","Bestanden gevonden","Status"), show="headings")
+            self.tree = ttk.Treeview(
+                treef,
+                columns=(
+                    "PartNumber",
+                    "Description",
+                    "Production",
+                    "Bestanden gevonden",
+                    "Status",
+                ),
+                show="headings",
+                selectmode="extended",
+            )
             for col in ("PartNumber","Description","Production","Bestanden gevonden","Status"):
                 w = 140
                 if col=="Description": w=320
@@ -2270,21 +2393,35 @@ def start_gui():
             tree_scroll.pack(side="left", fill="y")
             self.tree.bind("<Button-1>", self._on_tree_click)
             self.tree.bind("<Delete>", self._delete_selected_bom_rows)
+
+            self.tree.bind("<Down>", lambda event: self._move_tree_focus(1))
+            self.tree.bind("<Up>", lambda event: self._move_tree_focus(-1))
+            self.tree.bind("<Control-Tab>", self._select_next_with_ctrl_tab)
+            self.tree.bind("<Control-Shift-Tab>", self._select_prev_with_ctrl_tab)
+            self.tree.bind("<Control-ISO_Left_Tab>", self._select_prev_with_ctrl_tab)
+
             self.item_links: Dict[str, str] = {}
 
             # Actions
             act = tk.Frame(main); act.pack(fill="x", padx=8, pady=8)
-            tk.Button(act, text="Kopieer zonder submappen", command=self._copy_flat).pack(
-                side="left", padx=6
+            button_style = dict(
+                bg=MANUFACT_BRAND_COLOR,
+                activebackground="#F7B538",
+                fg="black",
+                activeforeground="black",
             )
+            tk.Button(
+                act, text="Kopieer zonder submappen", command=self._copy_flat, **button_style
+            ).pack(side="left", padx=6)
             tk.Button(
                 act,
                 text="Kopieer per productie + bestelbonnen",
                 command=self._copy_per_prod,
+                **button_style,
             ).pack(side="left", padx=6)
-            tk.Button(act, text="Combine pdf", command=self._combine_pdf).pack(
-                side="left", padx=6
-            )
+            tk.Button(
+                act, text="Combine pdf", command=self._combine_pdf, **button_style
+            ).pack(side="left", padx=6)
 
             # Status
             self.status_var = tk.StringVar(value="Klaar")
@@ -2312,6 +2449,19 @@ def start_gui():
             elif opts:
                 self.client_combo.set(opts[0])
 
+        def _toggle_zip_per_finish(self):
+            enabled = bool(self.zip_per_finish_var.get())
+            desired = 1 if enabled else 0
+            if self.zip_var.get() != desired:
+                self.zip_var.set(desired)
+            if self.zip_finish_var.get() != desired:
+                self.zip_finish_var.set(desired)
+
+        def _update_zip_per_finish_var(self, *_args):
+            desired = 1 if (self.zip_var.get() and self.zip_finish_var.get()) else 0
+            if self.zip_per_finish_var.get() != desired:
+                self.zip_per_finish_var.set(desired)
+
         def _save_settings(self, *_args):
             if getattr(self, "_suspend_save", False):
                 return
@@ -2324,6 +2474,7 @@ def start_gui():
             self.settings.zip_per_production = bool(self.zip_var.get())
             self.settings.copy_finish_exports = bool(self.finish_export_var.get())
             self.settings.zip_finish_exports = bool(self.zip_finish_var.get())
+            self.settings.export_processed_bom = bool(self.export_bom_var.get())
             self.settings.export_date_prefix = bool(self.export_date_prefix_var.get())
             self.settings.export_date_suffix = bool(self.export_date_suffix_var.get())
             self.settings.custom_prefix_enabled = bool(
@@ -2542,6 +2693,15 @@ def start_gui():
             df = self.bom_df
             if df is None or df.empty:
                 return "break" if event is not None else None
+
+            if event is not None:
+                try:
+                    widget_with_focus = self.focus_get()
+                except tk.TclError:
+                    widget_with_focus = None
+                if widget_with_focus is not self.tree:
+                    return None
+
             selection = self.tree.selection()
             if not selection:
                 return "break" if event is not None else None
@@ -2557,8 +2717,9 @@ def start_gui():
                 return "break" if event is not None else None
 
             row_count = len(df)
+            sorted_indices = sorted(set(indices))
             drop_labels = []
-            for idx in sorted(set(indices)):
+            for idx in sorted_indices:
                 if 0 <= idx < row_count:
                     drop_labels.append(df.index[idx])
             if not drop_labels:
@@ -2566,6 +2727,7 @@ def start_gui():
 
             self.bom_df = df.drop(drop_labels).reset_index(drop=True)
 
+            target_index = sorted_indices[0]
             removed = 0
             for item in selection:
                 if item in self.item_links:
@@ -2580,7 +2742,71 @@ def start_gui():
                 msg = "1 BOM-rij verwijderd." if removed == 1 else f"{removed} BOM-rijen verwijderd."
                 self.status_var.set(msg)
 
+            remaining_items = list(self.tree.get_children())
+            if remaining_items:
+                target_index = min(target_index, len(remaining_items) - 1)
+                next_item = remaining_items[target_index]
+                try:
+                    self.tree.selection_set(next_item)
+                    self.tree.focus(next_item)
+                    self.tree.see(next_item)
+                except tk.TclError:
+                    pass
+            else:
+                try:
+                    current_selection = self.tree.selection()
+                    if current_selection:
+                        self.tree.selection_remove(*current_selection)
+                    self.tree.focus("")
+                except tk.TclError:
+                    pass
+
+
             return "break" if event is not None else None
+
+        def _move_tree_focus(self, direction: int) -> str:
+            items = list(self.tree.get_children())
+            if not items:
+                return "break"
+
+            focus = self.tree.focus()
+            if focus in items:
+                idx = items.index(focus)
+            else:
+                idx = -1 if direction >= 0 else len(items)
+
+            idx = max(0, min(len(items) - 1, idx + direction))
+            target = items[idx]
+            self.tree.selection_set(target)
+            self.tree.focus(target)
+            self.tree.see(target)
+            return "break"
+
+        def _extend_tree_selection(self, direction: int) -> str:
+            items = list(self.tree.get_children())
+            if not items:
+                return "break"
+
+            focus = self.tree.focus()
+            if focus not in items:
+                focus = items[0] if direction >= 0 else items[-1]
+                self.tree.focus(focus)
+
+            self.tree.selection_add(focus)
+
+            idx = items.index(focus)
+            idx = max(0, min(len(items) - 1, idx + direction))
+            target = items[idx]
+            self.tree.selection_add(target)
+            self.tree.focus(target)
+            self.tree.see(target)
+            return "break"
+
+        def _select_next_with_ctrl_tab(self, _event) -> str:
+            return self._extend_tree_selection(1)
+
+        def _select_prev_with_ctrl_tab(self, _event) -> str:
+            return self._extend_tree_selection(-1)
 
         def _clear_bom(self):
             from tkinter import messagebox
@@ -2968,6 +3194,7 @@ def start_gui():
                         project_name=project_name,
                         copy_finish_exports=bool(self.finish_export_var.get()),
                         zip_finish_exports=bool(self.zip_finish_var.get()),
+                        export_bom=bool(self.export_bom_var.get()),
                         export_name_prefix_text=token_prefix_text,
                         export_name_prefix_enabled=token_prefix_enabled,
                         export_name_suffix_text=token_suffix_text,

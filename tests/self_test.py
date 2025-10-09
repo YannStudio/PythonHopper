@@ -13,7 +13,12 @@ from models import Supplier, Client
 from suppliers_db import SuppliersDB
 from clients_db import ClientsDB
 from bom import load_bom
-from orders import copy_per_production_and_orders, DEFAULT_FOOTER_NOTE, write_order_excel
+from orders import (
+    copy_per_production_and_orders,
+    DEFAULT_FOOTER_NOTE,
+    write_order_excel,
+    make_production_selection_key,
+)
 
 
 def run_tests() -> int:
@@ -90,7 +95,7 @@ def run_tests() -> int:
             footer_note=DEFAULT_FOOTER_NOTE,
         )
         assert cnt == 2
-        assert chosen.get("Laser") == "ACME"
+        assert chosen.get(make_production_selection_key("Laser")) == "ACME"
         prod_folder = os.path.join(dst, "Laser")
         assert os.path.exists(os.path.join(prod_folder, "PN1.pdf"))
         assert os.path.exists(os.path.join(prod_folder, "PN1.stp"))

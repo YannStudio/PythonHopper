@@ -163,6 +163,16 @@ def load_bom(path: str) -> pd.DataFrame:
 
     df["Materiaal"] = _text_column(mat_col)
 
+    supplier_col = find_any(["Supplier"])
+    supplier_code_col = find_any(["Supplier code"])
+    manufacturer_col = find_any(["Manufacturer"])
+    manufacturer_code_col = find_any(["Manufacturer code"])
+
+    df["Supplier"] = _text_column(supplier_col)
+    df["Supplier code"] = _text_column(supplier_code_col)
+    df["Manufacturer"] = _text_column(manufacturer_col)
+    df["Manufacturer code"] = _text_column(manufacturer_code_col)
+
     finish_col = find_any(["Finish"])
     if finish_col is None:
         finish_col = _find_col_by_regex(df, [r"\bfinish\b"])
@@ -186,6 +196,10 @@ def load_bom(path: str) -> pd.DataFrame:
             "Bestanden gevonden",
             "Status",
             "Materiaal",
+            "Supplier",
+            "Supplier code",
+            "Manufacturer",
+            "Manufacturer code",
             "Finish",
             "RAL color",
             "Aantal",
