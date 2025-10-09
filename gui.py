@@ -2393,11 +2393,13 @@ def start_gui():
             tree_scroll.pack(side="left", fill="y")
             self.tree.bind("<Button-1>", self._on_tree_click)
             self.tree.bind("<Delete>", self._delete_selected_bom_rows)
+
             self.tree.bind("<Down>", lambda event: self._move_tree_focus(1))
             self.tree.bind("<Up>", lambda event: self._move_tree_focus(-1))
             self.tree.bind("<Control-Tab>", self._select_next_with_ctrl_tab)
             self.tree.bind("<Control-Shift-Tab>", self._select_prev_with_ctrl_tab)
             self.tree.bind("<Control-ISO_Left_Tab>", self._select_prev_with_ctrl_tab)
+
             self.item_links: Dict[str, str] = {}
 
             # Actions
@@ -2691,6 +2693,15 @@ def start_gui():
             df = self.bom_df
             if df is None or df.empty:
                 return "break" if event is not None else None
+
+            if event is not None:
+                try:
+                    widget_with_focus = self.focus_get()
+                except tk.TclError:
+                    widget_with_focus = None
+                if widget_with_focus is not self.tree:
+                    return None
+
             selection = self.tree.selection()
             if not selection:
                 return "break" if event is not None else None
@@ -2706,8 +2717,9 @@ def start_gui():
                 return "break" if event is not None else None
 
             row_count = len(df)
+            sorted_indices = sorted(set(indices))
             drop_labels = []
-            for idx in sorted(set(indices)):
+            for idx in sorted_indices:
                 if 0 <= idx < row_count:
                     drop_labels.append(df.index[idx])
             if not drop_labels:
@@ -2715,6 +2727,7 @@ def start_gui():
 
             self.bom_df = df.drop(drop_labels).reset_index(drop=True)
 
+            target_index = sorted_indices[0]
             removed = 0
             for item in selection:
                 if item in self.item_links:
@@ -2728,6 +2741,16 @@ def start_gui():
             if removed:
                 msg = "1 BOM-rij verwijderd." if removed == 1 else f"{removed} BOM-rijen verwijderd."
                 self.status_var.set(msg)
+
+            remaining_items = list(self.tree.get_children())
+            if remaining_items:
+                target_index = min(target_index, len(remaining_items) - 1)
+                next_item = remaining_items[target_index]
+                self.tree.selection_set(next_item)
+                self.tree.focus(next_item)
+                self.tree.see(next_item)
+            else:
+                self.tree.selection_remove(self.tree.selection())
 
             return "break" if event is not None else None
 
