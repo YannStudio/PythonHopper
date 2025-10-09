@@ -1563,6 +1563,17 @@ def start_gui():
 
             _add_option(
                 export_options,
+                "Exporteer bewerkte BOM naar exportmap",
+                (
+                    "Bewaar automatisch een Excel-bestand van de huidige BOM in de "
+                    "hoofdfolder van elke export. Alle wijzigingen die je in Filehopper "
+                    "hebt aangebracht, zoals verwijderde rijen, worden meegeschreven."
+                ),
+                self.app.export_bom_var,
+            )
+
+            _add_option(
+                export_options,
                 "Maak snelkoppeling naar nieuwste exportmap",
                 (
                     "Na het exporteren wordt er een snelkoppeling met de naam 'latest'"
@@ -2096,6 +2107,9 @@ def start_gui():
             self.zip_finish_var = tk.IntVar(
                 master=self, value=1 if self.settings.zip_finish_exports else 0
             )
+            self.export_bom_var = tk.IntVar(
+                master=self, value=1 if self.settings.export_processed_bom else 0
+            )
             self.zip_per_finish_var = tk.IntVar(
                 master=self,
                 value=
@@ -2150,6 +2164,7 @@ def start_gui():
                 self.zip_var,
                 self.finish_export_var,
                 self.zip_finish_var,
+                self.export_bom_var,
                 self.export_date_prefix_var,
                 self.export_date_suffix_var,
                 self.export_name_custom_prefix_enabled_var,
@@ -2441,6 +2456,7 @@ def start_gui():
             self.settings.zip_per_production = bool(self.zip_var.get())
             self.settings.copy_finish_exports = bool(self.finish_export_var.get())
             self.settings.zip_finish_exports = bool(self.zip_finish_var.get())
+            self.settings.export_processed_bom = bool(self.export_bom_var.get())
             self.settings.export_date_prefix = bool(self.export_date_prefix_var.get())
             self.settings.export_date_suffix = bool(self.export_date_suffix_var.get())
             self.settings.custom_prefix_enabled = bool(
@@ -3085,6 +3101,7 @@ def start_gui():
                         project_name=project_name,
                         copy_finish_exports=bool(self.finish_export_var.get()),
                         zip_finish_exports=bool(self.zip_finish_var.get()),
+                        export_bom=bool(self.export_bom_var.get()),
                         export_name_prefix_text=token_prefix_text,
                         export_name_prefix_enabled=token_prefix_enabled,
                         export_name_suffix_text=token_suffix_text,

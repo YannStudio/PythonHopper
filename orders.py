@@ -59,6 +59,34 @@ DEFAULT_FOOTER_NOTE = (
 STEP_EXTS = {".step", ".stp"}
 
 
+def _export_bom_workbook(bom_df: pd.DataFrame, dest: str, date_iso: str) -> str:
+    """Write the processed BOM dataframe to an Excel workbook."""
+
+    filename = f"BOM-FileHopper-Export-{date_iso}.xlsx"
+    target_path = os.path.join(dest, filename)
+    export_df = bom_df.reset_index(drop=True).copy()
+
+    with pd.ExcelWriter(target_path, engine="openpyxl") as writer:
+        export_df.to_excel(writer, index=False, sheet_name="BOM")
+        if Alignment is not None and get_column_letter is not None:
+            ws = writer.sheets["BOM"]
+            alignment = Alignment(wrap_text=False, vertical="top")
+            for row in ws.iter_rows():
+                for cell in row:
+                    cell.alignment = alignment
+            for col_idx in range(1, ws.max_column + 1):
+                column_letter = get_column_letter(col_idx)
+                max_length = 0
+                for cell in ws[column_letter]:
+                    value = cell.value
+                    cell_length = len(str(value)) if value is not None else 0
+                    if cell_length > max_length:
+                        max_length = cell_length
+                ws.column_dimensions[column_letter].width = min(max(12, max_length + 2), 80)
+
+    return target_path
+
+
 def _normalize_crop_box(
     crop: object, width: int, height: int
 ) -> Optional[tuple[int, int, int, int]]:
@@ -779,6 +807,7 @@ def copy_per_production_and_orders(
     export_name_suffix_enabled: bool | None = None,
     copy_finish_exports: bool = False,
     zip_finish_exports: bool = True,
+    export_bom: bool = True,
     finish_override_map: Dict[str, str] | None = None,
     finish_doc_type_map: Dict[str, str] | None = None,
     finish_doc_num_map: Dict[str, str] | None = None,
@@ -818,6 +847,10 @@ def copy_per_production_and_orders(
     ``RAL color`` values. When ``zip_finish_exports`` is ``True`` (default)
     the finish folders receive a single ZIP archive containing the export
     files instead of loose copies.
+
+    When ``export_bom`` is ``True`` (default) the processed BOM, including any
+    changes made inside Filehopper, is written as an Excel workbook in the root
+    of ``dest``. The filename contains the export date in ISO-formaat.
 
     Finish-specific overrides, document types/numbers and deliveries can be
     provided via the ``finish_*`` mappings. Keys correspond to the normalized
@@ -1237,6 +1270,12 @@ def copy_per_production_and_orders(
 
     # Persist any (possibly unchanged) supplier defaults so that callers can rely on
     # the database reflecting the latest state on disk.
+    if export_bom:
+        try:
+            _export_bom_workbook(bom_df, dest, today)
+        except Exception as exc:  # pragma: no cover - unexpected
+            raise RuntimeError(f"Kon BOM-export niet opslaan: {exc}") from exc
+
     db.save(SUPPLIERS_DB_FILE)
 
     return count_copied, chosen
