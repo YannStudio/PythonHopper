@@ -2393,15 +2393,13 @@ def start_gui():
             tree_scroll.pack(side="left", fill="y")
             self.tree.bind("<Button-1>", self._on_tree_click)
             self.tree.bind("<Delete>", self._delete_selected_bom_rows)
-            self.tree.bind("<KeyPress-Delete>", self._delete_selected_bom_rows)
-            self.tree.bind("<KP_Delete>", self._delete_selected_bom_rows)
+
             self.tree.bind("<Down>", lambda event: self._move_tree_focus(1))
             self.tree.bind("<Up>", lambda event: self._move_tree_focus(-1))
             self.tree.bind("<Control-Tab>", self._select_next_with_ctrl_tab)
             self.tree.bind("<Control-Shift-Tab>", self._select_prev_with_ctrl_tab)
             self.tree.bind("<Control-ISO_Left_Tab>", self._select_prev_with_ctrl_tab)
-            self.bind("<Delete>", self._delete_selected_bom_rows)
-            self.bind("<KP_Delete>", self._delete_selected_bom_rows)
+
             self.item_links: Dict[str, str] = {}
 
             # Actions
