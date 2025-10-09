@@ -2367,7 +2367,18 @@ def start_gui():
             style.configure("Treeview", rowheight=24)
             treef = tk.Frame(main)
             treef.pack(fill="both", expand=True, padx=8, pady=6)
-            self.tree = ttk.Treeview(treef, columns=("PartNumber","Description","Production","Bestanden gevonden","Status"), show="headings")
+            self.tree = ttk.Treeview(
+                treef,
+                columns=(
+                    "PartNumber",
+                    "Description",
+                    "Production",
+                    "Bestanden gevonden",
+                    "Status",
+                ),
+                show="headings",
+                selectmode="extended",
+            )
             for col in ("PartNumber","Description","Production","Bestanden gevonden","Status"):
                 w = 140
                 if col=="Description": w=320
@@ -2382,6 +2393,15 @@ def start_gui():
             tree_scroll.pack(side="left", fill="y")
             self.tree.bind("<Button-1>", self._on_tree_click)
             self.tree.bind("<Delete>", self._delete_selected_bom_rows)
+            self.tree.bind("<KeyPress-Delete>", self._delete_selected_bom_rows)
+            self.tree.bind("<KP_Delete>", self._delete_selected_bom_rows)
+            self.tree.bind("<Down>", lambda event: self._move_tree_focus(1))
+            self.tree.bind("<Up>", lambda event: self._move_tree_focus(-1))
+            self.tree.bind("<Control-Tab>", self._select_next_with_ctrl_tab)
+            self.tree.bind("<Control-Shift-Tab>", self._select_prev_with_ctrl_tab)
+            self.tree.bind("<Control-ISO_Left_Tab>", self._select_prev_with_ctrl_tab)
+            self.bind("<Delete>", self._delete_selected_bom_rows)
+            self.bind("<KP_Delete>", self._delete_selected_bom_rows)
             self.item_links: Dict[str, str] = {}
 
             # Actions
@@ -2675,6 +2695,17 @@ def start_gui():
             df = self.bom_df
             if df is None or df.empty:
                 return "break" if event is not None else None
+
+            if event is not None:
+                widget = getattr(event, "widget", None)
+                if widget is not self.tree:
+                    try:
+                        widget_with_focus = self.focus_get()
+                    except tk.TclError:
+                        widget_with_focus = None
+                    if widget_with_focus is not self.tree:
+                        return None
+
             selection = self.tree.selection()
             if not selection:
                 return "break" if event is not None else None
@@ -2686,34 +2717,89 @@ def start_gui():
                 except tk.TclError:
                     continue
                 indices.append(idx)
+
             if not indices:
                 return "break" if event is not None else None
 
             row_count = len(df)
-            drop_labels = []
-            for idx in sorted(set(indices)):
+            sorted_indices = sorted(set(indices))
+            drop_labels: List[int] = []
+            for idx in sorted_indices:
                 if 0 <= idx < row_count:
-                    drop_labels.append(df.index[idx])
+                    drop_labels.append(int(df.index[idx]))
+
             if not drop_labels:
                 return "break" if event is not None else None
 
+            target_index = sorted_indices[0]
+            removed_count = len(drop_labels)
+
             self.bom_df = df.drop(drop_labels).reset_index(drop=True)
+            self._refresh_tree()
 
-            removed = 0
-            for item in selection:
-                if item in self.item_links:
-                    self.item_links.pop(item, None)
-                try:
-                    self.tree.delete(item)
-                except tk.TclError:
-                    continue
-                removed += 1
+            remaining_items = list(self.tree.get_children())
+            if remaining_items:
+                target_index = min(target_index, len(remaining_items) - 1)
+                next_item = remaining_items[target_index]
+                self.tree.selection_set(next_item)
+                self.tree.focus(next_item)
+                self.tree.see(next_item)
+            else:
+                self.tree.selection_remove(self.tree.selection())
 
-            if removed:
-                msg = "1 BOM-rij verwijderd." if removed == 1 else f"{removed} BOM-rijen verwijderd."
+            if removed_count:
+                msg = (
+                    "1 BOM-rij verwijderd."
+                    if removed_count == 1
+                    else f"{removed_count} BOM-rijen verwijderd."
+                )
                 self.status_var.set(msg)
 
             return "break" if event is not None else None
+
+        def _move_tree_focus(self, direction: int) -> str:
+            items = list(self.tree.get_children())
+            if not items:
+                return "break"
+
+            focus = self.tree.focus()
+            if focus in items:
+                idx = items.index(focus)
+            else:
+                idx = -1 if direction >= 0 else len(items)
+
+            idx = max(0, min(len(items) - 1, idx + direction))
+            target = items[idx]
+            self.tree.selection_set(target)
+            self.tree.focus(target)
+            self.tree.see(target)
+            return "break"
+
+        def _extend_tree_selection(self, direction: int) -> str:
+            items = list(self.tree.get_children())
+            if not items:
+                return "break"
+
+            focus = self.tree.focus()
+            if focus not in items:
+                focus = items[0] if direction >= 0 else items[-1]
+                self.tree.focus(focus)
+
+            self.tree.selection_add(focus)
+
+            idx = items.index(focus)
+            idx = max(0, min(len(items) - 1, idx + direction))
+            target = items[idx]
+            self.tree.selection_add(target)
+            self.tree.focus(target)
+            self.tree.see(target)
+            return "break"
+
+        def _select_next_with_ctrl_tab(self, _event) -> str:
+            return self._extend_tree_selection(1)
+
+        def _select_prev_with_ctrl_tab(self, _event) -> str:
+            return self._extend_tree_selection(-1)
 
         def _clear_bom(self):
             from tkinter import messagebox
