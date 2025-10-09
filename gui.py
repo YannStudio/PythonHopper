@@ -28,6 +28,7 @@ from orders import (
     combine_pdfs_from_source,
     _prefix_for_doc_type,
     describe_finish_combo,
+    is_spare_or_dummy_production,
     make_finish_selection_key,
     make_production_selection_key,
     parse_selection_key,
@@ -1271,8 +1272,7 @@ def start_gui():
                 )
                 kind, identifier = parser(sel_key)
                 if kind == "production":
-                    lower_name = identifier.strip().lower()
-                    if lower_name in ("dummy part", "nan", "spare part"):
+                    if is_spare_or_dummy_production(identifier):
                         combo.set(self._base_options[0])
                         continue
                     name = self.db.get_default(identifier)

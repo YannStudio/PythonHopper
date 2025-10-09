@@ -7,6 +7,7 @@ from typing import List, Dict, Optional
 from suppliers_db import SuppliersDB
 from delivery_addresses_db import DeliveryAddressesDB
 from models import Supplier, DeliveryAddress
+from orders import is_spare_or_dummy_production
 
 
 def _norm(text: str) -> str:
@@ -122,6 +123,7 @@ def _load_supplier_frame():
         "DeliveryAddressesDB": DeliveryAddressesDB,
         "sort_supplier_options": sort_supplier_options,
         "_norm": _norm,
+        "is_spare_or_dummy_production": is_spare_or_dummy_production,
     }
     exec(code, ns)
     cls = ns["SupplierSelectionFrame"]

@@ -20,3 +20,13 @@ def test_pick_supplier_with_prefetched_list(tmp_path, monkeypatch):
     )
 
     assert cached == direct
+
+
+def test_pick_supplier_skips_sparepart(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    db = SuppliersDB()
+    db.upsert(Supplier.from_any({"supplier": "ACME"}))
+
+    result = pick_supplier_for_production("SparePart", db, {})
+
+    assert result.supplier == ""
