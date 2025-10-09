@@ -59,6 +59,24 @@ DEFAULT_FOOTER_NOTE = (
 STEP_EXTS = {".step", ".stp"}
 
 
+_SPARE_OR_DUMMY_PRODUCTIONS = {
+    "dummypart",
+    "nan",
+    "sparepart",
+    "spareparts",
+}
+
+
+def is_spare_or_dummy_production(value: object) -> bool:
+    """Return ``True`` when a production name represents a spare/dummy branch."""
+
+    text = _to_str(value).strip().lower()
+    if not text:
+        return False
+    normalized = re.sub(r"[^a-z0-9]+", "", text)
+    return normalized in _SPARE_OR_DUMMY_PRODUCTIONS
+
+
 def _export_bom_workbook(bom_df: pd.DataFrame, dest: str, date_iso: str) -> str:
     """Write the processed BOM dataframe to an Excel workbook."""
 
@@ -748,7 +766,7 @@ def pick_supplier_for_production(
             if s.supplier.lower() == name.lower():
                 return s
         return Supplier(supplier=name)
-    if prod.strip().lower() in {"dummy part", "nan", "spare part"}:
+    if is_spare_or_dummy_production(prod):
         return Supplier(supplier="")
     default = db.get_default(prod)
     if default:

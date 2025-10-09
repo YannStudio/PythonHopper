@@ -8,6 +8,7 @@ from delivery_addresses_db import DeliveryAddressesDB
 from clients_db import ClientsDB
 from models import Supplier, DeliveryAddress, Client
 from app_settings import FileExtensionSetting
+from orders import is_spare_or_dummy_production
 
 
 class DummyCombo:
@@ -70,6 +71,7 @@ def _load_gui_classes():
         "SuppliersDB": SuppliersDB,
         "DeliveryAddressesDB": DeliveryAddressesDB,
         "FileExtensionSetting": FileExtensionSetting,
+        "is_spare_or_dummy_production": is_spare_or_dummy_production,
     }
     exec(code, ns)
     return ns["SupplierSelectionFrame"], ns["App"]
