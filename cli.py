@@ -531,6 +531,7 @@ def cli_copy_per_prod(args):
         project_name=args.project_name,
         copy_finish_exports=copy_finish_exports,
         zip_finish_exports=zip_finish_exports,
+        export_bom=bool(settings.export_processed_bom),
         export_name_prefix_text=export_prefix_text,
         export_name_prefix_enabled=export_prefix_enabled,
         export_name_suffix_text=export_suffix_text,
