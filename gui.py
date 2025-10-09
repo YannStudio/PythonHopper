@@ -2746,6 +2746,20 @@ def start_gui():
             if remaining_items:
                 target_index = min(target_index, len(remaining_items) - 1)
                 next_item = remaining_items[target_index]
+                try:
+                    self.tree.selection_set(next_item)
+                    self.tree.focus(next_item)
+                    self.tree.see(next_item)
+                except tk.TclError:
+                    pass
+            else:
+                try:
+                    current_selection = self.tree.selection()
+                    if current_selection:
+                        self.tree.selection_remove(*current_selection)
+                    self.tree.focus("")
+                except tk.TclError:
+                    pass
 
 
             return "break" if event is not None else None
