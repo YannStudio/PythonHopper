@@ -791,8 +791,20 @@ class BOMCustomTab(ttk.Frame):
             return "break"
 
         rows, cols = self._collect_selection()
-        start_row = min(rows) if rows else int(self.table.currentrow or 0)
-        start_col = min(cols) if cols else int(self.table.currentcol or 0)
+
+        def _coerce_index(value: Optional[Any]) -> Optional[int]:
+            if value is None:
+                return None
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+
+        active_row = _coerce_index(getattr(self.table, "currentrow", None))
+        active_col = _coerce_index(getattr(self.table, "currentcol", None))
+
+        start_row = active_row if active_row is not None else (min(rows) if rows else 0)
+        start_col = active_col if active_col is not None else (min(cols) if cols else 0)
         start_row = max(start_row, 0)
         start_col = max(start_col, 0)
 
