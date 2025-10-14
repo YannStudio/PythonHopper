@@ -39,7 +39,6 @@
     }
   ],
   "zip_per_production": true,
-{
   "copy_finish_exports": false,
   "zip_finish_exports": true,
   "export_processed_bom": true,

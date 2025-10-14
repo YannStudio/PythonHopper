@@ -2398,7 +2398,12 @@ def start_gui():
             self.tree.bind("<Up>", lambda event: self._move_tree_focus(-1))
             self.tree.bind("<Control-Tab>", self._select_next_with_ctrl_tab)
             self.tree.bind("<Control-Shift-Tab>", self._select_prev_with_ctrl_tab)
-            self.tree.bind("<Control-ISO_Left_Tab>", self._select_prev_with_ctrl_tab)
+            try:
+                # Some Tk builds (e.g. Linux) use ISO_Left_Tab instead of Shift-Tab.
+                self.tree.bind("<Control-ISO_Left_Tab>", self._select_prev_with_ctrl_tab)
+            except tk.TclError:
+                # Skip the binding on platforms where the keysym is unknown (e.g. Windows).
+                pass
 
             self.item_links: Dict[str, str] = {}
 
