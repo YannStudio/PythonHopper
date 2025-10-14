@@ -47,6 +47,35 @@ na updates.
 
 ## Voorbeelden
 
+## Problemen oplossen
+
+### "Please clean your repository working tree before checkout"
+
+Deze melding verschijnt in Visual Studio (Code) wanneer je probeert te
+wisselen van branch of commit terwijl er lokale wijzigingen zijn. Los dit op
+door eerst je werkdirectory op te ruimen:
+
+1. Controleer de status van de repository:
+
+   ```bash
+   git status
+   ```
+
+2. Commit of stash de wijzigingen:
+
+   ```bash
+   git add .
+   git commit -m "Jouw boodschap"
+   # of
+   git stash
+   ```
+
+3. Probeer daarna opnieuw van branch of commit te wisselen.
+
+Als je wijzigingen niet wil bewaren, kan je ze weggooien met `git checkout --
+<bestand>` of `git reset --hard`, maar wees hiermee voorzichtig: je verliest
+dan alle niet-gecommit werk.
+
 ### Leverancier toevoegen
 
 ```
