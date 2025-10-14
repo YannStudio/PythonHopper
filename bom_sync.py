@@ -7,6 +7,12 @@ from typing import Optional, Sequence, Tuple
 import pandas as pd
 
 _MAIN_STATUS_COLUMNS: Tuple[str, ...] = ("Bestanden gevonden", "Status", "Link")
+_CUSTOM_TO_MAIN_ALIASES = {
+    "Material": "Materiaal",
+    "QTY.": "Aantal",
+    "Surface Area (m²)": "Oppervlakte",
+    "Weight (kg)": "Gewicht",
+}
 MAIN_BOM_COLUMNS: Tuple[str, ...] = (
     "PartNumber",
     "Description",
@@ -87,9 +93,6 @@ def prepare_custom_bom_for_main(
 
     normalized = custom_df.copy(deep=True)
     for column in normalized.columns:
-        if column == "Aantal":
-            normalized[column] = _numeric_qty(normalized[column])
-            continue
         normalized[column] = normalized[column].map(_normalize_cell)
 
     part_values = _normalize_part_numbers(normalized)
@@ -100,6 +103,22 @@ def prepare_custom_bom_for_main(
         raise ValueError("Er zijn geen rijen met een ingevulde 'PartNumber'.")
     normalized["PartNumber"] = part_values.loc[valid_mask]
     part_index = part_keys.loc[valid_mask]
+
+    for source, target in _CUSTOM_TO_MAIN_ALIASES.items():
+        if source not in normalized.columns:
+            continue
+        source_values = normalized[source]
+        if target in normalized.columns:
+            target_values = normalized[target]
+            normalized[target] = target_values.where(
+                target_values != "", source_values
+            )
+        else:
+            normalized[target] = source_values
+        normalized.drop(columns=[source], inplace=True)
+
+    if "Aantal" in normalized.columns:
+        normalized["Aantal"] = _numeric_qty(normalized["Aantal"])
 
     for status_col in _MAIN_STATUS_COLUMNS:
         if status_col not in normalized.columns:
