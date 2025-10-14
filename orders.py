@@ -65,6 +65,8 @@ def _export_bom_workbook(bom_df: pd.DataFrame, dest: str, date_iso: str) -> str:
     filename = f"BOM-FileHopper-Export-{date_iso}.xlsx"
     target_path = os.path.join(dest, filename)
     export_df = bom_df.reset_index(drop=True).copy()
+    if "Link" in export_df.columns:
+        export_df = export_df.drop(columns=["Link"])
 
     with pd.ExcelWriter(target_path, engine="openpyxl") as writer:
         export_df.to_excel(writer, index=False, sheet_name="BOM")
