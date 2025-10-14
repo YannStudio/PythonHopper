@@ -120,6 +120,31 @@ class UndoEntry:
     cells: Sequence[CellCoord]
 
 
+def _dataframe_slice_to_clipboard(
+    frame: pd.DataFrame, rows: Sequence[int], cols: Sequence[int]
+) -> str:
+    """Formatteer een DataFrame-deel naar tabgescheiden klembordtekst."""
+
+    if not rows or not cols:
+        return ""
+
+    safe_rows = [index for index in rows if 0 <= index < len(frame.index)]
+    safe_cols = [index for index in cols if 0 <= index < len(frame.columns)]
+
+    if not safe_rows or not safe_cols:
+        return ""
+
+    lines: List[str] = []
+    for row in safe_rows:
+        cells: List[str] = []
+        for col in safe_cols:
+            value = frame.iat[row, col]
+            normalized = "" if pd.isna(value) else str(value)
+            cells.append(normalized)
+        lines.append("\t".join(cells))
+    return "\n".join(lines)
+
+
 class _UndoableTableModel(TableModel):
     """Uitbreiding van :class:`pandastable.TableModel` met undo-notificaties."""
 
@@ -298,11 +323,15 @@ class _UndoAwareTable(Table):
     # Custom binding helpers
 
     def _install_custom_bindings(self) -> None:
-
-
+        self.bind("<Button-1>", self._on_primary_button, add="+")
+        self.bind("<B1-Motion>", self._extend_drag_selection, add="+")
+        self.bind("<ButtonRelease-1>", self._finalise_drag_selection, add="+")
         self.bind("<Key>", self._handle_table_key, add="+")
         self.bind("<Return>", self._on_return_key, add="+")
         self.bind("<KP_Enter>", self._on_return_key, add="+")
+        self.bind("<Tab>", self._on_tab_key, add="+")
+        self.bind("<ISO_Left_Tab>", self._on_shift_tab_key, add="+")
+        self.bind("<Shift-Tab>", self._on_shift_tab_key, add="+")
 
 
     def _ensure_entry_bindings(self, entry: tk.Entry) -> None:
@@ -311,6 +340,7 @@ class _UndoAwareTable(Table):
         entry.bind("<FocusOut>", self._on_entry_focus_out, add="+")
         entry.bind("<Return>", self._on_entry_return, add="+")
         entry.bind("<KP_Enter>", self._on_entry_return, add="+")
+        setattr(entry, "_fh_bindings", True)
 
     # ------------------------------------------------------------------
     # Mouse helpers
@@ -501,13 +531,44 @@ class _UndoAwareTable(Table):
         self.drawSelectedRect(new_row, new_col)
         self.rowheader.drawSelectedRows(new_row)
 
+    def _selected_cell_coordinates(self) -> Tuple[List[int], List[int]]:
+        rows, cols = self._owner._collect_selection()
+        if not rows:
+            current_row = getattr(self, "currentrow", None)
+            if current_row is not None:
+                rows = [int(current_row)]
+        if not cols:
+            current_col = getattr(self, "currentcol", None)
+            if current_col is not None:
+                cols = [int(current_col)]
+        rows = sorted(dict.fromkeys(rows))
+        cols = sorted(dict.fromkeys(cols))
+        row_count = len(self._owner.table_model.df.index)
+        col_count = len(self._owner.table_model.df.columns)
+        rows = [index for index in rows if 0 <= index < row_count]
+        cols = [index for index in cols if 0 <= index < col_count]
+        return rows, cols
+
     def _on_copy_shortcut(self, event=None):
         if not self._commit_active_edit():
             return "break"
-        base = super()
-        copy_func = getattr(base, "copy", None)
-        if callable(copy_func):
-            return copy_func(event)
+
+        rows, cols = self._selected_cell_coordinates()
+        clipboard_text = _dataframe_slice_to_clipboard(
+            self._owner.table_model.df, rows, cols
+        )
+
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(clipboard_text)
+        except tk.TclError:
+            return "break"
+
+        copied_cells = len(rows) * len(cols) if rows and cols else 0
+        if copied_cells:
+            self._owner._update_status(f"{copied_cells} cellen gekopieerd.")
+        else:
+            self._owner._update_status("Geen cellen beschikbaar om te kopiëren.")
         return "break"
 
 

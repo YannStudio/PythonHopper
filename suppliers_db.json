@@ -1,5 +1,21 @@
 {
-  "suppliers": [],
+  "suppliers": [
+    {
+      "supplier": "ACME",
+      "description": null,
+      "supplier_id": null,
+      "adres_1": null,
+      "adres_2": null,
+      "postcode": null,
+      "gemeente": null,
+      "land": null,
+      "btw": null,
+      "contact_sales": null,
+      "sales_email": null,
+      "phone": null,
+      "favorite": false
+    }
+  ],
   "defaults_by_production": {},
   "defaults_by_finish": {}
 }
