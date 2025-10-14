@@ -3032,7 +3032,25 @@ def start_gui():
                         shutil.copy2(p, dst)
                         cnt += 1
                 def on_done():
-                    self.status_var.set(f"Gekopieerd: {cnt} → {bundle_dest}")
+                    status_text = f"Klaar. Gekopieerd: {cnt} → {bundle_dest}"
+                    self.status_var.set(status_text)
+                    info_lines = ["Bestanden gekopieerd naar:", bundle_dest]
+                    if bundle.latest_symlink:
+                        info_lines.append(f"Symlink: {bundle.latest_symlink}")
+                    messagebox.showinfo("Klaar", "\n".join(info_lines), parent=self)
+                    try:
+                        if sys.platform.startswith("win"):
+                            os.startfile(bundle_dest)
+                        elif sys.platform == "darwin":
+                            subprocess.run(["open", bundle_dest], check=False)
+                        else:
+                            subprocess.run(["xdg-open", bundle_dest], check=False)
+                    except Exception as exc:
+                        messagebox.showwarning(
+                            "Let op",
+                            f"Kon bundelmap niet openen:\n{exc}",
+                            parent=self,
+                        )
 
                 self.after(0, on_done)
             threading.Thread(target=work, daemon=True).start()
