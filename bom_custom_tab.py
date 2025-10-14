@@ -330,7 +330,15 @@ class _UndoAwareTable(Table):
         self.bind("<Return>", self._on_return_key, add="+")
         self.bind("<KP_Enter>", self._on_return_key, add="+")
         self.bind("<Tab>", self._on_tab_key, add="+")
-        self.bind("<ISO_Left_Tab>", self._on_shift_tab_key, add="+")
+        try:
+            self.bind("<ISO_Left_Tab>", self._on_shift_tab_key, add="+")
+        except tk.TclError:
+            # ``ISO_Left_Tab`` is specific to X11/Unix platforms.  The binding
+            # does not exist on Windows and older Tk versions, which would
+            # otherwise raise a TclError during initialisation.  In that case
+            # we silently ignore the sequence; ``<Shift-Tab>`` (bound below)
+            # continues to provide the reverse-tab behaviour.
+            pass
         self.bind("<Shift-Tab>", self._on_shift_tab_key, add="+")
 
 
