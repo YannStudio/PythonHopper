@@ -2702,27 +2702,11 @@ def start_gui():
         def _apply_custom_bom_to_main(self, custom_df: "pd.DataFrame") -> None:
             from tkinter import messagebox
 
+
             if custom_df is None or custom_df.empty:
                 messagebox.showwarning(
                     "Geen gegevens",
                     "Er zijn geen rijen met gegevens om naar de Main-tab te sturen.",
-                    parent=self.custom_bom_tab,
-                )
-                return
-
-            try:
-                normalized = prepare_custom_bom_for_main(custom_df, self.bom_df)
-            except ValueError as exc:
-                messagebox.showerror(
-                    "Update mislukt",
-                    str(exc),
-                    parent=self.custom_bom_tab,
-                )
-                return
-            except Exception as exc:
-                messagebox.showerror(
-                    "Update mislukt",
-                    str(exc),
                     parent=self.custom_bom_tab,
                 )
                 return
