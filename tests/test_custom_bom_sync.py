@@ -76,6 +76,28 @@ def test_prepare_custom_bom_handles_missing_columns():
         assert (result[status_col] == "").all()
 
 
+def test_prepare_custom_bom_maps_custom_tab_headers():
+    custom = pd.DataFrame(
+        [
+            {
+                "PartNumber": "AB-01",
+                "Description": "plaat",
+                "Material": "S235",
+                "QTY.": "5",
+                "Surface Area (m²)": "2.5",
+                "Weight (kg)": "1.25",
+            }
+        ]
+    )
+
+    result = prepare_custom_bom_for_main(custom)
+    assert list(result.columns) == list(MAIN_BOM_COLUMNS)
+    assert result.loc[0, "Materiaal"] == "S235"
+    assert result.loc[0, "Aantal"] == 5
+    assert result.loc[0, "Oppervlakte"] == "2.5"
+    assert result.loc[0, "Gewicht"] == "1.25"
+
+
 def test_prepare_custom_bom_missing_partnumber_column_raises():
     custom = pd.DataFrame([{"Description": "plaat"}])
     with pytest.raises(ValueError):
