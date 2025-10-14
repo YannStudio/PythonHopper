@@ -54,12 +54,17 @@ def run_tests() -> int:
         dst = os.path.join(td, "dst")
         os.makedirs(src)
         os.makedirs(dst)
-        open(os.path.join(src, "PN1.pdf"), "wb").write(b"%PDF-1.4")
-        open(os.path.join(src, "PN1.stp"), "wb").write(b"step")
+        long_part_number = "PN1-THIS-IS-A-VERY-LONG-CODE-OVER-25CHARS"
+        open(
+            os.path.join(src, f"{long_part_number}.pdf"), "wb"
+        ).write(b"%PDF-1.4")
+        open(
+            os.path.join(src, f"{long_part_number}.stp"), "wb"
+        ).write(b"step")
         bom = os.path.join(td, "bom.xlsx")
         df = pd.DataFrame([
             {
-                "PartNumber": "PN1-THIS-IS-A-VERY-LONG-CODE-OVER-25CHARS",
+                "PartNumber": long_part_number,
                 "Description": "Lange omschrijving die netjes moet wrappen.",
                 "Production": "Laser",
                 "Aantal": 2,
@@ -97,8 +102,12 @@ def run_tests() -> int:
         assert cnt == 2
         assert chosen.get(make_production_selection_key("Laser")) == "ACME"
         prod_folder = os.path.join(dst, "Laser")
-        assert os.path.exists(os.path.join(prod_folder, "PN1.pdf"))
-        assert os.path.exists(os.path.join(prod_folder, "PN1.stp"))
+        assert os.path.exists(
+            os.path.join(prod_folder, f"{long_part_number}.pdf")
+        )
+        assert os.path.exists(
+            os.path.join(prod_folder, f"{long_part_number}.stp")
+        )
         xlsx = [f for f in os.listdir(prod_folder) if f.lower().endswith(".xlsx")]
         assert xlsx, "Excel bestelbon niet aangemaakt"
         wb = openpyxl.load_workbook(os.path.join(prod_folder, xlsx[0]))
@@ -107,15 +116,19 @@ def run_tests() -> int:
         date_token = datetime.date.today().strftime("%Y%m%d")
         assert ws["A1"].value == "Nummer" and ws["B1"].value == "BB-1"
         assert ws["A2"].value == "Datum" and ws["B2"].value == today_display
-        assert ws["A4"].value == "Bedrijf" and ws["B4"].value == client.name
-        assert ws["A9"].value == "Leverancier" and ws["B9"].value == "ACME"
-        assert ws["A10"].value == "Adres"
+        assert ws["A3"].value == "Productie" and ws["B3"].value == "Laser"
+        assert ws["A5"].value == "Bedrijf" and ws["B5"].value == client.name
+        assert ws["A6"].value == "Adres" and ws["B6"].value == client.address
+        assert ws["A7"].value == "BTW" and ws["B7"].value == client.vat
+        assert ws["A8"].value == "E-mail" and ws["B8"].value == client.email
+        assert ws["A10"].value == "Leverancier" and ws["B10"].value == "ACME"
+        assert ws["A11"].value == "Adres"
         assert (
-            ws["B10"].value == "Teststraat 1 bus 2, BE-2000 Antwerpen, BE"
+            ws["B11"].value == "Teststraat 1 bus 2, BE-2000 Antwerpen, BE"
         )
-        assert ws["A11"].value == "BTW" and ws["B11"].value == "BE123"
-        assert ws["A12"].value == "E-mail" and ws["B12"].value == "x@y.z"
-        assert ws["A13"].value == "Tel" and ws["B13"].value == "+32 123"
+        assert ws["A12"].value == "BTW" and ws["B12"].value == "BE123"
+        assert ws["A13"].value == "E-mail" and ws["B13"].value == "x@y.z"
+        assert ws["A14"].value == "Tel" and ws["B14"].value == "+32 123"
         header_row = None
         for row in range(1, ws.max_row + 1):
             if ws.cell(row=row, column=1).value == "PartNumber":
@@ -147,8 +160,8 @@ def run_tests() -> int:
         )
         assert cnt_dates == 2
         prod_folder_dates = os.path.join(dst_dates, "Laser")
-        suffix_pdf_name = f"PN1-{date_token}.pdf"
-        suffix_stp_name = f"PN1-{date_token}.stp"
+        suffix_pdf_name = f"{long_part_number}-{date_token}.pdf"
+        suffix_stp_name = f"{long_part_number}-{date_token}.stp"
         assert "_" not in suffix_pdf_name and "_" not in suffix_stp_name
         assert os.path.exists(os.path.join(prod_folder_dates, suffix_pdf_name))
         assert os.path.exists(os.path.join(prod_folder_dates, suffix_stp_name))
@@ -172,8 +185,8 @@ def run_tests() -> int:
         )
         assert cnt_prefix == 2
         prod_folder_prefix = os.path.join(dst_prefix, "Laser")
-        prefix_pdf_name = f"{date_token}-PN1.pdf"
-        prefix_stp_name = f"{date_token}-PN1.stp"
+        prefix_pdf_name = f"{date_token}-{long_part_number}.pdf"
+        prefix_stp_name = f"{date_token}-{long_part_number}.stp"
         assert os.path.exists(os.path.join(prod_folder_prefix, prefix_pdf_name))
         assert os.path.exists(os.path.join(prod_folder_prefix, prefix_stp_name))
 
@@ -197,8 +210,12 @@ def run_tests() -> int:
         )
         assert cnt_prefix_suffix == 2
         prod_folder_prefix_suffix = os.path.join(dst_prefix_suffix, "Laser")
-        prefix_suffix_pdf = f"{date_token}-PN1-{date_token}.pdf"
-        prefix_suffix_stp = f"{date_token}-PN1-{date_token}.stp"
+        prefix_suffix_pdf = (
+            f"{date_token}-{long_part_number}-{date_token}.pdf"
+        )
+        prefix_suffix_stp = (
+            f"{date_token}-{long_part_number}-{date_token}.stp"
+        )
         assert "_" not in prefix_suffix_pdf and "_" not in prefix_suffix_stp
         assert os.path.exists(
             os.path.join(prod_folder_prefix_suffix, prefix_suffix_pdf)
