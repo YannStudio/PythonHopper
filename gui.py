@@ -21,6 +21,7 @@ from clients_db import ClientsDB, CLIENTS_DB_FILE
 from delivery_addresses_db import DeliveryAddressesDB, DELIVERY_DB_FILE
 from bom import read_csv_flex, load_bom
 from bom_custom_tab import BOMCustomTab
+from bom_sync import prepare_custom_bom_for_main
 from orders import (
     copy_per_production_and_orders,
     DEFAULT_FOOTER_NOTE,
@@ -2700,7 +2701,7 @@ def start_gui():
 
         def _apply_custom_bom_to_main(self, custom_df: "pd.DataFrame") -> None:
             from tkinter import messagebox
-            import pandas as pd  # lokale import voor testextracties
+
 
             if custom_df is None or custom_df.empty:
                 messagebox.showwarning(
@@ -2709,60 +2710,6 @@ def start_gui():
                     parent=self.custom_bom_tab,
                 )
                 return
-
-            if "PartNumber" not in custom_df.columns:
-                messagebox.showerror(
-                    "Update mislukt",
-                    "De Custom BOM bevat geen kolom 'PartNumber'.",
-                    parent=self.custom_bom_tab,
-                )
-                return
-
-            normalized = custom_df.copy()
-            for col in normalized.columns:
-                series = normalized[col]
-                if col == "Aantal":
-                    numeric = pd.to_numeric(series, errors="coerce").fillna(1).astype(int)
-                    normalized[col] = numeric.clip(lower=1, upper=999)
-                    continue
-                normalized[col] = series.apply(
-                    lambda value: "" if pd.isna(value) else str(value).strip()
-                )
-
-            existing = self.bom_df
-            normalized["Bestanden gevonden"] = ""
-            normalized["Status"] = ""
-            normalized["Link"] = ""
-            if existing is not None and "PartNumber" in existing.columns:
-                existing_index = existing.set_index("PartNumber")
-                for col in ("Bestanden gevonden", "Status", "Link"):
-                    if col in existing_index.columns:
-                        normalized[col] = (
-                            normalized["PartNumber"].map(existing_index[col]).fillna("")
-                        )
-
-            ordered_columns = [
-                "PartNumber",
-                "Description",
-                "Production",
-                "Bestanden gevonden",
-                "Status",
-                "Materiaal",
-                "Supplier",
-                "Supplier code",
-                "Manufacturer",
-                "Manufacturer code",
-                "Finish",
-                "RAL color",
-                "Aantal",
-                "Oppervlakte",
-                "Gewicht",
-                "Link",
-            ]
-            for column in ordered_columns:
-                if column not in normalized.columns:
-                    normalized[column] = ""
-            normalized = normalized[ordered_columns]
 
             self.bom_df = normalized
             self._refresh_tree()
