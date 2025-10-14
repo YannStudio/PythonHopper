@@ -50,5 +50,6 @@
   "custom_suffix_text": "",
   "bundle_latest": false,
   "bundle_dry_run": false,
+  "autofill_custom_bom": false,
   "footer_note": "Gelieve afwijkingen schriftelijk te bevestigen. Levertermijn in overleg. Betalingsvoorwaarden: 30 dagen netto. Vermeld onze productiereferentie bij levering."
 }

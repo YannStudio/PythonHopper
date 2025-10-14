@@ -21,6 +21,7 @@ from clients_db import ClientsDB, CLIENTS_DB_FILE
 from delivery_addresses_db import DeliveryAddressesDB, DELIVERY_DB_FILE
 from bom import read_csv_flex, load_bom
 from bom_custom_tab import BOMCustomTab
+from bom_sync import prepare_custom_bom_for_main
 from orders import (
     copy_per_production_and_orders,
     DEFAULT_FOOTER_NOTE,
@@ -1592,6 +1593,16 @@ def start_gui():
                 ),
                 self.app.bundle_dry_run_var,
             )
+            _add_option(
+                export_options,
+                "Vul Custom BOM automatisch na het laden van de hoofd-BOM",
+                (
+                    "Wanneer je een BOM opent, wordt dezelfde inhoud ook in de"
+                    " Custom BOM-tab geplaatst zodat je daar meteen kunt"
+                    " aanpassen en bijwerken."
+                ),
+                self.app.autofill_custom_bom_var,
+            )
 
             template_frame = tk.LabelFrame(
                 self,
@@ -2142,6 +2153,9 @@ def start_gui():
             self.bundle_dry_run_var = tk.IntVar(
                 master=self, value=1 if self.settings.bundle_dry_run else 0
             )
+            self.autofill_custom_bom_var = tk.IntVar(
+                master=self, value=1 if self.settings.autofill_custom_bom else 0
+            )
             self.footer_note_var = tk.StringVar(
                 master=self, value=self.settings.footer_note or ""
             )
@@ -2149,7 +2163,7 @@ def start_gui():
             self.source_folder = self.source_folder_var.get().strip()
             self.dest_folder = self.dest_folder_var.get().strip()
             self.last_bundle_result: Optional[ExportBundleResult] = None
-            self.bom_df: Optional[pd.DataFrame] = None
+            self.bom_df: Optional["pd.DataFrame"] = None
             self.bom_source_path: Optional[str] = None
 
             for var in (
@@ -2172,6 +2186,7 @@ def start_gui():
                 self.export_name_custom_suffix_enabled_var,
                 self.bundle_latest_var,
                 self.bundle_dry_run_var,
+                self.autofill_custom_bom_var,
             ):
                 var.trace_add("write", self._save_settings)
 
@@ -2197,6 +2212,7 @@ def start_gui():
                 self.nb,
                 app_name="Filehopper",
                 on_custom_bom_ready=self._on_custom_bom_ready,
+                on_push_to_main=self._apply_custom_bom_to_main,
                 event_target=self,
             )
             main = tk.Frame(self.nb)
@@ -2493,6 +2509,9 @@ def start_gui():
             self.settings.custom_suffix_text = self.export_name_custom_suffix_text.get().strip()
             self.settings.bundle_latest = bool(self.bundle_latest_var.get())
             self.settings.bundle_dry_run = bool(self.bundle_dry_run_var.get())
+            self.settings.autofill_custom_bom = bool(
+                self.autofill_custom_bom_var.get()
+            )
             self.settings.footer_note = self.footer_note_var.get().replace("\r\n", "\n")
             for ext in self.settings.file_extensions:
                 var = self.extension_vars.get(ext.key)
@@ -2637,6 +2656,14 @@ def start_gui():
             self.bom_source_path = os.path.abspath(path)
             self._refresh_tree()
             self.status_var.set(f"BOM geladen: {len(df)} rijen")
+            if self.settings.autofill_custom_bom:
+                try:
+                    self.custom_bom_tab.load_from_main_dataframe(df)
+                except Exception as exc:
+                    print(
+                        f"Kon custom BOM niet vullen vanuit hoofd-BOM: {exc}",
+                        file=sys.stderr,
+                    )
 
         def _load_bom(self):
             from tkinter import filedialog, messagebox
@@ -2671,6 +2698,41 @@ def start_gui():
                     self.status_var.set(
                         "Aangepaste BOM geladen. Terug naar Main-tabblad."
                     )
+
+        def _apply_custom_bom_to_main(self, custom_df: "pd.DataFrame") -> None:
+            from tkinter import messagebox
+
+            if custom_df is None or custom_df.empty:
+                messagebox.showwarning(
+                    "Geen gegevens",
+                    "Er zijn geen rijen met gegevens om naar de Main-tab te sturen.",
+                    parent=self.custom_bom_tab,
+                )
+                return
+
+            try:
+                normalized = prepare_custom_bom_for_main(custom_df, self.bom_df)
+            except ValueError as exc:
+                messagebox.showerror(
+                    "Update mislukt",
+                    str(exc),
+                    parent=self.custom_bom_tab,
+                )
+                return
+            except Exception as exc:
+                messagebox.showerror(
+                    "Update mislukt",
+                    str(exc),
+                    parent=self.custom_bom_tab,
+                )
+                return
+
+            self.bom_df = normalized
+            self._refresh_tree()
+            self.nb.select(self.main_frame)
+            self.status_var.set(
+                f"Custom BOM wijzigingen toegepast ({len(normalized)} rijen)."
+            )
 
         def _refresh_tree(self):
             self.item_links.clear()
