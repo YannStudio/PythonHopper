@@ -540,6 +540,7 @@ def cli_copy_per_prod(args):
         finish_doc_type_map=finish_doc_type_map,
         finish_doc_num_map=finish_doc_num_map,
         finish_delivery_map=finish_delivery_map,
+        bom_source_path=args.bom,
     )
     print("Gekopieerd:", cnt)
     for k, v in chosen.items():

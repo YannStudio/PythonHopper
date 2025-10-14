@@ -84,3 +84,35 @@ def test_bom_export_can_be_disabled(tmp_path, monkeypatch):
     today = datetime.date.today().strftime("%Y-%m-%d")
     export_path = dest / f"BOM-FileHopper-Export-{today}.xlsx"
     assert not export_path.exists()
+
+
+def test_related_exports_copied_next_to_bom(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    src = tmp_path / "src"
+    dest = tmp_path / "dest"
+    src.mkdir(); dest.mkdir()
+
+    (src / "PN-001.pdf").write_text("dummy", encoding="utf-8")
+    assembly_stem = "20230171-v2-a00"
+    (src / f"{assembly_stem}.pdf").write_text("top", encoding="utf-8")
+    bom_path = src / f"{assembly_stem}-BOM-PartsOnly.xlsx"
+    bom_path.write_text("bom", encoding="utf-8")
+
+    df = _basic_bom()
+
+    cnt, _ = copy_per_production_and_orders(
+        str(src),
+        str(dest),
+        df,
+        [".pdf"],
+        _make_db(),
+        {"Laser": "ACME"},
+        {},
+        {},
+        False,
+        export_bom=True,
+        bom_source_path=str(bom_path),
+    )
+
+    assert cnt == 2
+    assert (dest / f"{assembly_stem}.pdf").is_file()
