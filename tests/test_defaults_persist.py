@@ -2,7 +2,7 @@ import os
 import pandas as pd
 from models import Supplier
 from suppliers_db import SuppliersDB
-from orders import copy_per_production_and_orders
+from orders import copy_per_production_and_orders, parse_selection_key
 
 
 def test_defaults_persist(tmp_path, monkeypatch):
@@ -47,7 +47,8 @@ def test_defaults_persist(tmp_path, monkeypatch):
     )
 
     assert cnt == 2
-    assert chosen == overrides
+    resolved = {parse_selection_key(k)[1]: v for k, v in chosen.items()}
+    assert resolved == overrides
 
     # Defaults should be updated in memory
     assert db.defaults_by_production == overrides

@@ -1238,6 +1238,22 @@ def start_gui():
             opts.insert(0, "(geen)")
             return opts
 
+        @staticmethod
+        def _parse_selection_key(key: str) -> tuple[str, str]:
+            """Safely resolve a selection key even when helper imports are missing."""
+
+            try:
+                return parse_selection_key(key)
+            except Exception:
+                pass
+
+            if "::" in key:
+                prefix, identifier = key.split("::", 1)
+                if prefix in ("production", "finish"):
+                    return prefix, identifier
+
+            return "production", key
+
         def _refresh_options(self, initial=False):
             self._base_options = self._display_list()
             self._disp_to_name = {}
@@ -1248,7 +1264,12 @@ def start_gui():
             for sel_key, combo in self.rows:
                 typed = combo.get()
                 combo["values"] = self._base_options
-                kind, identifier = parse_selection_key(sel_key)
+                parser = getattr(
+                    self,
+                    "_parse_selection_key",
+                    SupplierSelectionFrame._parse_selection_key,
+                )
+                kind, identifier = parser(sel_key)
                 if kind == "production":
                     lower_name = identifier.strip().lower()
                     if lower_name in ("dummy part", "nan", "spare part"):
@@ -1539,6 +1560,17 @@ def start_gui():
                     wraplength=520,
                     foreground="#555555",
                 ).grid(row=1, column=0, sticky="ew", padx=(28, 0))
+
+            _add_option(
+                export_options,
+                "Exporteer bewerkte BOM naar exportmap",
+                (
+                    "Bewaar automatisch een Excel-bestand van de huidige BOM in de "
+                    "hoofdfolder van elke export. Alle wijzigingen die je in Filehopper "
+                    "hebt aangebracht, zoals verwijderde rijen, worden meegeschreven."
+                ),
+                self.app.export_bom_var,
+            )
 
             _add_option(
                 export_options,
@@ -2075,6 +2107,9 @@ def start_gui():
             self.zip_finish_var = tk.IntVar(
                 master=self, value=1 if self.settings.zip_finish_exports else 0
             )
+            self.export_bom_var = tk.IntVar(
+                master=self, value=1 if self.settings.export_processed_bom else 0
+            )
             self.zip_per_finish_var = tk.IntVar(
                 master=self,
                 value=
@@ -2129,6 +2164,7 @@ def start_gui():
                 self.zip_var,
                 self.finish_export_var,
                 self.zip_finish_var,
+                self.export_bom_var,
                 self.export_date_prefix_var,
                 self.export_date_suffix_var,
                 self.export_name_custom_prefix_enabled_var,
@@ -2331,7 +2367,18 @@ def start_gui():
             style.configure("Treeview", rowheight=24)
             treef = tk.Frame(main)
             treef.pack(fill="both", expand=True, padx=8, pady=6)
-            self.tree = ttk.Treeview(treef, columns=("PartNumber","Description","Production","Bestanden gevonden","Status"), show="headings")
+            self.tree = ttk.Treeview(
+                treef,
+                columns=(
+                    "PartNumber",
+                    "Description",
+                    "Production",
+                    "Bestanden gevonden",
+                    "Status",
+                ),
+                show="headings",
+                selectmode="extended",
+            )
             for col in ("PartNumber","Description","Production","Bestanden gevonden","Status"):
                 w = 140
                 if col=="Description": w=320
@@ -2346,6 +2393,13 @@ def start_gui():
             tree_scroll.pack(side="left", fill="y")
             self.tree.bind("<Button-1>", self._on_tree_click)
             self.tree.bind("<Delete>", self._delete_selected_bom_rows)
+
+            self.tree.bind("<Down>", lambda event: self._move_tree_focus(1))
+            self.tree.bind("<Up>", lambda event: self._move_tree_focus(-1))
+            self.tree.bind("<Control-Tab>", self._select_next_with_ctrl_tab)
+            self.tree.bind("<Control-Shift-Tab>", self._select_prev_with_ctrl_tab)
+            self.tree.bind("<Control-ISO_Left_Tab>", self._select_prev_with_ctrl_tab)
+
             self.item_links: Dict[str, str] = {}
 
             # Actions
@@ -2420,6 +2474,7 @@ def start_gui():
             self.settings.zip_per_production = bool(self.zip_var.get())
             self.settings.copy_finish_exports = bool(self.finish_export_var.get())
             self.settings.zip_finish_exports = bool(self.zip_finish_var.get())
+            self.settings.export_processed_bom = bool(self.export_bom_var.get())
             self.settings.export_date_prefix = bool(self.export_date_prefix_var.get())
             self.settings.export_date_suffix = bool(self.export_date_suffix_var.get())
             self.settings.custom_prefix_enabled = bool(
@@ -2638,6 +2693,15 @@ def start_gui():
             df = self.bom_df
             if df is None or df.empty:
                 return "break" if event is not None else None
+
+            if event is not None:
+                try:
+                    widget_with_focus = self.focus_get()
+                except tk.TclError:
+                    widget_with_focus = None
+                if widget_with_focus is not self.tree:
+                    return None
+
             selection = self.tree.selection()
             if not selection:
                 return "break" if event is not None else None
@@ -2653,8 +2717,9 @@ def start_gui():
                 return "break" if event is not None else None
 
             row_count = len(df)
+            sorted_indices = sorted(set(indices))
             drop_labels = []
-            for idx in sorted(set(indices)):
+            for idx in sorted_indices:
                 if 0 <= idx < row_count:
                     drop_labels.append(df.index[idx])
             if not drop_labels:
@@ -2662,6 +2727,7 @@ def start_gui():
 
             self.bom_df = df.drop(drop_labels).reset_index(drop=True)
 
+            target_index = sorted_indices[0]
             removed = 0
             for item in selection:
                 if item in self.item_links:
@@ -2676,7 +2742,71 @@ def start_gui():
                 msg = "1 BOM-rij verwijderd." if removed == 1 else f"{removed} BOM-rijen verwijderd."
                 self.status_var.set(msg)
 
+            remaining_items = list(self.tree.get_children())
+            if remaining_items:
+                target_index = min(target_index, len(remaining_items) - 1)
+                next_item = remaining_items[target_index]
+                try:
+                    self.tree.selection_set(next_item)
+                    self.tree.focus(next_item)
+                    self.tree.see(next_item)
+                except tk.TclError:
+                    pass
+            else:
+                try:
+                    current_selection = self.tree.selection()
+                    if current_selection:
+                        self.tree.selection_remove(*current_selection)
+                    self.tree.focus("")
+                except tk.TclError:
+                    pass
+
+
             return "break" if event is not None else None
+
+        def _move_tree_focus(self, direction: int) -> str:
+            items = list(self.tree.get_children())
+            if not items:
+                return "break"
+
+            focus = self.tree.focus()
+            if focus in items:
+                idx = items.index(focus)
+            else:
+                idx = -1 if direction >= 0 else len(items)
+
+            idx = max(0, min(len(items) - 1, idx + direction))
+            target = items[idx]
+            self.tree.selection_set(target)
+            self.tree.focus(target)
+            self.tree.see(target)
+            return "break"
+
+        def _extend_tree_selection(self, direction: int) -> str:
+            items = list(self.tree.get_children())
+            if not items:
+                return "break"
+
+            focus = self.tree.focus()
+            if focus not in items:
+                focus = items[0] if direction >= 0 else items[-1]
+                self.tree.focus(focus)
+
+            self.tree.selection_add(focus)
+
+            idx = items.index(focus)
+            idx = max(0, min(len(items) - 1, idx + direction))
+            target = items[idx]
+            self.tree.selection_add(target)
+            self.tree.focus(target)
+            self.tree.see(target)
+            return "break"
+
+        def _select_next_with_ctrl_tab(self, _event) -> str:
+            return self._extend_tree_selection(1)
+
+        def _select_prev_with_ctrl_tab(self, _event) -> str:
+            return self._extend_tree_selection(-1)
 
         def _clear_bom(self):
             from tkinter import messagebox
@@ -3064,6 +3194,7 @@ def start_gui():
                         project_name=project_name,
                         copy_finish_exports=bool(self.finish_export_var.get()),
                         zip_finish_exports=bool(self.zip_finish_var.get()),
+                        export_bom=bool(self.export_bom_var.get()),
                         export_name_prefix_text=token_prefix_text,
                         export_name_prefix_enabled=token_prefix_enabled,
                         export_name_suffix_text=token_suffix_text,

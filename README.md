@@ -3,12 +3,12 @@ Filehopper in Python
 
 ## Installatie
 
-De GUI-componenten gebruiken het externe pakket [`tksheet`](https://github.com/ragardner/tksheet).
-Installeer eerst de basisvereisten en daarna `tksheet`:
+De GUI-componenten vertrouwen op [`pandastable`](https://github.com/dmnfarrell/pandastable)
+voor het spreadsheet-gedeelte van de custom BOM-tab. Alle runtime
+afhankelijkheden worden via `requirements.txt` geïnstalleerd:
 
 ```bash
 pip install -r requirements.txt
-pip install tksheet
 ```
 
 Start vervolgens de applicatie met `python main.py` of `python -m gui`.
@@ -46,6 +46,35 @@ opgeslagen. Op Windows vind je ze in `%LOCALAPPDATA%\Filehopper`, op macOS in
 na updates.
 
 ## Voorbeelden
+
+## Problemen oplossen
+
+### "Please clean your repository working tree before checkout"
+
+Deze melding verschijnt in Visual Studio (Code) wanneer je probeert te
+wisselen van branch of commit terwijl er lokale wijzigingen zijn. Los dit op
+door eerst je werkdirectory op te ruimen:
+
+1. Controleer de status van de repository:
+
+   ```bash
+   git status
+   ```
+
+2. Commit of stash de wijzigingen:
+
+   ```bash
+   git add .
+   git commit -m "Jouw boodschap"
+   # of
+   git stash
+   ```
+
+3. Probeer daarna opnieuw van branch of commit te wisselen.
+
+Als je wijzigingen niet wil bewaren, kan je ze weggooien met `git checkout --
+<bestand>` of `git reset --hard`, maar wees hiermee voorzichtig: je verliest
+dan alle niet-gecommit werk.
 
 ### Leverancier toevoegen
 
