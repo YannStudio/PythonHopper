@@ -57,7 +57,7 @@ import csv
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -535,6 +535,39 @@ class BOMCustomTab(ttk.Frame):
     )
     TEMPLATE_DEFAULT_FILENAME: str = "BOM-FileHopper-Temp.xlsx"
     DEFAULT_EMPTY_ROWS: int = 20
+    MAIN_TO_CUSTOM_COLUMN_MAP: Dict[str, str] = {
+        "PartNumber": "PartNumber",
+        "Description": "Description",
+        "Production": "Production",
+        "Materiaal": "Material",
+        "Finish": "Finish",
+        "RAL color": "RAL color",
+        "Aantal": "QTY.",
+        "Oppervlakte": "Surface Area (m²)",
+        "Gewicht": "Weight (kg)",
+        "Supplier": "Supplier",
+        "Supplier code": "Supplier code",
+        "Manufacturer": "Manufacturer",
+        "Manufacturer code": "Manufacturer code",
+    }
+    CUSTOM_TO_MAIN_COLUMN_MAP: Dict[str, str] = {
+        custom: main for main, custom in MAIN_TO_CUSTOM_COLUMN_MAP.items()
+    }
+    MAIN_COLUMN_ORDER: Tuple[str, ...] = (
+        "PartNumber",
+        "Description",
+        "Production",
+        "Materiaal",
+        "Supplier",
+        "Supplier code",
+        "Manufacturer",
+        "Manufacturer code",
+        "Finish",
+        "RAL color",
+        "Aantal",
+        "Oppervlakte",
+        "Gewicht",
+    )
 
     def __init__(
         self,
@@ -542,6 +575,7 @@ class BOMCustomTab(ttk.Frame):
         *,
         app_name: str = "Filehopper",
         on_custom_bom_ready: Optional[Callable[[Path, int], None]] = None,
+        on_push_to_main: Optional[Callable[[pd.DataFrame], None]] = None,
         event_target: Optional[tk.Misc] = None,
         max_undo: int = 50,
     ) -> None:
@@ -551,6 +585,7 @@ class BOMCustomTab(ttk.Frame):
         self.configure(padding=(12, 12))
         self.app_name = app_name
         self.on_custom_bom_ready = on_custom_bom_ready
+        self.on_push_to_main = on_push_to_main
         self.event_target = event_target
         self.max_undo = max_undo
         self.undo_stack: List[UndoEntry] = []
@@ -574,6 +609,10 @@ class BOMCustomTab(ttk.Frame):
 
         export_btn = ttk.Button(bar, text="Exporteren", command=self._export_temp)
         export_btn.pack(side="left", padx=(0, 6))
+
+        update_btn = ttk.Button(bar, text="Update Main BOM", command=self._push_to_main)
+        update_btn.pack(side="left", padx=(0, 6))
+        self._update_main_btn = update_btn
 
         template_btn = ttk.Button(bar, text="Download template", command=self._download_template)
         template_btn.pack(side="left", padx=(0, 6))
@@ -903,6 +942,36 @@ class BOMCustomTab(ttk.Frame):
 
     # ------------------------------------------------------------------
     # Export
+    def _push_to_main(self) -> None:
+        if self.on_push_to_main is None:
+            messagebox.showinfo(
+                "Niet beschikbaar",
+                (
+                    "Deze knop is alleen actief wanneer de Custom BOM-tab "
+                    "aan de hoofdinterface is gekoppeld."
+                ),
+                parent=self,
+            )
+            return
+
+        main_df = self.build_main_dataframe()
+        if main_df.empty:
+            messagebox.showwarning(
+                "Geen gegevens",
+                "Er zijn geen rijen met gegevens om naar de Main-tab te sturen.",
+                parent=self,
+            )
+            self._update_status("Geen gegevens om naar Main te sturen.")
+            return
+
+        try:
+            self.on_push_to_main(main_df)
+        except Exception as exc:
+            messagebox.showerror("Bijwerken mislukt", str(exc), parent=self)
+            self._update_status("Fout bij bijwerken van de hoofd-BOM.")
+        else:
+            self._update_status(f"Main-BOM geüpdatet met {len(main_df)} rijen.")
+
     def _export_temp(self) -> None:
         data = self._snapshot_data()
         cleaned = [row[: len(self.HEADERS)] for row in data]
@@ -973,3 +1042,62 @@ class BOMCustomTab(ttk.Frame):
         """Verwijder alle undo-stappen."""
 
         self.undo_stack.clear()
+
+    def load_from_main_dataframe(self, df: pd.DataFrame) -> None:
+        """Vul de Custom BOM met gegevens uit de hoofd-BOM."""
+
+        if df is None:
+            return
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError("df must be a pandas.DataFrame")
+
+        row_count = len(df.index)
+        target_rows = max(self.DEFAULT_EMPTY_ROWS, row_count + 1)
+        fresh = self._create_empty_dataframe(target_rows)
+        if row_count:
+            normalized = df.fillna("")
+            for main_col, custom_col in self.MAIN_TO_CUSTOM_COLUMN_MAP.items():
+                if main_col not in normalized.columns:
+                    continue
+                values = [str(value).strip() for value in normalized[main_col]]
+                col_index = fresh.columns.get_loc(custom_col)
+                fresh.iloc[: len(values), col_index] = values
+
+        self._set_dataframe(fresh)
+        self.clear_history()
+        self._update_status("Custom BOM gevuld vanuit hoofd-BOM.")
+
+    def build_main_dataframe(self) -> pd.DataFrame:
+        """Zet de huidige Custom BOM om naar het hoofd-BOM formaat."""
+
+        column_order = list(self.MAIN_COLUMN_ORDER)
+        empty = pd.DataFrame(columns=column_order)
+
+        snapshot = pd.DataFrame(self._snapshot_data(), columns=self.HEADERS)
+        trimmed = snapshot.replace("", pd.NA).dropna(how="all")
+        if trimmed.empty:
+            return empty
+
+        trimmed = trimmed.fillna("").applymap(lambda value: str(value).strip())
+        result = pd.DataFrame(index=trimmed.index)
+        for custom_col, main_col in self.CUSTOM_TO_MAIN_COLUMN_MAP.items():
+            if custom_col in trimmed.columns:
+                series = trimmed[custom_col]
+            else:
+                series = pd.Series([""] * len(trimmed), index=trimmed.index)
+            result[main_col] = series.astype(str).map(lambda value: value.strip())
+
+        if "PartNumber" not in result.columns:
+            return empty
+
+        result = result[result["PartNumber"].str.strip() != ""]
+        if result.empty:
+            return empty
+
+        if "Aantal" in result.columns:
+            qty = pd.to_numeric(result["Aantal"], errors="coerce").fillna(1).astype(int)
+            result["Aantal"] = qty.clip(lower=1, upper=999)
+
+        result = result.reindex(columns=column_order, fill_value="")
+        result.reset_index(drop=True, inplace=True)
+        return result
