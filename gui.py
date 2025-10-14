@@ -2150,6 +2150,7 @@ def start_gui():
             self.dest_folder = self.dest_folder_var.get().strip()
             self.last_bundle_result: Optional[ExportBundleResult] = None
             self.bom_df: Optional[pd.DataFrame] = None
+            self.bom_source_path: Optional[str] = None
 
             for var in (
                 self.source_folder_var,
@@ -2633,6 +2634,7 @@ def start_gui():
             if "Link" not in df.columns:
                 df["Link"] = ""
             self.bom_df = df
+            self.bom_source_path = os.path.abspath(path)
             self._refresh_tree()
             self.status_var.set(f"BOM geladen: {len(df)} rijen")
 
@@ -2823,6 +2825,7 @@ def start_gui():
                 if col in self.bom_df.columns:
                     self.bom_df[col] = ""
             self.bom_df = None
+            self.bom_source_path = None
             self._refresh_tree()
             self.status_var.set("BOM gewist.")
 
@@ -3220,6 +3223,7 @@ def start_gui():
                         finish_doc_type_map=finish_doc_type_map,
                         finish_doc_num_map=finish_doc_num_map,
                         finish_delivery_map=finish_delivery_map,
+                        bom_source_path=self.bom_source_path,
                     )
 
                     def on_done():

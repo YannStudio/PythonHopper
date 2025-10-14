@@ -12,6 +12,7 @@ import re
 import zipfile
 import io
 from collections import defaultdict
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -814,6 +815,7 @@ def copy_per_production_and_orders(
     finish_doc_type_map: Dict[str, str] | None = None,
     finish_doc_num_map: Dict[str, str] | None = None,
     finish_delivery_map: Dict[str, DeliveryAddress | None] | None = None,
+    bom_source_path: str | None = None,
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
 
@@ -853,6 +855,13 @@ def copy_per_production_and_orders(
     When ``export_bom`` is ``True`` (default) the processed BOM, including any
     changes made inside Filehopper, is written as an Excel workbook in the root
     of ``dest``. The filename contains the export date in ISO-formaat.
+
+    When ``bom_source_path`` refers to the loaded BOM file, Filehopper tries to
+    copy export files from ``source`` whose filename stem appears inside the BOM
+    name (for example ``123-BOM-PartsOnly`` → ``123.pdf``). Matching files are
+    placed next to the exported BOM workbook and use the same optional
+    name-transformations (date/prefix/suffix). When no related files are found
+    nothing is copied.
 
     Finish-specific overrides, document types/numbers and deliveries can be
     provided via the ``finish_*`` mappings. Keys correspond to the normalized
@@ -939,6 +948,35 @@ def copy_per_production_and_orders(
             suffix_parts.append(export_name_suffix_text)
         new_stem = "-".join(prefix_parts + [stem] + suffix_parts)
         return f"{new_stem}{ext}"
+
+    def _related_bom_exports(path: Optional[str]) -> List[str]:
+        if not path:
+            return []
+        stem = Path(path).stem.lower()
+        if not stem:
+            return []
+        matches: List[str] = []
+        seen: set[str] = set()
+        for key in sorted(file_index.keys(), key=len, reverse=True):
+            if not key:
+                continue
+            key_lower = key.lower()
+            if len(key_lower) < 4 and not any(ch.isdigit() for ch in key_lower):
+                continue
+            idx = stem.find(key_lower)
+            if idx == -1:
+                continue
+            if idx > 0 and stem[idx - 1].isalnum():
+                continue
+            end = idx + len(key_lower)
+            if end < len(stem) and stem[end].isalnum():
+                continue
+            for src_file in file_index[key]:
+                if src_file not in seen:
+                    matches.append(src_file)
+                    seen.add(src_file)
+        return matches
+
     suppliers_sorted = db.suppliers_sorted()
 
     footer_note_text = (
@@ -1272,11 +1310,18 @@ def copy_per_production_and_orders(
 
     # Persist any (possibly unchanged) supplier defaults so that callers can rely on
     # the database reflecting the latest state on disk.
+    bom_export_path: Optional[str] = None
     if export_bom:
         try:
-            _export_bom_workbook(bom_df, dest, today)
+            bom_export_path = _export_bom_workbook(bom_df, dest, today)
         except Exception as exc:  # pragma: no cover - unexpected
             raise RuntimeError(f"Kon BOM-export niet opslaan: {exc}") from exc
+
+    if bom_export_path and bom_source_path:
+        for src_file in _related_bom_exports(bom_source_path):
+            transformed = _transform_export_name(os.path.basename(src_file))
+            shutil.copy2(src_file, os.path.join(dest, transformed))
+            count_copied += 1
 
     db.save(SUPPLIERS_DB_FILE)
 
