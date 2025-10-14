@@ -2915,11 +2915,31 @@ def start_gui():
                 self.export_name_custom_suffix_enabled_var.get()
             )
 
+            tree_items = list(self.tree.get_children()) if hasattr(self, "tree") else []
+            part_numbers_for_export: List[str] = []
+            seen_part_numbers: set[str] = set()
+
+            if tree_items:
+                for item in tree_items:
+                    pn = _to_str(self.tree.set(item, "PartNumber")).strip()
+                    if pn and pn not in seen_part_numbers:
+                        seen_part_numbers.add(pn)
+                        part_numbers_for_export.append(pn)
+            else:
+                df_snapshot = self.bom_df
+                if df_snapshot is not None:
+                    for _, row in df_snapshot.iterrows():
+                        pn = _to_str(row.get("PartNumber")).strip()
+                        if pn and pn not in seen_part_numbers:
+                            seen_part_numbers.add(pn)
+                            part_numbers_for_export.append(pn)
+
             def work(
                 token_prefix_text=custom_prefix_text,
                 token_suffix_text=custom_suffix_text,
                 token_prefix_enabled=custom_prefix_enabled,
                 token_suffix_enabled=custom_suffix_enabled,
+                export_part_numbers=tuple(part_numbers_for_export),
             ):
                 self.status_var.set("Bundelmap voorbereiden...")
                 try:
@@ -3000,17 +3020,9 @@ def start_gui():
                     parts = prefix_parts + [stem] + suffix_parts
                     new_stem = "-".join([p for p in parts if p])
                     return f"{new_stem}{ext}"
-                requested_part_numbers: List[str] = []
-                seen_part_numbers: set[str] = set()
-                for _, row in self.bom_df.iterrows():
-                    pn = _to_str(row.get("PartNumber")).strip()
-                    if pn and pn not in seen_part_numbers:
-                        seen_part_numbers.add(pn)
-                        requested_part_numbers.append(pn)
-
                 copied_paths: set[str] = set()
                 cnt = 0
-                for pn in requested_part_numbers:
+                for pn in export_part_numbers:
                     for p in idx.get(pn, []):
                         if p in copied_paths:
                             continue
