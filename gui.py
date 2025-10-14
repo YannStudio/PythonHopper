@@ -2997,9 +2997,21 @@ def start_gui():
                     parts = prefix_parts + [stem] + suffix_parts
                     new_stem = "-".join([p for p in parts if p])
                     return f"{new_stem}{ext}"
+                requested_part_numbers: List[str] = []
+                seen_part_numbers: set[str] = set()
+                for _, row in self.bom_df.iterrows():
+                    pn = _to_str(row.get("PartNumber")).strip()
+                    if pn and pn not in seen_part_numbers:
+                        seen_part_numbers.add(pn)
+                        requested_part_numbers.append(pn)
+
+                copied_paths: set[str] = set()
                 cnt = 0
-                for _, paths in idx.items():
-                    for p in paths:
+                for pn in requested_part_numbers:
+                    for p in idx.get(pn, []):
+                        if p in copied_paths:
+                            continue
+                        copied_paths.add(p)
                         name = _export_name(os.path.basename(p))
                         dst = os.path.join(bundle_dest, name)
                         shutil.copy2(p, dst)
