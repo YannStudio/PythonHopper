@@ -1,8 +1,8 @@
 {
-  "source_folder": "",
-  "dest_folder": "",
-  "project_number": "",
-  "project_name": "",
+  "source_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2023/Maatwerk overkappingen/Speelplaatsoverkappingen/20230171 - Smeermaas/CAD/v2",
+  "dest_folder": "C:/Users/jeroe/Desktop",
+  "project_number": "xxx",
+  "project_name": "sfsf",
   "file_extensions": [
     {
       "key": "pdf",
@@ -10,7 +10,7 @@
       "patterns": [
         ".pdf"
       ],
-      "enabled": false
+      "enabled": true
     },
     {
       "key": "step",
@@ -19,7 +19,7 @@
         ".step",
         ".stp"
       ],
-      "enabled": false
+      "enabled": true
     },
     {
       "key": "dxf",
@@ -50,5 +50,6 @@
   "custom_suffix_text": "",
   "bundle_latest": false,
   "bundle_dry_run": false,
-  "footer_note": "Gelieve afwijkingen schriftelijk te bevestigen. Levertermijn in overleg. Betalingsvoorwaarden: 30 dagen netto. Vermeld onze productiereferentie bij levering."
+  "footer_note": "Gelieve afwijkingen schriftelijk te bevestigen. Levertermijn in overleg. Betalingsvoorwaarden: 30 dagen netto. Vermeld onze productiereferentie bij levering.",
+  "autofill_custom_bom": true
 }
