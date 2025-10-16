@@ -877,6 +877,7 @@ def copy_per_production_and_orders(
     """
     os.makedirs(dest, exist_ok=True)
     file_index = _build_file_index(source, selected_exts)
+    selected_exts_set = {ext.lower() for ext in selected_exts}
     count_copied = 0
     chosen: Dict[str, str] = {}
     doc_type_map = doc_type_map or {}
@@ -1059,6 +1060,8 @@ def copy_per_production_and_orders(
                     continue
                 processed_pairs.add(combo)
                 ext = os.path.splitext(src_file)[1].lower()
+                if selected_exts_set and ext not in selected_exts_set:
+                    continue
                 if ext in STEP_EXTS:
                     seen_paths = step_seen[prod]
                     if src_file not in seen_paths:
@@ -1226,6 +1229,9 @@ def copy_per_production_and_orders(
                     if combo in seen_pairs:
                         continue
                     seen_pairs.add(combo)
+                    ext = os.path.splitext(src_file)[1].lower()
+                    if selected_exts_set and ext not in selected_exts_set:
+                        continue
                     if zip_finish_exports:
                         if zf is not None:
                             zf.write(src_file, arcname=transformed)
