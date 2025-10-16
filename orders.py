@@ -9,6 +9,7 @@ import sys
 import shutil
 import datetime
 import re
+import unicodedata
 import zipfile
 import io
 from collections import defaultdict
@@ -16,6 +17,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
+from dataclasses import dataclass
 try:
     from openpyxl.styles import Alignment
     from openpyxl.utils import get_column_letter
@@ -58,6 +60,83 @@ DEFAULT_FOOTER_NOTE = (
 )
 
 STEP_EXTS = {".step", ".stp"}
+
+
+@dataclass(slots=True)
+class CombinedPdfResult:
+    """Metadata for combined PDF export operations."""
+
+    count: int
+    output_dir: str
+
+
+_INVALID_PATH_CHARS = set('<>:"/\\|?*')
+
+
+def _sanitize_component(value: object) -> str:
+    """Return a filesystem-friendly representation of ``value``."""
+
+    text = "" if value is None else str(value).strip()
+    if not text:
+        return ""
+    text = " ".join(text.split())
+    cleaned: List[str] = []
+    for ch in text:
+        if ch in _INVALID_PATH_CHARS or ord(ch) < 32:
+            cleaned.append("_")
+        elif ch == os.sep or (os.altsep and ch == os.altsep):
+            cleaned.append("-")
+        else:
+            cleaned.append(ch)
+    return "".join(cleaned).strip(" .-_")
+
+
+def _slugify_name(value: object, fallback: str) -> str:
+    """Slugify ``value`` similar to export bundle directories."""
+
+    normalized = unicodedata.normalize("NFKD", "" if value is None else str(value))
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    ascii_text = ascii_text.lower()
+    ascii_text = ascii_text.replace(" ", "-")
+    ascii_text = re.sub(r"[^a-z0-9-]", "", ascii_text)
+    ascii_text = re.sub(r"-+", "-", ascii_text).strip("-")
+    if len(ascii_text) > 40:
+        ascii_text = ascii_text[:40].rstrip("-")
+    if ascii_text:
+        return ascii_text
+    fallback_norm = unicodedata.normalize("NFKD", fallback)
+    ascii_fallback = fallback_norm.encode("ascii", "ignore").decode("ascii") or fallback
+    ascii_fallback = re.sub(r"[^a-zA-Z0-9-]", "", ascii_fallback)
+    ascii_fallback = ascii_fallback.lower()[:40].rstrip("-")
+    return ascii_fallback or "export"
+
+
+def _create_combined_output_dir(
+    base_dir: str,
+    project_number: Optional[str],
+    project_name: Optional[str],
+    *,
+    timestamp: Optional[datetime.datetime] = None,
+) -> str:
+    """Create a combined PDF export directory inside ``base_dir``."""
+
+    os.makedirs(base_dir, exist_ok=True)
+    ts = timestamp or datetime.datetime.now()
+    ts_token = ts.strftime("%Y-%m-%dT%H%M%S")
+    pn_clean = _sanitize_component(project_number) or "project"
+    slug = _slugify_name(project_name, pn_clean)
+    name_parts = ["Combined pdf", ts_token, pn_clean]
+    if slug and slug != pn_clean.lower():
+        name_parts.append(slug)
+    folder_name = "_".join(part for part in name_parts if part)
+    base_path = os.path.join(base_dir, folder_name)
+    candidate = base_path
+    index = 1
+    while os.path.exists(candidate):
+        candidate = f"{base_path}_{index}"
+        index += 1
+    os.makedirs(candidate, exist_ok=True)
+    return candidate
 
 
 def _export_bom_workbook(bom_df: pd.DataFrame, dest: str, filename: str) -> str:
@@ -1361,15 +1440,21 @@ def combine_pdfs_from_source(
     bom_df: pd.DataFrame,
     dest: str,
     date_str: str | None = None,
-) -> int:
+    *,
+    project_number: str | None = None,
+    project_name: str | None = None,
+    timestamp: datetime.datetime | None = None,
+) -> CombinedPdfResult:
     """Combine PDF drawing files per production directly from ``source``.
 
     The BOM dataframe provides ``PartNumber`` to ``Production`` mappings.
     PDFs matching the part numbers are searched in ``source`` using
     :func:`_build_file_index` and merged per production. The resulting files
-    are written to ``dest/Combined pdf``. Output filenames contain the
-    production name and current date. Returns the number of combined PDF
-    files created.
+    are written to a newly created export directory inside ``dest`` whose name
+    contains the project number, project name (slugified) and an ISO-like
+    timestamp. Output filenames contain the production name and current date.
+    The returned :class:`CombinedPdfResult` provides the number of generated
+    files and the absolute output directory path.
     """
     if PdfMerger is None:
         raise ModuleNotFoundError(
@@ -1385,8 +1470,12 @@ def combine_pdfs_from_source(
         pn = str(row.get("PartNumber", ""))
         prod_to_files[prod].extend(idx.get(pn, []))
 
-    out_dir = os.path.join(dest, "Combined pdf")
-    os.makedirs(out_dir, exist_ok=True)
+    out_dir = _create_combined_output_dir(
+        dest,
+        project_number,
+        project_name,
+        timestamp=timestamp,
+    )
     count = 0
     for prod, files in prod_to_files.items():
         if not files:
@@ -1398,15 +1487,24 @@ def combine_pdfs_from_source(
         merger.write(os.path.join(out_dir, out_name))
         merger.close()
         count += 1
-    return count
+    return CombinedPdfResult(count=count, output_dir=out_dir)
 
 
-def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
+def combine_pdfs_per_production(
+    dest: str,
+    date_str: str | None = None,
+    *,
+    project_number: str | None = None,
+    project_name: str | None = None,
+    timestamp: datetime.datetime | None = None,
+) -> CombinedPdfResult:
     """Combine PDF drawing files per production folder into single PDFs.
 
-    The resulting files are written to a subdirectory ``Combined pdf`` inside
-    ``dest``. Output filenames contain the production name and current date.
-    Returns the number of combined PDF files created.
+    The resulting files are written to a newly created export directory inside
+    ``dest`` whose name contains the project number, project name (slugified)
+    and an ISO-like timestamp. Output filenames contain the production name
+    and current date. The returned :class:`CombinedPdfResult` provides the
+    number of generated files and the absolute output directory path.
     """
     if PdfMerger is None:
         raise ModuleNotFoundError(
@@ -1414,12 +1512,19 @@ def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
         )
 
     date_str = date_str or datetime.date.today().strftime("%Y-%m-%d")
-    out_dir = os.path.join(dest, "Combined pdf")
-    os.makedirs(out_dir, exist_ok=True)
+    out_dir = _create_combined_output_dir(
+        dest,
+        project_number,
+        project_name,
+        timestamp=timestamp,
+    )
+    out_dir_name = os.path.basename(out_dir)
     count = 0
     for prod in sorted(os.listdir(dest)):
         prod_path = os.path.join(dest, prod)
         if not os.path.isdir(prod_path):
+            continue
+        if prod == out_dir_name or prod.lower().startswith("combined pdf"):
             continue
         pdfs = [
             f
@@ -1465,4 +1570,4 @@ def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
         merger.write(os.path.join(out_dir, out_name))
         merger.close()
         count += 1
-    return count
+    return CombinedPdfResult(count=count, output_dir=out_dir)
