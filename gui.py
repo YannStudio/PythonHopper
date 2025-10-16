@@ -2112,6 +2112,9 @@ def start_gui():
             self.zip_var = tk.IntVar(
                 master=self, value=1 if self.settings.zip_per_production else 0
             )
+            self.combine_pdf_per_production_var = tk.IntVar(
+                master=self, value=1 if self.settings.combine_pdf_per_production else 0
+            )
             self.finish_export_var = tk.IntVar(
                 master=self, value=1 if self.settings.copy_finish_exports else 0
             )
@@ -2177,6 +2180,7 @@ def start_gui():
                 var.trace_add("write", self._save_settings)
             for var in (
                 self.zip_var,
+                self.combine_pdf_per_production_var,
                 self.finish_export_var,
                 self.zip_finish_var,
                 self.export_bom_var,
@@ -2320,6 +2324,12 @@ def start_gui():
                 variable=self.zip_per_finish_var,
                 anchor="w",
                 command=self._toggle_zip_per_finish,
+            ).pack(anchor="w", pady=2)
+            tk.Checkbutton(
+                options_frame,
+                text="Combineer pdf per productie (uit = één PDF)",
+                variable=self.combine_pdf_per_production_var,
+                anchor="w",
             ).pack(anchor="w", pady=2)
             tk.Checkbutton(
                 options_frame,
@@ -2494,6 +2504,9 @@ def start_gui():
             self.settings.project_number = self.project_number_var.get().strip()
             self.settings.project_name = self.project_name_var.get().strip()
             self.settings.zip_per_production = bool(self.zip_var.get())
+            self.settings.combine_pdf_per_production = bool(
+                self.combine_pdf_per_production_var.get()
+            )
             self.settings.copy_finish_exports = bool(self.finish_export_var.get())
             self.settings.zip_finish_exports = bool(self.zip_finish_var.get())
             self.settings.export_processed_bom = bool(self.export_bom_var.get())
@@ -3393,6 +3406,9 @@ def start_gui():
                             out_dir,
                             project_number=pn or None,
                             project_name=pname or None,
+                            combine_per_production=bool(
+                                self.combine_pdf_per_production_var.get()
+                            ),
                         )
                     except ModuleNotFoundError:
                         self.status_var.set("PyPDF2 ontbreekt")

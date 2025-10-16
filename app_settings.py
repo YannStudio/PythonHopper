@@ -183,6 +183,7 @@ class AppSettings:
         default_factory=lambda: deepcopy(DEFAULT_FILE_EXTENSIONS)
     )
     zip_per_production: bool = True
+    combine_pdf_per_production: bool = True
     copy_finish_exports: bool = False
     zip_finish_exports: bool = True
     export_processed_bom: bool = True
