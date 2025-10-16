@@ -2257,7 +2257,9 @@ def start_gui():
             self.src_entry.grid(row=0, column=1, padx=4)
             tk.Button(top, text="Bladeren", command=self._pick_src).grid(row=0, column=2, padx=4)
             tk.Label(top, text="Projectnr.:").grid(row=0, column=3, sticky="w", padx=(16, 0))
-            tk.Entry(top, textvariable=self.project_number_var, width=60).grid(row=0, column=4, padx=4, sticky="w")
+            tk.Entry(top, textvariable=self.project_number_var, width=60).grid(
+                row=0, column=4, padx=4, sticky="w"
+            )
 
             tk.Label(top, text=f"{FOLDER_ICON} Bestemmingsmap:", font=label_font).grid(
                 row=1, column=0, sticky="w"
@@ -2266,13 +2268,24 @@ def start_gui():
             self.dst_entry.grid(row=1, column=1, padx=4)
             tk.Button(top, text="Bladeren", command=self._pick_dst).grid(row=1, column=2, padx=4)
             tk.Label(top, text="Projectnaam:").grid(row=1, column=3, sticky="w", padx=(16, 0))
-            tk.Entry(top, textvariable=self.project_name_var, width=60).grid(row=1, column=4, padx=4, sticky="w")
+            tk.Entry(top, textvariable=self.project_name_var, width=60).grid(
+                row=1, column=4, padx=4, sticky="w"
+            )
+
+            top.grid_columnconfigure(5, weight=1)
+            tk.Button(
+                top,
+                text="Leegmaken",
+                command=self._clear_main_inputs,
+            ).grid(row=0, column=5, rowspan=2, sticky="ne", padx=(16, 0))
 
             tk.Label(top, text=f"{USER_ICON} Opdrachtgever:", font=label_font).grid(
                 row=2, column=0, sticky="w", pady=(8, 0)
             )
             self.client_var = tk.StringVar()
-            self.client_combo = ttk.Combobox(top, textvariable=self.client_var, state="readonly", width=40)
+            self.client_combo = ttk.Combobox(
+                top, textvariable=self.client_var, state="readonly", width=40
+            )
             self.client_combo.grid(row=2, column=1, padx=4, pady=(8, 0))
             tk.Button(top, text="Beheer", command=lambda: self.nb.select(self.clients_frame)).grid(
                 row=2, column=2, padx=4, pady=(8, 0)
@@ -2480,6 +2493,25 @@ def start_gui():
                 self.client_combo.set(cur)
             elif opts:
                 self.client_combo.set(opts[0])
+
+        def _clear_main_inputs(self) -> None:
+            prev_suspend = getattr(self, "_suspend_save", False)
+            self._suspend_save = True
+            try:
+                self.source_folder_var.set("")
+                self.dest_folder_var.set("")
+                self.project_number_var.set("")
+                self.project_name_var.set("")
+            finally:
+                self._suspend_save = prev_suspend
+
+            if not prev_suspend:
+                self._save_settings()
+
+            try:
+                self.src_entry.focus_set()
+            except Exception:
+                pass
 
         def _toggle_zip_per_finish(self):
             enabled = bool(self.zip_per_finish_var.get())
