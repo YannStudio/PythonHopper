@@ -3107,6 +3107,16 @@ def start_gui():
             if not self._ensure_bom_loaded():
                 return
             bom_df = self.bom_df
+            attrs = getattr(bom_df, "attrs", {}) or {}
+            missing_production = bool(attrs.get("production_column_missing"))
+            if missing_production:
+                messagebox.showwarning(
+                    "Let op",
+                    "De geladen BOM mist de kolom 'Production'. "
+                    "Vul de productie in de BOM in om bestelbonnen per productie te exporteren.",
+                    parent=self,
+                )
+                return
             exts = self._selected_exts()
             if not exts or not self.source_folder or not self.dest_folder:
                 messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies."); return

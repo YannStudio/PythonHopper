@@ -191,7 +191,7 @@ def load_bom(path: str) -> pd.DataFrame:
     if "Status" not in df.columns:
         df["Status"] = ""
 
-    return df[
+    normalized = df[
         [
             "PartNumber",
             "Description",
@@ -210,6 +210,11 @@ def load_bom(path: str) -> pd.DataFrame:
             "Gewicht",
         ]
     ].copy()
+
+    if pr_c is None:
+        normalized.attrs["production_column_missing"] = True
+
+    return normalized
 
 
 __all__ = ["read_csv_flex", "load_bom"]
