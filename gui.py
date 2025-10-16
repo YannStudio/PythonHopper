@@ -3385,8 +3385,14 @@ def start_gui():
                     self.status_var.set("PDF's combineren...")
                     try:
                         out_dir = self.dest_folder or self.source_folder
-                        cnt = combine_pdfs_from_source(
-                            self.source_folder, bom_df, out_dir
+                        pn = self.project_number_var.get().strip() if self.project_number_var else ""
+                        pname = self.project_name_var.get().strip() if self.project_name_var else ""
+                        result = combine_pdfs_from_source(
+                            self.source_folder,
+                            bom_df,
+                            out_dir,
+                            project_number=pn or None,
+                            project_name=pname or None,
                         )
                     except ModuleNotFoundError:
                         self.status_var.set("PyPDF2 ontbreekt")
@@ -3395,8 +3401,25 @@ def start_gui():
                             "Installeer PyPDF2 om PDF's te combineren.",
                         )
                         return
-                    self.status_var.set(f"Gecombineerde pdf's: {cnt}")
-                    messagebox.showinfo("Klaar", "PDF's gecombineerd.")
+                    self.status_var.set(
+                        f"Gecombineerde pdf's: {result.count} → {result.output_dir}"
+                    )
+                    messagebox.showinfo(
+                        "Klaar",
+                        "PDF's gecombineerd.\n\n" f"Map: {result.output_dir}",
+                    )
+                    try:
+                        if sys.platform.startswith("win"):
+                            os.startfile(result.output_dir)
+                        elif sys.platform == "darwin":
+                            subprocess.run(["open", result.output_dir], check=False)
+                        else:
+                            subprocess.run(["xdg-open", result.output_dir], check=False)
+                    except Exception as exc:
+                        messagebox.showwarning(
+                            "Let op",
+                            f"Kon exportmap niet openen:\n{exc}",
+                        )
                 threading.Thread(target=work, daemon=True).start()
             else:
                 messagebox.showwarning(

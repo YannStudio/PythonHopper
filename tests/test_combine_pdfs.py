@@ -1,3 +1,4 @@
+import datetime
 import zipfile
 from pathlib import Path
 
@@ -17,6 +18,7 @@ def _blank_pdf(path: Path) -> None:
 def test_combine_handles_loose_files_and_zip(tmp_path):
     dest = tmp_path
     date = "2023-01-01"
+    stamp = datetime.datetime(2023, 1, 1, 12, 30, 15)
 
     # production with loose PDFs
     prod1 = dest / "prod1"
@@ -38,10 +40,22 @@ def test_combine_handles_loose_files_and_zip(tmp_path):
     # empty production should be skipped
     (dest / "empty").mkdir()
 
-    count = combine_pdfs_per_production(str(dest), date)
-    out_dir = dest / "Combined pdf"
+    result = combine_pdfs_per_production(
+        str(dest),
+        date,
+        project_number="PRJ-42",
+        project_name="Alpha Beta",
+        timestamp=stamp,
+    )
+    out_dir = Path(result.output_dir)
 
-    assert count == 2
+    assert result.count == 2
+    assert out_dir.parent == dest
+    folder_name = out_dir.name
+    assert folder_name.startswith("Combined pdf_")
+    assert "2023-01-01T123015" in folder_name
+    assert "PRJ-42" in folder_name
+    assert "alpha-beta" in folder_name
     assert sorted(p.name for p in out_dir.glob("*.pdf")) == [
         "prod1_2023-01-01_combined.pdf",
         "prod2_2023-01-01_combined.pdf",
@@ -66,10 +80,23 @@ def test_combine_from_source_without_copy(tmp_path):
         ]
     )
 
-    count = combine_pdfs_from_source(str(source), bom_df, str(dest), "2023-01-01")
-    out_dir = dest / "Combined pdf"
+    stamp = datetime.datetime(2023, 1, 1, 13, 45, 0)
+    result = combine_pdfs_from_source(
+        str(source),
+        bom_df,
+        str(dest),
+        "2023-01-01",
+        project_number="PN-5",
+        project_name="Gamma",
+        timestamp=stamp,
+    )
+    out_dir = Path(result.output_dir)
 
-    assert count == 2
+    assert result.count == 2
+    assert out_dir.parent == dest
+    assert "2023-01-01T134500" in out_dir.name
+    assert "PN-5" in out_dir.name
+    assert "gamma" in out_dir.name
     assert sorted(p.name for p in out_dir.glob("*.pdf")) == [
         "prod1_2023-01-01_combined.pdf",
         "prod2_2023-01-01_combined.pdf",
@@ -94,13 +121,22 @@ def test_combine_from_source_to_dest_without_copy(tmp_path):
         ]
     )
 
-    count = combine_pdfs_from_source(str(source), bom_df, str(dest), "2023-01-01")
-    out_dir = dest / "Combined pdf"
+    stamp = datetime.datetime(2023, 1, 1, 9, 0, 0)
+    result = combine_pdfs_from_source(
+        str(source),
+        bom_df,
+        str(dest),
+        "2023-01-01",
+        project_number="PN-5",
+        project_name="Gamma",
+        timestamp=stamp,
+    )
+    out_dir = Path(result.output_dir)
 
-    assert count == 2
+    assert result.count == 2
     assert sorted(p.name for p in out_dir.glob("*.pdf")) == [
         "prod1_2023-01-01_combined.pdf",
         "prod2_2023-01-01_combined.pdf",
     ]
-    assert sorted(p.name for p in dest.iterdir()) == ["Combined pdf"]
+    assert [p for p in dest.iterdir()] == [out_dir]
 
