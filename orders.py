@@ -60,10 +60,11 @@ DEFAULT_FOOTER_NOTE = (
 STEP_EXTS = {".step", ".stp"}
 
 
-def _export_bom_workbook(bom_df: pd.DataFrame, dest: str, date_iso: str) -> str:
+def _export_bom_workbook(bom_df: pd.DataFrame, dest: str, filename: str) -> str:
     """Write the processed BOM dataframe to an Excel workbook."""
 
-    filename = f"BOM-FileHopper-Export-{date_iso}.xlsx"
+    if not filename.lower().endswith(".xlsx"):
+        filename = f"{filename}.xlsx"
     target_path = os.path.join(dest, filename)
     export_df = bom_df.reset_index(drop=True).copy()
     # Drop status-related columns that are only useful inside the app.
@@ -952,6 +953,22 @@ def copy_per_production_and_orders(
         new_stem = "-".join(prefix_parts + [stem] + suffix_parts)
         return f"{new_stem}{ext}"
 
+    def _bom_export_filename(date_iso: str) -> str:
+        source_stem = ""
+        if bom_source_path:
+            source_stem = Path(bom_source_path).stem
+            match = re.search(r"(.*?\bBOM\b)", source_stem, flags=re.IGNORECASE)
+            if match:
+                source_stem = match.group(1)
+            source_stem = source_stem.rstrip(" -_.")
+        if source_stem:
+            stem = source_stem
+        else:
+            stem = "BOM-FileHopper-Export"
+        stem_with_date = f"{stem}-{date_iso}"
+        filename = f"{stem_with_date}.xlsx"
+        return _transform_export_name(filename)
+
     def _related_bom_exports(path: Optional[str]) -> List[str]:
         if not path:
             return []
@@ -1316,7 +1333,9 @@ def copy_per_production_and_orders(
     bom_export_path: Optional[str] = None
     if export_bom:
         try:
-            bom_export_path = _export_bom_workbook(bom_df, dest, today)
+            bom_export_path = _export_bom_workbook(
+                bom_df, dest, _bom_export_filename(today)
+            )
         except Exception as exc:  # pragma: no cover - unexpected
             raise RuntimeError(f"Kon BOM-export niet opslaan: {exc}") from exc
 
