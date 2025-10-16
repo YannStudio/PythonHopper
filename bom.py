@@ -91,7 +91,10 @@ def load_bom(path: str) -> pd.DataFrame:
         ds_c = need("Description")
     except ValueError:
         ds_c = None
-    pr_c = need("Production")
+    try:
+        pr_c = need("Production")
+    except ValueError:
+        pr_c = None
 
     def find_any(names: List[str]) -> Optional[str]:
         low = {c.lower(): c for c in df.columns}
@@ -133,7 +136,6 @@ def load_bom(path: str) -> pd.DataFrame:
         # Fallback to PartNumber when no description column is present so that
         # downstream code keeps working with a consistent schema.
         df["Description"] = df["PartNumber"]
-    df["Production"] = df[pr_c].astype(str).str.strip()
 
     if aantal_col is None:
         df["Aantal"] = 1
@@ -162,6 +164,7 @@ def load_bom(path: str) -> pd.DataFrame:
         return series.apply(_normalize_text_value)
 
     df["Materiaal"] = _text_column(mat_col)
+    df["Production"] = _text_column(pr_c)
 
     supplier_col = find_any(["Supplier"])
     supplier_code_col = find_any(["Supplier code"])
@@ -188,7 +191,7 @@ def load_bom(path: str) -> pd.DataFrame:
     if "Status" not in df.columns:
         df["Status"] = ""
 
-    return df[
+    normalized = df[
         [
             "PartNumber",
             "Description",
@@ -207,6 +210,11 @@ def load_bom(path: str) -> pd.DataFrame:
             "Gewicht",
         ]
     ].copy()
+
+    if pr_c is None:
+        normalized.attrs["production_column_missing"] = True
+
+    return normalized
 
 
 __all__ = ["read_csv_flex", "load_bom"]
