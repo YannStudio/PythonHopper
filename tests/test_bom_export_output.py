@@ -19,6 +19,7 @@ def _basic_bom() -> pd.DataFrame:
                 "Description": "Behuizing",
                 "Production": "Laser",
                 "Aantal": 2,
+                "Bestanden gevonden": "pdf",
                 "Status": "✅",
             }
         ]
@@ -53,9 +54,12 @@ def test_bom_export_written_with_iso_date(tmp_path, monkeypatch):
     assert export_path.is_file()
 
     exported = pd.read_excel(export_path)
+    expected = df.drop(columns=["Bestanden gevonden", "Status"], errors="ignore")
     pd.testing.assert_frame_equal(
-        df.reset_index(drop=True), exported, check_dtype=False
+        expected.reset_index(drop=True), exported, check_dtype=False
     )
+    assert "Bestanden gevonden" not in exported.columns
+    assert "Status" not in exported.columns
 
 
 def test_bom_export_can_be_disabled(tmp_path, monkeypatch):
