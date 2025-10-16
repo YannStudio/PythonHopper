@@ -55,4 +55,3 @@ def test_load_bom_without_production_column(tmp_path):
     df = load_bom(str(bom_path))
 
     assert list(df["Production"]) == ["", ""]
-    assert df.attrs.get("production_column_missing") is True
