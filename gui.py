@@ -2327,14 +2327,14 @@ def start_gui():
             ).pack(anchor="w", pady=2)
             tk.Checkbutton(
                 options_frame,
-                text="Combineer pdf per productie (uit = één PDF)",
-                variable=self.combine_pdf_per_production_var,
+                text="Finish export",
+                variable=self.finish_export_var,
                 anchor="w",
             ).pack(anchor="w", pady=2)
             tk.Checkbutton(
                 options_frame,
-                text="Finish export",
-                variable=self.finish_export_var,
+                text="Combineer pdf per productie (uit = één PDF)",
+                variable=self.combine_pdf_per_production_var,
                 anchor="w",
             ).pack(anchor="w", pady=2)
             tk.Checkbutton(
