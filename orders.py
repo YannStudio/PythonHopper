@@ -1444,17 +1444,21 @@ def combine_pdfs_from_source(
     project_number: str | None = None,
     project_name: str | None = None,
     timestamp: datetime.datetime | None = None,
+    combine_per_production: bool = True,
 ) -> CombinedPdfResult:
     """Combine PDF drawing files per production directly from ``source``.
 
     The BOM dataframe provides ``PartNumber`` to ``Production`` mappings.
     PDFs matching the part numbers are searched in ``source`` using
-    :func:`_build_file_index` and merged per production. The resulting files
-    are written to a newly created export directory inside ``dest`` whose name
-    contains the project number, project name (slugified) and an ISO-like
-    timestamp. Output filenames contain the production name and current date.
-    The returned :class:`CombinedPdfResult` provides the number of generated
-    files and the absolute output directory path.
+    :func:`_build_file_index` and merged per production when
+    ``combine_per_production`` is :data:`True`. When the flag is :data:`False`,
+    every matching PDF in the BOM is merged into a single export file. The
+    resulting files are written to a newly created export directory inside
+    ``dest`` whose name contains the project number, project name (slugified)
+    and an ISO-like timestamp. Output filenames contain either the production
+    name or ``BOM`` together with the current date. The returned
+    :class:`CombinedPdfResult` provides the number of generated files and the
+    absolute output directory path.
     """
     if PdfMerger is None:
         raise ModuleNotFoundError(
@@ -1477,16 +1481,35 @@ def combine_pdfs_from_source(
         timestamp=timestamp,
     )
     count = 0
-    for prod, files in prod_to_files.items():
-        if not files:
-            continue
-        merger = PdfMerger()
-        for path in sorted(files, key=lambda x: os.path.basename(x).lower()):
-            merger.append(path)
-        out_name = f"{prod}_{date_str}_combined.pdf"
-        merger.write(os.path.join(out_dir, out_name))
-        merger.close()
-        count += 1
+
+    if combine_per_production:
+        for prod, files in prod_to_files.items():
+            if not files:
+                continue
+            merger = PdfMerger()
+            for path in sorted(files, key=lambda x: os.path.basename(x).lower()):
+                merger.append(path)
+            out_name = f"{prod}_{date_str}_combined.pdf"
+            merger.write(os.path.join(out_dir, out_name))
+            merger.close()
+            count += 1
+    else:
+        ordered_files: List[str] = []
+        seen = set()
+        for files in prod_to_files.values():
+            for path in files:
+                if path not in seen:
+                    ordered_files.append(path)
+                    seen.add(path)
+        if ordered_files:
+            merger = PdfMerger()
+            for path in sorted(ordered_files, key=lambda x: os.path.basename(x).lower()):
+                merger.append(path)
+            out_name = f"BOM_{date_str}_combined.pdf"
+            merger.write(os.path.join(out_dir, out_name))
+            merger.close()
+            count = 1
+
     return CombinedPdfResult(count=count, output_dir=out_dir)
 
 
