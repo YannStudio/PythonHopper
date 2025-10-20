@@ -196,7 +196,7 @@ class AppSettings:
     bundle_latest: bool = False
     bundle_dry_run: bool = False
     footer_note: str = DEFAULT_FOOTER_NOTE
-    autofill_custom_bom: bool = False
+    autofill_custom_bom: bool = True
     _path: Path = field(default=SETTINGS_FILE, repr=False, compare=False)
 
     @classmethod

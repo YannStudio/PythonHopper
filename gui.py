@@ -2701,14 +2701,13 @@ def start_gui():
             self.bom_source_path = os.path.abspath(path)
             self._refresh_tree()
             self.status_var.set(f"BOM geladen: {len(df)} rijen")
-            if self.settings.autofill_custom_bom:
-                try:
-                    self.custom_bom_tab.load_from_main_dataframe(df)
-                except Exception as exc:
-                    print(
-                        f"Kon custom BOM niet vullen vanuit hoofd-BOM: {exc}",
-                        file=sys.stderr,
-                    )
+            try:
+                self.custom_bom_tab.load_from_main_dataframe(df)
+            except Exception as exc:
+                print(
+                    f"Kon custom BOM niet vullen vanuit hoofd-BOM: {exc}",
+                    file=sys.stderr,
+                )
 
         def _load_bom(self):
             from tkinter import filedialog, messagebox
@@ -2754,6 +2753,12 @@ def start_gui():
                     "Er zijn geen rijen met gegevens om naar de Main-tab te sturen.",
                     parent=self.custom_bom_tab,
                 )
+                return
+
+            try:
+                normalized = prepare_custom_bom_for_main(custom_df, self.bom_df)
+            except ValueError as exc:
+                messagebox.showerror("Fout", str(exc), parent=self.custom_bom_tab)
                 return
 
             self.bom_df = normalized
