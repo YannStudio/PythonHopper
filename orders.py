@@ -1093,8 +1093,8 @@ def copy_per_production_and_orders(
         doc_type = _to_str(raw_doc_type).strip() or "Bestelbon"
         doc_num = _to_str(doc_num_map.get(prod, "")).strip()
         prefix = _prefix_for_doc_type(doc_type)
-        if doc_num and prefix and not doc_num.upper().startswith(prefix.upper()):
-            doc_num = f"{prefix}{doc_num}"
+        if doc_num and prefix and doc_num.upper() == prefix.upper():
+            doc_num = ""
         num_part = f"_{doc_num}" if doc_num else ""
         doc_type_lower = doc_type.lower()
         is_standaard_doc = doc_type_lower.startswith("standaard")

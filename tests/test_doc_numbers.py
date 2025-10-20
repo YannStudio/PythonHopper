@@ -27,7 +27,7 @@ def test_doc_number_in_name_and_header(tmp_path):
     dst = tmp_path / "dst"
     dst.mkdir()
 
-    doc_num_map = {"Laser": "123"}
+    doc_num_map = {"Laser": "BB-123"}
     copy_per_production_and_orders(
         str(src),
         str(dst),
@@ -85,7 +85,7 @@ def test_offerte_prefix_in_output(tmp_path):
     dst = tmp_path / "dst"
     dst.mkdir()
 
-    doc_num_map = {"Laser": "42"}
+    doc_num_map = {"Laser": "OFF-42"}
     doc_type_map = {"Laser": "Offerteaanvraag"}
     copy_per_production_and_orders(
         str(src),
@@ -187,7 +187,7 @@ def test_doc_number_applied_to_zip_filename(tmp_path):
     dst = tmp_path / "dst_zip"
     dst.mkdir()
 
-    doc_num_map = {"Laser": "123"}
+    doc_num_map = {"Laser": "BB-123"}
 
     cnt, _ = copy_per_production_and_orders(
         str(src),
