@@ -3283,7 +3283,10 @@ def start_gui():
                     token_prefix_enabled=custom_prefix_enabled,
                     token_suffix_enabled=custom_suffix_enabled,
                 ):
-                    self.status_var.set("Bundelmap voorbereiden...")
+                    def set_status(message: str) -> None:
+                        self.after(0, self.status_var.set, message)
+
+                    set_status("Bundelmap voorbereiden...")
                     try:
                         bundle = create_export_bundle(
                             self.dest_folder,
@@ -3326,41 +3329,53 @@ def start_gui():
                         self.after(0, on_dry)
                         return
 
-                    self.status_var.set("Kopiëren & bestelbonnen maken...")
+                    set_status("Kopiëren & bestelbonnen maken...")
                     client = self.client_db.get(
                         self.client_var.get().replace("★ ", "", 1)
                     )
-                    cnt, chosen = copy_per_production_and_orders(
-                        self.source_folder,
-                        bundle_dest,
-                        current_bom,
-                        exts,
-                        self.db,
-                        prod_override_map,
-                        doc_type_map,
-                        prod_doc_num_map,
-                        remember,
-                        client=client,
-                        delivery_map=production_delivery_map,
-                        footer_note=self.footer_note_var.get(),
-                        zip_parts=bool(self.zip_var.get()),
-                        date_prefix_exports=bool(self.export_date_prefix_var.get()),
-                        date_suffix_exports=bool(self.export_date_suffix_var.get()),
-                        project_number=project_number,
-                        project_name=project_name,
-                        copy_finish_exports=bool(self.finish_export_var.get()),
-                        zip_finish_exports=bool(self.zip_finish_var.get()),
-                        export_bom=bool(self.export_bom_var.get()),
-                        export_name_prefix_text=token_prefix_text,
-                        export_name_prefix_enabled=token_prefix_enabled,
-                        export_name_suffix_text=token_suffix_text,
-                        export_name_suffix_enabled=token_suffix_enabled,
-                        finish_override_map=finish_override_map,
-                        finish_doc_type_map=finish_doc_type_map,
-                        finish_doc_num_map=finish_doc_num_map,
-                        finish_delivery_map=finish_delivery_map,
-                        bom_source_path=self.bom_source_path,
-                    )
+                    try:
+                        cnt, chosen = copy_per_production_and_orders(
+                            self.source_folder,
+                            bundle_dest,
+                            current_bom,
+                            exts,
+                            self.db,
+                            prod_override_map,
+                            doc_type_map,
+                            prod_doc_num_map,
+                            remember,
+                            client=client,
+                            delivery_map=production_delivery_map,
+                            footer_note=self.footer_note_var.get(),
+                            zip_parts=bool(self.zip_var.get()),
+                            date_prefix_exports=bool(self.export_date_prefix_var.get()),
+                            date_suffix_exports=bool(self.export_date_suffix_var.get()),
+                            project_number=project_number,
+                            project_name=project_name,
+                            copy_finish_exports=bool(self.finish_export_var.get()),
+                            zip_finish_exports=bool(self.zip_finish_var.get()),
+                            export_bom=bool(self.export_bom_var.get()),
+                            export_name_prefix_text=token_prefix_text,
+                            export_name_prefix_enabled=token_prefix_enabled,
+                            export_name_suffix_text=token_suffix_text,
+                            export_name_suffix_enabled=token_suffix_enabled,
+                            finish_override_map=finish_override_map,
+                            finish_doc_type_map=finish_doc_type_map,
+                            finish_doc_num_map=finish_doc_num_map,
+                            finish_delivery_map=finish_delivery_map,
+                            bom_source_path=self.bom_source_path,
+                        )
+                    except Exception as exc:
+                        def on_error():
+                            messagebox.showerror(
+                                "Fout",
+                                f"Bestelbonnen exporteren mislukt:\n{exc}",
+                                parent=self,
+                            )
+                            self.status_var.set("Export mislukt.")
+
+                        self.after(0, on_error)
+                        return
 
                     def on_done():
                         friendly_pairs = []
