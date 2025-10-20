@@ -1051,7 +1051,7 @@ class BOMCustomTab(ttk.Frame):
             return
 
         path = self._resolve_default_export_path()
-        self._write_csv(path, cleaned)
+        self._write_csv(path, non_empty_rows)
 
         if self.on_custom_bom_ready is not None:
             self.on_custom_bom_ready(path, row_count)
