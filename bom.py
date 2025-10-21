@@ -166,6 +166,18 @@ def load_bom(path: str) -> pd.DataFrame:
     df["Materiaal"] = _text_column(mat_col)
     df["Production"] = _text_column(pr_c)
 
+    profile_col = find_any(["Profile"])
+    if profile_col is None:
+        profile_col = _find_col_by_regex(df, [r"\bprofile\b"])
+    profile_length_col = find_any(["Length profile", "Profile length"])
+    if profile_length_col is None:
+        profile_length_col = _find_col_by_regex(
+            df, [r"length\s*profile", r"profile\s*length"]
+        )
+
+    df["Profile"] = _text_column(profile_col)
+    df["Length profile"] = _text_column(profile_length_col)
+
     supplier_col = find_any(["Supplier"])
     supplier_code_col = find_any(["Supplier code"])
     manufacturer_col = find_any(["Manufacturer"])
@@ -195,6 +207,8 @@ def load_bom(path: str) -> pd.DataFrame:
         [
             "PartNumber",
             "Description",
+            "Profile",
+            "Length profile",
             "Production",
             "Bestanden gevonden",
             "Status",

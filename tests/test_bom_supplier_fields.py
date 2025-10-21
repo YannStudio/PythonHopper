@@ -11,6 +11,8 @@ from bom_custom_tab import BOMCustomTab
 EXPECTED_COLUMNS = [
     "PartNumber",
     "Description",
+    "Profile",
+    "Length profile",
     "Production",
     "Bestanden gevonden",
     "Status",
@@ -33,6 +35,8 @@ def test_load_bom_preserves_supplier_fields(tmp_path):
         {
             "PartNumber": ["PN1"],
             "Description": ["Widget"],
+            "Profile": ["  L-100  "],
+            "Length profile": [" 2500 "],
             "Production": ["Laser"],
             "Supplier": ["  Supplier NV  "],
             "Supplier code": [" SUP-001 "],
@@ -49,6 +53,8 @@ def test_load_bom_preserves_supplier_fields(tmp_path):
     assert df.loc[0, "Supplier code"] == "SUP-001"
     assert df.loc[0, "Manufacturer"] == "Maker BV"
     assert df.loc[0, "Manufacturer code"] == "M-42"
+    assert df.loc[0, "Profile"] == "L-100"
+    assert df.loc[0, "Length profile"] == "2500"
 
 
 def test_custom_bom_export_includes_supplier_columns(tmp_path):
