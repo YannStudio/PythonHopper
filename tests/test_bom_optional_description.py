@@ -18,6 +18,8 @@ def test_load_bom_without_description(tmp_path):
     assert list(df.columns) == [
         "PartNumber",
         "Description",
+        "Profile",
+        "Length profile",
         "Production",
         "Bestanden gevonden",
         "Status",
@@ -37,6 +39,8 @@ def test_load_bom_without_description(tmp_path):
     assert df["Supplier code"].tolist() == ["", ""]
     assert df["Manufacturer"].tolist() == ["", ""]
     assert df["Manufacturer code"].tolist() == ["", ""]
+    assert df["Profile"].tolist() == ["", ""]
+    assert df["Length profile"].tolist() == ["", ""]
 
     grouped = df.groupby("PartNumber")["Aantal"].sum().to_dict()
     assert grouped == {"PN1": 2, "PN2": 1}

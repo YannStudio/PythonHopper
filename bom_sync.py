@@ -16,6 +16,8 @@ _CUSTOM_TO_MAIN_ALIASES = {
 MAIN_BOM_COLUMNS: Tuple[str, ...] = (
     "PartNumber",
     "Description",
+    "Profile",
+    "Length profile",
     "Production",
     "Bestanden gevonden",
     "Status",

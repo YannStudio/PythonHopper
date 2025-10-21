@@ -607,6 +607,8 @@ class BOMCustomTab(ttk.Frame):
     MAIN_TO_CUSTOM_COLUMN_MAP: Dict[str, str] = {
         "PartNumber": "PartNumber",
         "Description": "Description",
+        "Profile": "Profile",
+        "Length profile": "Length profile",
         "Production": "Production",
         "Materiaal": "Material",
         "Finish": "Finish",
@@ -625,6 +627,8 @@ class BOMCustomTab(ttk.Frame):
     MAIN_COLUMN_ORDER: Tuple[str, ...] = (
         "PartNumber",
         "Description",
+        "Profile",
+        "Length profile",
         "Production",
         "Materiaal",
         "Supplier",
