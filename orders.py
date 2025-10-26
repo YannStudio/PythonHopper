@@ -13,7 +13,6 @@ import unicodedata
 import zipfile
 import io
 import tempfile
-import hashlib
 from collections import defaultdict
 from pathlib import Path
 from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
