@@ -215,6 +215,18 @@ def test_export_remark_rendered_under_delivery(tmp_path):
     assert expected in text
     assert "Opmerking: Export aanwijzing" not in text
 
+    xlsx = next(f for f in os.listdir(prod_folder) if f.endswith(".xlsx"))
+    wb = openpyxl.load_workbook(prod_folder / xlsx)
+    ws = wb.active
+    col_a = [ws[f"A{i}"].value for i in range(1, 40)]
+    col_b = [ws[f"B{i}"].value for i in range(1, 40)]
+    lever_row = col_a.index("Leveradres") + 1
+    assert "Export aanwijzing" not in col_b[: lever_row - 1]
+    assert any(
+        ws[f"A{i}"].value == "Opmerking" and ws[f"B{i}"].value == "Export aanwijzing"
+        for i in range(lever_row, lever_row + 8)
+    )
+
 
 def test_export_remark_rendered_under_delivery_with_spaced_doc_type(tmp_path):
     reportlab = pytest.importorskip("reportlab")
@@ -251,3 +263,15 @@ def test_export_remark_rendered_under_delivery_with_spaced_doc_type(tmp_path):
     )
     assert expected in text
     assert "Opmerking: Export aanwijzing" not in text
+
+    xlsx = next(f for f in os.listdir(prod_folder) if f.endswith(".xlsx"))
+    wb = openpyxl.load_workbook(prod_folder / xlsx)
+    ws = wb.active
+    col_a = [ws[f"A{i}"].value for i in range(1, 40)]
+    col_b = [ws[f"B{i}"].value for i in range(1, 40)]
+    lever_row = col_a.index("Leveradres") + 1
+    assert "Export aanwijzing" not in col_b[: lever_row - 1]
+    assert any(
+        ws[f"A{i}"].value == "Opmerking" and ws[f"B{i}"].value == "Export aanwijzing"
+        for i in range(lever_row, lever_row + 8)
+    )
