@@ -1,8 +1,10 @@
 """Tests voor clipboardhelper van de Custom BOM-tab."""
 
+from types import SimpleNamespace
+
 import pandas as pd
 
-from bom_custom_tab import _dataframe_slice_to_clipboard
+from bom_custom_tab import BOMCustomTab, _dataframe_slice_to_clipboard
 
 
 def test_clipboard_slice_basic_matrix() -> None:
@@ -31,3 +33,84 @@ def test_clipboard_slice_empty_when_nothing_selected() -> None:
     df = pd.DataFrame([["only", "value"]])
 
     assert _dataframe_slice_to_clipboard(df, [], []) == ""
+
+
+def _build_tab(df: pd.DataFrame):
+    tab = object.__new__(BOMCustomTab)
+    tab.table_model = SimpleNamespace(df=df.copy(deep=True))
+    tab._dataframe = tab.table_model.df.copy(deep=True)
+    tab.DEFAULT_EMPTY_ROWS = BOMCustomTab.DEFAULT_EMPTY_ROWS
+    tab.undo_stack = []
+    tab.max_undo = 5
+    tab._suspend_history = False
+    status_updates = []
+
+    def update_status(self, text: str) -> None:
+        status_updates.append(text)
+
+    def refresh(self) -> None:
+        pass
+
+    def ensure_rows(self, minimum: int) -> None:
+        pass
+
+    tab._update_status = update_status.__get__(tab, BOMCustomTab)
+    tab._refresh_table = refresh.__get__(tab, BOMCustomTab)
+    tab._ensure_minimum_rows = ensure_rows.__get__(tab, BOMCustomTab)
+    return tab, status_updates
+
+
+def test_clear_cells_clears_values_and_records_undo() -> None:
+    df = pd.DataFrame({"A": ["one"], "B": ["two"]})
+    tab, statuses = _build_tab(df)
+
+    count = tab._clear_cells(
+        [0],
+        [0, 1],
+        undo_action="test",
+        empty_status="geen selectie",
+        success_status="{count} cellen gewist",
+        no_change_status="geen wijziging",
+    )
+
+    assert count == 2
+    assert tab.table_model.df.iloc[0, 0] == ""
+    assert tab.table_model.df.iloc[0, 1] == ""
+    assert tab.undo_stack[-1].action == "test"
+    assert statuses[-1] == "2 cellen gewist"
+
+
+def test_clear_cells_handles_empty_selection() -> None:
+    df = pd.DataFrame({"A": ["one"]})
+    tab, statuses = _build_tab(df)
+
+    count = tab._clear_cells(
+        [],
+        [0],
+        undo_action="test",
+        empty_status="geen selectie",
+        success_status="{count} cellen gewist",
+        no_change_status="geen wijziging",
+    )
+
+    assert count == 0
+    assert statuses[-1] == "geen selectie"
+    assert tab.undo_stack == []
+
+
+def test_clear_cells_skips_when_values_already_empty() -> None:
+    df = pd.DataFrame({"A": [""], "B": [" "]})
+    tab, statuses = _build_tab(df)
+
+    count = tab._clear_cells(
+        [0],
+        [0, 1],
+        undo_action="test",
+        empty_status="geen selectie",
+        success_status="{count} cellen gewist",
+        no_change_status="geen wijziging",
+    )
+
+    assert count == 1
+    assert statuses[-1] == "1 cellen gewist"
+    assert len(tab.undo_stack) == 1

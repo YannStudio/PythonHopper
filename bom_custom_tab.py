@@ -285,13 +285,30 @@ class _UndoAwareTable(Table):
     def cut(self, event=None):  # type: ignore[override]
         if not self._commit_active_edit():
             return "break"
-        base = super()
-        cut_func = getattr(base, "cut", None)
-        if callable(cut_func):
-            return cut_func(event)
-        # Fallback: copy and clear selection when Pandastable lacks cut().
-        self.copy(event)
-        self.clearData(event)
+
+        rows, cols = self._selected_cell_coordinates()
+        copied_cells = len(rows) * len(cols) if rows and cols else 0
+        if not copied_cells:
+            self._owner._update_status("Geen cellen geselecteerd om te knippen.")
+            return "break"
+
+        clipboard_text = _dataframe_slice_to_clipboard(
+            self._owner.table_model.df, rows, cols
+        )
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(clipboard_text)
+        except tk.TclError:
+            return "break"
+
+        self._owner._clear_cells(
+            rows,
+            cols,
+            undo_action="knippen",
+            empty_status="Geen cellen geselecteerd om te knippen.",
+            success_status="{count} cellen geknipt.",
+            no_change_status="Geen cellen geknipt.",
+        )
         return "break"
 
     def paste(self, event=None):  # type: ignore[override]
@@ -780,6 +797,46 @@ class BOMCustomTab(ttk.Frame):
         if len(self.undo_stack) > self.max_undo:
             self.undo_stack.pop(0)
 
+    def _clear_cells(
+        self,
+        rows: Sequence[int],
+        cols: Sequence[int],
+        *,
+        undo_action: str,
+        empty_status: str,
+        success_status: str,
+        no_change_status: str,
+    ) -> int:
+        if not rows or not cols:
+            self._update_status(empty_status)
+            return 0
+
+        before = self.table_model.df.copy(deep=True)
+        changed: List[CellCoord] = []
+        self._suspend_history = True
+        try:
+            for row in rows:
+                for col in cols:
+                    current = self.table_model.df.iat[row, col]
+                    normalized = "" if pd.isna(current) else str(current)
+                    if normalized:
+                        self.table_model.df.iat[row, col] = ""
+                        changed.append((row, col))
+        finally:
+            self._suspend_history = False
+
+        after = self.table_model.df.copy(deep=True)
+        if changed and not before.equals(after):
+            self._push_undo(undo_action, before, changed)
+            self._dataframe = after
+            self._refresh_table()
+            self._ensure_minimum_rows(self.DEFAULT_EMPTY_ROWS)
+            self._update_status(success_status.format(count=len(changed)))
+            return len(changed)
+
+        self._update_status(no_change_status)
+        return 0
+
     def _collect_selection(self) -> Tuple[List[int], List[int]]:
         table = self.table
         rows = list(dict.fromkeys(table.multiplerowlist)) if table.multiplerowlist else []
@@ -833,33 +890,14 @@ class BOMCustomTab(ttk.Frame):
         if not self.table._commit_active_edit():
             return "break"
         rows, cols = self._collect_selection()
-        if not rows or not cols:
-            self._update_status("Geen cellen geselecteerd om te legen.")
-            return "break"
-
-        before = self.table_model.df.copy(deep=True)
-        changed: List[CellCoord] = []
-        self._suspend_history = True
-        try:
-            for row in rows:
-                for col in cols:
-                    current = self.table_model.df.iat[row, col]
-                    normalized = "" if pd.isna(current) else str(current)
-                    if normalized:
-                        self.table_model.df.iat[row, col] = ""
-                        changed.append((row, col))
-        finally:
-            self._suspend_history = False
-
-        after = self.table_model.df.copy(deep=True)
-        if changed and not before.equals(after):
-            self._push_undo("leegmaken", before, changed)
-            self._dataframe = after
-            self._refresh_table()
-            self._ensure_minimum_rows(self.DEFAULT_EMPTY_ROWS)
-            self._update_status(f"{len(changed)} cellen geleegd.")
-        else:
-            self._update_status("Geen wijzigingen bij legen.")
+        self._clear_cells(
+            rows,
+            cols,
+            undo_action="leegmaken",
+            empty_status="Geen cellen geselecteerd om te legen.",
+            success_status="{count} cellen geleegd.",
+            no_change_status="Geen wijzigingen bij legen.",
+        )
         return "break"
 
     def _parse_clipboard_text(self, text: str) -> List[List[str]]:
