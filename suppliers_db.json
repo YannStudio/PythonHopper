@@ -1487,14 +1487,9 @@
     }
   ],
   "defaults_by_production": {
-    "Sheetmetal": "AB-Matic (Hi-Motion)",
-    "Weld assembly": "AB-Matic (Hi-Motion)",
-    "Tube Laser": "AB-Matic (Hi-Motion)",
-    "Lasercutting": "AB-Matic (Hi-Motion)",
-    "Assembly": "AB-Matic (Hi-Motion)",
-    "_Onbekend": "AB-Matic (Hi-Motion)"
+    "Sheetmetal": "Tecno Spa",
+    "Lasercutting": "Productora",
+    "Assembly": "AB-Matic (Hi-Motion)"
   },
-  "defaults_by_finish": {
-    "Finish-Powder coating-De Lijn Geel": "AB-Matic (Hi-Motion)"
-  }
+  "defaults_by_finish": {}
 }
