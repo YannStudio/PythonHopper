@@ -93,6 +93,117 @@ def start_gui():
     TREE_ODD_BG = "#FFFFFF"
     TREE_EVEN_BG = "#F5F5F5"
 
+    def _entry_overflows(entry: "tk.Entry", text: str) -> bool:
+        """Return True if the Entry content is wider than the widget."""
+
+        if not text:
+            return False
+        entry.update_idletasks()
+        width = entry.winfo_width()
+        if width <= 1:
+            width = entry.winfo_reqwidth()
+        try:
+            font = tkfont.nametofont(entry.cget("font"))
+        except tk.TclError:
+            font = tkfont.nametofont("TkDefaultFont")
+        padding = 0
+        try:
+            padding += float(entry.cget("highlightthickness")) * 2
+        except tk.TclError:
+            pass
+        try:
+            padding += float(entry.cget("bd")) * 2
+        except tk.TclError:
+            pass
+        usable_width = max(1, width - int(padding) - 4)
+        return font.measure(text) > usable_width
+
+    def _scroll_entry_to_end(entry: "tk.Entry", variable: Optional["tk.StringVar"] = None) -> None:
+        """Ensure the end of the entry text remains visible."""
+
+        def adjust(*_ignored):
+            try:
+                entry.icursor("end")
+                entry.xview_moveto(1.0)
+            except tk.TclError:
+                pass
+
+        entry.bind("<FocusIn>", adjust, add="+")
+        entry.bind("<Configure>", adjust, add="+")
+        entry.after_idle(adjust)
+        if variable is not None:
+            trace_id = variable.trace_add("write", lambda *_: entry.after_idle(adjust))
+            setattr(entry, "_auto_scroll_trace", trace_id)
+
+    class _OverflowTooltip:
+        """Show a tooltip with full text when an Entry's content overflows."""
+
+        def __init__(self, widget: "tk.Entry", text_provider):
+            self.widget = widget
+            self._text_provider = text_provider
+            self._tipwindow: Optional["tk.Toplevel"] = None
+            self._after_id: Optional[str] = None
+            widget.bind("<Enter>", self._schedule_show, add="+")
+            widget.bind("<Leave>", self._hide, add="+")
+            widget.bind("<Destroy>", self._hide, add="+")
+
+        def _schedule_show(self, _event=None):
+            self._cancel_scheduled()
+            if not self.widget.winfo_viewable():
+                return
+            self._after_id = self.widget.after(200, self._maybe_show)
+
+        def _maybe_show(self):
+            self._after_id = None
+            if not self.widget.winfo_exists():
+                return
+            text = self._text_provider()
+            if not text:
+                return
+            if not _entry_overflows(self.widget, text):
+                return
+            if self._tipwindow is not None:
+                return
+            tip = tk.Toplevel(self.widget)
+            tip.wm_overrideredirect(True)
+            try:
+                tip.wm_attributes("-topmost", True)
+            except tk.TclError:
+                pass
+            label = tk.Label(
+                tip,
+                text=text,
+                background="#ffffe0",
+                foreground="#444444",
+                relief="solid",
+                borderwidth=1,
+                justify="left",
+                padx=4,
+                pady=2,
+            )
+            label.pack()
+            x = self.widget.winfo_rootx()
+            y = self.widget.winfo_rooty() + self.widget.winfo_height()
+            tip.wm_geometry(f"+{x}+{y}")
+            self._tipwindow = tip
+
+        def _cancel_scheduled(self):
+            if self._after_id is not None:
+                try:
+                    self.widget.after_cancel(self._after_id)
+                except tk.TclError:
+                    pass
+                self._after_id = None
+
+        def _hide(self, _event=None):
+            self._cancel_scheduled()
+            if self._tipwindow is not None:
+                try:
+                    self._tipwindow.destroy()
+                except tk.TclError:
+                    pass
+                self._tipwindow = None
+
     class ClientsManagerFrame(tk.Frame):
         def __init__(self, master, db: ClientsDB, on_change=None):
             super().__init__(master)
@@ -2303,6 +2414,8 @@ def start_gui():
             )
             self.src_entry = tk.Entry(top, width=60, textvariable=self.source_folder_var)
             self.src_entry.grid(row=0, column=1, padx=4)
+            _scroll_entry_to_end(self.src_entry, self.source_folder_var)
+            _OverflowTooltip(self.src_entry, lambda: self.source_folder_var.get().strip())
             tk.Button(top, text="Bladeren", command=self._pick_src).grid(row=0, column=2, padx=4)
             tk.Label(top, text="Projectnr.:").grid(row=0, column=3, sticky="w", padx=(16, 0))
             tk.Entry(top, textvariable=self.project_number_var, width=60).grid(
@@ -2314,6 +2427,8 @@ def start_gui():
             )
             self.dst_entry = tk.Entry(top, width=60, textvariable=self.dest_folder_var)
             self.dst_entry.grid(row=1, column=1, padx=4)
+            _scroll_entry_to_end(self.dst_entry, self.dest_folder_var)
+            _OverflowTooltip(self.dst_entry, lambda: self.dest_folder_var.get().strip())
             tk.Button(top, text="Bladeren", command=self._pick_dst).grid(row=1, column=2, padx=4)
             tk.Label(top, text="Projectnaam:").grid(row=1, column=3, sticky="w", padx=(16, 0))
             tk.Entry(top, textvariable=self.project_name_var, width=60).grid(
