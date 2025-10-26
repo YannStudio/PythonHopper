@@ -430,6 +430,7 @@ def generate_pdf_order_platypus(
     project_number: str | None = None,
     project_name: str | None = None,
     label_kind: str = "productie",
+    order_remark: str | None = None,
 ) -> None:
     """Generate a PDF order using ReportLab if available.
 
@@ -474,6 +475,8 @@ def generate_pdf_order_platypus(
         doc_lines.append(f"Projectnummer: {project_number}")
     if project_name:
         doc_lines.append(f"Projectnaam: {project_name}")
+    if order_remark:
+        doc_lines.append(f"Opmerking: {order_remark}")
 
     company_lines = [
         f"<b>{company_info.get('name','')}</b>",
@@ -795,6 +798,7 @@ def write_order_excel(
     project_name: str | None = None,
     context_label: str | None = None,
     context_kind: str = "productie",
+    order_remark: str | None = None,
 ) -> None:
     """Write order information to an Excel file with header info."""
     df = pd.DataFrame(
@@ -817,6 +821,8 @@ def write_order_excel(
         header_lines.append(("Projectnummer", project_number))
     if project_name:
         header_lines.append(("Projectnaam", project_name))
+    if order_remark:
+        header_lines.append(("Opmerking", order_remark))
     header_lines.append(("", ""))
     if company_info:
         header_lines.extend(
@@ -980,6 +986,8 @@ def copy_per_production_and_orders(
     finish_doc_type_map: Dict[str, str] | None = None,
     finish_doc_num_map: Dict[str, str] | None = None,
     finish_delivery_map: Dict[str, DeliveryAddress | None] | None = None,
+    remarks_map: Dict[str, str] | None = None,
+    finish_remarks_map: Dict[str, str] | None = None,
     bom_source_path: str | None = None,
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
@@ -992,6 +1000,10 @@ def copy_per_production_and_orders(
     filenames and document headers.
 
     ``delivery_map`` can provide a :class:`DeliveryAddress` per production.
+
+    ``remarks_map`` and ``finish_remarks_map`` allow passing additional notes for
+    productions and finishes respectively. When provided, the remarks are added
+    to the generated Excel- en PDF-bestanden.
     
     If ``zip_parts`` is ``True``, all export files for a production are
     collected into a single ``<production>.zip`` archive instead of individual
@@ -1048,6 +1060,19 @@ def copy_per_production_and_orders(
     finish_doc_type_map = finish_doc_type_map or {}
     finish_doc_num_map = finish_doc_num_map or {}
     finish_delivery_map = finish_delivery_map or {}
+    remarks_clean: Dict[str, str] = {}
+    for key, value in (remarks_map or {}).items():
+        text = _to_str(value).strip()
+        if text:
+            remarks_clean[key] = text
+    remarks_map = remarks_clean
+
+    finish_remarks_clean: Dict[str, str] = {}
+    for key, value in (finish_remarks_map or {}).items():
+        text = _to_str(value).strip()
+        if text:
+            finish_remarks_clean[key] = text
+    finish_remarks_map = finish_remarks_clean
 
     prod_to_rows: Dict[str, List[dict]] = defaultdict(list)
     step_entries: Dict[str, List[tuple[str, str]]] = defaultdict(list)
@@ -1227,6 +1252,7 @@ def copy_per_production_and_orders(
         }
         supplier_name_clean = _to_str(supplier.supplier).strip()
         delivery = delivery_map.get(prod)
+        order_remark = (remarks_map.get(prod, "") if remarks_map else "").strip()
         supplier_for_docs: Supplier | None = supplier
         delivery_for_docs = delivery
         if is_standaard_doc and not supplier_name_clean:
@@ -1249,6 +1275,7 @@ def copy_per_production_and_orders(
                 project_name=project_name,
                 context_label=prod,
                 context_kind="Productie",
+                order_remark=order_remark or None,
             )
 
             pdf_path = os.path.join(
@@ -1268,6 +1295,7 @@ def copy_per_production_and_orders(
                     project_number=project_number,
                     project_name=project_name,
                     label_kind="productie",
+                    order_remark=order_remark or None,
                 )
             except Exception as e:
                 print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
@@ -1407,6 +1435,9 @@ def copy_per_production_and_orders(
             label = _to_str(info.get("label")) or finish_key
             filename_component = info.get("filename_component") or finish_key
             delivery = finish_delivery_map.get(finish_key)
+            finish_remark = (
+                finish_remarks_map.get(finish_key, "") if finish_remarks_map else ""
+            ).strip()
             supplier_for_docs: Supplier | None = supplier
             delivery_for_docs = delivery
             if is_standaard_doc and not supplier_name_clean:
@@ -1429,6 +1460,7 @@ def copy_per_production_and_orders(
                 project_name=project_name,
                 context_label=label,
                 context_kind="Afwerking",
+                order_remark=finish_remark or None,
             )
 
             pdf_path = os.path.join(
@@ -1448,6 +1480,7 @@ def copy_per_production_and_orders(
                     project_number=project_number,
                     project_name=project_name,
                     label_kind="afwerking",
+                    order_remark=finish_remark or None,
                 )
             except Exception as e:
                 print(f"[WAARSCHUWING] PDF mislukt voor {label}: {e}", file=sys.stderr)
