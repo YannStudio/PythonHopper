@@ -204,6 +204,51 @@ def start_gui():
                     pass
                 self._tipwindow = None
 
+    def _place_window_near_parent(win: "tk.Toplevel", parent: "tk.Misc") -> None:
+        """Place a popup window on the same screen as its parent."""
+
+        def _apply_geometry() -> None:
+            try:
+                parent.update_idletasks()
+                win.update_idletasks()
+
+                parent_x = parent.winfo_rootx()
+                parent_y = parent.winfo_rooty()
+                parent_w = parent.winfo_width()
+                parent_h = parent.winfo_height()
+                if parent_w <= 1 or parent_h <= 1:
+                    parent_w = parent.winfo_reqwidth()
+                    parent_h = parent.winfo_reqheight()
+
+                win_w = win.winfo_width()
+                win_h = win.winfo_height()
+                if win_w <= 1 or win_h <= 1:
+                    win_w = win.winfo_reqwidth()
+                    win_h = win.winfo_reqheight()
+
+                if parent_w > 1 and parent_h > 1:
+                    x = parent_x + max(0, (parent_w - win_w) // 2)
+                    y = parent_y + max(0, (parent_h - win_h) // 3)
+                else:
+                    screen_w = win.winfo_screenwidth()
+                    screen_h = win.winfo_screenheight()
+                    x = max(0, (screen_w - win_w) // 2)
+                    y = max(0, (screen_h - win_h) // 3)
+
+                screen_w = win.winfo_screenwidth()
+                screen_h = win.winfo_screenheight()
+                x = max(0, min(screen_w - win_w, x))
+                y = max(0, min(screen_h - win_h, y))
+
+                win.wm_geometry(f"+{int(x)}+{int(y)}")
+            except tk.TclError:
+                pass
+
+        try:
+            win.after_idle(_apply_geometry)
+        except tk.TclError:
+            _apply_geometry()
+
     class ClientsManagerFrame(tk.Frame):
         def __init__(self, master, db: ClientsDB, on_change=None):
             super().__init__(master)
@@ -597,6 +642,7 @@ def start_gui():
                     side="left", padx=4
                 )
 
+                _place_window_near_parent(crop_win, win)
                 crop_win.grab_set()
                 crop_win.focus_set()
 
@@ -633,6 +679,7 @@ def start_gui():
             tk.Button(btnf, text="Opslaan", command=_save).pack(side="left", padx=4)
             tk.Button(btnf, text="Annuleer", command=win.destroy).pack(side="left", padx=4)
             win.transient(self)
+            _place_window_near_parent(win, self)
             win.grab_set()
             entries["name"].focus_set()
 
@@ -778,6 +825,7 @@ def start_gui():
             tk.Button(btnf, text="Opslaan", command=_save).pack(side="left", padx=4)
             tk.Button(btnf, text="Annuleer", command=win.destroy).pack(side="left", padx=4)
             win.transient(self)
+            _place_window_near_parent(win, self)
             win.grab_set()
             entries["name"].focus_set()
 
@@ -962,6 +1010,7 @@ def start_gui():
                 tk.Button(btn, text="Opslaan", command=self._ok).pack(side="left", padx=4)
                 tk.Button(btn, text="Annuleer", command=self.destroy).pack(side="left", padx=4)
                 self.transient(master)
+                _place_window_near_parent(self, master)
                 self.grab_set()
 
             def _ok(self):
@@ -2126,6 +2175,7 @@ def start_gui():
             win = tk.Toplevel(self)
             win.title(title)
             win.transient(self)
+            _place_window_near_parent(win, self)
             win.grab_set()
 
             def _normalize_extensions(values) -> List[str]:
