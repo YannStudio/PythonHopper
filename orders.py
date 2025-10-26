@@ -14,7 +14,7 @@ import zipfile
 import io
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import pandas as pd
 from dataclasses import dataclass
@@ -198,6 +198,60 @@ def _export_bom_workbook(bom_df: pd.DataFrame, dest: str, filename: str) -> str:
                 ws.column_dimensions[column_letter].width = min(max(12, max_length + 2), 80)
 
     return target_path
+
+
+def make_bom_export_filename(
+    bom_source_path: Optional[str],
+    date_iso: str,
+    transform: Callable[[str], str],
+) -> str:
+    """Return a normalized filename for exporting the processed BOM workbook."""
+
+    source_stem = ""
+    if bom_source_path:
+        source_stem = Path(bom_source_path).stem
+        match = re.search(r"(.*?\bBOM\b)", source_stem, flags=re.IGNORECASE)
+        if match:
+            source_stem = match.group(1)
+        source_stem = source_stem.rstrip(" -_.")
+    stem = source_stem or "BOM-FileHopper-Export"
+    stem_with_date = f"{stem}-{date_iso}"
+    filename = f"{stem_with_date}.xlsx"
+    return transform(filename)
+
+
+def find_related_bom_exports(
+    bom_source_path: Optional[str],
+    file_index: Mapping[str, Sequence[str]],
+) -> List[str]:
+    """Return export files whose stem appears in the BOM filename."""
+
+    if not bom_source_path:
+        return []
+    stem = Path(bom_source_path).stem.lower()
+    if not stem:
+        return []
+    matches: List[str] = []
+    seen: set[str] = set()
+    for key in sorted(file_index.keys(), key=len, reverse=True):
+        if not key:
+            continue
+        key_lower = key.lower()
+        if len(key_lower) < 4 and not any(ch.isdigit() for ch in key_lower):
+            continue
+        idx = stem.find(key_lower)
+        if idx == -1:
+            continue
+        if idx > 0 and stem[idx - 1].isalnum():
+            continue
+        end = idx + len(key_lower)
+        if end < len(stem) and stem[end].isalnum():
+            continue
+        for src_file in file_index.get(key, []):
+            if src_file not in seen:
+                matches.append(src_file)
+                seen.add(src_file)
+    return matches
 
 
 def _normalize_crop_box(
@@ -921,6 +975,7 @@ def copy_per_production_and_orders(
     copy_finish_exports: bool = False,
     zip_finish_exports: bool = True,
     export_bom: bool = True,
+    export_related_files: bool = True,
     finish_override_map: Dict[str, str] | None = None,
     finish_doc_type_map: Dict[str, str] | None = None,
     finish_doc_num_map: Dict[str, str] | None = None,
@@ -971,7 +1026,8 @@ def copy_per_production_and_orders(
     name (for example ``123-BOM-PartsOnly`` → ``123.pdf``). Matching files are
     placed next to the exported BOM workbook and use the same optional
     name-transformations (date/prefix/suffix). When no related files are found
-    nothing is copied.
+    nothing is copied. Set ``export_related_files`` to ``False`` to skip copying
+    these auxiliary files even when a BOM export is created.
 
     Finish-specific overrides, document types/numbers and deliveries can be
     provided via the ``finish_*`` mappings. Keys correspond to the normalized
@@ -1059,50 +1115,6 @@ def copy_per_production_and_orders(
             suffix_parts.append(export_name_suffix_text)
         new_stem = "-".join(prefix_parts + [stem] + suffix_parts)
         return f"{new_stem}{ext}"
-
-    def _bom_export_filename(date_iso: str) -> str:
-        source_stem = ""
-        if bom_source_path:
-            source_stem = Path(bom_source_path).stem
-            match = re.search(r"(.*?\bBOM\b)", source_stem, flags=re.IGNORECASE)
-            if match:
-                source_stem = match.group(1)
-            source_stem = source_stem.rstrip(" -_.")
-        if source_stem:
-            stem = source_stem
-        else:
-            stem = "BOM-FileHopper-Export"
-        stem_with_date = f"{stem}-{date_iso}"
-        filename = f"{stem_with_date}.xlsx"
-        return _transform_export_name(filename)
-
-    def _related_bom_exports(path: Optional[str]) -> List[str]:
-        if not path:
-            return []
-        stem = Path(path).stem.lower()
-        if not stem:
-            return []
-        matches: List[str] = []
-        seen: set[str] = set()
-        for key in sorted(file_index.keys(), key=len, reverse=True):
-            if not key:
-                continue
-            key_lower = key.lower()
-            if len(key_lower) < 4 and not any(ch.isdigit() for ch in key_lower):
-                continue
-            idx = stem.find(key_lower)
-            if idx == -1:
-                continue
-            if idx > 0 and stem[idx - 1].isalnum():
-                continue
-            end = idx + len(key_lower)
-            if end < len(stem) and stem[end].isalnum():
-                continue
-            for src_file in file_index[key]:
-                if src_file not in seen:
-                    matches.append(src_file)
-                    seen.add(src_file)
-        return matches
 
     suppliers_sorted = db.suppliers_sorted()
 
@@ -1442,17 +1454,19 @@ def copy_per_production_and_orders(
 
     # Persist any (possibly unchanged) supplier defaults so that callers can rely on
     # the database reflecting the latest state on disk.
-    bom_export_path: Optional[str] = None
     if export_bom:
         try:
-            bom_export_path = _export_bom_workbook(
-                bom_df, dest, _bom_export_filename(today)
+            bom_filename = make_bom_export_filename(
+                bom_source_path, today, _transform_export_name
+            )
+            _export_bom_workbook(
+                bom_df, dest, bom_filename
             )
         except Exception as exc:  # pragma: no cover - unexpected
             raise RuntimeError(f"Kon BOM-export niet opslaan: {exc}") from exc
 
-    if bom_export_path and bom_source_path:
-        for src_file in _related_bom_exports(bom_source_path):
+    if export_bom and export_related_files and bom_source_path:
+        for src_file in find_related_bom_exports(bom_source_path, file_index):
             transformed = _transform_export_name(os.path.basename(src_file))
             shutil.copy2(src_file, os.path.join(dest, transformed))
             count_copied += 1

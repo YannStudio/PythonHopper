@@ -27,7 +27,10 @@ from orders import (
     DEFAULT_FOOTER_NOTE,
     combine_pdfs_per_production,
     combine_pdfs_from_source,
+    find_related_bom_exports,
+    make_bom_export_filename,
     _prefix_for_doc_type,
+    _export_bom_workbook,
     describe_finish_combo,
     make_finish_selection_key,
     make_production_selection_key,
@@ -1575,6 +1578,17 @@ def start_gui():
 
             _add_option(
                 export_options,
+                "Exporteer gerelateerde exportbestanden naar exportmap",
+                (
+                    "Zoek in de geselecteerde extensies naar bestanden waarvan de naam "
+                    "overeenkomt met de BOM en kopieer ze naast het BOM-bestand. "
+                    "Handig voor extra documenten zoals PDF's of STEP-bestanden."
+                ),
+                self.app.export_related_files_var,
+            )
+
+            _add_option(
+                export_options,
                 "Maak snelkoppeling naar nieuwste exportmap",
                 (
                     "Na het exporteren wordt er een snelkoppeling met de naam 'latest'"
@@ -2124,6 +2138,10 @@ def start_gui():
             self.export_bom_var = tk.IntVar(
                 master=self, value=1 if self.settings.export_processed_bom else 0
             )
+            self.export_related_files_var = tk.IntVar(
+                master=self,
+                value=1 if self.settings.export_related_bom_files else 0,
+            )
             self.zip_per_finish_var = tk.IntVar(
                 master=self,
                 value=
@@ -2184,6 +2202,7 @@ def start_gui():
                 self.finish_export_var,
                 self.zip_finish_var,
                 self.export_bom_var,
+                self.export_related_files_var,
                 self.export_date_prefix_var,
                 self.export_date_suffix_var,
                 self.export_name_custom_prefix_enabled_var,
@@ -2542,6 +2561,9 @@ def start_gui():
             self.settings.copy_finish_exports = bool(self.finish_export_var.get())
             self.settings.zip_finish_exports = bool(self.zip_finish_var.get())
             self.settings.export_processed_bom = bool(self.export_bom_var.get())
+            self.settings.export_related_bom_files = bool(
+                self.export_related_files_var.get()
+            )
             self.settings.export_date_prefix = bool(self.export_date_prefix_var.get())
             self.settings.export_date_suffix = bool(self.export_date_suffix_var.get())
             self.settings.custom_prefix_enabled = bool(
@@ -3036,6 +3058,10 @@ def start_gui():
                 token_prefix_enabled=custom_prefix_enabled,
                 token_suffix_enabled=custom_suffix_enabled,
                 export_part_numbers=tuple(part_numbers_for_export),
+                bom_df_snapshot=self.bom_df,
+                bom_source=self.bom_source_path,
+                export_bom_enabled=bool(self.export_bom_var.get()),
+                export_related_enabled=bool(self.export_related_files_var.get()),
             ):
                 self.status_var.set("Bundelmap voorbereiden...")
                 try:
@@ -3088,11 +3114,11 @@ def start_gui():
                 suffix_text_clean = (token_suffix_text or "").strip()
                 prefix_active = bool(token_prefix_enabled) and bool(prefix_text_clean)
                 suffix_active = bool(token_suffix_enabled) and bool(suffix_text_clean)
+                today_date = datetime.date.today()
                 date_token = (
-                    datetime.date.today().strftime("%Y%m%d")
-                    if date_prefix or date_suffix
-                    else ""
+                    today_date.strftime("%Y%m%d") if date_prefix or date_suffix else ""
                 )
+                today_iso = today_date.strftime("%Y-%m-%d")
 
                 def _export_name(fname: str) -> str:
                     if not (
@@ -3127,12 +3153,82 @@ def start_gui():
                         dst = os.path.join(bundle_dest, name)
                         shutil.copy2(p, dst)
                         cnt += 1
+
+                bom_written = False
+                related_copied = 0
+
+                if export_bom_enabled:
+                    if bom_df_snapshot is None:
+                        def on_error():
+                            messagebox.showerror(
+                                "Fout",
+                                "Geen BOM beschikbaar om te exporteren.",
+                                parent=self,
+                            )
+                            self.status_var.set("BOM-export mislukt.")
+
+                        self.after(0, on_error)
+                        return
+                    try:
+                        bom_filename = make_bom_export_filename(
+                            bom_source,
+                            today_iso,
+                            _export_name,
+                        )
+                        _export_bom_workbook(bom_df_snapshot, bundle_dest, bom_filename)
+                        bom_written = True
+                    except Exception as exc:
+                        def on_error():
+                            messagebox.showerror(
+                                "Fout",
+                                f"Kon BOM-export niet opslaan:\n{exc}",
+                                parent=self,
+                            )
+                            self.status_var.set("BOM-export mislukt.")
+
+                        self.after(0, on_error)
+                        return
+
+                if bom_written and export_related_enabled and bom_source:
+                    try:
+                        for src_file in find_related_bom_exports(bom_source, idx):
+                            if src_file in copied_paths:
+                                continue
+                            copied_paths.add(src_file)
+                            transformed = _export_name(os.path.basename(src_file))
+                            dst = os.path.join(bundle_dest, transformed)
+                            shutil.copy2(src_file, dst)
+                            related_copied += 1
+                    except Exception as exc:
+                        def on_error():
+                            messagebox.showerror(
+                                "Fout",
+                                f"Kon gerelateerde exportbestanden kopiëren:\n{exc}",
+                                parent=self,
+                            )
+                            self.status_var.set("Kopiëren mislukt.")
+
+                        self.after(0, on_error)
+                        return
+
                 def on_done():
                     status_text = f"Klaar. Gekopieerd: {cnt} → {bundle_dest}"
+                    if bom_written:
+                        status_text += " (BOM opgeslagen)"
+                    if related_copied:
+                        status_text += f" (+{related_copied} gerelateerd)"
                     self.status_var.set(status_text)
                     info_lines = ["Bestanden gekopieerd naar:", bundle_dest]
                     if bundle.latest_symlink:
                         info_lines.append(f"Symlink: {bundle.latest_symlink}")
+                    details = []
+                    if bom_written:
+                        details.append("BOM geëxporteerd")
+                    if related_copied:
+                        details.append(f"Gerelateerde bestanden: {related_copied}")
+                    if details:
+                        info_lines.append("")
+                        info_lines.append(", ".join(details))
                     messagebox.showinfo("Klaar", "\n".join(info_lines), parent=self)
                     try:
                         if sys.platform.startswith("win"):
@@ -3355,6 +3451,9 @@ def start_gui():
                             copy_finish_exports=bool(self.finish_export_var.get()),
                             zip_finish_exports=bool(self.zip_finish_var.get()),
                             export_bom=bool(self.export_bom_var.get()),
+                            export_related_files=bool(
+                                self.export_related_files_var.get()
+                            ),
                             export_name_prefix_text=token_prefix_text,
                             export_name_prefix_enabled=token_prefix_enabled,
                             export_name_suffix_text=token_suffix_text,
