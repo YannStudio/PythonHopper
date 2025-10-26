@@ -1702,14 +1702,21 @@ def start_gui():
                     w.bind("<Button-1>", handler)
 
         def set_busy(self, busy: bool, message: Optional[str] = None) -> None:
-            state = "disabled" if busy else "normal"
-            for btn in (getattr(self, "confirm_button", None), getattr(self, "cancel_button", None)):
-                if btn is None:
-                    continue
+            confirm = getattr(self, "confirm_button", None)
+            cancel = getattr(self, "cancel_button", None)
+
+            if confirm is not None:
                 try:
-                    btn.configure(state=state)
+                    confirm.configure(state="disabled" if busy else "normal")
                 except tk.TclError:
                     pass
+
+            if cancel is not None:
+                try:
+                    cancel.configure(state="normal")
+                except tk.TclError:
+                    pass
+
             if message is not None:
                 self.status_var.set(message)
 
