@@ -1083,6 +1083,13 @@ def start_gui():
 
             combo.bind("<FocusIn>", _handle_focus, add="+")
 
+        @staticmethod
+        def _set_combo_value(combo: "ttk.Combobox", value: str) -> None:
+            """Update combobox text and reset focus selection tracking."""
+
+            combo.set(value)
+            setattr(combo, "_supplier_focus_seen", False)
+
         def __init__(
             self,
             master,
@@ -1447,8 +1454,11 @@ def start_gui():
             self.db.defaults_by_finish.clear()
             self.db.save()
 
+            set_combo_value = getattr(
+                type(self), "_set_combo_value", SupplierSelectionFrame._set_combo_value
+            )
             for _sel_key, combo in self.rows:
-                combo.set("(geen)")
+                set_combo_value(combo, "(geen)")
 
             for sel_key in self.doc_vars:
                 self.doc_vars[sel_key].set("Standaard bon")
@@ -1493,6 +1503,9 @@ def start_gui():
             for s in src:
                 self._disp_to_name[self.db.display_name(s)] = s.supplier
 
+            set_combo_value = getattr(
+                type(self), "_set_combo_value", SupplierSelectionFrame._set_combo_value
+            )
             for sel_key, combo in self.rows:
                 typed = combo.get()
                 combo["values"] = self._base_options
@@ -1505,13 +1518,13 @@ def start_gui():
                 if kind == "production":
                     lower_name = identifier.strip().lower()
                     if lower_name in ("dummy part", "nan", "spare part"):
-                        combo.set(self._base_options[0])
+                        set_combo_value(combo, self._base_options[0])
                         continue
                     name = self.db.get_default(identifier)
                 else:
                     name = self.db.get_default_finish(identifier)
                 if typed:
-                    combo.set(typed)
+                    set_combo_value(combo, typed)
                     continue
                 if not name and initial:
                     favs = [x for x in src if x.favorite]
@@ -1526,12 +1539,13 @@ def start_gui():
                         disp = k
                         break
                 if disp:
-                    combo.set(disp)
+                    set_combo_value(combo, disp)
                 elif self._base_options:
-                    combo.set(
+                    set_combo_value(
+                        combo,
                         self._base_options[1]
                         if len(self._base_options) > 1
-                        else self._base_options[0]
+                        else self._base_options[0],
                     )
 
             delivery_opts = [
@@ -1595,7 +1609,12 @@ def start_gui():
             combo["values"] = filtered
             self._populate_cards(filtered, sel_key)
             if evt.keysym == "Return" and len(filtered) == 1:
-                combo.set(filtered[0])
+                set_combo_value = getattr(
+                    type(self),
+                    "_set_combo_value",
+                    SupplierSelectionFrame._set_combo_value,
+                )
+                set_combo_value(combo, filtered[0])
                 self._update_preview_for_text(filtered[0])
             else:
                 self._update_preview_for_text(combo.get())
@@ -1643,7 +1662,10 @@ def start_gui():
         def _on_card_click(self, option: str, sel_key: str):
             combo = self.combo_by_key.get(sel_key)
             if combo:
-                combo.set(option)
+                set_combo_value = getattr(
+                    type(self), "_set_combo_value", SupplierSelectionFrame._set_combo_value
+                )
+                set_combo_value(combo, option)
             self._active_key = sel_key
             self._update_preview_for_text(option)
             self._populate_cards([option], sel_key)
