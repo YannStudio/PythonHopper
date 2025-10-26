@@ -40,6 +40,7 @@ def _build_tab(df: pd.DataFrame):
     tab.table_model = SimpleNamespace(df=df.copy(deep=True))
     tab._dataframe = tab.table_model.df.copy(deep=True)
     tab.DEFAULT_EMPTY_ROWS = BOMCustomTab.DEFAULT_EMPTY_ROWS
+    tab.HEADERS = BOMCustomTab.HEADERS
     tab.undo_stack = []
     tab.max_undo = 5
     tab._suspend_history = False
@@ -114,3 +115,30 @@ def test_clear_cells_skips_when_values_already_empty() -> None:
     assert count == 1
     assert statuses[-1] == "1 cellen gewist"
     assert len(tab.undo_stack) == 1
+
+
+def test_delete_rows_removes_rows_and_updates_status() -> None:
+    df = pd.DataFrame(
+        {header: [f"{header}-1", f"{header}-2", f"{header}-3"] for header in BOMCustomTab.HEADERS}
+    )
+    tab, statuses = _build_tab(df)
+
+    count = tab._delete_rows([1])
+
+    assert count == 1
+    assert len(tab.table_model.df) == 2
+    assert tab.table_model.df.iloc[0, 0] == f"{BOMCustomTab.HEADERS[0]}-1"
+    assert tab.table_model.df.iloc[1, 0] == f"{BOMCustomTab.HEADERS[0]}-3"
+    assert tab.undo_stack[-1].action == "rijen verwijderen"
+    assert statuses[-1] == "1 rij verwijderd."
+
+
+def test_delete_rows_handles_invalid_selection() -> None:
+    df = pd.DataFrame({header: [f"{header}-1"] for header in BOMCustomTab.HEADERS})
+    tab, statuses = _build_tab(df)
+
+    count = tab._delete_rows([-1, 5])
+
+    assert count == 0
+    assert statuses[-1] == "Geen rijen geselecteerd om te verwijderen."
+    assert len(tab.table_model.df) == 1
