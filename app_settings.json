@@ -1,8 +1,8 @@
 {
-  "source_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2023/Maatwerk overkappingen/Speelplaatsoverkappingen/20230171 - Smeermaas/CAD/v2",
-  "dest_folder": "C:/Users/jeroe/Desktop",
-  "project_number": "xxx",
-  "project_name": "sfsf",
+  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/De Lijn/53. De Lijn - Infopunten/cad/Opera - Locatie E",
+  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/De Lijn/53. De Lijn - Infopunten/export/01. Locaties/Opera - Locatie E",
+  "project_number": "53",
+  "project_name": "De Lijn-Locatie E",
   "file_extensions": [
     {
       "key": "pdf",
@@ -19,7 +19,7 @@
         ".step",
         ".stp"
       ],
-      "enabled": true
+      "enabled": false
     },
     {
       "key": "dxf",
@@ -39,8 +39,8 @@
     }
   ],
   "zip_per_production": true,
-  "combine_pdf_per_production": true,
-  "copy_finish_exports": false,
+  "combine_pdf_per_production": false,
+  "copy_finish_exports": true,
   "zip_finish_exports": true,
   "export_processed_bom": true,
   "export_date_prefix": false,
