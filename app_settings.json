@@ -1,23 +1,9 @@
 {
-  "source_folder": "",
-  "dest_folder": "",
-  "project_number": "",
-  "project_name": "",
+  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Stuvex/00. Producten/05. Beursstanden/00. Beurstotem/cad/V1",
+  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Stuvex/00. Producten/05. Beursstanden/00. Beurstotem/export",
+  "project_number": "120223",
+  "project_name": "Bestelling 20250728",
   "file_extensions": [
-    {
-      "key": "pdf_2",
-      "label": "Office & PDF",
-      "patterns": [
-        ".pdf",
-        ".doc",
-        ".docx",
-        ".xls",
-        ".xlsx",
-        ".ppt",
-        ".pptx"
-      ],
-      "enabled": false
-    },
     {
       "key": "pdf",
       "label": "PDF (.pdf)",
@@ -41,7 +27,7 @@
       "patterns": [
         ".dxf"
       ],
-      "enabled": false
+      "enabled": true
     },
     {
       "key": "dwg",
@@ -50,6 +36,14 @@
         ".dwg"
       ],
       "enabled": false
+    },
+    {
+      "key": "html",
+      "label": ".html",
+      "patterns": [
+        ".html"
+      ],
+      "enabled": true
     }
   ],
   "zip_per_production": true,

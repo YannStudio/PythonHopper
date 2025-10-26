@@ -1486,14 +1486,6 @@
       "favorite": false
     }
   ],
-  "defaults_by_production": {
-    "Sheetmetal": "Borgh",
-    "Weld assembly": "Bacovo",
-    "Tube Laser": "Antwerp Gas Depot",
-    "Lasercutting": "Antwerp Gas Depot",
-    "Assembly": "Productora"
-  },
-  "defaults_by_finish": {
-    "Finish-Powder coating-De Lijn Geel": "Van Gils Coating - Beringen/Maasmechelen"
-  }
+  "defaults_by_production": {},
+  "defaults_by_finish": {}
 }
