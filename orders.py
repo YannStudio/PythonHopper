@@ -330,6 +330,24 @@ def _prefix_for_doc_type(doc_type: str) -> str:
     return ""
 
 
+def _should_place_remark_in_delivery_block(
+    *,
+    order_remark_has_content: bool,
+    doc_type_text_slug: str,
+    is_standaard_doc: bool,
+    delivery: DeliveryAddress | None,
+) -> bool:
+    """Return :data:`True` when remarks belong in the delivery block."""
+
+    doc_type_is_export = "export" in doc_type_text_slug
+
+    return (
+        order_remark_has_content
+        and doc_type_is_export
+        and not is_standaard_doc
+    )
+
+
 FINISH_KEY_PREFIX = "finish::"
 PRODUCTION_KEY_PREFIX = "production::"
 
@@ -465,11 +483,11 @@ def generate_pdf_order_platypus(
     is_standaard_doc = doc_type_text_lower.startswith("standaard")
     order_remark_text = _to_str(order_remark) if order_remark is not None else ""
     order_remark_has_content = bool(order_remark_text.strip())
-    place_remark_in_delivery_block = (
-        order_remark_has_content
-        and "exportbon" in doc_type_text_slug
-        and not is_standaard_doc
-        and delivery is not None
+    place_remark_in_delivery_block = _should_place_remark_in_delivery_block(
+        order_remark_has_content=order_remark_has_content,
+        doc_type_text_slug=doc_type_text_slug,
+        is_standaard_doc=is_standaard_doc,
+        delivery=delivery,
     )
 
     doc_lines: List[str] = []
@@ -580,14 +598,18 @@ def generate_pdf_order_platypus(
         left_cell = KeepTogether(left_elements)
 
     right_lines: List[str] = []
-    if delivery and not is_standaard_doc:
-        # Delivery address block with each piece of information on its own line
-        right_lines.append("<b>Leveradres:</b>")
-        right_lines.append(delivery.name)
-        if delivery.address:
-            right_lines.extend(delivery.address.splitlines())
-        if delivery.remarks:
-            right_lines.append(delivery.remarks)
+    include_right_block = not is_standaard_doc and (
+        delivery is not None or place_remark_in_delivery_block
+    )
+    if include_right_block:
+        if delivery:
+            # Delivery address block with each piece of information on its own line
+            right_lines.append("<b>Leveradres:</b>")
+            right_lines.append(delivery.name)
+            if delivery.address:
+                right_lines.extend(delivery.address.splitlines())
+            if delivery.remarks:
+                right_lines.append(delivery.remarks)
         if place_remark_in_delivery_block:
             right_lines.append("<b>Opmerking:</b>")
             remark_lines = order_remark_text.splitlines()
@@ -823,7 +845,17 @@ def write_order_excel(
     )
 
     doc_type_text = (_to_str(doc_type).strip() or "Bestelbon")
-    is_standaard_doc = doc_type_text.lower().startswith("standaard")
+    doc_type_text_lower = doc_type_text.lower()
+    doc_type_text_slug = re.sub(r"[^0-9a-z]+", "", doc_type_text_lower)
+    is_standaard_doc = doc_type_text_lower.startswith("standaard")
+    order_remark_text = _to_str(order_remark) if order_remark is not None else ""
+    order_remark_has_content = bool(order_remark_text.strip())
+    place_remark_in_delivery_block = _should_place_remark_in_delivery_block(
+        order_remark_has_content=order_remark_has_content,
+        doc_type_text_slug=doc_type_text_slug,
+        is_standaard_doc=is_standaard_doc,
+        delivery=delivery,
+    )
 
     header_lines: List[Tuple[str, str]] = []
     today = datetime.date.today().strftime("%Y-%m-%d")
@@ -837,8 +869,8 @@ def write_order_excel(
         header_lines.append(("Projectnummer", project_number))
     if project_name:
         header_lines.append(("Projectnaam", project_name))
-    if order_remark:
-        header_lines.append(("Opmerking", order_remark))
+    if order_remark_has_content and not place_remark_in_delivery_block:
+        header_lines.append(("Opmerking", order_remark_text))
     header_lines.append(("", ""))
     if company_info:
         header_lines.extend(
@@ -882,17 +914,26 @@ def write_order_excel(
             _to_str(value).strip()
             for value in (delivery.name, delivery.address, delivery.remarks)
         )
-        include_delivery_block = not is_standaard_doc or delivery_has_content
-    if include_delivery_block and delivery:
-        header_lines.extend(
-            [
-                ("Leveradres", ""),
-                ("", delivery.name),
-                ("Adres", delivery.address or ""),
-                ("Opmerking", delivery.remarks or ""),
-                ("", ""),
-            ]
+        include_delivery_block = (
+            not is_standaard_doc
+            or delivery_has_content
+            or place_remark_in_delivery_block
         )
+    elif place_remark_in_delivery_block and not is_standaard_doc:
+        include_delivery_block = True
+    if include_delivery_block:
+        if delivery:
+            header_lines.extend(
+                [
+                    ("Leveradres", ""),
+                    ("", delivery.name),
+                    ("Adres", delivery.address or ""),
+                    ("Opmerking", delivery.remarks or ""),
+                ]
+            )
+        if place_remark_in_delivery_block and order_remark_has_content:
+            header_lines.append(("Opmerking", order_remark_text))
+        header_lines.append(("", ""))
 
     startrow = len(header_lines)
     if Alignment is not None and hasattr(pd, "ExcelWriter"):

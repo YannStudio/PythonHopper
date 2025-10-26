@@ -204,6 +204,51 @@ def start_gui():
                     pass
                 self._tipwindow = None
 
+    def _place_window_near_parent(win: "tk.Toplevel", parent: "tk.Misc") -> None:
+        """Place a popup window on the same screen as its parent."""
+
+        def _apply_geometry() -> None:
+            try:
+                parent.update_idletasks()
+                win.update_idletasks()
+
+                parent_x = parent.winfo_rootx()
+                parent_y = parent.winfo_rooty()
+                parent_w = parent.winfo_width()
+                parent_h = parent.winfo_height()
+                if parent_w <= 1 or parent_h <= 1:
+                    parent_w = parent.winfo_reqwidth()
+                    parent_h = parent.winfo_reqheight()
+
+                win_w = win.winfo_width()
+                win_h = win.winfo_height()
+                if win_w <= 1 or win_h <= 1:
+                    win_w = win.winfo_reqwidth()
+                    win_h = win.winfo_reqheight()
+
+                if parent_w > 1 and parent_h > 1:
+                    x = parent_x + max(0, (parent_w - win_w) // 2)
+                    y = parent_y + max(0, (parent_h - win_h) // 3)
+                else:
+                    screen_w = win.winfo_screenwidth()
+                    screen_h = win.winfo_screenheight()
+                    x = max(0, (screen_w - win_w) // 2)
+                    y = max(0, (screen_h - win_h) // 3)
+
+                screen_w = win.winfo_screenwidth()
+                screen_h = win.winfo_screenheight()
+                x = max(0, min(screen_w - win_w, x))
+                y = max(0, min(screen_h - win_h, y))
+
+                win.wm_geometry(f"+{int(x)}+{int(y)}")
+            except tk.TclError:
+                pass
+
+        try:
+            win.after_idle(_apply_geometry)
+        except tk.TclError:
+            _apply_geometry()
+
     class ClientsManagerFrame(tk.Frame):
         def __init__(self, master, db: ClientsDB, on_change=None):
             super().__init__(master)
@@ -597,6 +642,7 @@ def start_gui():
                     side="left", padx=4
                 )
 
+                _place_window_near_parent(crop_win, win)
                 crop_win.grab_set()
                 crop_win.focus_set()
 
@@ -633,6 +679,7 @@ def start_gui():
             tk.Button(btnf, text="Opslaan", command=_save).pack(side="left", padx=4)
             tk.Button(btnf, text="Annuleer", command=win.destroy).pack(side="left", padx=4)
             win.transient(self)
+            _place_window_near_parent(win, self)
             win.grab_set()
             entries["name"].focus_set()
 
@@ -778,6 +825,7 @@ def start_gui():
             tk.Button(btnf, text="Opslaan", command=_save).pack(side="left", padx=4)
             tk.Button(btnf, text="Annuleer", command=win.destroy).pack(side="left", padx=4)
             win.transient(self)
+            _place_window_near_parent(win, self)
             win.grab_set()
             entries["name"].focus_set()
 
@@ -841,6 +889,20 @@ def start_gui():
             tk.Button(btns, text="Update uit CSV (merge)", command=self.merge_csv).pack(side="left", padx=4)
             tk.Button(btns, text="Favoriet ★", command=self.toggle_fav_sel).pack(side="left", padx=4)
             self.refresh()
+
+        def suspend_search_filter(self) -> str:
+            """Temporarily clear the search box and return the previous query."""
+
+            current = self.search_var.get()
+            if current:
+                self.search_var.set("")
+            return current
+
+        def restore_search_filter(self, value: str) -> None:
+            """Restore a previously cleared search query, if any."""
+
+            if value:
+                self.search_var.set(value)
 
         def refresh(self):
             for r in self.tree.get_children():
@@ -962,6 +1024,7 @@ def start_gui():
                 tk.Button(btn, text="Opslaan", command=self._ok).pack(side="left", padx=4)
                 tk.Button(btn, text="Annuleer", command=self.destroy).pack(side="left", padx=4)
                 self.transient(master)
+                _place_window_near_parent(self, master)
                 self.grab_set()
 
             def _ok(self):
@@ -992,6 +1055,33 @@ def start_gui():
         """
 
         LABEL_COLUMN_WIDTH = 30
+
+        @staticmethod
+        def _install_supplier_focus_behavior(combo: "ttk.Combobox") -> None:
+            """Selecteer automatisch alle tekst bij eerste focus of placeholder."""
+
+            def _handle_focus(event):
+                widget = event.widget
+                try:
+                    current = widget.get()
+                except tk.TclError:
+                    current = ""
+
+                first_focus = not getattr(widget, "_supplier_focus_seen", False)
+                placeholder = current.strip().lower() in {"(geen)", "geen"}
+
+                if first_focus or placeholder:
+                    def _select_all():
+                        try:
+                            widget.selection_range(0, "end")
+                        except tk.TclError:
+                            return
+
+                    widget.after_idle(_select_all)
+
+                widget._supplier_focus_seen = True
+
+            combo.bind("<FocusIn>", _handle_focus, add="+")
 
         def __init__(
             self,
@@ -1223,6 +1313,7 @@ def start_gui():
                 combo.bind(
                     "<FocusIn>", lambda _e, key=sel_key: self._on_focus_key(key)
                 )
+                self._install_supplier_focus_behavior(combo)
                 combo.bind(
                     "<KeyRelease>",
                     lambda ev, key=sel_key, c=combo: self._on_combo_type(ev, key, c),
@@ -2126,6 +2217,7 @@ def start_gui():
             win = tk.Toplevel(self)
             win.title(title)
             win.transient(self)
+            _place_window_near_parent(win, self)
             win.grab_set()
 
             def _normalize_extensions(values) -> List[str]:
@@ -3788,19 +3880,44 @@ def start_gui():
 
                 threading.Thread(target=work, daemon=True).start()
 
-            sel_frame = SupplierSelectionFrame(
-                self.nb,
-                prods,
-                finish_entries,
-                self.db,
-                self.delivery_db,
-                on_sel,
-                self.project_number_var,
-                self.project_name_var,
-            )
+            sup_search_restore = ""
+            sup_frame = getattr(self, "suppliers_frame", None)
+            if sup_frame is not None and hasattr(sup_frame, "suspend_search_filter"):
+                try:
+                    sup_search_restore = sup_frame.suspend_search_filter()
+                except Exception:
+                    sup_search_restore = ""
+
+            try:
+                sel_frame = SupplierSelectionFrame(
+                    self.nb,
+                    prods,
+                    finish_entries,
+                    self.db,
+                    self.delivery_db,
+                    on_sel,
+                    self.project_number_var,
+                    self.project_name_var,
+                )
+            except Exception:
+                if sup_search_restore and hasattr(sup_frame, "restore_search_filter"):
+                    try:
+                        sup_frame.restore_search_filter(sup_search_restore)
+                    except Exception:
+                        pass
+                raise
             self.sel_frame = sel_frame
             self.nb.add(sel_frame, state="hidden")
             self.nb.select(sel_frame)
+
+            if sup_search_restore and hasattr(sup_frame, "restore_search_filter"):
+                def _restore_search(_event=None, frame=sup_frame, value=sup_search_restore):
+                    try:
+                        frame.restore_search_filter(value)
+                    except Exception:
+                        pass
+
+                sel_frame.bind("<Destroy>", _restore_search, add="+")
 
         def _combine_pdf(self):
             from tkinter import messagebox
