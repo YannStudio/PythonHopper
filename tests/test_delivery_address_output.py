@@ -177,3 +177,40 @@ def test_delivery_address_placeholder_prints(tmp_path):
     reader = PdfReader(prod_folder / pdf)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
     assert "Bestelling wordt opgehaald" in text
+
+
+def test_export_remark_rendered_under_delivery(tmp_path):
+    reportlab = pytest.importorskip("reportlab")
+    db, src, bom_df = _setup_basic(tmp_path)
+
+    delivery = DeliveryAddress(
+        name="Magazijn", address="Straat 1", remarks="Afspraak balie"
+    )
+
+    dst = tmp_path / "dst_export"
+    dst.mkdir()
+    copy_per_production_and_orders(
+        str(src),
+        str(dst),
+        bom_df,
+        [".pdf"],
+        db,
+        {},
+        {"Laser": "Exportbon"},
+        {"Laser": "5"},
+        False,
+        client=None,
+        delivery_map={"Laser": delivery},
+        remarks_map={"Laser": "Export aanwijzing"},
+    )
+
+    prod_folder = dst / "Laser"
+    pdf = next(f for f in os.listdir(prod_folder) if f.endswith(".pdf"))
+    reader = PdfReader(prod_folder / pdf)
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+
+    expected = (
+        "Leveradres:\nMagazijn\nStraat 1\nAfspraak balie\nOpmerking:\nExport aanwijzing"
+    )
+    assert expected in text
+    assert "Opmerking: Export aanwijzing" not in text
