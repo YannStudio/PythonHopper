@@ -3820,10 +3820,12 @@ def start_gui():
                             bom_source_path=self.bom_source_path,
                         )
                     except Exception as exc:
+                        error_message = str(exc)
+
                         def on_error():
                             messagebox.showerror(
                                 "Fout",
-                                f"Bestelbonnen exporteren mislukt:\n{exc}",
+                                f"Bestelbonnen exporteren mislukt:\n{error_message}",
                                 parent=self,
                             )
                             update_status("Export mislukt.")
