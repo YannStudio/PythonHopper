@@ -1,13 +1,23 @@
 import os
+
 import pandas as pd
 import pytest
-pytest.importorskip("openpyxl")
-import pytest
+
+openpyxl = pytest.importorskip("openpyxl")
 from PyPDF2 import PdfReader
+
+from pathlib import Path
 
 from models import Supplier, DeliveryAddress
 from suppliers_db import SuppliersDB
 from orders import copy_per_production_and_orders
+
+
+def _first_pdf_path(folder: Path) -> Path:
+    for name in sorted(os.listdir(folder)):
+        if name.lower().endswith(".pdf"):
+            return folder / name
+    raise AssertionError(f"No PDF found in {folder}")
 
 
 def _setup_basic(tmp_path):
@@ -56,8 +66,8 @@ def test_delivery_address_present_absent(tmp_path):
     assert ws[f"B{row+1}"].value == "Magazijn"
     assert ws[f"B{row+2}"].value == "Straat 1"
     assert ws[f"B{row+3}"].value == "achterdeur"
-    pdf = next(f for f in os.listdir(prod_folder) if f.endswith(".pdf"))
-    reader = PdfReader(prod_folder / pdf)
+    pdf = _first_pdf_path(prod_folder)
+    reader = PdfReader(pdf)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
     assert "Leveradres:\nMagazijn" in text
 
@@ -83,8 +93,8 @@ def test_delivery_address_present_absent(tmp_path):
     ws2 = wb2.active
     col_a2 = [ws2[f"A{i}"].value for i in range(1, 20)]
     assert "Leveradres" not in col_a2
-    pdf2 = next(f for f in os.listdir(prod_folder2) if f.endswith(".pdf"))
-    reader2 = PdfReader(prod_folder2 / pdf2)
+    pdf2 = _first_pdf_path(prod_folder2)
+    reader2 = PdfReader(pdf2)
     text2 = "\n".join(page.extract_text() or "" for page in reader2.pages)
     assert "Leveradres" not in text2
 
@@ -129,8 +139,8 @@ def test_delivery_address_per_production(tmp_path):
     row1 = col_a1.index("Leveradres") + 1
     assert ws1[f"B{row1}"].value in (None, "")
     assert ws1[f"B{row1+1}"].value == "Magazijn"
-    pdf1 = next(f for f in os.listdir(laser) if f.endswith(".pdf"))
-    reader1 = PdfReader(laser / pdf1)
+    pdf1 = _first_pdf_path(laser)
+    reader1 = PdfReader(pdf1)
     text1 = "\n".join(page.extract_text() or "" for page in reader1.pages)
     assert "Leveradres:\nMagazijn" in text1
 
@@ -143,8 +153,8 @@ def test_delivery_address_per_production(tmp_path):
     row2 = col_a2.index("Leveradres") + 1
     assert ws2[f"B{row2}"].value in (None, "")
     assert ws2[f"B{row2+1}"].value == "Depot"
-    pdf2 = next(f for f in os.listdir(plasma) if f.endswith(".pdf"))
-    reader2 = PdfReader(plasma / pdf2)
+    pdf2 = _first_pdf_path(plasma)
+    reader2 = PdfReader(pdf2)
     text2 = "\n".join(page.extract_text() or "" for page in reader2.pages)
     assert "Leveradres:\nDepot" in text2
 
@@ -173,7 +183,44 @@ def test_delivery_address_placeholder_prints(tmp_path):
     )
 
     prod_folder = dst / "Laser"
-    pdf = next(f for f in os.listdir(prod_folder) if f.endswith(".pdf"))
-    reader = PdfReader(prod_folder / pdf)
+    pdf = _first_pdf_path(prod_folder)
+    reader = PdfReader(pdf)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
     assert "Bestelling wordt opgehaald" in text
+
+
+def test_export_remark_rendered_under_delivery(tmp_path):
+    reportlab = pytest.importorskip("reportlab")
+    db, src, bom_df = _setup_basic(tmp_path)
+
+    delivery = DeliveryAddress(
+        name="Magazijn", address="Straat 1", remarks="Afspraak balie"
+    )
+
+    dst = tmp_path / "dst_export"
+    dst.mkdir()
+    copy_per_production_and_orders(
+        str(src),
+        str(dst),
+        bom_df,
+        [".pdf"],
+        db,
+        {},
+        {"Laser": "Export bon"},
+        {"Laser": "5"},
+        False,
+        client=None,
+        delivery_map={"Laser": delivery},
+        remarks_map={"Laser": "Export aanwijzing"},
+    )
+
+    prod_folder = dst / "Laser"
+    pdf = _first_pdf_path(prod_folder)
+    reader = PdfReader(pdf)
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+
+    expected = (
+        "Leveradres:\nMagazijn\nStraat 1\nAfspraak balie\nOpmerking:\nExport aanwijzing"
+    )
+    assert expected in text
+    assert "Opmerking: Export aanwijzing" not in text

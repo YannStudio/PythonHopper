@@ -460,7 +460,17 @@ def generate_pdf_order_platypus(
     small_style = ParagraphStyle("small", parent=text_style, fontSize=8.5, leading=10.5)
 
     doc_type_text = (_to_str(doc_type).strip() or "Bestelbon")
-    is_standaard_doc = doc_type_text.lower().startswith("standaard")
+    doc_type_text_lower = doc_type_text.lower()
+    doc_type_text_key = re.sub(r"[^a-z]", "", doc_type_text_lower)
+    is_standaard_doc = doc_type_text_lower.startswith("standaard")
+    order_remark_text = _to_str(order_remark) if order_remark is not None else ""
+    order_remark_has_content = bool(order_remark_text.strip())
+    place_remark_in_delivery_block = (
+        order_remark_has_content
+        and "exportbon" in doc_type_text_key
+        and not is_standaard_doc
+        and delivery is not None
+    )
 
     doc_lines: List[str] = []
     if doc_number:
@@ -475,8 +485,8 @@ def generate_pdf_order_platypus(
         doc_lines.append(f"Projectnummer: {project_number}")
     if project_name:
         doc_lines.append(f"Projectnaam: {project_name}")
-    if order_remark:
-        doc_lines.append(f"Opmerking: {order_remark}")
+    if order_remark_has_content and not place_remark_in_delivery_block:
+        doc_lines.append(f"Opmerking: {order_remark_text}")
 
     company_lines = [
         f"<b>{company_info.get('name','')}</b>",
@@ -578,6 +588,12 @@ def generate_pdf_order_platypus(
             right_lines.extend(delivery.address.splitlines())
         if delivery.remarks:
             right_lines.append(delivery.remarks)
+        if place_remark_in_delivery_block:
+            right_lines.append("<b>Opmerking:</b>")
+            remark_lines = order_remark_text.splitlines()
+            if not remark_lines:
+                remark_lines = [order_remark_text]
+            right_lines.extend(remark_lines)
 
     story = []
     title = (
