@@ -890,6 +890,20 @@ def start_gui():
             tk.Button(btns, text="Favoriet ★", command=self.toggle_fav_sel).pack(side="left", padx=4)
             self.refresh()
 
+        def suspend_search_filter(self) -> str:
+            """Temporarily clear the search box and return the previous query."""
+
+            current = self.search_var.get()
+            if current:
+                self.search_var.set("")
+            return current
+
+        def restore_search_filter(self, value: str) -> None:
+            """Restore a previously cleared search query, if any."""
+
+            if value:
+                self.search_var.set(value)
+
         def refresh(self):
             for r in self.tree.get_children():
                 self.tree.delete(r)
@@ -3838,19 +3852,44 @@ def start_gui():
 
                 threading.Thread(target=work, daemon=True).start()
 
-            sel_frame = SupplierSelectionFrame(
-                self.nb,
-                prods,
-                finish_entries,
-                self.db,
-                self.delivery_db,
-                on_sel,
-                self.project_number_var,
-                self.project_name_var,
-            )
+            sup_search_restore = ""
+            sup_frame = getattr(self, "suppliers_frame", None)
+            if sup_frame is not None and hasattr(sup_frame, "suspend_search_filter"):
+                try:
+                    sup_search_restore = sup_frame.suspend_search_filter()
+                except Exception:
+                    sup_search_restore = ""
+
+            try:
+                sel_frame = SupplierSelectionFrame(
+                    self.nb,
+                    prods,
+                    finish_entries,
+                    self.db,
+                    self.delivery_db,
+                    on_sel,
+                    self.project_number_var,
+                    self.project_name_var,
+                )
+            except Exception:
+                if sup_search_restore and hasattr(sup_frame, "restore_search_filter"):
+                    try:
+                        sup_frame.restore_search_filter(sup_search_restore)
+                    except Exception:
+                        pass
+                raise
             self.sel_frame = sel_frame
             self.nb.add(sel_frame, state="hidden")
             self.nb.select(sel_frame)
+
+            if sup_search_restore and hasattr(sup_frame, "restore_search_filter"):
+                def _restore_search(_event=None, frame=sup_frame, value=sup_search_restore):
+                    try:
+                        frame.restore_search_filter(value)
+                    except Exception:
+                        pass
+
+                sel_frame.bind("<Destroy>", _restore_search, add="+")
 
         def _combine_pdf(self):
             from tkinter import messagebox
