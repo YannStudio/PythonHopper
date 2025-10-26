@@ -461,12 +461,13 @@ def generate_pdf_order_platypus(
 
     doc_type_text = (_to_str(doc_type).strip() or "Bestelbon")
     doc_type_text_lower = doc_type_text.lower()
+    doc_type_text_slug = re.sub(r"[^0-9a-z]+", "", doc_type_text_lower)
     is_standaard_doc = doc_type_text_lower.startswith("standaard")
     order_remark_text = _to_str(order_remark) if order_remark is not None else ""
     order_remark_has_content = bool(order_remark_text.strip())
     place_remark_in_delivery_block = (
         order_remark_has_content
-        and "exportbon" in doc_type_text_lower
+        and "exportbon" in doc_type_text_slug
         and not is_standaard_doc
         and delivery is not None
     )
