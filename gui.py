@@ -1206,12 +1206,26 @@ def start_gui():
 
             # Buttons bar (altijd zichtbaar)
             btns = tk.Frame(self)
-            btns.grid(row=1, column=0, sticky="ew", padx=10, pady=(6,10))
+            btns.grid(row=1, column=0, sticky="ew", padx=10, pady=(6, 10))
             btns.grid_columnconfigure(0, weight=1)
             self.remember_var = tk.BooleanVar(value=True)
-            tk.Checkbutton(btns, text="Onthoud keuze per selectie", variable=self.remember_var).grid(row=0, column=0, sticky="w")
-            tk.Button(btns, text="Annuleer", command=self._cancel).grid(row=0, column=1, sticky="e", padx=(4,0))
-            tk.Button(btns, text="Bevestig", command=self._confirm).grid(row=0, column=2, sticky="e")
+            tk.Checkbutton(
+                btns,
+                text="Onthoud keuze per selectie",
+                variable=self.remember_var,
+            ).grid(row=0, column=0, sticky="w")
+            self.cancel_button = tk.Button(btns, text="Annuleer", command=self._cancel)
+            self.cancel_button.grid(row=0, column=1, sticky="e", padx=(4, 0))
+            self.confirm_button = tk.Button(btns, text="Bevestig", command=self._confirm)
+            self.confirm_button.grid(row=0, column=2, sticky="e")
+            self.status_var = tk.StringVar(value="")
+            self.status_label = tk.Label(
+                btns,
+                textvariable=self.status_var,
+                anchor="w",
+                justify="left",
+            )
+            self.status_label.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(6, 0))
 
             # Init
             self._refresh_options(initial=True)
@@ -1472,6 +1486,21 @@ def start_gui():
                 card.bind("<Button-1>", handler)
                 for w in widgets:
                     w.bind("<Button-1>", handler)
+
+        def set_busy(self, busy: bool, message: Optional[str] = None) -> None:
+            state = "disabled" if busy else "normal"
+            for btn in (getattr(self, "confirm_button", None), getattr(self, "cancel_button", None)):
+                if btn is None:
+                    continue
+                try:
+                    btn.configure(state=state)
+                except tk.TclError:
+                    pass
+            if message is not None:
+                self.status_var.set(message)
+
+        def update_status(self, message: str) -> None:
+            self.status_var.set(message)
 
         def _cancel(self):
             if self.master:
@@ -2477,12 +2506,13 @@ def start_gui():
             tk.Button(
                 act, text="Kopieer zonder submappen", command=self._copy_flat, **button_style
             ).pack(side="left", padx=6)
-            tk.Button(
+            self.copy_per_prod_button = tk.Button(
                 act,
                 text="Kopieer per productie + bestelbonnen",
                 command=self._copy_per_prod,
                 **button_style,
-            ).pack(side="left", padx=6)
+            )
+            self.copy_per_prod_button.pack(side="left", padx=6)
             tk.Button(
                 act, text="Combine pdf", command=self._combine_pdf, **button_style
             ).pack(side="left", padx=6)
@@ -3373,16 +3403,44 @@ def start_gui():
                     self.export_name_custom_suffix_enabled_var.get()
                 )
 
+                def update_status(message: str) -> None:
+                    def apply() -> None:
+                        self.status_var.set(message)
+                        if sel_frame is not None:
+                            try:
+                                if sel_frame.winfo_exists():
+                                    sel_frame.update_status(message)
+                            except tk.TclError:
+                                pass
+
+                    self.after(0, apply)
+
+                def set_busy_state(active: bool, message: Optional[str] = None) -> None:
+                    def apply() -> None:
+                        btn = getattr(self, "copy_per_prod_button", None)
+                        if btn is not None:
+                            try:
+                                btn.configure(state="disabled" if active else "normal")
+                            except tk.TclError:
+                                pass
+                        if sel_frame is not None:
+                            try:
+                                if sel_frame.winfo_exists():
+                                    sel_frame.set_busy(active, message)
+                            except tk.TclError:
+                                pass
+
+                    self.after(0, apply)
+                    if message is not None:
+                        update_status(message)
+
                 def work(
                     token_prefix_text=custom_prefix_text,
                     token_suffix_text=custom_suffix_text,
                     token_prefix_enabled=custom_prefix_enabled,
                     token_suffix_enabled=custom_suffix_enabled,
                 ):
-                    def set_status(message: str) -> None:
-                        self.after(0, self.status_var.set, message)
-
-                    set_status("Bundelmap voorbereiden...")
+                    update_status("Bundelmap voorbereiden...")
                     try:
                         bundle = create_export_bundle(
                             self.dest_folder,
@@ -3398,7 +3456,8 @@ def start_gui():
                                 f"Kon bundelmap niet maken:\n{exc}",
                                 parent=self,
                             )
-                            self.status_var.set("Bundelmap maken mislukt.")
+                            update_status("Bundelmap maken mislukt.")
+                            set_busy_state(False)
 
                         self.after(0, on_error)
                         return
@@ -3420,12 +3479,13 @@ def start_gui():
                             if bundle.latest_symlink:
                                 lines.append(f"Snelkoppeling: {bundle.latest_symlink}")
                             messagebox.showinfo("Testrun", "\n".join(lines), parent=self)
-                            self.status_var.set(f"Testrun - doelmap: {bundle_dest}")
+                            update_status(f"Testrun - doelmap: {bundle_dest}")
+                            set_busy_state(False)
 
                         self.after(0, on_dry)
                         return
 
-                    set_status("Kopiëren & bestelbonnen maken...")
+                    update_status("Kopiëren & bestelbonnen maken...")
                     client = self.client_db.get(
                         self.client_var.get().replace("★ ", "", 1)
                     )
@@ -3471,7 +3531,8 @@ def start_gui():
                                 f"Bestelbonnen exporteren mislukt:\n{exc}",
                                 parent=self,
                             )
-                            self.status_var.set("Export mislukt.")
+                            update_status("Export mislukt.")
+                            set_busy_state(False)
 
                         self.after(0, on_error)
                         return
@@ -3492,36 +3553,42 @@ def start_gui():
                             if friendly_pairs
                             else str(chosen)
                         )
-                        self.status_var.set(
+                        final_status = (
                             f"Klaar. Gekopieerd: {cnt}. Leveranciers: {suppliers_text}. → {bundle_dest}"
                         )
-                        info_lines = ["Bestelbonnen aangemaakt in:", bundle_dest]
-                        if bundle.latest_symlink:
-                            info_lines.append(f"Symlink: {bundle.latest_symlink}")
-                        messagebox.showinfo("Klaar", "\n".join(info_lines), parent=self)
+                        update_status(final_status)
                         try:
-                            if sys.platform.startswith("win"):
-                                os.startfile(bundle_dest)
-                            elif sys.platform == "darwin":
-                                subprocess.run(["open", bundle_dest], check=False)
-                            else:
-                                subprocess.run(["xdg-open", bundle_dest], check=False)
-                        except Exception as exc:
-                            messagebox.showwarning(
-                                "Let op",
-                                f"Kon bundelmap niet openen:\n{exc}",
-                                parent=self,
-                            )
-                        if getattr(self, "sel_frame", None):
+                            info_lines = ["Bestelbonnen aangemaakt in:", bundle_dest]
+                            if bundle.latest_symlink:
+                                info_lines.append(f"Symlink: {bundle.latest_symlink}")
+                            messagebox.showinfo("Klaar", "\n".join(info_lines), parent=self)
                             try:
-                                self.nb.forget(self.sel_frame)
-                                self.sel_frame.destroy()
-                            except Exception:
-                                pass
-                            self.sel_frame = None
-                        self.nb.select(self.main_frame)
+                                if sys.platform.startswith("win"):
+                                    os.startfile(bundle_dest)
+                                elif sys.platform == "darwin":
+                                    subprocess.run(["open", bundle_dest], check=False)
+                                else:
+                                    subprocess.run(["xdg-open", bundle_dest], check=False)
+                            except Exception as exc:
+                                messagebox.showwarning(
+                                    "Let op",
+                                    f"Kon bundelmap niet openen:\n{exc}",
+                                    parent=self,
+                                )
+                        finally:
+                            if getattr(self, "sel_frame", None):
+                                try:
+                                    self.nb.forget(self.sel_frame)
+                                    self.sel_frame.destroy()
+                                except Exception:
+                                    pass
+                                self.sel_frame = None
+                            self.nb.select(self.main_frame)
+                            set_busy_state(False)
 
                     self.after(0, on_done)
+
+                set_busy_state(True, "Bundelmap voorbereiden...")
 
                 threading.Thread(target=work, daemon=True).start()
 
