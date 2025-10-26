@@ -12,6 +12,8 @@ import re
 import unicodedata
 import zipfile
 import io
+import tempfile
+import hashlib
 from collections import defaultdict
 from pathlib import Path
 from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -91,6 +93,7 @@ class CombinedPdfResult:
 
 
 _INVALID_PATH_CHARS = set('<>:"/\\|?*')
+_WINDOWS_MAX_PATH = 240
 
 
 def _sanitize_component(value: object) -> str:
@@ -129,6 +132,54 @@ def _slugify_name(value: object, fallback: str) -> str:
     ascii_fallback = re.sub(r"[^a-zA-Z0-9-]", "", ascii_fallback)
     ascii_fallback = ascii_fallback.lower()[:40].rstrip("-")
     return ascii_fallback or "export"
+
+
+def _fit_filename_within_path(
+    directory: str, filename: str, *, max_path: int = _WINDOWS_MAX_PATH
+) -> str:
+    """Return ``filename`` possibly shortened so ``directory/filename`` fits ``max_path``.
+
+    On Windows, opening files with paths longer than 260 characters raises ``FileNotFoundError``.
+    ``max_path`` defaults to a slightly smaller value (240) to provide some safety margin for
+    runtime conversions that may add characters (e.g. via extended paths). When the composed path
+    exceeds the limit, the base filename is truncated and suffixed with an 8-character hash so the
+    resulting name remains unique and deterministic while staying within the limit. ``max_path`` can
+    be overridden (primarily for tests). When the directory path already exceeds the limit the
+    function raises :class:`OSError` as there is no filename that could satisfy the constraint.
+    """
+
+    if max_path is None:
+        return filename
+
+    directory_abs = os.path.abspath(directory)
+    full_abs = os.path.join(directory_abs, filename)
+    if len(full_abs) <= max_path:
+        return filename
+
+    stem, ext = os.path.splitext(filename)
+    if not stem:
+        stem = "_"
+
+    available = max_path - len(directory_abs) - len(os.sep) - len(ext)
+    if available <= 0:
+        raise OSError(
+            "Basispad is te lang voor het genereren van exportbestanden. Verkort het exportpad."
+        )
+
+    digest = hashlib.sha1(full_abs.encode("utf-8")).hexdigest()[:8]
+    if available <= len(digest):
+        safe_stem = digest[:available]
+    else:
+        keep = max(1, available - len(digest) - 1)
+        safe_stem = f"{stem[:keep].rstrip(' _-.')}_{digest}" if keep < len(stem) else f"{stem}_{digest}"
+
+    safe_filename = f"{safe_stem}{ext}"
+    safe_abs = os.path.join(directory_abs, safe_filename)
+    if len(safe_abs) > max_path and available > len(digest):
+        safe_stem = digest[: available]
+        safe_filename = f"{safe_stem}{ext}"
+
+    return safe_filename
 
 
 def _create_combined_output_dir(
@@ -1216,13 +1267,16 @@ def copy_per_production_and_orders(
         prefix = _prefix_for_doc_type(doc_type)
         if doc_num and prefix and doc_num.upper() == prefix.upper():
             doc_num = ""
-        num_part = f"_{doc_num}" if doc_num else ""
+        doc_num_token = _sanitize_component(doc_num) if doc_num else ""
+        num_part = f"_{doc_num_token}" if doc_num_token else ""
         doc_type_lower = doc_type.lower()
         is_standaard_doc = doc_type_lower.startswith("standaard")
 
         zf = None
         if zip_parts:
-            zip_name = f"{prod}{num_part}.zip"
+            zip_name = _fit_filename_within_path(
+                prod_folder, f"{prod}{num_part}.zip"
+            )
             zip_path = os.path.join(prod_folder, zip_name)
             try:
                 zf = zipfile.ZipFile(
@@ -1317,9 +1371,10 @@ def copy_per_production_and_orders(
             delivery_for_docs = None
 
         if supplier_name_clean or is_standaard_doc:
-            excel_path = os.path.join(
+            excel_filename = _fit_filename_within_path(
                 prod_folder, f"{doc_type}{num_part}_{prod}_{today}.xlsx"
             )
+            excel_path = os.path.join(prod_folder, excel_filename)
             write_order_excel(
                 excel_path,
                 items,
@@ -1335,9 +1390,10 @@ def copy_per_production_and_orders(
                 order_remark=order_remark or None,
             )
 
-            pdf_path = os.path.join(
+            pdf_filename = _fit_filename_within_path(
                 prod_folder, f"{doc_type}{num_part}_{prod}_{today}.pdf"
             )
+            pdf_path = os.path.join(prod_folder, pdf_filename)
             try:
                 generate_pdf_order_platypus(
                     pdf_path,
@@ -1365,9 +1421,10 @@ def copy_per_production_and_orders(
                         packlist_items, preview_dir
                     )
                     if rendered_previews:
-                        packlist_path = os.path.join(
+                        packlist_filename = _fit_filename_within_path(
                             prod_folder, f"Paklijst_{prod}_{today}.pdf"
                         )
+                        packlist_path = os.path.join(prod_folder, packlist_filename)
                         try:
                             if not generate_packlist_pdf(
                                 packlist_path,
@@ -1399,7 +1456,9 @@ def copy_per_production_and_orders(
             seen_pairs = finish_seen[finish_key]
             zf = None
             if zip_finish_exports:
-                zip_name = f"{folder_name}.zip"
+                zip_name = _fit_filename_within_path(
+                    target_dir, f"{folder_name}.zip"
+                )
                 zip_path = os.path.join(target_dir, zip_name)
                 try:
                     zf = zipfile.ZipFile(
@@ -1468,9 +1527,12 @@ def copy_per_production_and_orders(
 
             doc_num = _to_str(finish_doc_num_map.get(finish_key, "")).strip()
             prefix = _prefix_for_doc_type(doc_type)
-            if doc_num and prefix and not doc_num.upper().startswith(prefix.upper()):
+            if doc_num and prefix and doc_num.upper() == prefix.upper():
+                doc_num = ""
+            elif doc_num and prefix and not doc_num.upper().startswith(prefix.upper()):
                 doc_num = f"{prefix}{doc_num}"
-            num_part = f"_{doc_num}" if doc_num else ""
+            doc_num_token = _sanitize_component(doc_num) if doc_num else ""
+            num_part = f"_{doc_num_token}" if doc_num_token else ""
 
             folder_name = info.get("folder_name", finish_key)
             target_dir = os.path.join(dest, folder_name)
@@ -1501,10 +1563,11 @@ def copy_per_production_and_orders(
                 supplier_for_docs = None
                 delivery_for_docs = None
 
-            excel_path = os.path.join(
+            excel_filename = _fit_filename_within_path(
                 target_dir,
                 f"{doc_type}{num_part}_{filename_component}_{today}.xlsx",
             )
+            excel_path = os.path.join(target_dir, excel_filename)
             write_order_excel(
                 excel_path,
                 items,
@@ -1520,9 +1583,10 @@ def copy_per_production_and_orders(
                 order_remark=finish_remark or None,
             )
 
-            pdf_path = os.path.join(
+            pdf_filename = _fit_filename_within_path(
                 target_dir, f"{doc_type}{num_part}_{filename_component}_{today}.pdf"
             )
+            pdf_path = os.path.join(target_dir, pdf_filename)
             try:
                 generate_pdf_order_platypus(
                     pdf_path,
@@ -1621,7 +1685,8 @@ def combine_pdfs_from_source(
             for path in sorted(files, key=lambda x: os.path.basename(x).lower()):
                 merger.append(path)
             out_name = f"{prod}_{date_str}_combined.pdf"
-            merger.write(os.path.join(out_dir, out_name))
+            safe_name = _fit_filename_within_path(out_dir, out_name)
+            merger.write(os.path.join(out_dir, safe_name))
             merger.close()
             count += 1
     else:
@@ -1637,7 +1702,8 @@ def combine_pdfs_from_source(
             for path in sorted(ordered_files, key=lambda x: os.path.basename(x).lower()):
                 merger.append(path)
             out_name = f"BOM_{date_str}_combined.pdf"
-            merger.write(os.path.join(out_dir, out_name))
+            safe_name = _fit_filename_within_path(out_dir, out_name)
+            merger.write(os.path.join(out_dir, safe_name))
             merger.close()
             count = 1
 
@@ -1701,7 +1767,8 @@ def combine_pdfs_per_production(
                     zip_path = os.path.join(prod_path, fname)
                     break
             if zip_path is None:
-                fallback = os.path.join(prod_path, f"{prod}.zip")
+                fallback_name = _fit_filename_within_path(prod_path, f"{prod}.zip")
+                fallback = os.path.join(prod_path, fallback_name)
                 if not os.path.isfile(fallback):
                     continue
                 zip_path = fallback
@@ -1721,7 +1788,8 @@ def combine_pdfs_per_production(
                     with zf.open(name) as fh:
                         merger.append(io.BytesIO(fh.read()))
         out_name = f"{prod}_{date_str}_combined.pdf"
-        merger.write(os.path.join(out_dir, out_name))
+        safe_name = _fit_filename_within_path(out_dir, out_name)
+        merger.write(os.path.join(out_dir, safe_name))
         merger.close()
         count += 1
     return CombinedPdfResult(count=count, output_dir=out_dir)
