@@ -1486,6 +1486,12 @@
       "favorite": false
     }
   ],
-  "defaults_by_production": {},
+  "defaults_by_production": {
+    "Assembly": "Productora",
+    "Weld assembly": "Productora",
+    "Sheetmetal": "Productora",
+    "Tube laser": "Productora",
+    "Spare part": "Productora"
+  },
   "defaults_by_finish": {}
 }
