@@ -187,6 +187,7 @@ class AppSettings:
     copy_finish_exports: bool = False
     zip_finish_exports: bool = True
     export_processed_bom: bool = True
+    export_related_bom_files: bool = True
     export_date_prefix: bool = False
     export_date_suffix: bool = False
     custom_prefix_enabled: bool = False
