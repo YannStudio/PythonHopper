@@ -12,6 +12,7 @@ import re
 import unicodedata
 import zipfile
 import io
+import tempfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
