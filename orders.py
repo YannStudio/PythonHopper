@@ -339,11 +339,12 @@ def _should_place_remark_in_delivery_block(
 ) -> bool:
     """Return :data:`True` when remarks belong in the delivery block."""
 
+    doc_type_is_export = "export" in doc_type_text_slug
+
     return (
         order_remark_has_content
-        and "exportbon" in doc_type_text_slug
+        and doc_type_is_export
         and not is_standaard_doc
-        and delivery is not None
     )
 
 
@@ -597,14 +598,18 @@ def generate_pdf_order_platypus(
         left_cell = KeepTogether(left_elements)
 
     right_lines: List[str] = []
-    if delivery and not is_standaard_doc:
-        # Delivery address block with each piece of information on its own line
-        right_lines.append("<b>Leveradres:</b>")
-        right_lines.append(delivery.name)
-        if delivery.address:
-            right_lines.extend(delivery.address.splitlines())
-        if delivery.remarks:
-            right_lines.append(delivery.remarks)
+    include_right_block = not is_standaard_doc and (
+        delivery is not None or place_remark_in_delivery_block
+    )
+    if include_right_block:
+        if delivery:
+            # Delivery address block with each piece of information on its own line
+            right_lines.append("<b>Leveradres:</b>")
+            right_lines.append(delivery.name)
+            if delivery.address:
+                right_lines.extend(delivery.address.splitlines())
+            if delivery.remarks:
+                right_lines.append(delivery.remarks)
         if place_remark_in_delivery_block:
             right_lines.append("<b>Opmerking:</b>")
             remark_lines = order_remark_text.splitlines()
@@ -914,15 +919,18 @@ def write_order_excel(
             or delivery_has_content
             or place_remark_in_delivery_block
         )
-    if include_delivery_block and delivery:
-        header_lines.extend(
-            [
-                ("Leveradres", ""),
-                ("", delivery.name),
-                ("Adres", delivery.address or ""),
-                ("Opmerking", delivery.remarks or ""),
-            ]
-        )
+    elif place_remark_in_delivery_block and not is_standaard_doc:
+        include_delivery_block = True
+    if include_delivery_block:
+        if delivery:
+            header_lines.extend(
+                [
+                    ("Leveradres", ""),
+                    ("", delivery.name),
+                    ("Adres", delivery.address or ""),
+                    ("Opmerking", delivery.remarks or ""),
+                ]
+            )
         if place_remark_in_delivery_block and order_remark_has_content:
             header_lines.append(("Opmerking", order_remark_text))
         header_lines.append(("", ""))
