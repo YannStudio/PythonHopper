@@ -2947,7 +2947,7 @@ def start_gui():
 
             start_dir = self.source_folder if self.source_folder else os.getcwd()
             path = filedialog.askopenfilename(
-                filetypes=[("CSV", "*.csv"), ("Excel", "*.xlsx;*.xls")],
+                filetypes=[("Excel", "*.xlsx *.xls"), ("CSV", "*.csv")],
                 initialdir=start_dir,
             )
             if not path:
