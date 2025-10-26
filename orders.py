@@ -1217,7 +1217,8 @@ def copy_per_production_and_orders(
         prefix = _prefix_for_doc_type(doc_type)
         if doc_num and prefix and doc_num.upper() == prefix.upper():
             doc_num = ""
-        num_part = f"_{doc_num}" if doc_num else ""
+        doc_num_token = _sanitize_component(doc_num) if doc_num else ""
+        num_part = f"_{doc_num_token}" if doc_num_token else ""
         doc_type_lower = doc_type.lower()
         is_standaard_doc = doc_type_lower.startswith("standaard")
 
@@ -1469,9 +1470,12 @@ def copy_per_production_and_orders(
 
             doc_num = _to_str(finish_doc_num_map.get(finish_key, "")).strip()
             prefix = _prefix_for_doc_type(doc_type)
-            if doc_num and prefix and not doc_num.upper().startswith(prefix.upper()):
+            if doc_num and prefix and doc_num.upper() == prefix.upper():
+                doc_num = ""
+            elif doc_num and prefix and not doc_num.upper().startswith(prefix.upper()):
                 doc_num = f"{prefix}{doc_num}"
-            num_part = f"_{doc_num}" if doc_num else ""
+            doc_num_token = _sanitize_component(doc_num) if doc_num else ""
+            num_part = f"_{doc_num_token}" if doc_num_token else ""
 
             folder_name = info.get("folder_name", finish_key)
             target_dir = os.path.join(dest, folder_name)
