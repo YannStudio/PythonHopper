@@ -1016,6 +1016,7 @@ def start_gui():
             self.sel_vars: Dict[str, tk.StringVar] = {}
             self.doc_vars: Dict[str, tk.StringVar] = {}
             self.doc_num_vars: Dict[str, tk.StringVar] = {}
+            self.remark_vars: Dict[str, tk.StringVar] = {}
             self.delivery_vars: Dict[str, tk.StringVar] = {}
             self.delivery_combos: Dict[str, ttk.Combobox] = {}
             self.row_meta: Dict[str, Dict[str, str]] = {}
@@ -1182,6 +1183,7 @@ def start_gui():
                 ("Leverancier", 50, None),
                 ("Documenttype", 18, None),
                 ("Nr.", 12, None),
+                ("Opmerking", 24, None),
                 ("Leveradres", 50, None),
             ]
 
@@ -1246,6 +1248,13 @@ def start_gui():
                 tk.Entry(row, textvariable=doc_num_var, width=12).pack(
                     side="left", padx=(0, 6)
                 )
+
+                remark_var = tk.StringVar()
+                self.remark_vars[sel_key] = remark_var
+                remark_entry = tk.Entry(row, textvariable=remark_var, width=24)
+                remark_entry.pack(side="left", padx=(0, 6))
+                _scroll_entry_to_end(remark_entry, remark_var)
+                _OverflowTooltip(remark_entry, lambda v=remark_var: v.get().strip())
 
                 dvar = tk.StringVar(value="Geen")
                 self.delivery_vars[sel_key] = dvar
@@ -1355,6 +1364,9 @@ def start_gui():
 
             for dcombo in self.delivery_combos.values():
                 dcombo.set("Geen")
+
+            for rvar in getattr(self, "remark_vars", {}).values():
+                rvar.set("")
 
             self._on_combo_change()
 
@@ -1627,6 +1639,8 @@ def start_gui():
 
         def _confirm(self):
             """Collect selected suppliers per production and return via callback."""
+            import inspect
+
             sel_map: Dict[str, str] = {}
             doc_map: Dict[str, str] = {}
             for sel_key, combo in self.rows:
@@ -1642,24 +1656,76 @@ def start_gui():
 
             doc_num_map: Dict[str, str] = {}
             delivery_map: Dict[str, str] = {}
+            remarks_map: Dict[str, str] = {}
+            remark_vars = getattr(self, "remark_vars", {})
             for sel_key, _combo in self.rows:
                 doc_num_map[sel_key] = self.doc_num_vars[sel_key].get().strip()
                 delivery_map[sel_key] = self.delivery_vars.get(
                     sel_key, tk.StringVar(value="Geen")
                 ).get()
+                remark_var = remark_vars.get(sel_key)
+                remarks_map[sel_key] = remark_var.get().strip() if remark_var else ""
 
             project_number = self.project_number_var.get().strip()
             project_name = self.project_name_var.get().strip()
 
-            self.callback(
-                sel_map,
-                doc_map,
-                doc_num_map,
-                delivery_map,
-                project_number,
-                project_name,
-                bool(self.remember_var.get()),
-            )
+            remember_flag = bool(self.remember_var.get())
+            callback = self.callback
+            use_new_signature = False
+            sig_params = None
+            try:
+                sig = inspect.signature(callback)
+            except (ValueError, TypeError):
+                sig = None
+            if sig is not None:
+                params = list(sig.parameters.values())
+                if params and params[0].name == "self" and params[0].kind in (
+                    inspect.Parameter.POSITIONAL_ONLY,
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                ):
+                    params = params[1:]
+                sig_params = params
+                if any(
+                    p.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+                    for p in params
+                ):
+                    use_new_signature = True
+                elif len(params) >= 8:
+                    use_new_signature = True
+
+            if use_new_signature:
+                try:
+                    callback(
+                        sel_map,
+                        doc_map,
+                        doc_num_map,
+                        delivery_map,
+                        remarks_map,
+                        project_number,
+                        project_name,
+                        remember_flag,
+                    )
+                    return
+                except TypeError as exc:
+                    msg = str(exc)
+                    if not (
+                        "positional" in msg
+                        or "keyword" in msg
+                        or (sig_params is not None and len(sig_params) >= 8)
+                    ):
+                        raise
+                    use_new_signature = False
+
+            if not use_new_signature:
+                callback(
+                    sel_map,
+                    doc_map,
+                    doc_num_map,
+                    delivery_map,
+                    project_number,
+                    project_name,
+                    remember_flag,
+                )
 
     class SettingsFrame(tk.Frame):
         def __init__(self, master, app: "App"):
@@ -3455,6 +3521,7 @@ def start_gui():
                 doc_map: Dict[str, str],
                 doc_num_map: Dict[str, str],
                 delivery_map_raw: Dict[str, str],
+                remarks_map_raw: Dict[str, str],
                 project_number: str,
                 project_name: str,
                 remember: bool,
@@ -3508,6 +3575,18 @@ def start_gui():
                         finish_delivery_map[identifier] = resolved
                     else:
                         production_delivery_map[identifier] = resolved
+
+                production_remarks_map: Dict[str, str] = {}
+                finish_remarks_map: Dict[str, str] = {}
+                for key, text in remarks_map_raw.items():
+                    clean_text = text.strip()
+                    if not clean_text:
+                        continue
+                    kind, identifier = parse_selection_key(key)
+                    if kind == "finish":
+                        finish_remarks_map[identifier] = clean_text
+                    else:
+                        production_remarks_map[identifier] = clean_text
 
                 custom_prefix_text = self.export_name_custom_prefix_text.get().strip()
                 custom_prefix_enabled = bool(
@@ -3637,6 +3716,8 @@ def start_gui():
                             finish_doc_type_map=finish_doc_type_map,
                             finish_doc_num_map=finish_doc_num_map,
                             finish_delivery_map=finish_delivery_map,
+                            remarks_map=production_remarks_map,
+                            finish_remarks_map=finish_remarks_map,
                             bom_source_path=self.bom_source_path,
                         )
                     except Exception as exc:
