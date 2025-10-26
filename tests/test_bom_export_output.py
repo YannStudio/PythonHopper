@@ -18,6 +18,17 @@ def _basic_bom() -> pd.DataFrame:
                 "PartNumber": "PN-001",
                 "Description": "Behuizing",
                 "Production": "Laser",
+                "Profile": "L-100",
+                "Length profile": 2500,
+                "Materiaal": "Staal",
+                "Supplier": "Leverancier",
+                "Supplier code": "SUP-001",
+                "Manufacturer": "Fabrikant",
+                "Manufacturer code": "FAB-001",
+                "Finish": "Poedercoat",
+                "RAL color": "9005",
+                "Oppervlakte": "",  # optional field
+                "Gewicht": "",  # optional field
                 "Aantal": 2,
                 "Bestanden gevonden": "pdf",
                 "Status": "✅",
@@ -57,12 +68,68 @@ def test_bom_export_written_with_iso_date(tmp_path, monkeypatch):
     assert export_path.is_file()
 
     exported = pd.read_excel(export_path)
-    expected = df.drop(columns=["Bestanden gevonden", "Status"], errors="ignore")
+    expected = df.drop(columns=["Bestanden gevonden", "Status", "Link"], errors="ignore")
+    expected_columns = [
+        "PartNumber",
+        "Description",
+        "Profile",
+        "Length profile",
+        "Production",
+        "Materiaal",
+        "Supplier",
+        "Supplier code",
+        "Manufacturer",
+        "Manufacturer code",
+        "Finish",
+        "RAL color",
+        "Aantal",
+        "Oppervlakte",
+        "Gewicht",
+    ]
+    for column in expected_columns:
+        if column not in expected.columns:
+            expected[column] = ""
+    expected = expected[expected_columns].copy()
+    exported = exported[expected_columns].copy()
+
+    text_columns = {
+        "PartNumber",
+        "Description",
+        "Profile",
+        "Length profile",
+        "Production",
+        "Materiaal",
+        "Supplier",
+        "Supplier code",
+        "Manufacturer",
+        "Manufacturer code",
+        "Finish",
+        "RAL color",
+        "Oppervlakte",
+        "Gewicht",
+    }
+
+    def normalize(df: pd.DataFrame) -> pd.DataFrame:
+        normalized = {}
+        for column in expected_columns:
+            series = df[column]
+            if column in text_columns:
+                normalized[column] = series.map(
+                    lambda v: "" if pd.isna(v) else str(v)
+                )
+            else:
+                normalized[column] = series
+        return pd.DataFrame(normalized, columns=expected_columns)
+
+    expected_cmp = normalize(expected)
+    exported_cmp = normalize(exported)
     pd.testing.assert_frame_equal(
-        expected.reset_index(drop=True), exported, check_dtype=False
+        expected_cmp.reset_index(drop=True), exported_cmp, check_dtype=False
     )
     assert "Bestanden gevonden" not in exported.columns
     assert "Status" not in exported.columns
+    assert "Link" not in exported.columns
+    assert exported.columns.tolist() == expected_columns
 
 
 def test_bom_export_can_be_disabled(tmp_path, monkeypatch):

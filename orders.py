@@ -62,6 +62,26 @@ DEFAULT_FOOTER_NOTE = (
 STEP_EXTS = {".step", ".stp"}
 
 
+_BOM_STATUS_COLUMNS: Tuple[str, ...] = ("Bestanden gevonden", "Status", "Link")
+_BOM_EXPORT_BASE_COLUMNS: Tuple[str, ...] = (
+    "PartNumber",
+    "Description",
+    "Profile",
+    "Length profile",
+    "Production",
+    "Materiaal",
+    "Supplier",
+    "Supplier code",
+    "Manufacturer",
+    "Manufacturer code",
+    "Finish",
+    "RAL color",
+    "Aantal",
+    "Oppervlakte",
+    "Gewicht",
+)
+
+
 @dataclass(slots=True)
 class CombinedPdfResult:
     """Metadata for combined PDF export operations."""
@@ -147,10 +167,17 @@ def _export_bom_workbook(bom_df: pd.DataFrame, dest: str, filename: str) -> str:
     target_path = os.path.join(dest, filename)
     export_df = bom_df.reset_index(drop=True).copy()
     # Drop status-related columns that are only useful inside the app.
-    drop_candidates = ["Link", "Bestanden gevonden", "Status"]
-    to_drop = [col for col in drop_candidates if col in export_df.columns]
+    to_drop = [col for col in _BOM_STATUS_COLUMNS if col in export_df.columns]
     if to_drop:
         export_df = export_df.drop(columns=to_drop)
+
+    # Ensure all primary BOM columns are present and appear first.
+    for column in _BOM_EXPORT_BASE_COLUMNS:
+        if column not in export_df.columns:
+            export_df[column] = ""
+    ordered_columns = [c for c in _BOM_EXPORT_BASE_COLUMNS if c in export_df.columns]
+    remaining_columns = [c for c in export_df.columns if c not in ordered_columns]
+    export_df = export_df[ordered_columns + remaining_columns]
 
     with pd.ExcelWriter(target_path, engine="openpyxl") as writer:
         export_df.to_excel(writer, index=False, sheet_name="BOM")
