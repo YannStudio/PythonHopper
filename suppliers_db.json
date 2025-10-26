@@ -1487,9 +1487,7 @@
     }
   ],
   "defaults_by_production": {
-    "Sheetmetal": "Tecno Spa",
-    "Lasercutting": "Productora",
-    "Assembly": "AB-Matic (Hi-Motion)"
+    "Assembly": "Productora"
   },
   "defaults_by_finish": {}
 }
