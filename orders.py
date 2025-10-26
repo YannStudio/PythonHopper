@@ -8,6 +8,7 @@ import os
 import sys
 import shutil
 import datetime
+import time
 import re
 import unicodedata
 import zipfile
@@ -26,9 +27,10 @@ except Exception:  # pragma: no cover - optional dependency
     get_column_letter = None
 
 try:
-    from PyPDF2 import PdfMerger
+    from PyPDF2 import PdfMerger, PdfReader
 except Exception:  # pragma: no cover - PyPDF2 might be absent
     PdfMerger = None
+    PdfReader = None
 
 # ReportLab (PDF). Script works without it (PDF generation is skipped).
 try:
@@ -330,20 +332,58 @@ def _prefix_for_doc_type(doc_type: str) -> str:
     return ""
 
 
+def _tokenize_doc_type(text: str) -> List[str]:
+    """Return lowercase alphanumeric tokens for a document type."""
+
+    tokens = [tok for tok in re.split(r"[^0-9a-z]+", text) if tok]
+    if not tokens and text:
+        tokens = [text]
+    return tokens
+
+
+_EXPORT_PREFIX_EXCLUSIONS: tuple[str, ...] = ("expedit", "expedi", "expedition")
+_EXPORT_SUFFIX_TOKENS: tuple[str, ...] = ("bon", "order", "aanvraag")
+
+
+def _doc_type_is_export(
+    doc_type_text_slug: str, doc_type_tokens: Sequence[str]
+) -> bool:
+    """Return :data:`True` when ``doc_type`` should treat remarks as export notes."""
+
+    if "export" in doc_type_text_slug:
+        return True
+
+    token_set = set(doc_type_tokens)
+    if "exp" in token_set or "expbon" in token_set:
+        return True
+
+    if doc_type_text_slug.startswith("exp"):
+        if doc_type_text_slug.startswith(_EXPORT_PREFIX_EXCLUSIONS):
+            return False
+        if any(doc_type_text_slug.endswith(suffix) for suffix in _EXPORT_SUFFIX_TOKENS):
+            return True
+        if token_set.intersection(_EXPORT_SUFFIX_TOKENS):
+            return True
+
+    return False
+
+
 def _should_place_remark_in_delivery_block(
     *,
     order_remark_has_content: bool,
     doc_type_text_slug: str,
+    doc_type_text_tokens: Sequence[str],
     is_standaard_doc: bool,
     delivery: DeliveryAddress | None,
 ) -> bool:
     """Return :data:`True` when remarks belong in the delivery block."""
 
+    doc_type_is_export = _doc_type_is_export(doc_type_text_slug, doc_type_text_tokens)
+
     return (
         order_remark_has_content
-        and "exportbon" in doc_type_text_slug
+        and doc_type_is_export
         and not is_standaard_doc
-        and delivery is not None
     )
 
 
@@ -458,286 +498,330 @@ def generate_pdf_order_platypus(
         return
 
     margin = 18 * mm
-    doc = SimpleDocTemplate(
-        path,
-        pagesize=A4,
-        leftMargin=margin,
-        rightMargin=margin,
-        topMargin=20 * mm,
-        bottomMargin=20 * mm,
-    )
-    width, _ = A4
-    styles = getSampleStyleSheet()
-    title_style = styles["Heading1"]
-    title_style.textColor = colors.HexColor(MIAMI_PINK)
-    title_style.fontName = "Helvetica-Bold"
-    title_style.fontSize = 18
-    text_style = styles["Normal"]
-    text_style.leading = 13
-    small_style = ParagraphStyle("small", parent=text_style, fontSize=8.5, leading=10.5)
+    with open(path, "wb") as pdf_buffer:
+        doc = SimpleDocTemplate(
+            pdf_buffer,
+            pagesize=A4,
+            leftMargin=margin,
+            rightMargin=margin,
+            topMargin=20 * mm,
+            bottomMargin=20 * mm,
+        )
+        width, _ = A4
+        styles = getSampleStyleSheet()
+        title_style = styles["Heading1"]
+        title_style.textColor = colors.HexColor(MIAMI_PINK)
+        title_style.fontName = "Helvetica-Bold"
+        title_style.fontSize = 18
+        text_style = styles["Normal"]
+        text_style.leading = 13
+        small_style = ParagraphStyle("small", parent=text_style, fontSize=8.5, leading=10.5)
 
-    doc_type_text = (_to_str(doc_type).strip() or "Bestelbon")
-    doc_type_text_lower = doc_type_text.lower()
-    doc_type_text_slug = re.sub(r"[^0-9a-z]+", "", doc_type_text_lower)
-    is_standaard_doc = doc_type_text_lower.startswith("standaard")
-    order_remark_text = _to_str(order_remark) if order_remark is not None else ""
-    order_remark_has_content = bool(order_remark_text.strip())
-    place_remark_in_delivery_block = _should_place_remark_in_delivery_block(
-        order_remark_has_content=order_remark_has_content,
-        doc_type_text_slug=doc_type_text_slug,
-        is_standaard_doc=is_standaard_doc,
-        delivery=delivery,
-    )
+        doc_type_text = (_to_str(doc_type).strip() or "Bestelbon")
+        doc_type_text_lower = doc_type_text.lower()
+        doc_type_text_slug = re.sub(r"[^0-9a-z]+", "", doc_type_text_lower)
+        doc_type_text_tokens = _tokenize_doc_type(doc_type_text_lower)
+        is_standaard_doc = doc_type_text_lower.startswith("standaard")
+        order_remark_text = _to_str(order_remark) if order_remark is not None else ""
+        order_remark_has_content = bool(order_remark_text.strip())
+        place_remark_in_delivery_block = _should_place_remark_in_delivery_block(
+            order_remark_has_content=order_remark_has_content,
+            doc_type_text_slug=doc_type_text_slug,
+            doc_type_text_tokens=doc_type_text_tokens,
+            is_standaard_doc=is_standaard_doc,
+            delivery=delivery,
+        )
 
-    doc_lines: List[str] = []
-    if doc_number:
-        doc_lines.append(f"Nummer: {doc_number}")
-    today = datetime.date.today().strftime("%Y-%m-%d")
-    doc_lines.append(f"Datum: {today}")
-    label_kind_clean = (_to_str(label_kind) or "productie").strip() or "productie"
-    label_title = label_kind_clean[0].upper() + label_kind_clean[1:]
-    if production:
-        doc_lines.append(f"{label_title}: {production}")
-    if project_number:
-        doc_lines.append(f"Projectnummer: {project_number}")
-    if project_name:
-        doc_lines.append(f"Projectnaam: {project_name}")
-    if order_remark_has_content and not place_remark_in_delivery_block:
-        doc_lines.append(f"Opmerking: {order_remark_text}")
+        doc_lines: List[str] = []
+        if doc_number:
+            doc_lines.append(f"Nummer: {doc_number}")
+        today = datetime.date.today().strftime("%Y-%m-%d")
+        doc_lines.append(f"Datum: {today}")
+        label_kind_clean = (_to_str(label_kind) or "productie").strip() or "productie"
+        label_title = label_kind_clean[0].upper() + label_kind_clean[1:]
+        if production:
+            doc_lines.append(f"{label_title}: {production}")
+        if project_number:
+            doc_lines.append(f"Projectnummer: {project_number}")
+        if project_name:
+            doc_lines.append(f"Projectnaam: {project_name}")
+        if order_remark_has_content and not place_remark_in_delivery_block:
+            doc_lines.append(f"Opmerking: {order_remark_text}")
 
-    company_lines = [
-        f"<b>{company_info.get('name','')}</b>",
-        f"{company_info.get('address','')}",
-        f"BTW: {company_info.get('vat','')}",
-        f"E-mail: {company_info.get('email','')}",
-    ]
+        company_lines = [
+            f"<b>{company_info.get('name','')}</b>",
+            f"{company_info.get('address','')}",
+            f"BTW: {company_info.get('vat','')}",
+            f"E-mail: {company_info.get('email','')}",
+        ]
 
-    logo_flowable = None
-    logo_path_info = company_info.get("logo_path") if company_info else None
-    if logo_path_info:
-        logo_path = str(logo_path_info)
-        if not os.path.isabs(logo_path):
-            logo_path = os.path.join(os.getcwd(), logo_path)
-        if os.path.exists(logo_path):
-            try:
-                from PIL import Image as PILImage  # type: ignore
-            except Exception:  # pragma: no cover - Pillow missing during runtime
-                PILImage = None  # type: ignore
-            if PILImage is not None:
+        logo_flowable = None
+        logo_path_info = company_info.get("logo_path") if company_info else None
+        if logo_path_info:
+            logo_path = str(logo_path_info)
+            if not os.path.isabs(logo_path):
+                logo_path = os.path.join(os.getcwd(), logo_path)
+            if os.path.exists(logo_path):
                 try:
-                    with PILImage.open(logo_path) as src_logo:  # type: ignore[union-attr]
-                        logo_img = src_logo.convert("RGBA")
-                        crop_box = _normalize_crop_box(
-                            company_info.get("logo_crop"),
-                            logo_img.width,
-                            logo_img.height,
-                        )
-                        if crop_box:
-                            logo_img = logo_img.crop(crop_box)
-                        if logo_img.width > 0 and logo_img.height > 0:
-                            buffer = io.BytesIO()
-                            logo_img.save(buffer, format="PNG")
-                            buffer.seek(0)
-                            aspect = (
-                                logo_img.width / logo_img.height
-                                if logo_img.height
-                                else 1.0
+                    from PIL import Image as PILImage  # type: ignore
+                except Exception:  # pragma: no cover - Pillow missing during runtime
+                    PILImage = None  # type: ignore
+                if PILImage is not None:
+                    try:
+                        with PILImage.open(logo_path) as src_logo:  # type: ignore[union-attr]
+                            logo_img = src_logo.convert("RGBA")
+                            crop_box = _normalize_crop_box(
+                                company_info.get("logo_crop"),
+                                logo_img.width,
+                                logo_img.height,
                             )
-                            max_width = 50 * mm
-                            max_height = 25 * mm
-                            width_pt = max_width
-                            height_pt = width_pt / aspect if aspect else max_height
-                            if height_pt > max_height:
-                                height_pt = max_height
-                                width_pt = height_pt * aspect
-                            logo_flowable = RLImage(
-                                buffer, width=width_pt, height=height_pt
-                            )
-                            logo_flowable.hAlign = "LEFT"
-                except Exception:
-                    logo_flowable = None
+                            if crop_box:
+                                logo_img = logo_img.crop(crop_box)
+                            if logo_img.width > 0 and logo_img.height > 0:
+                                buffer = io.BytesIO()
+                                logo_img.save(buffer, format="PNG")
+                                buffer.seek(0)
+                                aspect = (
+                                    logo_img.width / logo_img.height
+                                    if logo_img.height
+                                    else 1.0
+                                )
+                                max_width = 50 * mm
+                                max_height = 25 * mm
+                                width_pt = max_width
+                                height_pt = width_pt / aspect if aspect else max_height
+                                if height_pt > max_height:
+                                    height_pt = max_height
+                                    width_pt = height_pt * aspect
+                                logo_flowable = RLImage(
+                                    buffer, width=width_pt, height=height_pt
+                                )
+                                logo_flowable.hAlign = "LEFT"
+                    except Exception:
+                        logo_flowable = None
 
-    supp_lines: List[str] = []
-    if supplier is not None and not is_standaard_doc:
-        addr_parts = []
-        if supplier.adres_1:
-            addr_parts.append(supplier.adres_1)
-        if supplier.adres_2:
-            addr_parts.append(supplier.adres_2)
-        pc_gem = " ".join(x for x in [supplier.postcode, supplier.gemeente] if x)
-        if pc_gem:
-            addr_parts.append(pc_gem)
-        if supplier.land:
-            addr_parts.append(supplier.land)
-        full_addr = ", ".join(addr_parts)
+        supp_lines: List[str] = []
+        if supplier is not None and not is_standaard_doc:
+            addr_parts = []
+            if supplier.adres_1:
+                addr_parts.append(supplier.adres_1)
+            if supplier.adres_2:
+                addr_parts.append(supplier.adres_2)
+            pc_gem = " ".join(x for x in [supplier.postcode, supplier.gemeente] if x)
+            if pc_gem:
+                addr_parts.append(pc_gem)
+            if supplier.land:
+                addr_parts.append(supplier.land)
+            full_addr = ", ".join(addr_parts)
 
-        supp_lines = [f"<b>Besteld bij:</b> {supplier.supplier}"]
-        if full_addr:
-            supp_lines.append(full_addr)
-        supp_lines.append(f"BTW: {supplier.btw or ''}")
-        if supplier.contact_sales:
-            supp_lines.append(f"Contact sales: {supplier.contact_sales}")
-        if supplier.sales_email:
-            supp_lines.append(f"E-mail: {supplier.sales_email}")
-        if supplier.phone:
-            supp_lines.append(f"Tel: {supplier.phone}")
+            supp_lines = [f"<b>Besteld bij:</b> {supplier.supplier}"]
+            if full_addr:
+                supp_lines.append(full_addr)
+            supp_lines.append(f"BTW: {supplier.btw or ''}")
+            if supplier.contact_sales:
+                supp_lines.append(f"Contact sales: {supplier.contact_sales}")
+            if supplier.sales_email:
+                supp_lines.append(f"E-mail: {supplier.sales_email}")
+            if supplier.phone:
+                supp_lines.append(f"Tel: {supplier.phone}")
 
-    left_lines = list(company_lines)
-    if supp_lines:
-        left_lines.append("")
-        left_lines.extend(supp_lines)
-    left_paragraph = Paragraph("<br/>".join(left_lines), text_style)
-    left_elements: List[object] = []
-    if logo_flowable is not None:
-        left_elements.extend([logo_flowable, Spacer(0, 4)])
-    left_elements.append(left_paragraph)
-    if len(left_elements) == 1:
-        left_cell = left_elements[0]
-    else:
-        left_cell = KeepTogether(left_elements)
+        left_lines = list(company_lines)
+        if supp_lines:
+            left_lines.append("")
+            left_lines.extend(supp_lines)
+        left_paragraph = Paragraph("<br/>".join(left_lines), text_style)
+        left_elements: List[object] = []
+        if logo_flowable is not None:
+            left_elements.extend([logo_flowable, Spacer(0, 4)])
+        left_elements.append(left_paragraph)
+        if len(left_elements) == 1:
+            left_cell = left_elements[0]
+        else:
+            left_cell = KeepTogether(left_elements)
 
-    right_lines: List[str] = []
-    if delivery and not is_standaard_doc:
-        # Delivery address block with each piece of information on its own line
-        right_lines.append("<b>Leveradres:</b>")
-        right_lines.append(delivery.name)
-        if delivery.address:
-            right_lines.extend(delivery.address.splitlines())
-        if delivery.remarks:
-            right_lines.append(delivery.remarks)
-        if place_remark_in_delivery_block:
-            right_lines.append("<b>Opmerking:</b>")
-            remark_lines = order_remark_text.splitlines()
-            if not remark_lines:
-                remark_lines = [order_remark_text]
-            right_lines.extend(remark_lines)
-
-    story = []
-    title = (
-        f"{doc_type_text} {label_kind_clean}: {production}"
-        if production
-        else f"{doc_type_text}"
-    )
-    story.append(Paragraph(title, title_style))
-    if doc_lines:
-        story.append(Paragraph("<br/>".join(doc_lines), text_style))
-    story.append(Spacer(0, 6))
-    header_tbl = LongTable(
-        [
-            [
-                left_cell,
-                Paragraph("<br/>".join(right_lines), text_style),
-            ]
-        ],
-        colWidths=[(width - 2 * margin) / 2, (width - 2 * margin) / 2],
-    )
-    header_tbl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
-    story.append(header_tbl)
-    story.append(Spacer(0, 10))
-
-    # Headers and data
-    head = ["PartNumber", "Omschrijving", "Materiaal", "St.", "m²", "kg"]
-
-    def wrap_cell_html(val: str, small=False, align=None):
-        style = ParagraphStyle(
-            "cellsmall" if small else "cell",
-            fontName="Helvetica",
-            fontSize=8.5 if small else 9,
-            leading=10.5 if small else 11,
-            wordWrap="CJK",
+        right_lines: List[str] = []
+        include_right_block = not is_standaard_doc and (
+            delivery is not None or place_remark_in_delivery_block
         )
-        if align:
-            style.alignment = {"LEFT": 0, "CENTER": 1, "RIGHT": 2}.get(align.upper(), 0)
-        return Paragraph(str(val if (val is not None) else ""), style)
+        if include_right_block:
+            if delivery:
+                # Delivery address block with each piece of information on its own line
+                right_lines.append("<b>Leveradres:</b>")
+                right_lines.append(delivery.name)
+                if delivery.address:
+                    right_lines.extend(delivery.address.splitlines())
+                if delivery.remarks:
+                    right_lines.append(delivery.remarks)
+            if place_remark_in_delivery_block:
+                right_lines.append("<b>Opmerking:</b>")
+                remark_lines = order_remark_text.splitlines()
+                if not remark_lines:
+                    remark_lines = [order_remark_text]
+                right_lines.extend(remark_lines)
 
-    data = [head]
-    for it in items:
-        pn = _pn_wrap_25(it.get("PartNumber", ""))
-        desc = _to_str(it.get("Description", ""))
-        mat = _material_nowrap(it.get("Materiaal", ""))
-        qty = it.get("Aantal", "")
-        opp = _num_to_2dec(it.get("Oppervlakte", ""))
-        gew = _num_to_2dec(it.get("Gewicht", ""))
-        data.append(
-            [
-                wrap_cell_html(pn, small=False, align="LEFT"),
-                wrap_cell_html(desc, small=False, align="LEFT"),
-                wrap_cell_html(mat, small=True, align="RIGHT"),
-                wrap_cell_html(qty, small=True, align="RIGHT"),
-                wrap_cell_html(opp, small=True, align="RIGHT"),
-                wrap_cell_html(gew, small=True, align="RIGHT"),
-            ]
+        story = []
+        title = (
+            f"{doc_type_text} {label_kind_clean}: {production}"
+            if production
+            else f"{doc_type_text}"
         )
+        story.append(Paragraph(title, title_style))
+        if doc_lines:
+            story.append(Paragraph("<br/>".join(doc_lines), text_style))
+        story.append(Spacer(0, 6))
+        header_tbl = LongTable(
+            [
+                [
+                    left_cell,
+                    Paragraph("<br/>".join(right_lines), text_style),
+                ]
+            ],
+            colWidths=[(width - 2 * margin) / 2, (width - 2 * margin) / 2],
+        )
+        header_tbl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+        story.append(header_tbl)
+        story.append(Spacer(0, 10))
 
-    usable_w = width - 2 * margin
-    col_fracs = [0.22, 0.40, 0.14, 0.06, 0.09, 0.09]
-    desc_w = usable_w * col_fracs[1]
-    mat_w = usable_w * col_fracs[2]
-    try:
-        header_width = stringWidth("Materiaal", "Helvetica-Bold", 10) + 6
-        value_width = (
-            max(
-                stringWidth(
-                    _material_nowrap(it.get("Materiaal", "")), "Helvetica", 9
-                )
-                for it in items
+        # Headers and data
+        head = ["PartNumber", "Omschrijving", "Materiaal", "St.", "m²", "kg"]
+
+        def wrap_cell_html(val: str, small=False, align=None):
+            style = ParagraphStyle(
+                "cellsmall" if small else "cell",
+                fontName="Helvetica",
+                fontSize=8.5 if small else 9,
+                leading=10.5 if small else 11,
+                wordWrap="CJK",
             )
-            + 6
+            if align:
+                style.alignment = {"LEFT": 0, "CENTER": 1, "RIGHT": 2}.get(align.upper(), 0)
+            return Paragraph(str(val if (val is not None) else ""), style)
+
+        data = [head]
+        for it in items:
+            pn = _pn_wrap_25(it.get("PartNumber", ""))
+            desc = _to_str(it.get("Description", ""))
+            mat = _material_nowrap(it.get("Materiaal", ""))
+            qty = it.get("Aantal", "")
+            opp = _num_to_2dec(it.get("Oppervlakte", ""))
+            gew = _num_to_2dec(it.get("Gewicht", ""))
+            data.append(
+                [
+                    wrap_cell_html(pn, small=False, align="LEFT"),
+                    wrap_cell_html(desc, small=False, align="LEFT"),
+                    wrap_cell_html(mat, small=True, align="RIGHT"),
+                    wrap_cell_html(qty, small=True, align="RIGHT"),
+                    wrap_cell_html(opp, small=True, align="RIGHT"),
+                    wrap_cell_html(gew, small=True, align="RIGHT"),
+                ]
+            )
+
+        usable_w = width - 2 * margin
+        col_fracs = [0.22, 0.40, 0.14, 0.06, 0.09, 0.09]
+        desc_w = usable_w * col_fracs[1]
+        mat_w = usable_w * col_fracs[2]
+        try:
+            header_width = stringWidth("Materiaal", "Helvetica-Bold", 10) + 6
+            value_width = (
+                max(
+                    stringWidth(
+                        _material_nowrap(it.get("Materiaal", "")), "Helvetica", 9
+                    )
+                    for it in items
+                )
+                + 6
+            )
+            max_mat = max(header_width, value_width)
+            if max_mat < mat_w:
+                desc_w += mat_w - max_mat
+                mat_w = max_mat
+            elif max_mat > mat_w:
+                desc_w -= max_mat - mat_w
+                mat_w = max_mat
+            min_desc_w = 40 * mm
+            if desc_w < min_desc_w:
+                diff = min_desc_w - desc_w
+                desc_w = min_desc_w
+                mat_w = max(0, mat_w - diff)
+        except Exception:
+            pass
+        col_widths = [
+            usable_w * col_fracs[0],
+            desc_w,
+            mat_w,
+            usable_w * col_fracs[3],
+            usable_w * col_fracs[4],
+            usable_w * col_fracs[5],
+        ]
+
+        tbl = LongTable(data, colWidths=col_widths, repeatRows=1)
+        tbl.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(MIAMI_PINK)),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, 0), 10),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("ALIGN", (2, 0), (5, 0), "RIGHT"),
+                    ("ALIGN", (2, 1), (5, -1), "RIGHT"),
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+                ]
+            )
         )
-        max_mat = max(header_width, value_width)
-        if max_mat < mat_w:
-            desc_w += mat_w - max_mat
-            mat_w = max_mat
-        elif max_mat > mat_w:
-            desc_w -= max_mat - mat_w
-            mat_w = max_mat
-        min_desc_w = 40 * mm
-        if desc_w < min_desc_w:
-            diff = min_desc_w - desc_w
-            desc_w = min_desc_w
-            mat_w = max(0, mat_w - diff)
-    except Exception:
+        story.append(tbl)
+
+        if footer_note is None:
+            note = DEFAULT_FOOTER_NOTE
+        else:
+            note = _to_str(footer_note)
+        if note:
+            story.append(Spacer(0, 8))
+            story.append(Paragraph(note, small_style))
+
+        doc.build(story)
+        pdf_buffer.flush()
+        try:
+            os.fsync(pdf_buffer.fileno())
+        except (AttributeError, OSError):  # pragma: no cover - best effort flush
+            pass
+
+    # Ensure the PDF trailer is available before returning so downstream
+    # consumers (PyPDF2 in tests) can read it immediately.
+    for _ in range(5):
+        try:
+            with open(path, "rb") as check:
+                check.seek(0, os.SEEK_END)
+                file_size = check.tell()
+                if file_size >= 5:
+                    check.seek(-5, os.SEEK_END)
+                else:
+                    check.seek(0)
+                tail = check.read()
+                if tail.endswith(b"%%EOF"):
+                    break
+        except OSError:
+            pass
+        time.sleep(0.05)
+
+    try:
+        data = Path(path).read_bytes()
+        Path(path).write_bytes(data)
+    except OSError:
         pass
-    col_widths = [
-        usable_w * col_fracs[0],
-        desc_w,
-        mat_w,
-        usable_w * col_fracs[3],
-        usable_w * col_fracs[4],
-        usable_w * col_fracs[5],
-    ]
 
-    tbl = LongTable(data, colWidths=col_widths, repeatRows=1)
-    tbl.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(MIAMI_PINK)),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, 0), 10),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("ALIGN", (2, 0), (5, 0), "RIGHT"),
-                ("ALIGN", (2, 1), (5, -1), "RIGHT"),
-                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
-                ("LEFTPADDING", (0, 0), (-1, -1), 3),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-                ("TOPPADDING", (0, 0), (-1, -1), 2),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
-            ]
-        )
-    )
-    story.append(tbl)
-
-    if footer_note is None:
-        note = DEFAULT_FOOTER_NOTE
-    else:
-        note = _to_str(footer_note)
-    if note:
-        story.append(Spacer(0, 8))
-        story.append(Paragraph(note, small_style))
-
-    doc.build(story)
+    if PdfReader is not None:
+        for _ in range(5):
+            try:
+                PdfReader(path)
+                break
+            except Exception:
+                time.sleep(0.05)
 
 
 def generate_packlist_pdf(
@@ -842,12 +926,14 @@ def write_order_excel(
     doc_type_text = (_to_str(doc_type).strip() or "Bestelbon")
     doc_type_text_lower = doc_type_text.lower()
     doc_type_text_slug = re.sub(r"[^0-9a-z]+", "", doc_type_text_lower)
+    doc_type_text_tokens = _tokenize_doc_type(doc_type_text_lower)
     is_standaard_doc = doc_type_text_lower.startswith("standaard")
     order_remark_text = _to_str(order_remark) if order_remark is not None else ""
     order_remark_has_content = bool(order_remark_text.strip())
     place_remark_in_delivery_block = _should_place_remark_in_delivery_block(
         order_remark_has_content=order_remark_has_content,
         doc_type_text_slug=doc_type_text_slug,
+        doc_type_text_tokens=doc_type_text_tokens,
         is_standaard_doc=is_standaard_doc,
         delivery=delivery,
     )
@@ -914,15 +1000,18 @@ def write_order_excel(
             or delivery_has_content
             or place_remark_in_delivery_block
         )
-    if include_delivery_block and delivery:
-        header_lines.extend(
-            [
-                ("Leveradres", ""),
-                ("", delivery.name),
-                ("Adres", delivery.address or ""),
-                ("Opmerking", delivery.remarks or ""),
-            ]
-        )
+    elif place_remark_in_delivery_block and not is_standaard_doc:
+        include_delivery_block = True
+    if include_delivery_block:
+        if delivery:
+            header_lines.extend(
+                [
+                    ("Leveradres", ""),
+                    ("", delivery.name),
+                    ("Adres", delivery.address or ""),
+                    ("Opmerking", delivery.remarks or ""),
+                ]
+            )
         if place_remark_in_delivery_block and order_remark_has_content:
             header_lines.append(("Opmerking", order_remark_text))
         header_lines.append(("", ""))
