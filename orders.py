@@ -63,6 +63,8 @@ DEFAULT_FOOTER_NOTE = (
 
 STEP_EXTS = {".step", ".stp"}
 
+NO_SUPPLIER_PLACEHOLDER = "(geen)"
+
 
 _BOM_STATUS_COLUMNS: Tuple[str, ...] = ("Bestanden gevonden", "Status", "Link")
 _BOM_EXPORT_BASE_COLUMNS: Tuple[str, ...] = (
@@ -1036,7 +1038,8 @@ def pick_supplier_for_production(
         for s in sups:
             if s.supplier.lower() == default.lower():
                 return s
-    return sups[0] if sups else Supplier(supplier="")
+    # Geen eerder geselecteerde leverancier onthouden: vul de placeholder in.
+    return Supplier(supplier=NO_SUPPLIER_PLACEHOLDER)
 
 
 def pick_supplier_for_finish(
@@ -1061,7 +1064,7 @@ def pick_supplier_for_finish(
         for s in sups:
             if s.supplier.lower() == default.lower():
                 return s
-    return sups[0] if sups else Supplier(supplier="")
+    return Supplier(supplier=NO_SUPPLIER_PLACEHOLDER)
 
 
 def copy_per_production_and_orders(
@@ -1337,7 +1340,7 @@ def copy_per_production_and_orders(
             prod, db, override_map, suppliers_sorted=suppliers_sorted
         )
         chosen[make_production_selection_key(prod)] = supplier.supplier
-        if remember_defaults and supplier.supplier not in ("", "Onbekend"):
+        if remember_defaults and supplier.supplier not in ("", "Onbekend", NO_SUPPLIER_PLACEHOLDER):
             db.set_default(prod, supplier.supplier)
 
         items = []
@@ -1513,7 +1516,7 @@ def copy_per_production_and_orders(
                 finish_key, db, finish_override_map, suppliers_sorted=suppliers_sorted
             )
             chosen[make_finish_selection_key(finish_key)] = supplier.supplier
-            if remember_defaults and supplier.supplier not in ("", "Onbekend"):
+            if remember_defaults and supplier.supplier not in ("", "Onbekend", NO_SUPPLIER_PLACEHOLDER):
                 db.set_default_finish(finish_key, supplier.supplier)
 
             raw_doc_type = finish_doc_type_map.get(finish_key, "Bestelbon")
