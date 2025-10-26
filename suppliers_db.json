@@ -1487,14 +1487,13 @@
     }
   ],
   "defaults_by_production": {
-    "Assembly": "Productora",
-    "Sheetmetal": "AB-Matic (Hi-Motion)",
-    "Weld assembly": "AB-Matic (Hi-Motion)",
-    "Tube Laser": "AB-Matic (Hi-Motion)",
-    "Lasercutting": "AB-Matic (Hi-Motion)",
-    "_Onbekend": "AB-Matic (Hi-Motion)"
+    "Sheetmetal": "Borgh",
+    "Weld assembly": "Bacovo",
+    "Tube Laser": "Antwerp Gas Depot",
+    "Lasercutting": "Antwerp Gas Depot",
+    "Assembly": "Productora"
   },
   "defaults_by_finish": {
-    "Finish-Powder coating-De Lijn Geel": "AB-Matic (Hi-Motion)"
+    "Finish-Powder coating-De Lijn Geel": "Van Gils Coating - Beringen/Maasmechelen"
   }
 }
