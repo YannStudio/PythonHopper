@@ -1056,6 +1056,33 @@ def start_gui():
 
         LABEL_COLUMN_WIDTH = 30
 
+        @staticmethod
+        def _install_supplier_focus_behavior(combo: "ttk.Combobox") -> None:
+            """Selecteer automatisch alle tekst bij eerste focus of placeholder."""
+
+            def _handle_focus(event):
+                widget = event.widget
+                try:
+                    current = widget.get()
+                except tk.TclError:
+                    current = ""
+
+                first_focus = not getattr(widget, "_supplier_focus_seen", False)
+                placeholder = current.strip().lower() in {"(geen)", "geen"}
+
+                if first_focus or placeholder:
+                    def _select_all():
+                        try:
+                            widget.selection_range(0, "end")
+                        except tk.TclError:
+                            return
+
+                    widget.after_idle(_select_all)
+
+                widget._supplier_focus_seen = True
+
+            combo.bind("<FocusIn>", _handle_focus, add="+")
+
         def __init__(
             self,
             master,
@@ -1286,6 +1313,7 @@ def start_gui():
                 combo.bind(
                     "<FocusIn>", lambda _e, key=sel_key: self._on_focus_key(key)
                 )
+                self._install_supplier_focus_behavior(combo)
                 combo.bind(
                     "<KeyRelease>",
                     lambda ev, key=sel_key, c=combo: self._on_combo_type(ev, key, c),
