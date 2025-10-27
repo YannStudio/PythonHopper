@@ -1,8 +1,8 @@
 {
-  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Stuvex/00. Producten/05. Beursstanden/00. Beurstotem/cad/V1",
-  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Stuvex/00. Producten/05. Beursstanden/00. Beurstotem/export",
-  "project_number": "120223",
-  "project_name": "Bestelling 20250728",
+  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/00. Standaard producten/01. Deuren & poorten/01. Poorten/Design museum Gent/cad",
+  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/00. Standaard producten/01. Deuren & poorten/01. Poorten/Design museum Gent/export",
+  "project_number": "53",
+  "project_name": "Gent-add-ons",
   "file_extensions": [
     {
       "key": "pdf",
@@ -27,7 +27,7 @@
       "patterns": [
         ".dxf"
       ],
-      "enabled": true
+      "enabled": false
     },
     {
       "key": "dwg",
@@ -43,7 +43,7 @@
       "patterns": [
         ".html"
       ],
-      "enabled": true
+      "enabled": false
     }
   ],
   "zip_per_production": true,
