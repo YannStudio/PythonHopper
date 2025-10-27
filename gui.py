@@ -2673,7 +2673,7 @@ def start_gui():
             opticutter_table_container = tk.Frame(self.opticutter_frame)
             opticutter_table_container.pack(fill="both", expand=True)
 
-            opticutter_columns = ("Profile", "Profile length", "QTY.")
+            opticutter_columns = ("PartNumber", "Profile", "Profile length", "QTY.")
             self.opticutter_tree = ttk.Treeview(
                 opticutter_table_container,
                 columns=opticutter_columns,
@@ -3318,7 +3318,7 @@ def start_gui():
                     info_var.set("BOM is leeg. Geen profielen om te tonen.")
                 return
 
-            required_columns = ["Profile", "Length profile", "Aantal"]
+            required_columns = ["PartNumber", "Profile", "Length profile", "Aantal"]
             missing_columns = [col for col in required_columns if col not in df.columns]
             if missing_columns:
                 if info_var is not None:
@@ -3326,6 +3326,9 @@ def start_gui():
                 return
 
             profiles_df = df.loc[:, required_columns].copy()
+            profiles_df["PartNumber"] = (
+                profiles_df["PartNumber"].fillna("").astype(str).str.strip()
+            )
             profiles_df["Profile"] = (
                 profiles_df["Profile"].fillna("").astype(str).str.strip()
             )
@@ -3339,7 +3342,8 @@ def start_gui():
             )
 
             filtered = profiles_df[
-                (profiles_df["Profile"] != "")
+                (profiles_df["PartNumber"] != "")
+                | (profiles_df["Profile"] != "")
                 | (profiles_df["Length profile"] != "")
             ]
             if filtered.empty:
@@ -3348,9 +3352,11 @@ def start_gui():
                 return
 
             aggregated = (
-                filtered.groupby(["Profile", "Length profile"], as_index=False)["Aantal"]
+                filtered.groupby(
+                    ["PartNumber", "Profile", "Length profile"], as_index=False
+                )["Aantal"]
                 .sum()
-                .sort_values(by=["Profile", "Length profile"])
+                .sort_values(by=["PartNumber", "Profile", "Length profile"])
             )
 
             total_qty = int(aggregated["Aantal"].sum()) if not aggregated.empty else 0
@@ -3359,7 +3365,12 @@ def start_gui():
                 tree.insert(
                     "",
                     "end",
-                    values=(row["Profile"], row["Length profile"], qty),
+                    values=(
+                        row["PartNumber"],
+                        row["Profile"],
+                        row["Length profile"],
+                        qty,
+                    ),
                 )
 
             _autosize_tree_columns(tree)
