@@ -1284,16 +1284,26 @@ def start_gui():
                 ("Leveradres", 50, None),
             ]
 
+            self._header_column_frames: List[tk.Frame] = []
+            self._header_labels: List[tk.Label] = []
+            self._header_aligned = False
+            self._header_alignment_pending = False
+
             for text, width, font in header_columns:
                 label_kwargs = dict(header_label_kwargs)
                 if font is not None:
                     label_kwargs["font"] = font
-                tk.Label(
-                    header_row,
+                column_frame = tk.Frame(header_row, background=left.cget("bg"))
+                column_frame.pack(side="left", padx=(0, 6))
+                label = tk.Label(
+                    column_frame,
                     text=text,
                     width=width,
                     **label_kwargs,
-                ).pack(side="left", padx=(0, 6), anchor="w")
+                )
+                label.pack(fill="x", anchor="w")
+                self._header_column_frames.append(column_frame)
+                self._header_labels.append(label)
 
             self.finish_label_by_key: Dict[str, str] = {
                 entry.get("key", ""): _to_str(entry.get("label")) or _to_str(entry.get("key"))
@@ -1306,12 +1316,13 @@ def start_gui():
             def add_row(display_text: str, sel_key: str, metadata: Dict[str, str]):
                 row = tk.Frame(left)
                 row.pack(fill="x", pady=3)
-                tk.Label(
+                row_label = tk.Label(
                     row,
                     text=display_text,
                     width=self.LABEL_COLUMN_WIDTH,
                     anchor="w",
-                ).pack(side="left", padx=(0, 6))
+                )
+                row_label.pack(side="left", padx=(0, 6))
                 var = tk.StringVar()
                 self.sel_vars[sel_key] = var
                 combo = ttk.Combobox(row, textvariable=var, state="normal", width=50)
@@ -1343,9 +1354,8 @@ def start_gui():
 
                 doc_num_var = tk.StringVar()
                 self.doc_num_vars[sel_key] = doc_num_var
-                tk.Entry(row, textvariable=doc_num_var, width=12).pack(
-                    side="left", padx=(0, 6)
-                )
+                doc_entry = tk.Entry(row, textvariable=doc_num_var, width=12)
+                doc_entry.pack(side="left", padx=(0, 6))
 
                 remark_var = tk.StringVar()
                 self.remark_vars[sel_key] = remark_var
@@ -1369,6 +1379,17 @@ def start_gui():
                 self.rows.append((sel_key, combo))
                 self.combo_by_key[sel_key] = combo
                 self.row_meta[sel_key] = metadata
+
+                self._schedule_header_alignment(
+                    {
+                        "label": row_label,
+                        "supplier_combo": combo,
+                        "doc_combo": doc_combo,
+                        "doc_entry": doc_entry,
+                        "remark_entry": remark_entry,
+                        "delivery_combo": dcombo,
+                    }
+                )
 
             for prod in productions:
                 key = make_production_selection_key(prod)
@@ -1448,6 +1469,49 @@ def start_gui():
             # Init
             self._refresh_options(initial=True)
             self._update_preview_from_any_combo()
+
+        def _schedule_header_alignment(self, row_widgets: Dict[str, tk.Misc]) -> None:
+            if not getattr(self, "_header_column_frames", None):
+                return
+            if self._header_aligned or self._header_alignment_pending:
+                return
+
+            def _do_align() -> None:
+                self._align_header_columns(row_widgets)
+
+            self._header_alignment_pending = True
+            self.after_idle(_do_align)
+
+        def _align_header_columns(self, row_widgets: Dict[str, tk.Misc]) -> None:
+            try:
+                column_widgets = [
+                    row_widgets["label"],
+                    row_widgets["supplier_combo"],
+                    row_widgets["doc_combo"],
+                    row_widgets["doc_entry"],
+                    row_widgets["remark_entry"],
+                    row_widgets["delivery_combo"],
+                ]
+            except KeyError:
+                self._header_alignment_pending = False
+                return
+
+            self.update_idletasks()
+
+            for frame, label, widget in zip(
+                self._header_column_frames,
+                self._header_labels,
+                column_widgets,
+            ):
+                frame.pack_propagate(False)
+                width = widget.winfo_width() or widget.winfo_reqwidth()
+                height = label.winfo_reqheight() or widget.winfo_reqheight()
+                frame.configure(width=width, height=height)
+                label.configure(anchor="w", width=0)
+                label.pack_configure(fill="x")
+
+            self._header_aligned = True
+            self._header_alignment_pending = False
 
         def _clear_saved_suppliers(self) -> None:
             self.db.defaults_by_production.clear()
