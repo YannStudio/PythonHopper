@@ -201,6 +201,21 @@ def start_gui():
 
         return int(round(amount))
 
+    def _bold_digits(text: str) -> str:
+        bold_map = {
+            "0": "𝟬",
+            "1": "𝟭",
+            "2": "𝟮",
+            "3": "𝟯",
+            "4": "𝟰",
+            "5": "𝟱",
+            "6": "𝟲",
+            "7": "𝟳",
+            "8": "𝟴",
+            "9": "𝟵",
+        }
+        return "".join(bold_map.get(ch, ch) for ch in str(text))
+
     @dataclass
     class StockScenarioResult:
         bars: int
@@ -2837,7 +2852,7 @@ def start_gui():
             opticutter_header = tk.Frame(self.opticutter_frame)
             opticutter_header.pack(fill="x", pady=(0, 8))
 
-            tk.Label(
+            header_text = tk.Label(
                 opticutter_header,
                 text=(
                     "Gebruik deze zaagoptimalisatie om lineaire materialen zoals "
@@ -2848,27 +2863,49 @@ def start_gui():
                 ),
                 justify="left",
                 anchor="w",
-                wraplength=620,
-            ).pack(fill="x")
+                wraplength=520,
+                font=tkfont.nametofont("TkDefaultFont"),
+            )
+            header_text.pack(side="left", fill="both", expand=True, padx=(0, 12))
 
-            kerf_frame = tk.Frame(opticutter_header)
-            kerf_frame.pack(anchor="w", pady=(8, 0))
+            controls_frame = tk.Frame(opticutter_header)
+            controls_frame.pack(side="right", anchor="ne")
 
-            tk.Label(kerf_frame, text="Zaagbreedte (mm):").pack(side="left")
             self.opticutter_kerf_var = tk.StringVar(
                 master=self.opticutter_frame,
                 value=f"{DEFAULT_KERF_MM:g}",
             )
+            kerf_frame = tk.Frame(controls_frame)
+            kerf_frame.pack(anchor="e")
+            tk.Label(kerf_frame, text="Zaagbreedte (mm):").pack(side="left", padx=(0, 6))
             kerf_entry = ttk.Entry(
                 kerf_frame,
                 textvariable=self.opticutter_kerf_var,
                 width=8,
                 justify="right",
             )
-            kerf_entry.pack(side="left", padx=(4, 0))
-            self._opticutter_kerf_after_id: Optional[str] = None
+            kerf_entry.pack(side="right")
+
+            self.opticutter_custom_stock_var = tk.StringVar(master=self.opticutter_frame)
+            custom_frame = tk.Frame(controls_frame)
+            custom_frame.pack(anchor="e", pady=(6, 0))
+            tk.Label(custom_frame, text="Custom stock lengte:").pack(
+                side="left", padx=(0, 6)
+            )
+            custom_entry = ttk.Entry(
+                custom_frame,
+                textvariable=self.opticutter_custom_stock_var,
+                width=12,
+                justify="right",
+            )
+            custom_entry.pack(side="right")
+
+            self._opticutter_refresh_after_id: Optional[str] = None
             self.opticutter_kerf_var.trace_add(
                 "write", self._on_opticutter_kerf_change
+            )
+            self.opticutter_custom_stock_var.trace_add(
+                "write", self._on_opticutter_custom_stock_change
             )
 
             self.opticutter_info_var = tk.StringVar(
@@ -2880,7 +2917,8 @@ def start_gui():
                 textvariable=self.opticutter_info_var,
                 anchor="w",
                 justify="left",
-            ).pack(fill="x", pady=(0, 8))
+                font=tkfont.nametofont("TkDefaultFont"),
+            ).pack(fill="x", pady=(0, 12))
 
             opticutter_table_container = tk.Frame(self.opticutter_frame)
             opticutter_table_container.pack(fill="both", expand=True, pady=(0, 8))
@@ -2890,7 +2928,13 @@ def start_gui():
                 side="left", fill="both", expand=True, padx=(0, 12)
             )
 
-            opticutter_columns = ("PartNumber", "Profile", "Profile length", "QTY.")
+            opticutter_columns = (
+                "PartNumber",
+                "Profile",
+                "Material",
+                "Profile length",
+                "QTY.",
+            )
             self.opticutter_tree = ttk.Treeview(
                 opticutter_left_frame,
                 columns=opticutter_columns,
@@ -2900,11 +2944,16 @@ def start_gui():
             for col in opticutter_columns:
                 anchor = "center" if col == "QTY." else "w"
                 self.opticutter_tree.heading(col, text=col, anchor=anchor)
+                minwidth = 40
+                if col == "Material":
+                    minwidth = 120
+                elif col == "Profile length":
+                    minwidth = 110
                 self.opticutter_tree.column(
                     col,
                     anchor=anchor,
                     stretch=False,
-                    minwidth=40,
+                    minwidth=minwidth,
                 )
 
             opticutter_scroll = ttk.Scrollbar(
@@ -2923,14 +2972,18 @@ def start_gui():
 
             summary_columns = (
                 "Profile",
+                "Material",
                 "6m bars",
                 "6m waste",
-                "6m fallout",
                 "6m cuts",
+                "Spacer1",
                 "12m bars",
                 "12m waste",
-                "12m fallout",
                 "12m cuts",
+                "Spacer2",
+                "Custom bars",
+                "Custom waste",
+                "Custom cuts",
             )
             self.opticutter_profile_summary_tree = ttk.Treeview(
                 opticutter_summary_frame,
@@ -2940,17 +2993,38 @@ def start_gui():
                 height=12,
             )
             for col in summary_columns:
-                anchor = "center" if col != "Profile" else "w"
+                if col in {"Spacer1", "Spacer2"}:
+                    self.opticutter_profile_summary_tree.heading(col, text="")
+                    self.opticutter_profile_summary_tree.column(
+                        col,
+                        anchor="center",
+                        stretch=False,
+                        width=16,
+                        minwidth=12,
+                    )
+                    continue
+
+                anchor = "center" if col not in {"Profile", "Material"} else "w"
                 minwidth = 100 if "waste" in col else 90
                 if col == "Profile":
-                    minwidth = 160
-                self.opticutter_profile_summary_tree.heading(col, text=col, anchor=anchor)
+                    minwidth = 170
+                if col == "Material":
+                    minwidth = 140
+                heading_text = col
+                if col.endswith("bars"):
+                    heading_text = col.replace(" bars", "\nstaven")
+                elif col.endswith("waste"):
+                    heading_text = col.replace(" waste", "\nafval")
+                elif col.endswith("cuts"):
+                    heading_text = col.replace(" cuts", "\nzaagsneden")
+                self.opticutter_profile_summary_tree.heading(
+                    col, text=heading_text, anchor=anchor
+                )
                 self.opticutter_profile_summary_tree.column(
                     col,
                     anchor=anchor,
                     stretch=False,
                     minwidth=minwidth,
-                    width=minwidth,
                 )
 
             opticutter_summary_scroll = ttk.Scrollbar(
@@ -3569,14 +3643,20 @@ def start_gui():
                 f"Custom BOM wijzigingen toegepast ({len(normalized)} rijen)."
             )
 
-        def _on_opticutter_kerf_change(self, *_args) -> None:
-            after_id = getattr(self, "_opticutter_kerf_after_id", None)
+        def _schedule_opticutter_refresh(self) -> None:
+            after_id = getattr(self, "_opticutter_refresh_after_id", None)
             if after_id is not None:
                 try:
                     self.after_cancel(after_id)
                 except tk.TclError:
                     pass
-            self._opticutter_kerf_after_id = self.after(200, self._refresh_opticutter_table)
+            self._opticutter_refresh_after_id = self.after(200, self._refresh_opticutter_table)
+
+        def _on_opticutter_kerf_change(self, *_args) -> None:
+            self._schedule_opticutter_refresh()
+
+        def _on_opticutter_custom_stock_change(self, *_args) -> None:
+            self._schedule_opticutter_refresh()
 
         def _get_opticutter_kerf_mm(self) -> float:
             var = getattr(self, "opticutter_kerf_var", None)
@@ -3594,14 +3674,29 @@ def start_gui():
                 return DEFAULT_KERF_MM
             return max(0.0, value)
 
+        def _get_opticutter_custom_stock_mm(self) -> Optional[int]:
+            var = getattr(self, "opticutter_custom_stock_var", None)
+            if var is None:
+                return None
+            try:
+                raw_value = str(var.get()).strip()
+            except tk.TclError:
+                return None
+            if not raw_value:
+                return None
+            parsed = _parse_length_to_mm(raw_value)
+            if parsed is None or parsed <= 0:
+                return None
+            return int(parsed)
+
         def _refresh_opticutter_table(self) -> None:
-            after_id = getattr(self, "_opticutter_kerf_after_id", None)
+            after_id = getattr(self, "_opticutter_refresh_after_id", None)
             if after_id is not None:
                 try:
                     self.after_cancel(after_id)
                 except tk.TclError:
                     pass
-                self._opticutter_kerf_after_id = None
+                self._opticutter_refresh_after_id = None
             tree = getattr(self, "opticutter_tree", None)
             summary_tree = getattr(self, "opticutter_profile_summary_tree", None)
             if tree is None and summary_tree is None:
@@ -3644,6 +3739,12 @@ def start_gui():
                 )
             else:
                 profiles_df["Description"] = ""
+            if "Material" in df.columns:
+                profiles_df["Material"] = (
+                    df["Material"].fillna("").astype(str).str.strip()
+                )
+            else:
+                profiles_df["Material"] = ""
             profiles_df["PartNumber"] = (
                 profiles_df["PartNumber"].fillna("").astype(str).str.strip()
             )
@@ -3669,23 +3770,26 @@ def start_gui():
                 _parse_length_to_mm
             )
 
+            group_columns = ["PartNumber", "Profile", "Length profile", "Material"]
             aggregated = (
-                filtered.groupby(
-                    ["PartNumber", "Profile", "Length profile"], as_index=False
-                )["Aantal"]
+                filtered.groupby(group_columns, as_index=False)["Aantal"]
                 .sum()
-                .sort_values(by=["PartNumber", "Profile", "Length profile"])
+                .sort_values(by=group_columns)
             )
 
-            pieces_by_profile: Dict[str, List[int]] = defaultdict(list)
-            profile_blockers: Dict[str, Dict[str, set[str]]] = defaultdict(
-                lambda: {"6m": set(), "12m": set()}
+            pieces_by_profile: Dict[tuple[str, str], List[int]] = defaultdict(list)
+            profile_blockers: Dict[tuple[str, str], Dict[str, set[str]]] = defaultdict(
+                lambda: {"6m": set(), "12m": set(), "custom": set()}
             )
+            profile_piece_details: Dict[
+                tuple[str, str], List[tuple[int, str]]
+            ] = defaultdict(list)
             unparsed_lengths: List[str] = []
             oversized_profiles: set[str] = set()
             oversized_profiles_12m: set[str] = set()
             for _, row in filtered.iterrows():
                 profile_name = row["Profile"]
+                material_name = row.get("Material", "")
                 length_mm = row.get("Length profile mm")
                 qty = int(row.get("Aantal", 0))
                 if qty <= 0:
@@ -3699,7 +3803,8 @@ def start_gui():
                     oversized_profiles.add(profile_name)
                 if length_mm > LONG_STOCK_LENGTH_MM:
                     oversized_profiles_12m.add(profile_name)
-                pieces_by_profile[profile_name].extend([length_mm] * qty)
+                key = (profile_name, material_name)
+                pieces_by_profile[key].extend([length_mm] * qty)
                 description = row.get("Description", "")
                 part_number = row.get("PartNumber", "")
                 length_label = row.get("Length profile", "") or f"{length_mm} mm"
@@ -3711,9 +3816,10 @@ def start_gui():
                         part_label = description
                 blocker_text = f"{part_label} ({length_label})"
                 if length_mm > STOCK_LENGTH_MM:
-                    profile_blockers[profile_name]["6m"].add(blocker_text)
+                    profile_blockers[key]["6m"].add(blocker_text)
                 if length_mm > LONG_STOCK_LENGTH_MM:
-                    profile_blockers[profile_name]["12m"].add(blocker_text)
+                    profile_blockers[key]["12m"].add(blocker_text)
+                profile_piece_details[key].append((length_mm, blocker_text))
 
             total_qty = int(aggregated["Aantal"].sum()) if not aggregated.empty else 0
             if tree is not None:
@@ -3725,6 +3831,7 @@ def start_gui():
                         values=(
                             row["PartNumber"],
                             row["Profile"],
+                            row.get("Material", ""),
                             row["Length profile"],
                             qty,
                         ),
@@ -3732,52 +3839,96 @@ def start_gui():
                 _autosize_tree_columns(tree)
 
             kerf_mm = self._get_opticutter_kerf_mm()
+            custom_stock_mm = self._get_opticutter_custom_stock_mm()
+
+            if custom_stock_mm is not None:
+                for key, details in profile_piece_details.items():
+                    exceeding = {
+                        text for length_mm, text in details if length_mm > custom_stock_mm
+                    }
+                    if exceeding:
+                        profile_blockers[key]["custom"].update(exceeding)
 
             tooltip_manager = getattr(self, "opticutter_summary_tooltips", None)
             column_map = getattr(self, "opticutter_summary_column_map", {})
             if tooltip_manager is not None:
                 tooltip_manager.clear()
 
+            if summary_tree is not None:
+                if custom_stock_mm is not None:
+                    summary_tree.heading(
+                        "Custom bars",
+                        text=f"Custom ({custom_stock_mm} mm)\nstaven",
+                    )
+                    summary_tree.heading(
+                        "Custom waste",
+                        text=f"Custom ({custom_stock_mm} mm)\nafval",
+                    )
+                    summary_tree.heading(
+                        "Custom cuts",
+                        text=f"Custom ({custom_stock_mm} mm)\nzaagsneden",
+                    )
+                else:
+                    summary_tree.heading("Custom bars", text="Custom\nstaven")
+                    summary_tree.heading("Custom waste", text="Custom\nafval")
+                    summary_tree.heading("Custom cuts", text="Custom\nzaagsneden")
+
             if summary_tree is not None and pieces_by_profile:
-                for profile_name in sorted(pieces_by_profile):
-                    lengths = pieces_by_profile[profile_name]
+                for profile_name, material_name in sorted(
+                    pieces_by_profile.keys(), key=lambda item: (item[0], item[1])
+                ):
+                    lengths = pieces_by_profile[(profile_name, material_name)]
                     scenario_6m = _calculate_stock_scenario(
                         lengths, STOCK_LENGTH_MM, kerf_mm
                     )
                     scenario_12m = _calculate_stock_scenario(
                         lengths, LONG_STOCK_LENGTH_MM, kerf_mm
                     )
+                    scenario_custom: Optional[StockScenarioResult] = None
+                    if custom_stock_mm is not None:
+                        scenario_custom = _calculate_stock_scenario(
+                            lengths, custom_stock_mm, kerf_mm
+                        )
 
                     def _format_bars(result: StockScenarioResult) -> str:
-                        return "❌" if result.dropped_pieces else str(result.bars)
+                        if result.dropped_pieces:
+                            return "❌"
+                        return _bold_digits(str(result.bars))
 
                     def _format_waste(result: StockScenarioResult) -> str:
                         if result.dropped_pieces or result.bars == 0:
                             return "—"
                         return f"{result.waste_pct:.1f}%"
 
-                    def _format_fallout(result: StockScenarioResult) -> str:
-                        return str(result.dropped_pieces)
-
                     def _format_cuts(result: StockScenarioResult) -> str:
                         if result.dropped_pieces or result.bars == 0:
                             return "—"
-                        return str(result.cuts)
+                        return _bold_digits(str(result.cuts))
 
                     values = (
                         profile_name,
+                        material_name,
                         _format_bars(scenario_6m),
                         _format_waste(scenario_6m),
-                        _format_fallout(scenario_6m),
                         _format_cuts(scenario_6m),
+                        "",
                         _format_bars(scenario_12m),
                         _format_waste(scenario_12m),
-                        _format_fallout(scenario_12m),
                         _format_cuts(scenario_12m),
+                        "",
+                        _format_bars(scenario_custom)
+                        if scenario_custom is not None
+                        else "—",
+                        _format_waste(scenario_custom)
+                        if scenario_custom is not None
+                        else "—",
+                        _format_cuts(scenario_custom)
+                        if scenario_custom is not None
+                        else "—",
                     )
                     item_id = summary_tree.insert("", "end", values=values)
 
-                    blockers = profile_blockers.get(profile_name, {})
+                    blockers = profile_blockers[(profile_name, material_name)]
 
                     def _join_blockers(blocker_values: set[str], stock_length: int) -> str:
                         if not blocker_values:
@@ -3796,7 +3947,9 @@ def start_gui():
                             tooltip_manager.set(
                                 item_id,
                                 column_map.get("6m bars", "#2"),
-                                _join_blockers(blockers.get("6m", set()), STOCK_LENGTH_MM),
+                                _join_blockers(
+                                    blockers.get("6m", set()), STOCK_LENGTH_MM
+                                ),
                             )
                             tooltip_manager.set(
                                 item_id,
@@ -3860,6 +4013,46 @@ def start_gui():
                                 f"Geschat aantal zaagsneden: {scenario_12m.cuts}",
                             )
 
+                        if scenario_custom is not None:
+                            column_bars = column_map.get("Custom bars", "#11")
+                            column_waste = column_map.get("Custom waste", "#12")
+                            column_cuts = column_map.get("Custom cuts", "#13")
+                            if scenario_custom.dropped_pieces:
+                                tooltip_manager.set(
+                                    item_id,
+                                    column_bars,
+                                    _join_blockers(
+                                        blockers.get("custom", set()),
+                                        custom_stock_mm,
+                                    ),
+                                )
+                                tooltip_manager.set(
+                                    item_id,
+                                    column_waste,
+                                    "Afval niet beschikbaar door te lange stukken.",
+                                )
+                                tooltip_manager.set(
+                                    item_id,
+                                    column_cuts,
+                                    "Zaagplan niet beschikbaar door te lange stukken.",
+                                )
+                            else:
+                                tooltip_manager.set(
+                                    item_id,
+                                    column_waste,
+                                    f"Totale restlengte: {scenario_custom.waste_mm:.0f} mm",
+                                )
+                                tooltip_manager.set(
+                                    item_id,
+                                    column_bars,
+                                    f"{scenario_custom.bars} staaf/staven nodig",
+                                )
+                                tooltip_manager.set(
+                                    item_id,
+                                    column_cuts,
+                                    f"Geschat aantal zaagsneden: {scenario_custom.cuts}",
+                                )
+
                 _autosize_tree_columns(summary_tree)
 
             if info_var is not None:
@@ -3876,6 +4069,10 @@ def start_gui():
                     )
 
                 base_message = f"{base_message} | Zaagbreedte: {kerf_mm:g} mm"
+                if custom_stock_mm is not None:
+                    base_message = (
+                        f"{base_message} | Custom staaflengte: {custom_stock_mm} mm"
+                    )
 
                 warnings: List[str] = []
                 if oversized_profiles:
