@@ -1270,8 +1270,8 @@ def start_gui():
             header_row = tk.Frame(left)
             header_row.pack(fill="x", pady=(8, 3))
             header_label_kwargs = dict(
-                anchor="w",
-                justify="left",
+                anchor=tk.W,
+                justify=tk.LEFT,
                 background=left.cget("bg"),
             )
             header_font = ("TkDefaultFont", 10, "bold")
@@ -1293,7 +1293,7 @@ def start_gui():
                     text=text,
                     width=width,
                     **label_kwargs,
-                ).pack(side="left", padx=(0, 6), fill="x")
+                ).pack(side="left", padx=(0, 6), anchor="w")
 
             self.finish_label_by_key: Dict[str, str] = {
                 entry.get("key", ""): _to_str(entry.get("label")) or _to_str(entry.get("key"))
