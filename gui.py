@@ -2637,6 +2637,41 @@ def start_gui():
             self.opticutter_frame = tk.Frame(self.nb)
             self.opticutter_frame.configure(padx=12, pady=12)
             self.nb.add(self.opticutter_frame, text="Opticutter")
+
+            self.opticutter_info_var = tk.StringVar(
+                master=self.opticutter_frame,
+                value="Laad een BOM om profielen te bekijken.",
+            )
+            tk.Label(
+                self.opticutter_frame,
+                textvariable=self.opticutter_info_var,
+                anchor="w",
+            ).pack(fill="x", pady=(0, 8))
+
+            opticutter_table_container = tk.Frame(self.opticutter_frame)
+            opticutter_table_container.pack(fill="both", expand=True)
+
+            opticutter_columns = ("Profile", "Profile length", "QTY.")
+            self.opticutter_tree = ttk.Treeview(
+                opticutter_table_container,
+                columns=opticutter_columns,
+                show="headings",
+                selectmode="browse",
+            )
+            for col in opticutter_columns:
+                anchor = "center" if col == "QTY." else "w"
+                width = 120 if col == "QTY." else 240
+                self.opticutter_tree.heading(col, text=col, anchor=anchor)
+                self.opticutter_tree.column(col, anchor=anchor, width=width)
+
+            opticutter_scroll = ttk.Scrollbar(
+                opticutter_table_container,
+                orient="vertical",
+                command=self.opticutter_tree.yview,
+            )
+            self.opticutter_tree.configure(yscrollcommand=opticutter_scroll.set)
+            self.opticutter_tree.pack(side="left", fill="both", expand=True)
+            opticutter_scroll.pack(side="left", fill="y")
             self.main_frame = main
             self.clients_frame = ClientsManagerFrame(
                 self.nb, self.client_db, on_change=self._on_db_change
@@ -3234,10 +3269,83 @@ def start_gui():
                 f"Custom BOM wijzigingen toegepast ({len(normalized)} rijen)."
             )
 
+        def _refresh_opticutter_table(self) -> None:
+            tree = getattr(self, "opticutter_tree", None)
+            if tree is None:
+                return
+
+            for item in tree.get_children():
+                tree.delete(item)
+
+            info_var = getattr(self, "opticutter_info_var", None)
+            default_message = "Laad een BOM om profielen te bekijken."
+            if info_var is not None:
+                info_var.set(default_message)
+
+            df = self.bom_df
+            if df is None:
+                return
+            if df.empty:
+                if info_var is not None:
+                    info_var.set("BOM is leeg. Geen profielen om te tonen.")
+                return
+
+            required_columns = ["Profile", "Length profile", "Aantal"]
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                if info_var is not None:
+                    info_var.set("BOM mist profielgegevens.")
+                return
+
+            profiles_df = df.loc[:, required_columns].copy()
+            profiles_df["Profile"] = (
+                profiles_df["Profile"].fillna("").astype(str).str.strip()
+            )
+            profiles_df["Length profile"] = (
+                profiles_df["Length profile"].fillna("").astype(str).str.strip()
+            )
+            profiles_df["Aantal"] = (
+                pd.to_numeric(profiles_df["Aantal"], errors="coerce")
+                .fillna(0)
+                .astype(int)
+            )
+
+            filtered = profiles_df[
+                (profiles_df["Profile"] != "")
+                | (profiles_df["Length profile"] != "")
+            ]
+            if filtered.empty:
+                if info_var is not None:
+                    info_var.set("Geen profielen gevonden in de BOM.")
+                return
+
+            aggregated = (
+                filtered.groupby(["Profile", "Length profile"], as_index=False)["Aantal"]
+                .sum()
+                .sort_values(by=["Profile", "Length profile"])
+            )
+
+            total_qty = int(aggregated["Aantal"].sum()) if not aggregated.empty else 0
+            for _, row in aggregated.iterrows():
+                qty = int(row["Aantal"]) if pd.notna(row["Aantal"]) else 0
+                tree.insert(
+                    "",
+                    "end",
+                    values=(row["Profile"], row["Length profile"], qty),
+                )
+
+            if info_var is not None:
+                profile_count = len(aggregated.index)
+                profile_label = "profiel" if profile_count == 1 else "profielen"
+                info_var.set(
+                    f"{profile_count} {profile_label}, totaal aantal: {total_qty}"
+                )
+
         def _refresh_tree(self):
             self.item_links.clear()
             for it in self.tree.get_children():
                 self.tree.delete(it)
+            self._refresh_opticutter_table()
             df = self.bom_df
             if df is None:
                 self.status_var.set("Geen BOM geladen.")
@@ -3383,6 +3491,8 @@ def start_gui():
                     self.tree.focus("")
                 except tk.TclError:
                     pass
+
+            self._refresh_opticutter_table()
 
 
             return "break" if event is not None else None
