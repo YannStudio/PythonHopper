@@ -2371,6 +2371,7 @@ def start_gui():
             win.wait_window()
 
     class App(tk.Tk):
+        _CUSTOM_ROW_ATTR = "_custom_row_flags"
         def __init__(self):
             super().__init__()
             import sys
@@ -3034,6 +3035,20 @@ def start_gui():
                     selected.extend(ext.patterns)
             return selected or None
 
+        def _store_custom_row_flags(
+            self, df: "pd.DataFrame", flags: List[bool]
+        ) -> None:
+            normalized = list(flags)
+            if len(normalized) != len(df.index):
+                normalized = [False] * len(df.index)
+            df.attrs[self._CUSTOM_ROW_ATTR] = normalized
+
+        def _get_custom_row_flags(self, df: "pd.DataFrame") -> List[bool]:
+            flags = list(df.attrs.get(self._CUSTOM_ROW_ATTR, []))
+            if len(flags) != len(df.index):
+                flags = [False] * len(df.index)
+            return flags
+
         def _ensure_bom_loaded(self) -> bool:
             from tkinter import messagebox
 
@@ -3043,7 +3058,7 @@ def start_gui():
                 return False
             return True
 
-        def _load_bom_from_path(self, path: str) -> None:
+        def _load_bom_from_path(self, path: str, *, mark_as_custom: bool = False) -> None:
             df = load_bom(path)
             if "Bestanden gevonden" not in df.columns:
                 df["Bestanden gevonden"] = ""
@@ -3051,6 +3066,7 @@ def start_gui():
                 df["Status"] = ""
             if "Link" not in df.columns:
                 df["Link"] = ""
+            self._store_custom_row_flags(df, [mark_as_custom] * len(df.index))
             self.bom_df = df
             self.bom_source_path = os.path.abspath(path)
             self._refresh_tree()
@@ -3082,7 +3098,7 @@ def start_gui():
             from tkinter import messagebox
 
             try:
-                self._load_bom_from_path(str(path))
+                self._load_bom_from_path(str(path), mark_as_custom=True)
             except Exception as exc:
                 messagebox.showerror("Fout", str(exc))
             else:
@@ -3115,6 +3131,7 @@ def start_gui():
                 messagebox.showerror("Fout", str(exc), parent=self.custom_bom_tab)
                 return
 
+            self._store_custom_row_flags(normalized, [True] * len(normalized.index))
             self.bom_df = normalized
             self._refresh_tree()
             self.nb.select(self.main_frame)
@@ -3163,30 +3180,48 @@ def start_gui():
             if not selection:
                 return "break" if event is not None else None
 
-            indices: List[int] = []
+            row_count = len(df.index)
+            item_pairs: List[tuple[int, str]] = []
             for item in selection:
                 try:
                     idx = self.tree.index(item)
                 except tk.TclError:
                     continue
-                indices.append(idx)
-            if not indices:
+                item_pairs.append((idx, item))
+            if not item_pairs:
                 return "break" if event is not None else None
 
-            row_count = len(df)
-            sorted_indices = sorted(set(indices))
-            drop_labels = []
-            for idx in sorted_indices:
-                if 0 <= idx < row_count:
-                    drop_labels.append(df.index[idx])
+            custom_flags = self._get_custom_row_flags(df)
+            removable_pairs = [
+                (idx, item)
+                for idx, item in sorted(item_pairs, key=lambda pair: pair[0])
+                if 0 <= idx < row_count
+                and idx < len(custom_flags)
+                and custom_flags[idx]
+            ]
+            if not removable_pairs:
+                self.status_var.set(
+                    "Geen Custom BOM-rijen geselecteerd om te verwijderen."
+                )
+                return "break" if event is not None else None
+
+            drop_labels = [df.index[idx] for idx, _ in removable_pairs]
             if not drop_labels:
                 return "break" if event is not None else None
 
-            self.bom_df = df.drop(drop_labels).reset_index(drop=True)
+            removed_positions = {idx for idx, _ in removable_pairs}
+            remaining_flags = [
+                flag
+                for pos, flag in enumerate(custom_flags)
+                if pos not in removed_positions
+            ]
+            updated_df = df.drop(drop_labels).reset_index(drop=True)
+            self._store_custom_row_flags(updated_df, remaining_flags)
+            self.bom_df = updated_df
 
-            target_index = sorted_indices[0]
+            target_index = removable_pairs[0][0]
             removed = 0
-            for item in selection:
+            for _, item in removable_pairs:
                 if item in self.item_links:
                     self.item_links.pop(item, None)
                 try:
@@ -3196,11 +3231,26 @@ def start_gui():
                 removed += 1
 
             if removed:
-                msg = "1 BOM-rij verwijderd." if removed == 1 else f"{removed} BOM-rijen verwijderd."
+                skipped = len(item_pairs) - removed
+                if removed == 1:
+                    msg = "1 Custom BOM-rij verwijderd."
+                else:
+                    msg = f"{removed} Custom BOM-rijen verwijderd."
+                if skipped > 0:
+                    suffix = (
+                        "1 rij overgeslagen" if skipped == 1 else f"{skipped} rijen overgeslagen"
+                    )
+                    msg = f"{msg} ({suffix})"
                 self.status_var.set(msg)
 
             remaining_items = list(self.tree.get_children())
-            if remaining_items:
+            current_selection = self.tree.selection()
+            if current_selection:
+                try:
+                    self.tree.see(current_selection[0])
+                except tk.TclError:
+                    pass
+            elif remaining_items:
                 target_index = min(target_index, len(remaining_items) - 1)
                 next_item = remaining_items[target_index]
                 try:
@@ -3211,7 +3261,6 @@ def start_gui():
                     pass
             else:
                 try:
-                    current_selection = self.tree.selection()
                     if current_selection:
                         self.tree.selection_remove(*current_selection)
                     self.tree.focus("")
