@@ -3341,11 +3341,7 @@ def start_gui():
                 .astype(int)
             )
 
-            filtered = profiles_df[
-                (profiles_df["PartNumber"] != "")
-                | (profiles_df["Profile"] != "")
-                | (profiles_df["Length profile"] != "")
-            ]
+            filtered = profiles_df[profiles_df["Profile"] != ""]
             if filtered.empty:
                 if info_var is not None:
                     info_var.set("Geen profielen gevonden in de BOM.")
