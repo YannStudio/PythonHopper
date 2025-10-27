@@ -3122,6 +3122,39 @@ def start_gui():
                 return False
             return True
 
+        def _autofill_custom_bom_enabled(self) -> bool:
+            """Return whether automatic syncing to the Custom BOM is enabled."""
+
+            var = getattr(self, "autofill_custom_bom_var", None)
+            if var is not None:
+                try:
+                    return bool(var.get())
+                except tk.TclError:
+                    pass
+            return bool(getattr(self.settings, "autofill_custom_bom", True))
+
+        def _sync_custom_bom_from_main(self) -> None:
+            """Update the Custom BOM tab so it mirrors the main BOM."""
+
+            if not getattr(self, "custom_bom_tab", None):
+                return
+            if not self._autofill_custom_bom_enabled():
+                return
+
+            df = self.bom_df
+            if df is None:
+                empty = pd.DataFrame(columns=self.custom_bom_tab.MAIN_COLUMN_ORDER)
+            else:
+                empty = df
+
+            try:
+                self.custom_bom_tab.load_from_main_dataframe(empty)
+            except Exception as exc:
+                print(
+                    f"Kon custom BOM niet vullen vanuit hoofd-BOM: {exc}",
+                    file=sys.stderr,
+                )
+
         def _load_bom_from_path(self, path: str, *, mark_as_custom: bool = False) -> None:
             df = load_bom(path)
             if "Bestanden gevonden" not in df.columns:
@@ -3135,13 +3168,7 @@ def start_gui():
             self.bom_source_path = os.path.abspath(path)
             self._refresh_tree()
             self.status_var.set(f"BOM geladen: {len(df)} rijen")
-            try:
-                self.custom_bom_tab.load_from_main_dataframe(df)
-            except Exception as exc:
-                print(
-                    f"Kon custom BOM niet vullen vanuit hoofd-BOM: {exc}",
-                    file=sys.stderr,
-                )
+            self._sync_custom_bom_from_main()
 
         def _load_bom(self):
             from tkinter import filedialog, messagebox
@@ -3198,6 +3225,7 @@ def start_gui():
             self._store_custom_row_flags(normalized, [True] * len(normalized.index))
             self.bom_df = normalized
             self._refresh_tree()
+            self._sync_custom_bom_from_main()
             self.nb.select(self.main_frame)
             self.status_var.set(
                 f"Custom BOM wijzigingen toegepast ({len(normalized)} rijen)."
@@ -3297,6 +3325,7 @@ def start_gui():
             updated_df = df.drop(drop_labels).reset_index(drop=True)
             self._store_custom_row_flags(updated_df, remaining_flags)
             self.bom_df = updated_df
+            self._sync_custom_bom_from_main()
 
             target_index = removable_pairs[0][0]
             removed = 0
@@ -3411,6 +3440,7 @@ def start_gui():
             self.bom_df = None
             self.bom_source_path = None
             self._refresh_tree()
+            self._sync_custom_bom_from_main()
             self.status_var.set("BOM gewist.")
 
         def _on_tree_click(self, event):
