@@ -1,5 +1,6 @@
 import os
 import datetime
+import math
 import re
 import shutil
 import subprocess
@@ -92,6 +93,7 @@ def start_gui():
 
     TREE_ODD_BG = "#FFFFFF"
     TREE_EVEN_BG = "#F5F5F5"
+    STOCK_LENGTH_MM = 6000
 
     def _entry_overflows(entry: "tk.Entry", text: str) -> bool:
         """Return True if the Entry content is wider than the widget."""
@@ -156,6 +158,70 @@ def start_gui():
         if variable is not None:
             trace_id = variable.trace_add("write", lambda *_: entry.after_idle(adjust))
             setattr(entry, "_auto_scroll_trace", trace_id)
+
+    def _parse_length_to_mm(value: object) -> Optional[int]:
+        """Return the length in millimeters if possible."""
+
+        if value is None or (isinstance(value, float) and math.isnan(value)):
+            return None
+
+        text = str(value).strip()
+        if not text:
+            return None
+
+        lowered = text.lower()
+        number_match = re.search(r"([0-9]+(?:[.,][0-9]+)?)", lowered)
+        if not number_match:
+            return None
+
+        number = number_match.group(1).replace(",", ".")
+        try:
+            amount = float(number)
+        except ValueError:
+            return None
+
+        unit = "mm"
+        if "mm" in lowered:
+            unit = "mm"
+        elif re.search(r"\bcm\b", lowered):
+            unit = "cm"
+        elif re.search(r"\bmeters?\b", lowered) or re.search(r"\bm\b", lowered):
+            unit = "m"
+
+        if unit == "m":
+            amount *= 1000
+        elif unit == "cm":
+            amount *= 10
+
+        if amount <= 0:
+            return None
+
+        return int(round(amount))
+
+    def _estimate_stock_bars(lengths_mm: List[int]) -> int:
+        """Estimate bars of STOCK_LENGTH_MM required using first-fit decreasing."""
+
+        usable = [length for length in lengths_mm if length and length > 0]
+        if not usable:
+            return 0
+
+        remaining_capacities: List[int] = []
+        for length in sorted(usable, reverse=True):
+            if length >= STOCK_LENGTH_MM:
+                remaining_capacities.append(0)
+                continue
+
+            placed = False
+            for idx, capacity in enumerate(remaining_capacities):
+                if length <= capacity:
+                    remaining_capacities[idx] = capacity - length
+                    placed = True
+                    break
+
+            if not placed:
+                remaining_capacities.append(STOCK_LENGTH_MM - length)
+
+        return len(remaining_capacities) or 0
 
     class _OverflowTooltip:
         """Show a tooltip with full text when an Entry's content overflows."""
@@ -2673,9 +2739,12 @@ def start_gui():
             opticutter_table_container = tk.Frame(self.opticutter_frame)
             opticutter_table_container.pack(fill="both", expand=True)
 
+            opticutter_left_frame = tk.Frame(opticutter_table_container)
+            opticutter_left_frame.pack(side="left", fill="both", expand=True)
+
             opticutter_columns = ("PartNumber", "Profile", "Profile length", "QTY.")
             self.opticutter_tree = ttk.Treeview(
-                opticutter_table_container,
+                opticutter_left_frame,
                 columns=opticutter_columns,
                 show="headings",
                 selectmode="browse",
@@ -2691,13 +2760,45 @@ def start_gui():
                 )
 
             opticutter_scroll = ttk.Scrollbar(
-                opticutter_table_container,
+                opticutter_left_frame,
                 orient="vertical",
                 command=self.opticutter_tree.yview,
             )
             self.opticutter_tree.configure(yscrollcommand=opticutter_scroll.set)
-            self.opticutter_tree.pack(side="left", fill="y", expand=True, anchor="w")
+            self.opticutter_tree.pack(side="left", fill="both", expand=True, anchor="w")
             opticutter_scroll.pack(side="left", fill="y")
+
+            opticutter_summary_frame = tk.Frame(opticutter_table_container)
+            opticutter_summary_frame.pack(side="left", fill="y", padx=(12, 0))
+
+            summary_columns = ("Profile", "6m bars")
+            self.opticutter_profile_summary_tree = ttk.Treeview(
+                opticutter_summary_frame,
+                columns=summary_columns,
+                show="headings",
+                selectmode="none",
+                height=10,
+            )
+            for col in summary_columns:
+                anchor = "center" if col != "Profile" else "w"
+                self.opticutter_profile_summary_tree.heading(col, text=col, anchor=anchor)
+                self.opticutter_profile_summary_tree.column(
+                    col,
+                    anchor=anchor,
+                    stretch=False,
+                    minwidth=60 if col != "Profile" else 120,
+                )
+
+            opticutter_summary_scroll = ttk.Scrollbar(
+                opticutter_summary_frame,
+                orient="vertical",
+                command=self.opticutter_profile_summary_tree.yview,
+            )
+            self.opticutter_profile_summary_tree.configure(
+                yscrollcommand=opticutter_summary_scroll.set
+            )
+            self.opticutter_profile_summary_tree.pack(side="left", fill="both", expand=False)
+            opticutter_summary_scroll.pack(side="left", fill="y")
             self.main_frame = main
             self.clients_frame = ClientsManagerFrame(
                 self.nb, self.client_db, on_change=self._on_db_change
@@ -3297,13 +3398,19 @@ def start_gui():
 
         def _refresh_opticutter_table(self) -> None:
             tree = getattr(self, "opticutter_tree", None)
-            if tree is None:
+            summary_tree = getattr(self, "opticutter_profile_summary_tree", None)
+            if tree is None and summary_tree is None:
                 return
 
-            for item in tree.get_children():
-                tree.delete(item)
+            if tree is not None:
+                for item in tree.get_children():
+                    tree.delete(item)
+                _autosize_tree_columns(tree)
 
-            _autosize_tree_columns(tree)
+            if summary_tree is not None:
+                for item in summary_tree.get_children():
+                    summary_tree.delete(item)
+                _autosize_tree_columns(summary_tree)
 
             info_var = getattr(self, "opticutter_info_var", None)
             default_message = "Laad een BOM om profielen te bekijken."
@@ -3341,11 +3448,15 @@ def start_gui():
                 .astype(int)
             )
 
-            filtered = profiles_df[profiles_df["Profile"] != ""]
+            filtered = profiles_df[profiles_df["Profile"] != ""].copy()
             if filtered.empty:
                 if info_var is not None:
                     info_var.set("Geen profielen gevonden in de BOM.")
                 return
+
+            filtered["Length profile mm"] = filtered["Length profile"].map(
+                _parse_length_to_mm
+            )
 
             aggregated = (
                 filtered.groupby(
@@ -3355,28 +3466,74 @@ def start_gui():
                 .sort_values(by=["PartNumber", "Profile", "Length profile"])
             )
 
-            total_qty = int(aggregated["Aantal"].sum()) if not aggregated.empty else 0
-            for _, row in aggregated.iterrows():
-                qty = int(row["Aantal"]) if pd.notna(row["Aantal"]) else 0
-                tree.insert(
-                    "",
-                    "end",
-                    values=(
-                        row["PartNumber"],
-                        row["Profile"],
-                        row["Length profile"],
-                        qty,
-                    ),
-                )
+            pieces_by_profile: Dict[str, List[int]] = defaultdict(list)
+            unparsed_lengths: List[str] = []
+            oversized_profiles: set[str] = set()
+            for _, row in filtered.iterrows():
+                profile_name = row["Profile"]
+                length_mm = row.get("Length profile mm")
+                qty = int(row.get("Aantal", 0))
+                if qty <= 0:
+                    continue
+                if length_mm is None:
+                    length_text = row.get("Length profile", "")
+                    if length_text:
+                        unparsed_lengths.append(str(length_text))
+                    continue
+                if length_mm > STOCK_LENGTH_MM:
+                    oversized_profiles.add(profile_name)
+                pieces_by_profile[profile_name].extend([length_mm] * qty)
 
-            _autosize_tree_columns(tree)
+            total_qty = int(aggregated["Aantal"].sum()) if not aggregated.empty else 0
+            if tree is not None:
+                for _, row in aggregated.iterrows():
+                    qty = int(row["Aantal"]) if pd.notna(row["Aantal"]) else 0
+                    tree.insert(
+                        "",
+                        "end",
+                        values=(
+                            row["PartNumber"],
+                            row["Profile"],
+                            row["Length profile"],
+                            qty,
+                        ),
+                    )
+                _autosize_tree_columns(tree)
+
+            if summary_tree is not None and pieces_by_profile:
+                for profile_name in sorted(pieces_by_profile):
+                    lengths = pieces_by_profile[profile_name]
+                    required_bars = _estimate_stock_bars(lengths)
+                    summary_tree.insert(
+                        "",
+                        "end",
+                        values=(profile_name, required_bars),
+                    )
+                _autosize_tree_columns(summary_tree)
 
             if info_var is not None:
                 profile_count = len(aggregated.index)
                 profile_label = "profiel" if profile_count == 1 else "profielen"
-                info_var.set(
+                base_message = (
                     f"{profile_count} {profile_label}, totaal aantal: {total_qty}"
                 )
+
+                if pieces_by_profile:
+                    profile_types = len(pieces_by_profile)
+                    base_message = (
+                        f"{base_message} | {profile_types} profieltypen in overzicht"
+                    )
+
+                warnings: List[str] = []
+                if oversized_profiles:
+                    warnings.append("Let op: sommige profielen zijn langer dan 6m.")
+                if unparsed_lengths:
+                    warnings.append("Sommige profiel lengtes konden niet worden gelezen.")
+
+                if warnings:
+                    base_message = base_message + "\n" + " ".join(warnings)
+
+                info_var.set(base_message)
 
         def _refresh_tree(self):
             self.item_links.clear()
