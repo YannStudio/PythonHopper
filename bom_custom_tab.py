@@ -320,6 +320,10 @@ class _UndoAwareTable(Table):
     def undo(self, event=None):  # type: ignore[override]
         return self._owner._on_undo(event)
 
+    def handle_left_click(self, event):  # type: ignore[override]
+        self.setLeftClickSrc("cell")
+        return super().handle_left_click(event)
+
     def drawCellEntry(self, row, col, text=None):  # type: ignore[override]
         result = super().drawCellEntry(row, col, text=text)
         entry = getattr(self, "cellentry", None)
@@ -890,6 +894,10 @@ class BOMCustomTab(ttk.Frame):
         if not self.table._commit_active_edit():
             return "break"
         rows, cols = self._collect_selection()
+        last_src = getattr(self.table, "_Table__last_left_click_src", "")
+        if last_src == "row":
+            self._delete_rows(rows)
+            return "break"
         self._clear_cells(
             rows,
             cols,
@@ -899,6 +907,28 @@ class BOMCustomTab(ttk.Frame):
             no_change_status="Geen wijzigingen bij legen.",
         )
         return "break"
+
+    def _delete_rows(self, rows: Sequence[int]) -> int:
+        total_rows = len(self.table_model.df)
+        unique_rows = sorted({row for row in rows if 0 <= row < total_rows})
+        if not unique_rows:
+            self._update_status("Geen rijen geselecteerd om te verwijderen.")
+            return 0
+
+        before = self.table_model.df.copy(deep=True)
+        remaining = before.drop(index=unique_rows).reset_index(drop=True)
+        if remaining.equals(before):
+            self._update_status("Geen rijen geselecteerd om te verwijderen.")
+            return 0
+
+        self._push_undo("rijen verwijderen", before, [])
+        self._set_dataframe(remaining)
+        self._ensure_minimum_rows(self.DEFAULT_EMPTY_ROWS)
+
+        count = len(unique_rows)
+        label = "rij" if count == 1 else "rijen"
+        self._update_status(f"{count} {label} verwijderd.")
+        return count
 
     def _parse_clipboard_text(self, text: str) -> List[List[str]]:
         import io
