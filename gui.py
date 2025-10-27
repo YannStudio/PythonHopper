@@ -2633,6 +2633,9 @@ def start_gui():
             main = tk.Frame(self.nb)
             main.configure(padx=12, pady=12)
             self.nb.add(main, text="Main")
+            self.opticutter_frame = tk.Frame(self.nb)
+            self.opticutter_frame.configure(padx=12, pady=12)
+            self.nb.add(self.opticutter_frame, text="Opticutter")
             self.nb.add(self.custom_bom_tab, text="Custom BOM")
             self.main_frame = main
             self.clients_frame = ClientsManagerFrame(
