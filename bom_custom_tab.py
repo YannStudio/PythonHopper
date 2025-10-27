@@ -375,6 +375,17 @@ class _UndoAwareTable(Table):
             committed = self._commit_active_edit()
             if not committed:
                 return "break"
+        # ``pandastable`` onthoudt welke bron (rijhoofd, kolomhoofd, cel)
+        # voor het laatst is aangeklikt.  Wanneer een gebruiker eerst op het
+        # rijhoofd klikt en daarna in het raster, bleef de bron op "row"
+        # staan waardoor ``Delete`` alsnog de volledige rij leegmaakte.
+        # Door hier expliciet terug te schakelen naar de standaardwaarde
+        # herkennen we het daarna als een cel-selectie en worden alleen de
+        # gekozen cellen geleegd.
+        try:
+            self.setLeftClickSrc("")
+        except AttributeError:
+            pass
         self._drag_selection_active = True
         return None
 
