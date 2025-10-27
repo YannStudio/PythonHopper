@@ -27,7 +27,7 @@ def test_doc_number_in_name_and_header(tmp_path):
     dst = tmp_path / "dst"
     dst.mkdir()
 
-    doc_num_map = {"Laser": "123"}
+    doc_num_map = {"Laser": "BB-123/45"}
     copy_per_production_and_orders(
         str(src),
         str(dst),
@@ -45,21 +45,21 @@ def test_doc_number_in_name_and_header(tmp_path):
     prod_folder = dst / "Laser"
     today = datetime.date.today().strftime("%Y-%m-%d")
 
-    xlsx_path = prod_folder / f"Bestelbon_BB-123_Laser_{today}.xlsx"
+    xlsx_path = prod_folder / f"Bestelbon_BB-123_45_Laser_{today}.xlsx"
     assert xlsx_path.exists()
     wb = openpyxl.load_workbook(xlsx_path)
     ws = wb.active
     assert ws["A1"].value == "Nummer"
-    assert ws["B1"].value == "BB-123"
+    assert ws["B1"].value == "BB-123/45"
     assert ws["A2"].value == "Datum"
     assert ws["B2"].value == today
 
-    pdf_path = prod_folder / f"Bestelbon_BB-123_Laser_{today}.pdf"
+    pdf_path = prod_folder / f"Bestelbon_BB-123_45_Laser_{today}.pdf"
     assert pdf_path.exists()
     reader = PdfReader(pdf_path)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
     lines = text.splitlines()
-    assert f"Nummer: BB-123" in text
+    assert f"Nummer: BB-123/45" in text
     assert f"Datum: {today}" in text
     assert "BB-123" not in lines[0]
 
@@ -85,7 +85,7 @@ def test_offerte_prefix_in_output(tmp_path):
     dst = tmp_path / "dst"
     dst.mkdir()
 
-    doc_num_map = {"Laser": "42"}
+    doc_num_map = {"Laser": "OFF-42"}
     doc_type_map = {"Laser": "Offerteaanvraag"}
     copy_per_production_and_orders(
         str(src),
@@ -187,7 +187,7 @@ def test_doc_number_applied_to_zip_filename(tmp_path):
     dst = tmp_path / "dst_zip"
     dst.mkdir()
 
-    doc_num_map = {"Laser": "123"}
+    doc_num_map = {"Laser": "BB-123/45"}
 
     cnt, _ = copy_per_production_and_orders(
         str(src),
@@ -210,7 +210,7 @@ def test_doc_number_applied_to_zip_filename(tmp_path):
     zip_files = sorted(prod_folder.glob("Laser*.zip"))
     assert len(zip_files) == 1
     zip_path = zip_files[0]
-    assert zip_path.name == "Laser_BB-123.zip"
+    assert zip_path.name == "Laser_BB-123_45.zip"
 
     with zipfile.ZipFile(zip_path) as zf:
         assert "PN1.pdf" in zf.namelist()

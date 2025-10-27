@@ -183,9 +183,11 @@ class AppSettings:
         default_factory=lambda: deepcopy(DEFAULT_FILE_EXTENSIONS)
     )
     zip_per_production: bool = True
+    combine_pdf_per_production: bool = True
     copy_finish_exports: bool = False
     zip_finish_exports: bool = True
     export_processed_bom: bool = True
+    export_related_bom_files: bool = True
     export_date_prefix: bool = False
     export_date_suffix: bool = False
     custom_prefix_enabled: bool = False
@@ -195,6 +197,7 @@ class AppSettings:
     bundle_latest: bool = False
     bundle_dry_run: bool = False
     footer_note: str = DEFAULT_FOOTER_NOTE
+    autofill_custom_bom: bool = True
     _path: Path = field(default=SETTINGS_FILE, repr=False, compare=False)
 
     @classmethod

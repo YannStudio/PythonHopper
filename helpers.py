@@ -5,6 +5,7 @@ import os
 import re
 from collections import defaultdict
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, List
 
 from export_bundle import create_export_bundle as _create_export_bundle
@@ -59,6 +60,18 @@ def _material_nowrap(s: str) -> str:
     return _to_str(s).replace(" ", "&nbsp;")
 
 
+_EXPORT_BUNDLE_DIR_RE = re.compile(r"^\d{4}-\d{2}-\d{2}_.+")
+
+
+def _index_sort_key(path: str) -> tuple[int, int, str]:
+    parts = Path(path).parts
+    is_bundle = any(_EXPORT_BUNDLE_DIR_RE.match(part) for part in parts)
+    is_latest = any(part.lower() == "latest" for part in parts)
+    priority_group = 0 if (is_latest or is_bundle) else 1
+    depth_score = -len(parts)
+    return priority_group, depth_score, path.lower()
+
+
 def _build_file_index(source_folder: str, selected_exts: List[str]) -> Dict[str, List[str]]:
     idx = defaultdict(list)
     sel = set(e.lower() for e in selected_exts)
@@ -67,6 +80,8 @@ def _build_file_index(source_folder: str, selected_exts: List[str]) -> Dict[str,
             name, ext = os.path.splitext(f)
             if ext.lower() in sel:
                 idx[name].append(os.path.join(rootdir, f))
+    for key, paths in idx.items():
+        paths.sort(key=_index_sort_key)
     return idx
 
 

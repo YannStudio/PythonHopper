@@ -409,6 +409,8 @@ def test_finish_documents_and_defaults(tmp_path, monkeypatch):
     label = "Poedercoating – RAL 9005"
     filename_component = _normalize_finish_folder(label)
 
+    doc_number_raw = "12/34"
+
     cnt, chosen = copy_per_production_and_orders(
         str(src),
         str(dest),
@@ -421,6 +423,7 @@ def test_finish_documents_and_defaults(tmp_path, monkeypatch):
         True,
         copy_finish_exports=True,
         finish_override_map={finish_key: "ACME"},
+        finish_doc_num_map={finish_key: doc_number_raw},
     )
 
     assert cnt == 1
@@ -429,16 +432,18 @@ def test_finish_documents_and_defaults(tmp_path, monkeypatch):
 
     finish_dir = dest / finish_key
     assert finish_dir.is_dir()
-    excel_path = finish_dir / f"Bestelbon_{filename_component}_{today}.xlsx"
-    pdf_path = finish_dir / f"Bestelbon_{filename_component}_{today}.pdf"
+    excel_path = finish_dir / f"Bestelbon_BB-12_34_{filename_component}_{today}.xlsx"
+    pdf_path = finish_dir / f"Bestelbon_BB-12_34_{filename_component}_{today}.pdf"
     assert excel_path.exists()
     assert pdf_path.exists()
 
     wb = load_workbook(excel_path)
     ws = wb.active
     values = {ws[f"A{i}"].value: ws[f"B{i}"].value for i in range(1, 10)}
+    assert values.get("Nummer") == "BB-12/34"
     assert values.get("Afwerking") == label
 
     reader = PdfReader(str(pdf_path))
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
     assert "Afwerking: Poedercoating – RAL 9005" in text
+    assert "Nummer: BB-12/34" in text

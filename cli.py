@@ -532,6 +532,7 @@ def cli_copy_per_prod(args):
         copy_finish_exports=copy_finish_exports,
         zip_finish_exports=zip_finish_exports,
         export_bom=bool(settings.export_processed_bom),
+        export_related_files=bool(settings.export_related_bom_files),
         export_name_prefix_text=export_prefix_text,
         export_name_prefix_enabled=export_prefix_enabled,
         export_name_suffix_text=export_suffix_text,
@@ -540,6 +541,7 @@ def cli_copy_per_prod(args):
         finish_doc_type_map=finish_doc_type_map,
         finish_doc_num_map=finish_doc_num_map,
         finish_delivery_map=finish_delivery_map,
+        bom_source_path=args.bom,
     )
     print("Gekopieerd:", cnt)
     for k, v in chosen.items():

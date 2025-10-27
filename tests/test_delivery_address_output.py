@@ -1,8 +1,7 @@
 import os
 import pandas as pd
 import pytest
-pytest.importorskip("openpyxl")
-import pytest
+openpyxl = pytest.importorskip("openpyxl")
 from PyPDF2 import PdfReader
 
 from models import Supplier, DeliveryAddress
@@ -177,3 +176,142 @@ def test_delivery_address_placeholder_prints(tmp_path):
     reader = PdfReader(prod_folder / pdf)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
     assert "Bestelling wordt opgehaald" in text
+
+
+def test_export_remark_rendered_under_delivery(tmp_path):
+    reportlab = pytest.importorskip("reportlab")
+    db, src, bom_df = _setup_basic(tmp_path)
+
+    delivery = DeliveryAddress(
+        name="Magazijn", address="Straat 1", remarks="Afspraak balie"
+    )
+
+    dst = tmp_path / "dst_export"
+    dst.mkdir()
+    copy_per_production_and_orders(
+        str(src),
+        str(dst),
+        bom_df,
+        [".pdf"],
+        db,
+        {},
+        {"Laser": "Exportbon"},
+        {"Laser": "5"},
+        False,
+        client=None,
+        delivery_map={"Laser": delivery},
+        remarks_map={"Laser": "Export aanwijzing"},
+    )
+
+    prod_folder = dst / "Laser"
+    pdf = next(f for f in os.listdir(prod_folder) if f.endswith(".pdf"))
+    reader = PdfReader(prod_folder / pdf)
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+
+    expected = (
+        "Leveradres:\nMagazijn\nStraat 1\nAfspraak balie\nOpmerking:\nExport aanwijzing"
+    )
+    assert expected in text
+    assert "Opmerking: Export aanwijzing" not in text
+
+    xlsx = next(f for f in os.listdir(prod_folder) if f.endswith(".xlsx"))
+    wb = openpyxl.load_workbook(prod_folder / xlsx)
+    ws = wb.active
+    col_a = [ws[f"A{i}"].value for i in range(1, 40)]
+    col_b = [ws[f"B{i}"].value for i in range(1, 40)]
+    lever_row = col_a.index("Leveradres") + 1
+    assert "Export aanwijzing" not in col_b[: lever_row - 1]
+    assert any(
+        ws[f"A{i}"].value == "Opmerking" and ws[f"B{i}"].value == "Export aanwijzing"
+        for i in range(lever_row, lever_row + 8)
+    )
+
+
+def test_export_remark_rendered_under_delivery_with_spaced_doc_type(tmp_path):
+    reportlab = pytest.importorskip("reportlab")
+    db, src, bom_df = _setup_basic(tmp_path)
+
+    delivery = DeliveryAddress(
+        name="Magazijn", address="Straat 1", remarks="Afspraak balie"
+    )
+
+    dst = tmp_path / "dst_export_spaced"
+    dst.mkdir()
+    copy_per_production_and_orders(
+        str(src),
+        str(dst),
+        bom_df,
+        [".pdf"],
+        db,
+        {},
+        {"Laser": "Export bon"},
+        {"Laser": "5"},
+        False,
+        client=None,
+        delivery_map={"Laser": delivery},
+        remarks_map={"Laser": "Export aanwijzing"},
+    )
+
+    prod_folder = dst / "Laser"
+    pdf = next(f for f in os.listdir(prod_folder) if f.endswith(".pdf"))
+    reader = PdfReader(prod_folder / pdf)
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+
+    expected = (
+        "Leveradres:\nMagazijn\nStraat 1\nAfspraak balie\nOpmerking:\nExport aanwijzing"
+    )
+    assert expected in text
+    assert "Opmerking: Export aanwijzing" not in text
+
+    xlsx = next(f for f in os.listdir(prod_folder) if f.endswith(".xlsx"))
+    wb = openpyxl.load_workbook(prod_folder / xlsx)
+    ws = wb.active
+    col_a = [ws[f"A{i}"].value for i in range(1, 40)]
+    col_b = [ws[f"B{i}"].value for i in range(1, 40)]
+    lever_row = col_a.index("Leveradres") + 1
+    assert "Export aanwijzing" not in col_b[: lever_row - 1]
+    assert any(
+        ws[f"A{i}"].value == "Opmerking" and ws[f"B{i}"].value == "Export aanwijzing"
+        for i in range(lever_row, lever_row + 8)
+    )
+
+
+def test_export_remark_rendered_without_delivery(tmp_path):
+    reportlab = pytest.importorskip("reportlab")
+    db, src, bom_df = _setup_basic(tmp_path)
+
+    dst = tmp_path / "dst_export_no_delivery"
+    dst.mkdir()
+    copy_per_production_and_orders(
+        str(src),
+        str(dst),
+        bom_df,
+        [".pdf"],
+        db,
+        {},
+        {"Laser": "Export"},
+        {"Laser": "5"},
+        False,
+        client=None,
+        delivery_map={},
+        remarks_map={"Laser": "Export aanwijzing"},
+    )
+
+    prod_folder = dst / "Laser"
+    pdf = next(f for f in os.listdir(prod_folder) if f.endswith(".pdf"))
+    reader = PdfReader(prod_folder / pdf)
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+
+    assert "Opmerking:\nExport aanwijzing" in text
+    assert "Opmerking: Export aanwijzing" not in text
+    assert "Leveradres" not in text
+
+    xlsx = next(f for f in os.listdir(prod_folder) if f.endswith(".xlsx"))
+    wb = openpyxl.load_workbook(prod_folder / xlsx)
+    ws = wb.active
+    opmerking_rows = [
+        (ws[f"A{i}"].value, ws[f"B{i}"].value)
+        for i in range(1, 30)
+        if ws[f"A{i}"].value == "Opmerking"
+    ]
+    assert ("Opmerking", "Export aanwijzing") in opmerking_rows

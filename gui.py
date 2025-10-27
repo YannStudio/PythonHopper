@@ -21,12 +21,16 @@ from clients_db import ClientsDB, CLIENTS_DB_FILE
 from delivery_addresses_db import DeliveryAddressesDB, DELIVERY_DB_FILE
 from bom import read_csv_flex, load_bom
 from bom_custom_tab import BOMCustomTab
+from bom_sync import prepare_custom_bom_for_main
 from orders import (
     copy_per_production_and_orders,
     DEFAULT_FOOTER_NOTE,
     combine_pdfs_per_production,
     combine_pdfs_from_source,
+    find_related_bom_exports,
+    make_bom_export_filename,
     _prefix_for_doc_type,
+    _export_bom_workbook,
     describe_finish_combo,
     make_finish_selection_key,
     make_production_selection_key,
@@ -88,6 +92,162 @@ def start_gui():
 
     TREE_ODD_BG = "#FFFFFF"
     TREE_EVEN_BG = "#F5F5F5"
+
+    def _entry_overflows(entry: "tk.Entry", text: str) -> bool:
+        """Return True if the Entry content is wider than the widget."""
+
+        if not text:
+            return False
+        entry.update_idletasks()
+        width = entry.winfo_width()
+        if width <= 1:
+            width = entry.winfo_reqwidth()
+        try:
+            font = tkfont.nametofont(entry.cget("font"))
+        except tk.TclError:
+            font = tkfont.nametofont("TkDefaultFont")
+        padding = 0
+        try:
+            padding += float(entry.cget("highlightthickness")) * 2
+        except tk.TclError:
+            pass
+        try:
+            padding += float(entry.cget("bd")) * 2
+        except tk.TclError:
+            pass
+        usable_width = max(1, width - int(padding) - 4)
+        return font.measure(text) > usable_width
+
+    def _scroll_entry_to_end(entry: "tk.Entry", variable: Optional["tk.StringVar"] = None) -> None:
+        """Ensure the end of the entry text remains visible."""
+
+        def adjust(*_ignored):
+            try:
+                entry.icursor("end")
+                entry.xview_moveto(1.0)
+            except tk.TclError:
+                pass
+
+        entry.bind("<FocusIn>", adjust, add="+")
+        entry.bind("<Configure>", adjust, add="+")
+        entry.after_idle(adjust)
+        if variable is not None:
+            trace_id = variable.trace_add("write", lambda *_: entry.after_idle(adjust))
+            setattr(entry, "_auto_scroll_trace", trace_id)
+
+    class _OverflowTooltip:
+        """Show a tooltip with full text when an Entry's content overflows."""
+
+        def __init__(self, widget: "tk.Entry", text_provider):
+            self.widget = widget
+            self._text_provider = text_provider
+            self._tipwindow: Optional["tk.Toplevel"] = None
+            self._after_id: Optional[str] = None
+            widget.bind("<Enter>", self._schedule_show, add="+")
+            widget.bind("<Leave>", self._hide, add="+")
+            widget.bind("<Destroy>", self._hide, add="+")
+
+        def _schedule_show(self, _event=None):
+            self._cancel_scheduled()
+            if not self.widget.winfo_viewable():
+                return
+            self._after_id = self.widget.after(200, self._maybe_show)
+
+        def _maybe_show(self):
+            self._after_id = None
+            if not self.widget.winfo_exists():
+                return
+            text = self._text_provider()
+            if not text:
+                return
+            if not _entry_overflows(self.widget, text):
+                return
+            if self._tipwindow is not None:
+                return
+            tip = tk.Toplevel(self.widget)
+            tip.wm_overrideredirect(True)
+            try:
+                tip.wm_attributes("-topmost", True)
+            except tk.TclError:
+                pass
+            label = tk.Label(
+                tip,
+                text=text,
+                background="#ffffe0",
+                foreground="#444444",
+                relief="solid",
+                borderwidth=1,
+                justify="left",
+                padx=4,
+                pady=2,
+            )
+            label.pack()
+            x = self.widget.winfo_rootx()
+            y = self.widget.winfo_rooty() + self.widget.winfo_height()
+            tip.wm_geometry(f"+{x}+{y}")
+            self._tipwindow = tip
+
+        def _cancel_scheduled(self):
+            if self._after_id is not None:
+                try:
+                    self.widget.after_cancel(self._after_id)
+                except tk.TclError:
+                    pass
+                self._after_id = None
+
+        def _hide(self, _event=None):
+            self._cancel_scheduled()
+            if self._tipwindow is not None:
+                try:
+                    self._tipwindow.destroy()
+                except tk.TclError:
+                    pass
+                self._tipwindow = None
+
+    def _place_window_near_parent(win: "tk.Toplevel", parent: "tk.Misc") -> None:
+        """Place a popup window on the same screen as its parent."""
+
+        def _apply_geometry() -> None:
+            try:
+                parent.update_idletasks()
+                win.update_idletasks()
+
+                parent_x = parent.winfo_rootx()
+                parent_y = parent.winfo_rooty()
+                parent_w = parent.winfo_width()
+                parent_h = parent.winfo_height()
+                if parent_w <= 1 or parent_h <= 1:
+                    parent_w = parent.winfo_reqwidth()
+                    parent_h = parent.winfo_reqheight()
+
+                win_w = win.winfo_width()
+                win_h = win.winfo_height()
+                if win_w <= 1 or win_h <= 1:
+                    win_w = win.winfo_reqwidth()
+                    win_h = win.winfo_reqheight()
+
+                if parent_w > 1 and parent_h > 1:
+                    x = parent_x + max(0, (parent_w - win_w) // 2)
+                    y = parent_y + max(0, (parent_h - win_h) // 3)
+                else:
+                    screen_w = win.winfo_screenwidth()
+                    screen_h = win.winfo_screenheight()
+                    x = max(0, (screen_w - win_w) // 2)
+                    y = max(0, (screen_h - win_h) // 3)
+
+                screen_w = win.winfo_screenwidth()
+                screen_h = win.winfo_screenheight()
+                x = max(0, min(screen_w - win_w, x))
+                y = max(0, min(screen_h - win_h, y))
+
+                win.wm_geometry(f"+{int(x)}+{int(y)}")
+            except tk.TclError:
+                pass
+
+        try:
+            win.after_idle(_apply_geometry)
+        except tk.TclError:
+            _apply_geometry()
 
     class ClientsManagerFrame(tk.Frame):
         def __init__(self, master, db: ClientsDB, on_change=None):
@@ -482,6 +642,7 @@ def start_gui():
                     side="left", padx=4
                 )
 
+                _place_window_near_parent(crop_win, win)
                 crop_win.grab_set()
                 crop_win.focus_set()
 
@@ -518,6 +679,7 @@ def start_gui():
             tk.Button(btnf, text="Opslaan", command=_save).pack(side="left", padx=4)
             tk.Button(btnf, text="Annuleer", command=win.destroy).pack(side="left", padx=4)
             win.transient(self)
+            _place_window_near_parent(win, self)
             win.grab_set()
             entries["name"].focus_set()
 
@@ -663,6 +825,7 @@ def start_gui():
             tk.Button(btnf, text="Opslaan", command=_save).pack(side="left", padx=4)
             tk.Button(btnf, text="Annuleer", command=win.destroy).pack(side="left", padx=4)
             win.transient(self)
+            _place_window_near_parent(win, self)
             win.grab_set()
             entries["name"].focus_set()
 
@@ -726,6 +889,20 @@ def start_gui():
             tk.Button(btns, text="Update uit CSV (merge)", command=self.merge_csv).pack(side="left", padx=4)
             tk.Button(btns, text="Favoriet ★", command=self.toggle_fav_sel).pack(side="left", padx=4)
             self.refresh()
+
+        def suspend_search_filter(self) -> str:
+            """Temporarily clear the search box and return the previous query."""
+
+            current = self.search_var.get()
+            if current:
+                self.search_var.set("")
+            return current
+
+        def restore_search_filter(self, value: str) -> None:
+            """Restore a previously cleared search query, if any."""
+
+            if value:
+                self.search_var.set(value)
 
         def refresh(self):
             for r in self.tree.get_children():
@@ -847,6 +1024,7 @@ def start_gui():
                 tk.Button(btn, text="Opslaan", command=self._ok).pack(side="left", padx=4)
                 tk.Button(btn, text="Annuleer", command=self.destroy).pack(side="left", padx=4)
                 self.transient(master)
+                _place_window_near_parent(self, master)
                 self.grab_set()
 
             def _ok(self):
@@ -878,6 +1056,40 @@ def start_gui():
 
         LABEL_COLUMN_WIDTH = 30
 
+        @staticmethod
+        def _install_supplier_focus_behavior(combo: "ttk.Combobox") -> None:
+            """Selecteer automatisch alle tekst bij eerste focus of placeholder."""
+
+            def _handle_focus(event):
+                widget = event.widget
+                try:
+                    current = widget.get()
+                except tk.TclError:
+                    current = ""
+
+                first_focus = not getattr(widget, "_supplier_focus_seen", False)
+                placeholder = current.strip().lower() in {"(geen)", "geen"}
+
+                if first_focus or placeholder:
+                    def _select_all():
+                        try:
+                            widget.selection_range(0, "end")
+                        except tk.TclError:
+                            return
+
+                    widget.after_idle(_select_all)
+
+                widget._supplier_focus_seen = True
+
+            combo.bind("<FocusIn>", _handle_focus, add="+")
+
+        @staticmethod
+        def _set_combo_value(combo: "ttk.Combobox", value: str) -> None:
+            """Update combobox text and reset focus selection tracking."""
+
+            combo.set(value)
+            setattr(combo, "_supplier_focus_seen", False)
+
         def __init__(
             self,
             master,
@@ -901,6 +1113,7 @@ def start_gui():
             self.sel_vars: Dict[str, tk.StringVar] = {}
             self.doc_vars: Dict[str, tk.StringVar] = {}
             self.doc_num_vars: Dict[str, tk.StringVar] = {}
+            self.remark_vars: Dict[str, tk.StringVar] = {}
             self.delivery_vars: Dict[str, tk.StringVar] = {}
             self.delivery_combos: Dict[str, ttk.Combobox] = {}
             self.row_meta: Dict[str, Dict[str, str]] = {}
@@ -1057,8 +1270,8 @@ def start_gui():
             header_row = tk.Frame(left)
             header_row.pack(fill="x", pady=(8, 3))
             header_label_kwargs = dict(
-                anchor="w",
-                justify="left",
+                anchor=tk.W,
+                justify=tk.LEFT,
                 background=left.cget("bg"),
             )
             header_font = ("TkDefaultFont", 10, "bold")
@@ -1067,19 +1280,30 @@ def start_gui():
                 ("Leverancier", 50, None),
                 ("Documenttype", 18, None),
                 ("Nr.", 12, None),
+                ("Opmerking", 24, None),
                 ("Leveradres", 50, None),
             ]
+
+            self._header_column_frames: List[tk.Frame] = []
+            self._header_labels: List[tk.Label] = []
+            self._header_aligned = False
+            self._header_alignment_pending = False
 
             for text, width, font in header_columns:
                 label_kwargs = dict(header_label_kwargs)
                 if font is not None:
                     label_kwargs["font"] = font
-                tk.Label(
-                    header_row,
+                column_frame = tk.Frame(header_row, background=left.cget("bg"))
+                column_frame.pack(side="left", padx=(0, 6))
+                label = tk.Label(
+                    column_frame,
                     text=text,
                     width=width,
                     **label_kwargs,
-                ).pack(side="left", padx=(0, 6), fill="x")
+                )
+                label.pack(fill="x", anchor="w")
+                self._header_column_frames.append(column_frame)
+                self._header_labels.append(label)
 
             self.finish_label_by_key: Dict[str, str] = {
                 entry.get("key", ""): _to_str(entry.get("label")) or _to_str(entry.get("key"))
@@ -1092,12 +1316,13 @@ def start_gui():
             def add_row(display_text: str, sel_key: str, metadata: Dict[str, str]):
                 row = tk.Frame(left)
                 row.pack(fill="x", pady=3)
-                tk.Label(
+                row_label = tk.Label(
                     row,
                     text=display_text,
                     width=self.LABEL_COLUMN_WIDTH,
                     anchor="w",
-                ).pack(side="left", padx=(0, 6))
+                )
+                row_label.pack(side="left", padx=(0, 6))
                 var = tk.StringVar()
                 self.sel_vars[sel_key] = var
                 combo = ttk.Combobox(row, textvariable=var, state="normal", width=50)
@@ -1106,6 +1331,7 @@ def start_gui():
                 combo.bind(
                     "<FocusIn>", lambda _e, key=sel_key: self._on_focus_key(key)
                 )
+                self._install_supplier_focus_behavior(combo)
                 combo.bind(
                     "<KeyRelease>",
                     lambda ev, key=sel_key, c=combo: self._on_combo_type(ev, key, c),
@@ -1128,9 +1354,15 @@ def start_gui():
 
                 doc_num_var = tk.StringVar()
                 self.doc_num_vars[sel_key] = doc_num_var
-                tk.Entry(row, textvariable=doc_num_var, width=12).pack(
-                    side="left", padx=(0, 6)
-                )
+                doc_entry = tk.Entry(row, textvariable=doc_num_var, width=12)
+                doc_entry.pack(side="left", padx=(0, 6))
+
+                remark_var = tk.StringVar()
+                self.remark_vars[sel_key] = remark_var
+                remark_entry = tk.Entry(row, textvariable=remark_var, width=24)
+                remark_entry.pack(side="left", padx=(0, 6))
+                _scroll_entry_to_end(remark_entry, remark_var)
+                _OverflowTooltip(remark_entry, lambda v=remark_var: v.get().strip())
 
                 dvar = tk.StringVar(value="Geen")
                 self.delivery_vars[sel_key] = dvar
@@ -1147,6 +1379,17 @@ def start_gui():
                 self.rows.append((sel_key, combo))
                 self.combo_by_key[sel_key] = combo
                 self.row_meta[sel_key] = metadata
+
+                self._schedule_header_alignment(
+                    {
+                        "label": row_label,
+                        "supplier_combo": combo,
+                        "doc_combo": doc_combo,
+                        "doc_entry": doc_entry,
+                        "remark_entry": remark_entry,
+                        "delivery_combo": dcombo,
+                    }
+                )
 
             for prod in productions:
                 key = make_production_selection_key(prod)
@@ -1202,30 +1445,93 @@ def start_gui():
 
             # Buttons bar (altijd zichtbaar)
             btns = tk.Frame(self)
-            btns.grid(row=1, column=0, sticky="ew", padx=10, pady=(6,10))
+            btns.grid(row=1, column=0, sticky="ew", padx=10, pady=(6, 10))
             btns.grid_columnconfigure(0, weight=1)
             self.remember_var = tk.BooleanVar(value=True)
-            tk.Checkbutton(btns, text="Onthoud keuze per selectie", variable=self.remember_var).grid(row=0, column=0, sticky="w")
-            tk.Button(btns, text="Annuleer", command=self._cancel).grid(row=0, column=1, sticky="e", padx=(4,0))
-            tk.Button(btns, text="Bevestig", command=self._confirm).grid(row=0, column=2, sticky="e")
+            tk.Checkbutton(
+                btns,
+                text="Onthoud keuze per selectie",
+                variable=self.remember_var,
+            ).grid(row=0, column=0, sticky="w")
+            self.cancel_button = tk.Button(btns, text="Annuleer", command=self._cancel)
+            self.cancel_button.grid(row=0, column=1, sticky="e", padx=(4, 0))
+            self.confirm_button = tk.Button(btns, text="Bevestig", command=self._confirm)
+            self.confirm_button.grid(row=0, column=2, sticky="e")
+            self.status_var = tk.StringVar(value="")
+            self.status_label = tk.Label(
+                btns,
+                textvariable=self.status_var,
+                anchor="w",
+                justify="left",
+            )
+            self.status_label.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(6, 0))
 
             # Init
             self._refresh_options(initial=True)
             self._update_preview_from_any_combo()
+
+        def _schedule_header_alignment(self, row_widgets: Dict[str, tk.Misc]) -> None:
+            if not getattr(self, "_header_column_frames", None):
+                return
+            if self._header_aligned or self._header_alignment_pending:
+                return
+
+            def _do_align() -> None:
+                self._align_header_columns(row_widgets)
+
+            self._header_alignment_pending = True
+            self.after_idle(_do_align)
+
+        def _align_header_columns(self, row_widgets: Dict[str, tk.Misc]) -> None:
+            try:
+                column_widgets = [
+                    row_widgets["label"],
+                    row_widgets["supplier_combo"],
+                    row_widgets["doc_combo"],
+                    row_widgets["doc_entry"],
+                    row_widgets["remark_entry"],
+                    row_widgets["delivery_combo"],
+                ]
+            except KeyError:
+                self._header_alignment_pending = False
+                return
+
+            self.update_idletasks()
+
+            for frame, label, widget in zip(
+                self._header_column_frames,
+                self._header_labels,
+                column_widgets,
+            ):
+                frame.pack_propagate(False)
+                width = widget.winfo_width() or widget.winfo_reqwidth()
+                height = label.winfo_reqheight() or widget.winfo_reqheight()
+                frame.configure(width=width, height=height)
+                label.configure(anchor="w", width=0)
+                label.pack_configure(fill="x")
+
+            self._header_aligned = True
+            self._header_alignment_pending = False
 
         def _clear_saved_suppliers(self) -> None:
             self.db.defaults_by_production.clear()
             self.db.defaults_by_finish.clear()
             self.db.save()
 
+            set_combo_value = getattr(
+                type(self), "_set_combo_value", SupplierSelectionFrame._set_combo_value
+            )
             for _sel_key, combo in self.rows:
-                combo.set("(geen)")
+                set_combo_value(combo, "(geen)")
 
             for sel_key in self.doc_vars:
                 self.doc_vars[sel_key].set("Standaard bon")
 
             for dcombo in self.delivery_combos.values():
                 dcombo.set("Geen")
+
+            for rvar in getattr(self, "remark_vars", {}).values():
+                rvar.set("")
 
             self._on_combo_change()
 
@@ -1261,6 +1567,9 @@ def start_gui():
             for s in src:
                 self._disp_to_name[self.db.display_name(s)] = s.supplier
 
+            set_combo_value = getattr(
+                type(self), "_set_combo_value", SupplierSelectionFrame._set_combo_value
+            )
             for sel_key, combo in self.rows:
                 typed = combo.get()
                 combo["values"] = self._base_options
@@ -1273,13 +1582,13 @@ def start_gui():
                 if kind == "production":
                     lower_name = identifier.strip().lower()
                     if lower_name in ("dummy part", "nan", "spare part"):
-                        combo.set(self._base_options[0])
+                        set_combo_value(combo, self._base_options[0])
                         continue
                     name = self.db.get_default(identifier)
                 else:
                     name = self.db.get_default_finish(identifier)
                 if typed:
-                    combo.set(typed)
+                    set_combo_value(combo, typed)
                     continue
                 if not name and initial:
                     favs = [x for x in src if x.favorite]
@@ -1294,12 +1603,13 @@ def start_gui():
                         disp = k
                         break
                 if disp:
-                    combo.set(disp)
+                    set_combo_value(combo, disp)
                 elif self._base_options:
-                    combo.set(
+                    set_combo_value(
+                        combo,
                         self._base_options[1]
                         if len(self._base_options) > 1
-                        else self._base_options[0]
+                        else self._base_options[0],
                     )
 
             delivery_opts = [
@@ -1363,7 +1673,12 @@ def start_gui():
             combo["values"] = filtered
             self._populate_cards(filtered, sel_key)
             if evt.keysym == "Return" and len(filtered) == 1:
-                combo.set(filtered[0])
+                set_combo_value = getattr(
+                    type(self),
+                    "_set_combo_value",
+                    SupplierSelectionFrame._set_combo_value,
+                )
+                set_combo_value(combo, filtered[0])
                 self._update_preview_for_text(filtered[0])
             else:
                 self._update_preview_for_text(combo.get())
@@ -1411,7 +1726,10 @@ def start_gui():
         def _on_card_click(self, option: str, sel_key: str):
             combo = self.combo_by_key.get(sel_key)
             if combo:
-                combo.set(option)
+                set_combo_value = getattr(
+                    type(self), "_set_combo_value", SupplierSelectionFrame._set_combo_value
+                )
+                set_combo_value(combo, option)
             self._active_key = sel_key
             self._update_preview_for_text(option)
             self._populate_cards([option], sel_key)
@@ -1469,6 +1787,28 @@ def start_gui():
                 for w in widgets:
                     w.bind("<Button-1>", handler)
 
+        def set_busy(self, busy: bool, message: Optional[str] = None) -> None:
+            confirm = getattr(self, "confirm_button", None)
+            cancel = getattr(self, "cancel_button", None)
+
+            if confirm is not None:
+                try:
+                    confirm.configure(state="disabled" if busy else "normal")
+                except tk.TclError:
+                    pass
+
+            if cancel is not None:
+                try:
+                    cancel.configure(state="normal")
+                except tk.TclError:
+                    pass
+
+            if message is not None:
+                self.status_var.set(message)
+
+        def update_status(self, message: str) -> None:
+            self.status_var.set(message)
+
         def _cancel(self):
             if self.master:
                 try:
@@ -1483,6 +1823,8 @@ def start_gui():
 
         def _confirm(self):
             """Collect selected suppliers per production and return via callback."""
+            import inspect
+
             sel_map: Dict[str, str] = {}
             doc_map: Dict[str, str] = {}
             for sel_key, combo in self.rows:
@@ -1498,24 +1840,76 @@ def start_gui():
 
             doc_num_map: Dict[str, str] = {}
             delivery_map: Dict[str, str] = {}
+            remarks_map: Dict[str, str] = {}
+            remark_vars = getattr(self, "remark_vars", {})
             for sel_key, _combo in self.rows:
                 doc_num_map[sel_key] = self.doc_num_vars[sel_key].get().strip()
                 delivery_map[sel_key] = self.delivery_vars.get(
                     sel_key, tk.StringVar(value="Geen")
                 ).get()
+                remark_var = remark_vars.get(sel_key)
+                remarks_map[sel_key] = remark_var.get().strip() if remark_var else ""
 
             project_number = self.project_number_var.get().strip()
             project_name = self.project_name_var.get().strip()
 
-            self.callback(
-                sel_map,
-                doc_map,
-                doc_num_map,
-                delivery_map,
-                project_number,
-                project_name,
-                bool(self.remember_var.get()),
-            )
+            remember_flag = bool(self.remember_var.get())
+            callback = self.callback
+            use_new_signature = False
+            sig_params = None
+            try:
+                sig = inspect.signature(callback)
+            except (ValueError, TypeError):
+                sig = None
+            if sig is not None:
+                params = list(sig.parameters.values())
+                if params and params[0].name == "self" and params[0].kind in (
+                    inspect.Parameter.POSITIONAL_ONLY,
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                ):
+                    params = params[1:]
+                sig_params = params
+                if any(
+                    p.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+                    for p in params
+                ):
+                    use_new_signature = True
+                elif len(params) >= 8:
+                    use_new_signature = True
+
+            if use_new_signature:
+                try:
+                    callback(
+                        sel_map,
+                        doc_map,
+                        doc_num_map,
+                        delivery_map,
+                        remarks_map,
+                        project_number,
+                        project_name,
+                        remember_flag,
+                    )
+                    return
+                except TypeError as exc:
+                    msg = str(exc)
+                    if not (
+                        "positional" in msg
+                        or "keyword" in msg
+                        or (sig_params is not None and len(sig_params) >= 8)
+                    ):
+                        raise
+                    use_new_signature = False
+
+            if not use_new_signature:
+                callback(
+                    sel_map,
+                    doc_map,
+                    doc_num_map,
+                    delivery_map,
+                    project_number,
+                    project_name,
+                    remember_flag,
+                )
 
     class SettingsFrame(tk.Frame):
         def __init__(self, master, app: "App"):
@@ -1574,6 +1968,17 @@ def start_gui():
 
             _add_option(
                 export_options,
+                "Exporteer gerelateerde exportbestanden naar exportmap",
+                (
+                    "Zoek in de geselecteerde extensies naar bestanden waarvan de naam "
+                    "overeenkomt met de BOM en kopieer ze naast het BOM-bestand. "
+                    "Handig voor extra documenten zoals PDF's of STEP-bestanden."
+                ),
+                self.app.export_related_files_var,
+            )
+
+            _add_option(
+                export_options,
                 "Maak snelkoppeling naar nieuwste exportmap",
                 (
                     "Na het exporteren wordt er een snelkoppeling met de naam 'latest'"
@@ -1591,6 +1996,16 @@ def start_gui():
                     " bestanden aangemaakt of overschreven."
                 ),
                 self.app.bundle_dry_run_var,
+            )
+            _add_option(
+                export_options,
+                "Vul Custom BOM automatisch na het laden van de hoofd-BOM",
+                (
+                    "Wanneer je een BOM opent, wordt dezelfde inhoud ook in de"
+                    " Custom BOM-tab geplaatst zodat je daar meteen kunt"
+                    " aanpassen en bijwerken."
+                ),
+                self.app.autofill_custom_bom_var,
             )
 
             template_frame = tk.LabelFrame(
@@ -1895,6 +2310,7 @@ def start_gui():
             win = tk.Toplevel(self)
             win.title(title)
             win.transient(self)
+            _place_window_near_parent(win, self)
             win.grab_set()
 
             def _normalize_extensions(values) -> List[str]:
@@ -2019,6 +2435,7 @@ def start_gui():
             win.wait_window()
 
     class App(tk.Tk):
+        _CUSTOM_ROW_ATTR = "_custom_row_flags"
         def __init__(self):
             super().__init__()
             import sys
@@ -2101,6 +2518,9 @@ def start_gui():
             self.zip_var = tk.IntVar(
                 master=self, value=1 if self.settings.zip_per_production else 0
             )
+            self.combine_pdf_per_production_var = tk.IntVar(
+                master=self, value=1 if self.settings.combine_pdf_per_production else 0
+            )
             self.finish_export_var = tk.IntVar(
                 master=self, value=1 if self.settings.copy_finish_exports else 0
             )
@@ -2109,6 +2529,10 @@ def start_gui():
             )
             self.export_bom_var = tk.IntVar(
                 master=self, value=1 if self.settings.export_processed_bom else 0
+            )
+            self.export_related_files_var = tk.IntVar(
+                master=self,
+                value=1 if self.settings.export_related_bom_files else 0,
             )
             self.zip_per_finish_var = tk.IntVar(
                 master=self,
@@ -2142,6 +2566,9 @@ def start_gui():
             self.bundle_dry_run_var = tk.IntVar(
                 master=self, value=1 if self.settings.bundle_dry_run else 0
             )
+            self.autofill_custom_bom_var = tk.IntVar(
+                master=self, value=1 if self.settings.autofill_custom_bom else 0
+            )
             self.footer_note_var = tk.StringVar(
                 master=self, value=self.settings.footer_note or ""
             )
@@ -2149,7 +2576,8 @@ def start_gui():
             self.source_folder = self.source_folder_var.get().strip()
             self.dest_folder = self.dest_folder_var.get().strip()
             self.last_bundle_result: Optional[ExportBundleResult] = None
-            self.bom_df: Optional[pd.DataFrame] = None
+            self.bom_df: Optional["pd.DataFrame"] = None
+            self.bom_source_path: Optional[str] = None
 
             for var in (
                 self.source_folder_var,
@@ -2162,15 +2590,18 @@ def start_gui():
                 var.trace_add("write", self._save_settings)
             for var in (
                 self.zip_var,
+                self.combine_pdf_per_production_var,
                 self.finish_export_var,
                 self.zip_finish_var,
                 self.export_bom_var,
+                self.export_related_files_var,
                 self.export_date_prefix_var,
                 self.export_date_suffix_var,
                 self.export_name_custom_prefix_enabled_var,
                 self.export_name_custom_suffix_enabled_var,
                 self.bundle_latest_var,
                 self.bundle_dry_run_var,
+                self.autofill_custom_bom_var,
             ):
                 var.trace_add("write", self._save_settings)
 
@@ -2196,6 +2627,7 @@ def start_gui():
                 self.nb,
                 app_name="Filehopper",
                 on_custom_bom_ready=self._on_custom_bom_ready,
+                on_push_to_main=self._apply_custom_bom_to_main,
                 event_target=self,
             )
             main = tk.Frame(self.nb)
@@ -2234,24 +2666,41 @@ def start_gui():
             )
             self.src_entry = tk.Entry(top, width=60, textvariable=self.source_folder_var)
             self.src_entry.grid(row=0, column=1, padx=4)
+            _scroll_entry_to_end(self.src_entry, self.source_folder_var)
+            _OverflowTooltip(self.src_entry, lambda: self.source_folder_var.get().strip())
             tk.Button(top, text="Bladeren", command=self._pick_src).grid(row=0, column=2, padx=4)
             tk.Label(top, text="Projectnr.:").grid(row=0, column=3, sticky="w", padx=(16, 0))
-            tk.Entry(top, textvariable=self.project_number_var, width=60).grid(row=0, column=4, padx=4, sticky="w")
+            tk.Entry(top, textvariable=self.project_number_var, width=60).grid(
+                row=0, column=4, padx=4, sticky="w"
+            )
 
             tk.Label(top, text=f"{FOLDER_ICON} Bestemmingsmap:", font=label_font).grid(
                 row=1, column=0, sticky="w"
             )
             self.dst_entry = tk.Entry(top, width=60, textvariable=self.dest_folder_var)
             self.dst_entry.grid(row=1, column=1, padx=4)
+            _scroll_entry_to_end(self.dst_entry, self.dest_folder_var)
+            _OverflowTooltip(self.dst_entry, lambda: self.dest_folder_var.get().strip())
             tk.Button(top, text="Bladeren", command=self._pick_dst).grid(row=1, column=2, padx=4)
             tk.Label(top, text="Projectnaam:").grid(row=1, column=3, sticky="w", padx=(16, 0))
-            tk.Entry(top, textvariable=self.project_name_var, width=60).grid(row=1, column=4, padx=4, sticky="w")
+            tk.Entry(top, textvariable=self.project_name_var, width=60).grid(
+                row=1, column=4, padx=4, sticky="w"
+            )
+
+            top.grid_columnconfigure(5, weight=1)
+            tk.Button(
+                top,
+                text="Leegmaken",
+                command=self._clear_main_inputs,
+            ).grid(row=0, column=5, rowspan=2, sticky="ne", padx=(16, 0))
 
             tk.Label(top, text=f"{USER_ICON} Opdrachtgever:", font=label_font).grid(
                 row=2, column=0, sticky="w", pady=(8, 0)
             )
             self.client_var = tk.StringVar()
-            self.client_combo = ttk.Combobox(top, textvariable=self.client_var, state="readonly", width=40)
+            self.client_combo = ttk.Combobox(
+                top, textvariable=self.client_var, state="readonly", width=40
+            )
             self.client_combo.grid(row=2, column=1, padx=4, pady=(8, 0))
             tk.Button(top, text="Beheer", command=lambda: self.nb.select(self.clients_frame)).grid(
                 row=2, column=2, padx=4, pady=(8, 0)
@@ -2308,6 +2757,12 @@ def start_gui():
                 options_frame,
                 text="Finish export",
                 variable=self.finish_export_var,
+                anchor="w",
+            ).pack(anchor="w", pady=2)
+            tk.Checkbutton(
+                options_frame,
+                text="Combineer pdf per productie (uit = één PDF)",
+                variable=self.combine_pdf_per_production_var,
                 anchor="w",
             ).pack(anchor="w", pady=2)
             tk.Checkbutton(
@@ -2418,12 +2873,13 @@ def start_gui():
             tk.Button(
                 act, text="Kopieer zonder submappen", command=self._copy_flat, **button_style
             ).pack(side="left", padx=6)
-            tk.Button(
+            self.copy_per_prod_button = tk.Button(
                 act,
                 text="Kopieer per productie + bestelbonnen",
                 command=self._copy_per_prod,
                 **button_style,
-            ).pack(side="left", padx=6)
+            )
+            self.copy_per_prod_button.pack(side="left", padx=6)
             tk.Button(
                 act, text="Combine pdf", command=self._combine_pdf, **button_style
             ).pack(side="left", padx=6)
@@ -2454,6 +2910,25 @@ def start_gui():
             elif opts:
                 self.client_combo.set(opts[0])
 
+        def _clear_main_inputs(self) -> None:
+            prev_suspend = getattr(self, "_suspend_save", False)
+            self._suspend_save = True
+            try:
+                self.source_folder_var.set("")
+                self.dest_folder_var.set("")
+                self.project_number_var.set("")
+                self.project_name_var.set("")
+            finally:
+                self._suspend_save = prev_suspend
+
+            if not prev_suspend:
+                self._save_settings()
+
+            try:
+                self.src_entry.focus_set()
+            except Exception:
+                pass
+
         def _toggle_zip_per_finish(self):
             enabled = bool(self.zip_per_finish_var.get())
             desired = 1 if enabled else 0
@@ -2477,9 +2952,15 @@ def start_gui():
             self.settings.project_number = self.project_number_var.get().strip()
             self.settings.project_name = self.project_name_var.get().strip()
             self.settings.zip_per_production = bool(self.zip_var.get())
+            self.settings.combine_pdf_per_production = bool(
+                self.combine_pdf_per_production_var.get()
+            )
             self.settings.copy_finish_exports = bool(self.finish_export_var.get())
             self.settings.zip_finish_exports = bool(self.zip_finish_var.get())
             self.settings.export_processed_bom = bool(self.export_bom_var.get())
+            self.settings.export_related_bom_files = bool(
+                self.export_related_files_var.get()
+            )
             self.settings.export_date_prefix = bool(self.export_date_prefix_var.get())
             self.settings.export_date_suffix = bool(self.export_date_suffix_var.get())
             self.settings.custom_prefix_enabled = bool(
@@ -2492,6 +2973,9 @@ def start_gui():
             self.settings.custom_suffix_text = self.export_name_custom_suffix_text.get().strip()
             self.settings.bundle_latest = bool(self.bundle_latest_var.get())
             self.settings.bundle_dry_run = bool(self.bundle_dry_run_var.get())
+            self.settings.autofill_custom_bom = bool(
+                self.autofill_custom_bom_var.get()
+            )
             self.settings.footer_note = self.footer_note_var.get().replace("\r\n", "\n")
             for ext in self.settings.file_extensions:
                 var = self.extension_vars.get(ext.key)
@@ -2615,6 +3099,20 @@ def start_gui():
                     selected.extend(ext.patterns)
             return selected or None
 
+        def _store_custom_row_flags(
+            self, df: "pd.DataFrame", flags: List[bool]
+        ) -> None:
+            normalized = list(flags)
+            if len(normalized) != len(df.index):
+                normalized = [False] * len(df.index)
+            df.attrs[self._CUSTOM_ROW_ATTR] = normalized
+
+        def _get_custom_row_flags(self, df: "pd.DataFrame") -> List[bool]:
+            flags = list(df.attrs.get(self._CUSTOM_ROW_ATTR, []))
+            if len(flags) != len(df.index):
+                flags = [False] * len(df.index)
+            return flags
+
         def _ensure_bom_loaded(self) -> bool:
             from tkinter import messagebox
 
@@ -2624,7 +3122,7 @@ def start_gui():
                 return False
             return True
 
-        def _load_bom_from_path(self, path: str) -> None:
+        def _load_bom_from_path(self, path: str, *, mark_as_custom: bool = False) -> None:
             df = load_bom(path)
             if "Bestanden gevonden" not in df.columns:
                 df["Bestanden gevonden"] = ""
@@ -2632,16 +3130,25 @@ def start_gui():
                 df["Status"] = ""
             if "Link" not in df.columns:
                 df["Link"] = ""
+            self._store_custom_row_flags(df, [mark_as_custom] * len(df.index))
             self.bom_df = df
+            self.bom_source_path = os.path.abspath(path)
             self._refresh_tree()
             self.status_var.set(f"BOM geladen: {len(df)} rijen")
+            try:
+                self.custom_bom_tab.load_from_main_dataframe(df)
+            except Exception as exc:
+                print(
+                    f"Kon custom BOM niet vullen vanuit hoofd-BOM: {exc}",
+                    file=sys.stderr,
+                )
 
         def _load_bom(self):
             from tkinter import filedialog, messagebox
 
             start_dir = self.source_folder if self.source_folder else os.getcwd()
             path = filedialog.askopenfilename(
-                filetypes=[("CSV", "*.csv"), ("Excel", "*.xlsx;*.xls")],
+                filetypes=[("Excel", "*.xlsx *.xls"), ("CSV", "*.csv")],
                 initialdir=start_dir,
             )
             if not path:
@@ -2655,7 +3162,7 @@ def start_gui():
             from tkinter import messagebox
 
             try:
-                self._load_bom_from_path(str(path))
+                self._load_bom_from_path(str(path), mark_as_custom=True)
             except Exception as exc:
                 messagebox.showerror("Fout", str(exc))
             else:
@@ -2669,6 +3176,32 @@ def start_gui():
                     self.status_var.set(
                         "Aangepaste BOM geladen. Terug naar Main-tabblad."
                     )
+
+        def _apply_custom_bom_to_main(self, custom_df: "pd.DataFrame") -> None:
+            from tkinter import messagebox
+
+
+            if custom_df is None or custom_df.empty:
+                messagebox.showwarning(
+                    "Geen gegevens",
+                    "Er zijn geen rijen met gegevens om naar de Main-tab te sturen.",
+                    parent=self.custom_bom_tab,
+                )
+                return
+
+            try:
+                normalized = prepare_custom_bom_for_main(custom_df, self.bom_df)
+            except ValueError as exc:
+                messagebox.showerror("Fout", str(exc), parent=self.custom_bom_tab)
+                return
+
+            self._store_custom_row_flags(normalized, [True] * len(normalized.index))
+            self.bom_df = normalized
+            self._refresh_tree()
+            self.nb.select(self.main_frame)
+            self.status_var.set(
+                f"Custom BOM wijzigingen toegepast ({len(normalized)} rijen)."
+            )
 
         def _refresh_tree(self):
             self.item_links.clear()
@@ -2711,30 +3244,63 @@ def start_gui():
             if not selection:
                 return "break" if event is not None else None
 
-            indices: List[int] = []
+            row_count = len(df.index)
+            item_pairs: List[tuple[int, str]] = []
             for item in selection:
                 try:
                     idx = self.tree.index(item)
                 except tk.TclError:
                     continue
-                indices.append(idx)
-            if not indices:
+                item_pairs.append((idx, item))
+            if not item_pairs:
                 return "break" if event is not None else None
 
-            row_count = len(df)
-            sorted_indices = sorted(set(indices))
-            drop_labels = []
-            for idx in sorted_indices:
-                if 0 <= idx < row_count:
-                    drop_labels.append(df.index[idx])
+            custom_flags = self._get_custom_row_flags(df)
+            has_custom_rows = any(custom_flags)
+            sorted_pairs = sorted(item_pairs, key=lambda pair: pair[0])
+
+            removable_pairs = [
+                (idx, item)
+                for idx, item in sorted_pairs
+                if 0 <= idx < row_count
+                and idx < len(custom_flags)
+                and custom_flags[idx]
+            ]
+
+            if not removable_pairs:
+                # Allow deleting regular BOM rows as a fallback when there are no
+                # custom rows flagged (e.g. when working on a freshly loaded BOM).
+                if has_custom_rows:
+                    self.status_var.set(
+                        "Geen Custom BOM-rijen geselecteerd om te verwijderen."
+                    )
+                    return "break" if event is not None else None
+
+                removable_pairs = [
+                    (idx, item)
+                    for idx, item in sorted_pairs
+                    if 0 <= idx < row_count
+                ]
+                if not removable_pairs:
+                    return "break" if event is not None else None
+
+            drop_labels = [df.index[idx] for idx, _ in removable_pairs]
             if not drop_labels:
                 return "break" if event is not None else None
 
-            self.bom_df = df.drop(drop_labels).reset_index(drop=True)
+            removed_positions = {idx for idx, _ in removable_pairs}
+            remaining_flags = [
+                flag
+                for pos, flag in enumerate(custom_flags)
+                if pos not in removed_positions
+            ]
+            updated_df = df.drop(drop_labels).reset_index(drop=True)
+            self._store_custom_row_flags(updated_df, remaining_flags)
+            self.bom_df = updated_df
 
-            target_index = sorted_indices[0]
+            target_index = removable_pairs[0][0]
             removed = 0
-            for item in selection:
+            for _, item in removable_pairs:
                 if item in self.item_links:
                     self.item_links.pop(item, None)
                 try:
@@ -2744,11 +3310,32 @@ def start_gui():
                 removed += 1
 
             if removed:
-                msg = "1 BOM-rij verwijderd." if removed == 1 else f"{removed} BOM-rijen verwijderd."
+                skipped = len(item_pairs) - removed
+                if has_custom_rows:
+                    if removed == 1:
+                        msg = "1 Custom BOM-rij verwijderd."
+                    else:
+                        msg = f"{removed} Custom BOM-rijen verwijderd."
+                else:
+                    if removed == 1:
+                        msg = "1 rij verwijderd."
+                    else:
+                        msg = f"{removed} rijen verwijderd."
+                if skipped > 0:
+                    suffix = (
+                        "1 rij overgeslagen" if skipped == 1 else f"{skipped} rijen overgeslagen"
+                    )
+                    msg = f"{msg} ({suffix})"
                 self.status_var.set(msg)
 
             remaining_items = list(self.tree.get_children())
-            if remaining_items:
+            current_selection = self.tree.selection()
+            if current_selection:
+                try:
+                    self.tree.see(current_selection[0])
+                except tk.TclError:
+                    pass
+            elif remaining_items:
                 target_index = min(target_index, len(remaining_items) - 1)
                 next_item = remaining_items[target_index]
                 try:
@@ -2759,7 +3346,6 @@ def start_gui():
                     pass
             else:
                 try:
-                    current_selection = self.tree.selection()
                     if current_selection:
                         self.tree.selection_remove(*current_selection)
                     self.tree.focus("")
@@ -2823,6 +3409,7 @@ def start_gui():
                 if col in self.bom_df.columns:
                     self.bom_df[col] = ""
             self.bom_df = None
+            self.bom_source_path = None
             self._refresh_tree()
             self.status_var.set("BOM gewist.")
 
@@ -2912,11 +3499,35 @@ def start_gui():
                 self.export_name_custom_suffix_enabled_var.get()
             )
 
+            tree_items = list(self.tree.get_children()) if hasattr(self, "tree") else []
+            part_numbers_for_export: List[str] = []
+            seen_part_numbers: set[str] = set()
+
+            if tree_items:
+                for item in tree_items:
+                    pn = _to_str(self.tree.set(item, "PartNumber")).strip()
+                    if pn and pn not in seen_part_numbers:
+                        seen_part_numbers.add(pn)
+                        part_numbers_for_export.append(pn)
+            else:
+                df_snapshot = self.bom_df
+                if df_snapshot is not None:
+                    for _, row in df_snapshot.iterrows():
+                        pn = _to_str(row.get("PartNumber")).strip()
+                        if pn and pn not in seen_part_numbers:
+                            seen_part_numbers.add(pn)
+                            part_numbers_for_export.append(pn)
+
             def work(
                 token_prefix_text=custom_prefix_text,
                 token_suffix_text=custom_suffix_text,
                 token_prefix_enabled=custom_prefix_enabled,
                 token_suffix_enabled=custom_suffix_enabled,
+                export_part_numbers=tuple(part_numbers_for_export),
+                bom_df_snapshot=self.bom_df,
+                bom_source=self.bom_source_path,
+                export_bom_enabled=bool(self.export_bom_var.get()),
+                export_related_enabled=bool(self.export_related_files_var.get()),
             ):
                 self.status_var.set("Bundelmap voorbereiden...")
                 try:
@@ -2969,11 +3580,11 @@ def start_gui():
                 suffix_text_clean = (token_suffix_text or "").strip()
                 prefix_active = bool(token_prefix_enabled) and bool(prefix_text_clean)
                 suffix_active = bool(token_suffix_enabled) and bool(suffix_text_clean)
+                today_date = datetime.date.today()
                 date_token = (
-                    datetime.date.today().strftime("%Y%m%d")
-                    if date_prefix or date_suffix
-                    else ""
+                    today_date.strftime("%Y%m%d") if date_prefix or date_suffix else ""
                 )
+                today_iso = today_date.strftime("%Y-%m-%d")
 
                 def _export_name(fname: str) -> str:
                     if not (
@@ -2997,15 +3608,107 @@ def start_gui():
                     parts = prefix_parts + [stem] + suffix_parts
                     new_stem = "-".join([p for p in parts if p])
                     return f"{new_stem}{ext}"
+                copied_paths: set[str] = set()
                 cnt = 0
-                for _, paths in idx.items():
-                    for p in paths:
+                for pn in export_part_numbers:
+                    for p in idx.get(pn, []):
+                        if p in copied_paths:
+                            continue
+                        copied_paths.add(p)
                         name = _export_name(os.path.basename(p))
                         dst = os.path.join(bundle_dest, name)
                         shutil.copy2(p, dst)
                         cnt += 1
+
+                bom_written = False
+                related_copied = 0
+
+                if export_bom_enabled:
+                    if bom_df_snapshot is None:
+                        def on_error():
+                            messagebox.showerror(
+                                "Fout",
+                                "Geen BOM beschikbaar om te exporteren.",
+                                parent=self,
+                            )
+                            self.status_var.set("BOM-export mislukt.")
+
+                        self.after(0, on_error)
+                        return
+                    try:
+                        bom_filename = make_bom_export_filename(
+                            bom_source,
+                            today_iso,
+                            _export_name,
+                        )
+                        _export_bom_workbook(bom_df_snapshot, bundle_dest, bom_filename)
+                        bom_written = True
+                    except Exception as exc:
+                        def on_error():
+                            messagebox.showerror(
+                                "Fout",
+                                f"Kon BOM-export niet opslaan:\n{exc}",
+                                parent=self,
+                            )
+                            self.status_var.set("BOM-export mislukt.")
+
+                        self.after(0, on_error)
+                        return
+
+                if bom_written and export_related_enabled and bom_source:
+                    try:
+                        for src_file in find_related_bom_exports(bom_source, idx):
+                            if src_file in copied_paths:
+                                continue
+                            copied_paths.add(src_file)
+                            transformed = _export_name(os.path.basename(src_file))
+                            dst = os.path.join(bundle_dest, transformed)
+                            shutil.copy2(src_file, dst)
+                            related_copied += 1
+                    except Exception as exc:
+                        def on_error():
+                            messagebox.showerror(
+                                "Fout",
+                                f"Kon gerelateerde exportbestanden kopiëren:\n{exc}",
+                                parent=self,
+                            )
+                            self.status_var.set("Kopiëren mislukt.")
+
+                        self.after(0, on_error)
+                        return
+
                 def on_done():
-                    self.status_var.set(f"Gekopieerd: {cnt} → {bundle_dest}")
+                    status_text = f"Klaar. Gekopieerd: {cnt} → {bundle_dest}"
+                    if bom_written:
+                        status_text += " (BOM opgeslagen)"
+                    if related_copied:
+                        status_text += f" (+{related_copied} gerelateerd)"
+                    self.status_var.set(status_text)
+                    info_lines = ["Bestanden gekopieerd naar:", bundle_dest]
+                    if bundle.latest_symlink:
+                        info_lines.append(f"Symlink: {bundle.latest_symlink}")
+                    details = []
+                    if bom_written:
+                        details.append("BOM geëxporteerd")
+                    if related_copied:
+                        details.append(f"Gerelateerde bestanden: {related_copied}")
+                    if details:
+                        info_lines.append("")
+                        info_lines.append(", ".join(details))
+                    messagebox.showinfo("Klaar", "\n".join(info_lines), parent=self)
+                    try:
+                        if sys.platform.startswith("win"):
+                            os.startfile(bundle_dest)
+                        elif sys.platform == "darwin":
+                            subprocess.run(["open", bundle_dest], check=False)
+                        else:
+                            subprocess.run(["xdg-open", bundle_dest], check=False)
+                    except Exception as exc:
+                        messagebox.showwarning(
+                            "Let op",
+                            f"Kon bundelmap niet openen:\n{exc}",
+                            parent=self,
+                        )
 
                 self.after(0, on_done)
             threading.Thread(target=work, daemon=True).start()
@@ -3016,6 +3719,16 @@ def start_gui():
             if not self._ensure_bom_loaded():
                 return
             bom_df = self.bom_df
+            attrs = getattr(bom_df, "attrs", {}) or {}
+            missing_production = bool(attrs.get("production_column_missing"))
+            if missing_production:
+                messagebox.showwarning(
+                    "Let op",
+                    "De geladen BOM mist de kolom 'Production'. "
+                    "Vul de productie in de BOM in om bestelbonnen per productie te exporteren.",
+                    parent=self,
+                )
+                return
             exts = self._selected_exts()
             if not exts or not self.source_folder or not self.dest_folder:
                 messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies."); return
@@ -3063,6 +3776,7 @@ def start_gui():
                 doc_map: Dict[str, str],
                 doc_num_map: Dict[str, str],
                 delivery_map_raw: Dict[str, str],
+                remarks_map_raw: Dict[str, str],
                 project_number: str,
                 project_name: str,
                 remember: bool,
@@ -3117,6 +3831,18 @@ def start_gui():
                     else:
                         production_delivery_map[identifier] = resolved
 
+                production_remarks_map: Dict[str, str] = {}
+                finish_remarks_map: Dict[str, str] = {}
+                for key, text in remarks_map_raw.items():
+                    clean_text = text.strip()
+                    if not clean_text:
+                        continue
+                    kind, identifier = parse_selection_key(key)
+                    if kind == "finish":
+                        finish_remarks_map[identifier] = clean_text
+                    else:
+                        production_remarks_map[identifier] = clean_text
+
                 custom_prefix_text = self.export_name_custom_prefix_text.get().strip()
                 custom_prefix_enabled = bool(
                     self.export_name_custom_prefix_enabled_var.get()
@@ -3126,13 +3852,44 @@ def start_gui():
                     self.export_name_custom_suffix_enabled_var.get()
                 )
 
+                def update_status(message: str) -> None:
+                    def apply() -> None:
+                        self.status_var.set(message)
+                        if sel_frame is not None:
+                            try:
+                                if sel_frame.winfo_exists():
+                                    sel_frame.update_status(message)
+                            except tk.TclError:
+                                pass
+
+                    self.after(0, apply)
+
+                def set_busy_state(active: bool, message: Optional[str] = None) -> None:
+                    def apply() -> None:
+                        btn = getattr(self, "copy_per_prod_button", None)
+                        if btn is not None:
+                            try:
+                                btn.configure(state="disabled" if active else "normal")
+                            except tk.TclError:
+                                pass
+                        if sel_frame is not None:
+                            try:
+                                if sel_frame.winfo_exists():
+                                    sel_frame.set_busy(active, message)
+                            except tk.TclError:
+                                pass
+
+                    self.after(0, apply)
+                    if message is not None:
+                        update_status(message)
+
                 def work(
                     token_prefix_text=custom_prefix_text,
                     token_suffix_text=custom_suffix_text,
                     token_prefix_enabled=custom_prefix_enabled,
                     token_suffix_enabled=custom_suffix_enabled,
                 ):
-                    self.status_var.set("Bundelmap voorbereiden...")
+                    update_status("Bundelmap voorbereiden...")
                     try:
                         bundle = create_export_bundle(
                             self.dest_folder,
@@ -3148,7 +3905,8 @@ def start_gui():
                                 f"Kon bundelmap niet maken:\n{exc}",
                                 parent=self,
                             )
-                            self.status_var.set("Bundelmap maken mislukt.")
+                            update_status("Bundelmap maken mislukt.")
+                            set_busy_state(False)
 
                         self.after(0, on_error)
                         return
@@ -3170,45 +3928,67 @@ def start_gui():
                             if bundle.latest_symlink:
                                 lines.append(f"Snelkoppeling: {bundle.latest_symlink}")
                             messagebox.showinfo("Testrun", "\n".join(lines), parent=self)
-                            self.status_var.set(f"Testrun - doelmap: {bundle_dest}")
+                            update_status(f"Testrun - doelmap: {bundle_dest}")
+                            set_busy_state(False)
 
                         self.after(0, on_dry)
                         return
 
-                    self.status_var.set("Kopiëren & bestelbonnen maken...")
+                    update_status("Kopiëren & bestelbonnen maken...")
                     client = self.client_db.get(
                         self.client_var.get().replace("★ ", "", 1)
                     )
-                    cnt, chosen = copy_per_production_and_orders(
-                        self.source_folder,
-                        bundle_dest,
-                        current_bom,
-                        exts,
-                        self.db,
-                        prod_override_map,
-                        doc_type_map,
-                        prod_doc_num_map,
-                        remember,
-                        client=client,
-                        delivery_map=production_delivery_map,
-                        footer_note=self.footer_note_var.get(),
-                        zip_parts=bool(self.zip_var.get()),
-                        date_prefix_exports=bool(self.export_date_prefix_var.get()),
-                        date_suffix_exports=bool(self.export_date_suffix_var.get()),
-                        project_number=project_number,
-                        project_name=project_name,
-                        copy_finish_exports=bool(self.finish_export_var.get()),
-                        zip_finish_exports=bool(self.zip_finish_var.get()),
-                        export_bom=bool(self.export_bom_var.get()),
-                        export_name_prefix_text=token_prefix_text,
-                        export_name_prefix_enabled=token_prefix_enabled,
-                        export_name_suffix_text=token_suffix_text,
-                        export_name_suffix_enabled=token_suffix_enabled,
-                        finish_override_map=finish_override_map,
-                        finish_doc_type_map=finish_doc_type_map,
-                        finish_doc_num_map=finish_doc_num_map,
-                        finish_delivery_map=finish_delivery_map,
-                    )
+                    try:
+                        cnt, chosen = copy_per_production_and_orders(
+                            self.source_folder,
+                            bundle_dest,
+                            current_bom,
+                            exts,
+                            self.db,
+                            prod_override_map,
+                            doc_type_map,
+                            prod_doc_num_map,
+                            remember,
+                            client=client,
+                            delivery_map=production_delivery_map,
+                            footer_note=self.footer_note_var.get(),
+                            zip_parts=bool(self.zip_var.get()),
+                            date_prefix_exports=bool(self.export_date_prefix_var.get()),
+                            date_suffix_exports=bool(self.export_date_suffix_var.get()),
+                            project_number=project_number,
+                            project_name=project_name,
+                            copy_finish_exports=bool(self.finish_export_var.get()),
+                            zip_finish_exports=bool(self.zip_finish_var.get()),
+                            export_bom=bool(self.export_bom_var.get()),
+                            export_related_files=bool(
+                                self.export_related_files_var.get()
+                            ),
+                            export_name_prefix_text=token_prefix_text,
+                            export_name_prefix_enabled=token_prefix_enabled,
+                            export_name_suffix_text=token_suffix_text,
+                            export_name_suffix_enabled=token_suffix_enabled,
+                            finish_override_map=finish_override_map,
+                            finish_doc_type_map=finish_doc_type_map,
+                            finish_doc_num_map=finish_doc_num_map,
+                            finish_delivery_map=finish_delivery_map,
+                            remarks_map=production_remarks_map,
+                            finish_remarks_map=finish_remarks_map,
+                            bom_source_path=self.bom_source_path,
+                        )
+                    except Exception as exc:
+                        error_message = str(exc)
+
+                        def on_error():
+                            messagebox.showerror(
+                                "Fout",
+                                f"Bestelbonnen exporteren mislukt:\n{error_message}",
+                                parent=self,
+                            )
+                            update_status("Export mislukt.")
+                            set_busy_state(False)
+
+                        self.after(0, on_error)
+                        return
 
                     def on_done():
                         friendly_pairs = []
@@ -3226,52 +4006,83 @@ def start_gui():
                             if friendly_pairs
                             else str(chosen)
                         )
-                        self.status_var.set(
+                        final_status = (
                             f"Klaar. Gekopieerd: {cnt}. Leveranciers: {suppliers_text}. → {bundle_dest}"
                         )
-                        info_lines = ["Bestelbonnen aangemaakt in:", bundle_dest]
-                        if bundle.latest_symlink:
-                            info_lines.append(f"Symlink: {bundle.latest_symlink}")
-                        messagebox.showinfo("Klaar", "\n".join(info_lines), parent=self)
+                        update_status(final_status)
                         try:
-                            if sys.platform.startswith("win"):
-                                os.startfile(bundle_dest)
-                            elif sys.platform == "darwin":
-                                subprocess.run(["open", bundle_dest], check=False)
-                            else:
-                                subprocess.run(["xdg-open", bundle_dest], check=False)
-                        except Exception as exc:
-                            messagebox.showwarning(
-                                "Let op",
-                                f"Kon bundelmap niet openen:\n{exc}",
-                                parent=self,
-                            )
-                        if getattr(self, "sel_frame", None):
+                            info_lines = ["Bestelbonnen aangemaakt in:", bundle_dest]
+                            if bundle.latest_symlink:
+                                info_lines.append(f"Symlink: {bundle.latest_symlink}")
+                            messagebox.showinfo("Klaar", "\n".join(info_lines), parent=self)
                             try:
-                                self.nb.forget(self.sel_frame)
-                                self.sel_frame.destroy()
-                            except Exception:
-                                pass
-                            self.sel_frame = None
-                        self.nb.select(self.main_frame)
+                                if sys.platform.startswith("win"):
+                                    os.startfile(bundle_dest)
+                                elif sys.platform == "darwin":
+                                    subprocess.run(["open", bundle_dest], check=False)
+                                else:
+                                    subprocess.run(["xdg-open", bundle_dest], check=False)
+                            except Exception as exc:
+                                messagebox.showwarning(
+                                    "Let op",
+                                    f"Kon bundelmap niet openen:\n{exc}",
+                                    parent=self,
+                                )
+                        finally:
+                            if getattr(self, "sel_frame", None):
+                                try:
+                                    self.nb.forget(self.sel_frame)
+                                    self.sel_frame.destroy()
+                                except Exception:
+                                    pass
+                                self.sel_frame = None
+                            self.nb.select(self.main_frame)
+                            set_busy_state(False)
 
                     self.after(0, on_done)
 
+                set_busy_state(True, "Bundelmap voorbereiden...")
+
                 threading.Thread(target=work, daemon=True).start()
 
-            sel_frame = SupplierSelectionFrame(
-                self.nb,
-                prods,
-                finish_entries,
-                self.db,
-                self.delivery_db,
-                on_sel,
-                self.project_number_var,
-                self.project_name_var,
-            )
+            sup_search_restore = ""
+            sup_frame = getattr(self, "suppliers_frame", None)
+            if sup_frame is not None and hasattr(sup_frame, "suspend_search_filter"):
+                try:
+                    sup_search_restore = sup_frame.suspend_search_filter()
+                except Exception:
+                    sup_search_restore = ""
+
+            try:
+                sel_frame = SupplierSelectionFrame(
+                    self.nb,
+                    prods,
+                    finish_entries,
+                    self.db,
+                    self.delivery_db,
+                    on_sel,
+                    self.project_number_var,
+                    self.project_name_var,
+                )
+            except Exception:
+                if sup_search_restore and hasattr(sup_frame, "restore_search_filter"):
+                    try:
+                        sup_frame.restore_search_filter(sup_search_restore)
+                    except Exception:
+                        pass
+                raise
             self.sel_frame = sel_frame
             self.nb.add(sel_frame, state="hidden")
             self.nb.select(sel_frame)
+
+            if sup_search_restore and hasattr(sup_frame, "restore_search_filter"):
+                def _restore_search(_event=None, frame=sup_frame, value=sup_search_restore):
+                    try:
+                        frame.restore_search_filter(value)
+                    except Exception:
+                        pass
+
+                sel_frame.bind("<Destroy>", _restore_search, add="+")
 
         def _combine_pdf(self):
             from tkinter import messagebox
@@ -3283,8 +4094,17 @@ def start_gui():
                     self.status_var.set("PDF's combineren...")
                     try:
                         out_dir = self.dest_folder or self.source_folder
-                        cnt = combine_pdfs_from_source(
-                            self.source_folder, bom_df, out_dir
+                        pn = self.project_number_var.get().strip() if self.project_number_var else ""
+                        pname = self.project_name_var.get().strip() if self.project_name_var else ""
+                        result = combine_pdfs_from_source(
+                            self.source_folder,
+                            bom_df,
+                            out_dir,
+                            project_number=pn or None,
+                            project_name=pname or None,
+                            combine_per_production=bool(
+                                self.combine_pdf_per_production_var.get()
+                            ),
                         )
                     except ModuleNotFoundError:
                         self.status_var.set("PyPDF2 ontbreekt")
@@ -3293,8 +4113,25 @@ def start_gui():
                             "Installeer PyPDF2 om PDF's te combineren.",
                         )
                         return
-                    self.status_var.set(f"Gecombineerde pdf's: {cnt}")
-                    messagebox.showinfo("Klaar", "PDF's gecombineerd.")
+                    self.status_var.set(
+                        f"Gecombineerde pdf's: {result.count} → {result.output_dir}"
+                    )
+                    messagebox.showinfo(
+                        "Klaar",
+                        "PDF's gecombineerd.\n\n" f"Map: {result.output_dir}",
+                    )
+                    try:
+                        if sys.platform.startswith("win"):
+                            os.startfile(result.output_dir)
+                        elif sys.platform == "darwin":
+                            subprocess.run(["open", result.output_dir], check=False)
+                        else:
+                            subprocess.run(["xdg-open", result.output_dir], check=False)
+                    except Exception as exc:
+                        messagebox.showwarning(
+                            "Let op",
+                            f"Kon exportmap niet openen:\n{exc}",
+                        )
                 threading.Thread(target=work, daemon=True).start()
             else:
                 messagebox.showwarning(

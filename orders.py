@@ -9,12 +9,17 @@ import sys
 import shutil
 import datetime
 import re
+import unicodedata
 import zipfile
 import io
+import tempfile
+import hashlib
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import pandas as pd
+from dataclasses import dataclass
 try:
     from openpyxl.styles import Alignment
     from openpyxl.utils import get_column_letter
@@ -58,13 +63,174 @@ DEFAULT_FOOTER_NOTE = (
 
 STEP_EXTS = {".step", ".stp"}
 
+NO_SUPPLIER_PLACEHOLDER = "(geen)"
 
-def _export_bom_workbook(bom_df: pd.DataFrame, dest: str, date_iso: str) -> str:
+
+_BOM_STATUS_COLUMNS: Tuple[str, ...] = ("Bestanden gevonden", "Status", "Link")
+_BOM_EXPORT_BASE_COLUMNS: Tuple[str, ...] = (
+    "PartNumber",
+    "Description",
+    "Profile",
+    "Length profile",
+    "Production",
+    "Materiaal",
+    "Supplier",
+    "Supplier code",
+    "Manufacturer",
+    "Manufacturer code",
+    "Finish",
+    "RAL color",
+    "Aantal",
+    "Oppervlakte",
+    "Gewicht",
+)
+
+
+@dataclass(slots=True)
+class CombinedPdfResult:
+    """Metadata for combined PDF export operations."""
+
+    count: int
+    output_dir: str
+
+
+_INVALID_PATH_CHARS = set('<>:"/\\|?*')
+_WINDOWS_MAX_PATH = 240
+
+
+def _sanitize_component(value: object) -> str:
+    """Return a filesystem-friendly representation of ``value``."""
+
+    text = "" if value is None else str(value).strip()
+    if not text:
+        return ""
+    text = " ".join(text.split())
+    cleaned: List[str] = []
+    for ch in text:
+        if ch in _INVALID_PATH_CHARS or ord(ch) < 32:
+            cleaned.append("_")
+        elif ch == os.sep or (os.altsep and ch == os.altsep):
+            cleaned.append("-")
+        else:
+            cleaned.append(ch)
+    return "".join(cleaned).strip(" .-_")
+
+
+def _slugify_name(value: object, fallback: str) -> str:
+    """Slugify ``value`` similar to export bundle directories."""
+
+    normalized = unicodedata.normalize("NFKD", "" if value is None else str(value))
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    ascii_text = ascii_text.lower()
+    ascii_text = ascii_text.replace(" ", "-")
+    ascii_text = re.sub(r"[^a-z0-9-]", "", ascii_text)
+    ascii_text = re.sub(r"-+", "-", ascii_text).strip("-")
+    if len(ascii_text) > 40:
+        ascii_text = ascii_text[:40].rstrip("-")
+    if ascii_text:
+        return ascii_text
+    fallback_norm = unicodedata.normalize("NFKD", fallback)
+    ascii_fallback = fallback_norm.encode("ascii", "ignore").decode("ascii") or fallback
+    ascii_fallback = re.sub(r"[^a-zA-Z0-9-]", "", ascii_fallback)
+    ascii_fallback = ascii_fallback.lower()[:40].rstrip("-")
+    return ascii_fallback or "export"
+
+
+def _fit_filename_within_path(
+    directory: str, filename: str, *, max_path: int = _WINDOWS_MAX_PATH
+) -> str:
+    """Return ``filename`` possibly shortened so ``directory/filename`` fits ``max_path``.
+
+    On Windows, opening files with paths longer than 260 characters raises ``FileNotFoundError``.
+    ``max_path`` defaults to a slightly smaller value (240) to provide some safety margin for
+    runtime conversions that may add characters (e.g. via extended paths). When the composed path
+    exceeds the limit, the base filename is truncated and suffixed with an 8-character hash so the
+    resulting name remains unique and deterministic while staying within the limit. ``max_path`` can
+    be overridden (primarily for tests). When the directory path already exceeds the limit the
+    function raises :class:`OSError` as there is no filename that could satisfy the constraint.
+    """
+
+    if max_path is None:
+        return filename
+
+    directory_abs = os.path.abspath(directory)
+    full_abs = os.path.join(directory_abs, filename)
+    if len(full_abs) <= max_path:
+        return filename
+
+    stem, ext = os.path.splitext(filename)
+    if not stem:
+        stem = "_"
+
+    available = max_path - len(directory_abs) - len(os.sep) - len(ext)
+    if available <= 0:
+        raise OSError(
+            "Basispad is te lang voor het genereren van exportbestanden. Verkort het exportpad."
+        )
+
+    digest = hashlib.sha1(full_abs.encode("utf-8")).hexdigest()[:8]
+    if available <= len(digest):
+        safe_stem = digest[:available]
+    else:
+        keep = max(1, available - len(digest) - 1)
+        safe_stem = f"{stem[:keep].rstrip(' _-.')}_{digest}" if keep < len(stem) else f"{stem}_{digest}"
+
+    safe_filename = f"{safe_stem}{ext}"
+    safe_abs = os.path.join(directory_abs, safe_filename)
+    if len(safe_abs) > max_path and available > len(digest):
+        safe_stem = digest[: available]
+        safe_filename = f"{safe_stem}{ext}"
+
+    return safe_filename
+
+
+def _create_combined_output_dir(
+    base_dir: str,
+    project_number: Optional[str],
+    project_name: Optional[str],
+    *,
+    timestamp: Optional[datetime.datetime] = None,
+) -> str:
+    """Create a combined PDF export directory inside ``base_dir``."""
+
+    os.makedirs(base_dir, exist_ok=True)
+    ts = timestamp or datetime.datetime.now()
+    ts_token = ts.strftime("%Y-%m-%dT%H%M%S")
+    pn_clean = _sanitize_component(project_number) or "project"
+    slug = _slugify_name(project_name, pn_clean)
+    name_parts = ["Combined pdf", ts_token, pn_clean]
+    if slug and slug != pn_clean.lower():
+        name_parts.append(slug)
+    folder_name = "_".join(part for part in name_parts if part)
+    base_path = os.path.join(base_dir, folder_name)
+    candidate = base_path
+    index = 1
+    while os.path.exists(candidate):
+        candidate = f"{base_path}_{index}"
+        index += 1
+    os.makedirs(candidate, exist_ok=True)
+    return candidate
+
+
+def _export_bom_workbook(bom_df: pd.DataFrame, dest: str, filename: str) -> str:
     """Write the processed BOM dataframe to an Excel workbook."""
 
-    filename = f"BOM-FileHopper-Export-{date_iso}.xlsx"
+    if not filename.lower().endswith(".xlsx"):
+        filename = f"{filename}.xlsx"
     target_path = os.path.join(dest, filename)
     export_df = bom_df.reset_index(drop=True).copy()
+    # Drop status-related columns that are only useful inside the app.
+    to_drop = [col for col in _BOM_STATUS_COLUMNS if col in export_df.columns]
+    if to_drop:
+        export_df = export_df.drop(columns=to_drop)
+
+    # Ensure all primary BOM columns are present and appear first.
+    for column in _BOM_EXPORT_BASE_COLUMNS:
+        if column not in export_df.columns:
+            export_df[column] = ""
+    ordered_columns = [c for c in _BOM_EXPORT_BASE_COLUMNS if c in export_df.columns]
+    remaining_columns = [c for c in export_df.columns if c not in ordered_columns]
+    export_df = export_df[ordered_columns + remaining_columns]
 
     with pd.ExcelWriter(target_path, engine="openpyxl") as writer:
         export_df.to_excel(writer, index=False, sheet_name="BOM")
@@ -85,6 +251,60 @@ def _export_bom_workbook(bom_df: pd.DataFrame, dest: str, date_iso: str) -> str:
                 ws.column_dimensions[column_letter].width = min(max(12, max_length + 2), 80)
 
     return target_path
+
+
+def make_bom_export_filename(
+    bom_source_path: Optional[str],
+    date_iso: str,
+    transform: Callable[[str], str],
+) -> str:
+    """Return a normalized filename for exporting the processed BOM workbook."""
+
+    source_stem = ""
+    if bom_source_path:
+        source_stem = Path(bom_source_path).stem
+        match = re.search(r"(.*?\bBOM\b)", source_stem, flags=re.IGNORECASE)
+        if match:
+            source_stem = match.group(1)
+        source_stem = source_stem.rstrip(" -_.")
+    stem = source_stem or "BOM-FileHopper-Export"
+    stem_with_date = f"{stem}-{date_iso}"
+    filename = f"{stem_with_date}.xlsx"
+    return transform(filename)
+
+
+def find_related_bom_exports(
+    bom_source_path: Optional[str],
+    file_index: Mapping[str, Sequence[str]],
+) -> List[str]:
+    """Return export files whose stem appears in the BOM filename."""
+
+    if not bom_source_path:
+        return []
+    stem = Path(bom_source_path).stem.lower()
+    if not stem:
+        return []
+    matches: List[str] = []
+    seen: set[str] = set()
+    for key in sorted(file_index.keys(), key=len, reverse=True):
+        if not key:
+            continue
+        key_lower = key.lower()
+        if len(key_lower) < 4 and not any(ch.isdigit() for ch in key_lower):
+            continue
+        idx = stem.find(key_lower)
+        if idx == -1:
+            continue
+        if idx > 0 and stem[idx - 1].isalnum():
+            continue
+        end = idx + len(key_lower)
+        if end < len(stem) and stem[end].isalnum():
+            continue
+        for src_file in file_index.get(key, []):
+            if src_file not in seen:
+                matches.append(src_file)
+                seen.add(src_file)
+    return matches
 
 
 def _normalize_crop_box(
@@ -161,6 +381,24 @@ def _prefix_for_doc_type(doc_type: str) -> str:
     if t.startswith("offerte"):
         return "OFF-"
     return ""
+
+
+def _should_place_remark_in_delivery_block(
+    *,
+    order_remark_has_content: bool,
+    doc_type_text_slug: str,
+    is_standaard_doc: bool,
+    delivery: DeliveryAddress | None,
+) -> bool:
+    """Return :data:`True` when remarks belong in the delivery block."""
+
+    doc_type_is_export = "export" in doc_type_text_slug
+
+    return (
+        order_remark_has_content
+        and doc_type_is_export
+        and not is_standaard_doc
+    )
 
 
 FINISH_KEY_PREFIX = "finish::"
@@ -263,6 +501,7 @@ def generate_pdf_order_platypus(
     project_number: str | None = None,
     project_name: str | None = None,
     label_kind: str = "productie",
+    order_remark: str | None = None,
 ) -> None:
     """Generate a PDF order using ReportLab if available.
 
@@ -292,7 +531,17 @@ def generate_pdf_order_platypus(
     small_style = ParagraphStyle("small", parent=text_style, fontSize=8.5, leading=10.5)
 
     doc_type_text = (_to_str(doc_type).strip() or "Bestelbon")
-    is_standaard_doc = doc_type_text.lower().startswith("standaard")
+    doc_type_text_lower = doc_type_text.lower()
+    doc_type_text_slug = re.sub(r"[^0-9a-z]+", "", doc_type_text_lower)
+    is_standaard_doc = doc_type_text_lower.startswith("standaard")
+    order_remark_text = _to_str(order_remark) if order_remark is not None else ""
+    order_remark_has_content = bool(order_remark_text.strip())
+    place_remark_in_delivery_block = _should_place_remark_in_delivery_block(
+        order_remark_has_content=order_remark_has_content,
+        doc_type_text_slug=doc_type_text_slug,
+        is_standaard_doc=is_standaard_doc,
+        delivery=delivery,
+    )
 
     doc_lines: List[str] = []
     if doc_number:
@@ -307,6 +556,8 @@ def generate_pdf_order_platypus(
         doc_lines.append(f"Projectnummer: {project_number}")
     if project_name:
         doc_lines.append(f"Projectnaam: {project_name}")
+    if order_remark_has_content and not place_remark_in_delivery_block:
+        doc_lines.append(f"Opmerking: {order_remark_text}")
 
     company_lines = [
         f"<b>{company_info.get('name','')}</b>",
@@ -400,14 +651,24 @@ def generate_pdf_order_platypus(
         left_cell = KeepTogether(left_elements)
 
     right_lines: List[str] = []
-    if delivery and not is_standaard_doc:
-        # Delivery address block with each piece of information on its own line
-        right_lines.append("<b>Leveradres:</b>")
-        right_lines.append(delivery.name)
-        if delivery.address:
-            right_lines.extend(delivery.address.splitlines())
-        if delivery.remarks:
-            right_lines.append(delivery.remarks)
+    include_right_block = not is_standaard_doc and (
+        delivery is not None or place_remark_in_delivery_block
+    )
+    if include_right_block:
+        if delivery:
+            # Delivery address block with each piece of information on its own line
+            right_lines.append("<b>Leveradres:</b>")
+            right_lines.append(delivery.name)
+            if delivery.address:
+                right_lines.extend(delivery.address.splitlines())
+            if delivery.remarks:
+                right_lines.append(delivery.remarks)
+        if place_remark_in_delivery_block:
+            right_lines.append("<b>Opmerking:</b>")
+            remark_lines = order_remark_text.splitlines()
+            if not remark_lines:
+                remark_lines = [order_remark_text]
+            right_lines.extend(remark_lines)
 
     story = []
     title = (
@@ -628,6 +889,7 @@ def write_order_excel(
     project_name: str | None = None,
     context_label: str | None = None,
     context_kind: str = "productie",
+    order_remark: str | None = None,
 ) -> None:
     """Write order information to an Excel file with header info."""
     df = pd.DataFrame(
@@ -636,7 +898,17 @@ def write_order_excel(
     )
 
     doc_type_text = (_to_str(doc_type).strip() or "Bestelbon")
-    is_standaard_doc = doc_type_text.lower().startswith("standaard")
+    doc_type_text_lower = doc_type_text.lower()
+    doc_type_text_slug = re.sub(r"[^0-9a-z]+", "", doc_type_text_lower)
+    is_standaard_doc = doc_type_text_lower.startswith("standaard")
+    order_remark_text = _to_str(order_remark) if order_remark is not None else ""
+    order_remark_has_content = bool(order_remark_text.strip())
+    place_remark_in_delivery_block = _should_place_remark_in_delivery_block(
+        order_remark_has_content=order_remark_has_content,
+        doc_type_text_slug=doc_type_text_slug,
+        is_standaard_doc=is_standaard_doc,
+        delivery=delivery,
+    )
 
     header_lines: List[Tuple[str, str]] = []
     today = datetime.date.today().strftime("%Y-%m-%d")
@@ -650,6 +922,8 @@ def write_order_excel(
         header_lines.append(("Projectnummer", project_number))
     if project_name:
         header_lines.append(("Projectnaam", project_name))
+    if order_remark_has_content and not place_remark_in_delivery_block:
+        header_lines.append(("Opmerking", order_remark_text))
     header_lines.append(("", ""))
     if company_info:
         header_lines.extend(
@@ -693,17 +967,26 @@ def write_order_excel(
             _to_str(value).strip()
             for value in (delivery.name, delivery.address, delivery.remarks)
         )
-        include_delivery_block = not is_standaard_doc or delivery_has_content
-    if include_delivery_block and delivery:
-        header_lines.extend(
-            [
-                ("Leveradres", ""),
-                ("", delivery.name),
-                ("Adres", delivery.address or ""),
-                ("Opmerking", delivery.remarks or ""),
-                ("", ""),
-            ]
+        include_delivery_block = (
+            not is_standaard_doc
+            or delivery_has_content
+            or place_remark_in_delivery_block
         )
+    elif place_remark_in_delivery_block and not is_standaard_doc:
+        include_delivery_block = True
+    if include_delivery_block:
+        if delivery:
+            header_lines.extend(
+                [
+                    ("Leveradres", ""),
+                    ("", delivery.name),
+                    ("Adres", delivery.address or ""),
+                    ("Opmerking", delivery.remarks or ""),
+                ]
+            )
+        if place_remark_in_delivery_block and order_remark_has_content:
+            header_lines.append(("Opmerking", order_remark_text))
+        header_lines.append(("", ""))
 
     startrow = len(header_lines)
     if Alignment is not None and hasattr(pd, "ExcelWriter"):
@@ -755,7 +1038,8 @@ def pick_supplier_for_production(
         for s in sups:
             if s.supplier.lower() == default.lower():
                 return s
-    return sups[0] if sups else Supplier(supplier="")
+    # Geen eerder geselecteerde leverancier onthouden: vul de placeholder in.
+    return Supplier(supplier=NO_SUPPLIER_PLACEHOLDER)
 
 
 def pick_supplier_for_finish(
@@ -780,7 +1064,7 @@ def pick_supplier_for_finish(
         for s in sups:
             if s.supplier.lower() == default.lower():
                 return s
-    return sups[0] if sups else Supplier(supplier="")
+    return Supplier(supplier=NO_SUPPLIER_PLACEHOLDER)
 
 
 def copy_per_production_and_orders(
@@ -808,10 +1092,14 @@ def copy_per_production_and_orders(
     copy_finish_exports: bool = False,
     zip_finish_exports: bool = True,
     export_bom: bool = True,
+    export_related_files: bool = True,
     finish_override_map: Dict[str, str] | None = None,
     finish_doc_type_map: Dict[str, str] | None = None,
     finish_doc_num_map: Dict[str, str] | None = None,
     finish_delivery_map: Dict[str, DeliveryAddress | None] | None = None,
+    remarks_map: Dict[str, str] | None = None,
+    finish_remarks_map: Dict[str, str] | None = None,
+    bom_source_path: str | None = None,
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
 
@@ -823,6 +1111,10 @@ def copy_per_production_and_orders(
     filenames and document headers.
 
     ``delivery_map`` can provide a :class:`DeliveryAddress` per production.
+
+    ``remarks_map`` and ``finish_remarks_map`` allow passing additional notes for
+    productions and finishes respectively. When provided, the remarks are added
+    to the generated Excel- en PDF-bestanden.
     
     If ``zip_parts`` is ``True``, all export files for a production are
     collected into a single ``<production>.zip`` archive instead of individual
@@ -852,6 +1144,14 @@ def copy_per_production_and_orders(
     changes made inside Filehopper, is written as an Excel workbook in the root
     of ``dest``. The filename contains the export date in ISO-formaat.
 
+    When ``bom_source_path`` refers to the loaded BOM file, Filehopper tries to
+    copy export files from ``source`` whose filename stem appears inside the BOM
+    name (for example ``123-BOM-PartsOnly`` → ``123.pdf``). Matching files are
+    placed next to the exported BOM workbook and use the same optional
+    name-transformations (date/prefix/suffix). When no related files are found
+    nothing is copied. Set ``export_related_files`` to ``False`` to skip copying
+    these auxiliary files even when a BOM export is created.
+
     Finish-specific overrides, document types/numbers and deliveries can be
     provided via the ``finish_*`` mappings. Keys correspond to the normalized
     ``Finish-...`` folder names produced by :func:`describe_finish_combo`.
@@ -862,6 +1162,7 @@ def copy_per_production_and_orders(
     """
     os.makedirs(dest, exist_ok=True)
     file_index = _build_file_index(source, selected_exts)
+    selected_exts_set = {ext.lower() for ext in selected_exts}
     count_copied = 0
     chosen: Dict[str, str] = {}
     doc_type_map = doc_type_map or {}
@@ -870,6 +1171,19 @@ def copy_per_production_and_orders(
     finish_doc_type_map = finish_doc_type_map or {}
     finish_doc_num_map = finish_doc_num_map or {}
     finish_delivery_map = finish_delivery_map or {}
+    remarks_clean: Dict[str, str] = {}
+    for key, value in (remarks_map or {}).items():
+        text = _to_str(value).strip()
+        if text:
+            remarks_clean[key] = text
+    remarks_map = remarks_clean
+
+    finish_remarks_clean: Dict[str, str] = {}
+    for key, value in (finish_remarks_map or {}).items():
+        text = _to_str(value).strip()
+        if text:
+            finish_remarks_clean[key] = text
+    finish_remarks_map = finish_remarks_clean
 
     prod_to_rows: Dict[str, List[dict]] = defaultdict(list)
     step_entries: Dict[str, List[tuple[str, str]]] = defaultdict(list)
@@ -937,6 +1251,7 @@ def copy_per_production_and_orders(
             suffix_parts.append(export_name_suffix_text)
         new_stem = "-".join(prefix_parts + [stem] + suffix_parts)
         return f"{new_stem}{ext}"
+
     suppliers_sorted = db.suppliers_sorted()
 
     footer_note_text = (
@@ -953,15 +1268,18 @@ def copy_per_production_and_orders(
         doc_type = _to_str(raw_doc_type).strip() or "Bestelbon"
         doc_num = _to_str(doc_num_map.get(prod, "")).strip()
         prefix = _prefix_for_doc_type(doc_type)
-        if doc_num and prefix and not doc_num.upper().startswith(prefix.upper()):
-            doc_num = f"{prefix}{doc_num}"
-        num_part = f"_{doc_num}" if doc_num else ""
+        if doc_num and prefix and doc_num.upper() == prefix.upper():
+            doc_num = ""
+        doc_num_token = _sanitize_component(doc_num) if doc_num else ""
+        num_part = f"_{doc_num_token}" if doc_num_token else ""
         doc_type_lower = doc_type.lower()
         is_standaard_doc = doc_type_lower.startswith("standaard")
 
         zf = None
         if zip_parts:
-            zip_name = f"{prod}{num_part}.zip"
+            zip_name = _fit_filename_within_path(
+                prod_folder, f"{prod}{num_part}.zip"
+            )
             zip_path = os.path.join(prod_folder, zip_name)
             try:
                 zf = zipfile.ZipFile(
@@ -999,6 +1317,8 @@ def copy_per_production_and_orders(
                     continue
                 processed_pairs.add(combo)
                 ext = os.path.splitext(src_file)[1].lower()
+                if selected_exts_set and ext not in selected_exts_set:
+                    continue
                 if ext in STEP_EXTS:
                     seen_paths = step_seen[prod]
                     if src_file not in seen_paths:
@@ -1020,7 +1340,7 @@ def copy_per_production_and_orders(
             prod, db, override_map, suppliers_sorted=suppliers_sorted
         )
         chosen[make_production_selection_key(prod)] = supplier.supplier
-        if remember_defaults and supplier.supplier not in ("", "Onbekend"):
+        if remember_defaults and supplier.supplier not in ("", "Onbekend", NO_SUPPLIER_PLACEHOLDER):
             db.set_default(prod, supplier.supplier)
 
         items = []
@@ -1046,6 +1366,7 @@ def copy_per_production_and_orders(
         }
         supplier_name_clean = _to_str(supplier.supplier).strip()
         delivery = delivery_map.get(prod)
+        order_remark = (remarks_map.get(prod, "") if remarks_map else "").strip()
         supplier_for_docs: Supplier | None = supplier
         delivery_for_docs = delivery
         if is_standaard_doc and not supplier_name_clean:
@@ -1053,9 +1374,10 @@ def copy_per_production_and_orders(
             delivery_for_docs = None
 
         if supplier_name_clean or is_standaard_doc:
-            excel_path = os.path.join(
+            excel_filename = _fit_filename_within_path(
                 prod_folder, f"{doc_type}{num_part}_{prod}_{today}.xlsx"
             )
+            excel_path = os.path.join(prod_folder, excel_filename)
             write_order_excel(
                 excel_path,
                 items,
@@ -1068,11 +1390,13 @@ def copy_per_production_and_orders(
                 project_name=project_name,
                 context_label=prod,
                 context_kind="Productie",
+                order_remark=order_remark or None,
             )
 
-            pdf_path = os.path.join(
+            pdf_filename = _fit_filename_within_path(
                 prod_folder, f"{doc_type}{num_part}_{prod}_{today}.pdf"
             )
+            pdf_path = os.path.join(prod_folder, pdf_filename)
             try:
                 generate_pdf_order_platypus(
                     pdf_path,
@@ -1087,6 +1411,7 @@ def copy_per_production_and_orders(
                     project_number=project_number,
                     project_name=project_name,
                     label_kind="productie",
+                    order_remark=order_remark or None,
                 )
             except Exception as e:
                 print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
@@ -1099,9 +1424,10 @@ def copy_per_production_and_orders(
                         packlist_items, preview_dir
                     )
                     if rendered_previews:
-                        packlist_path = os.path.join(
+                        packlist_filename = _fit_filename_within_path(
                             prod_folder, f"Paklijst_{prod}_{today}.pdf"
                         )
+                        packlist_path = os.path.join(prod_folder, packlist_filename)
                         try:
                             if not generate_packlist_pdf(
                                 packlist_path,
@@ -1133,7 +1459,9 @@ def copy_per_production_and_orders(
             seen_pairs = finish_seen[finish_key]
             zf = None
             if zip_finish_exports:
-                zip_name = f"{folder_name}.zip"
+                zip_name = _fit_filename_within_path(
+                    target_dir, f"{folder_name}.zip"
+                )
                 zip_path = os.path.join(target_dir, zip_name)
                 try:
                     zf = zipfile.ZipFile(
@@ -1166,6 +1494,9 @@ def copy_per_production_and_orders(
                     if combo in seen_pairs:
                         continue
                     seen_pairs.add(combo)
+                    ext = os.path.splitext(src_file)[1].lower()
+                    if selected_exts_set and ext not in selected_exts_set:
+                        continue
                     if zip_finish_exports:
                         if zf is not None:
                             zf.write(src_file, arcname=transformed)
@@ -1185,7 +1516,7 @@ def copy_per_production_and_orders(
                 finish_key, db, finish_override_map, suppliers_sorted=suppliers_sorted
             )
             chosen[make_finish_selection_key(finish_key)] = supplier.supplier
-            if remember_defaults and supplier.supplier not in ("", "Onbekend"):
+            if remember_defaults and supplier.supplier not in ("", "Onbekend", NO_SUPPLIER_PLACEHOLDER):
                 db.set_default_finish(finish_key, supplier.supplier)
 
             raw_doc_type = finish_doc_type_map.get(finish_key, "Bestelbon")
@@ -1199,9 +1530,12 @@ def copy_per_production_and_orders(
 
             doc_num = _to_str(finish_doc_num_map.get(finish_key, "")).strip()
             prefix = _prefix_for_doc_type(doc_type)
-            if doc_num and prefix and not doc_num.upper().startswith(prefix.upper()):
+            if doc_num and prefix and doc_num.upper() == prefix.upper():
+                doc_num = ""
+            elif doc_num and prefix and not doc_num.upper().startswith(prefix.upper()):
                 doc_num = f"{prefix}{doc_num}"
-            num_part = f"_{doc_num}" if doc_num else ""
+            doc_num_token = _sanitize_component(doc_num) if doc_num else ""
+            num_part = f"_{doc_num_token}" if doc_num_token else ""
 
             folder_name = info.get("folder_name", finish_key)
             target_dir = os.path.join(dest, folder_name)
@@ -1223,16 +1557,20 @@ def copy_per_production_and_orders(
             label = _to_str(info.get("label")) or finish_key
             filename_component = info.get("filename_component") or finish_key
             delivery = finish_delivery_map.get(finish_key)
+            finish_remark = (
+                finish_remarks_map.get(finish_key, "") if finish_remarks_map else ""
+            ).strip()
             supplier_for_docs: Supplier | None = supplier
             delivery_for_docs = delivery
             if is_standaard_doc and not supplier_name_clean:
                 supplier_for_docs = None
                 delivery_for_docs = None
 
-            excel_path = os.path.join(
+            excel_filename = _fit_filename_within_path(
                 target_dir,
                 f"{doc_type}{num_part}_{filename_component}_{today}.xlsx",
             )
+            excel_path = os.path.join(target_dir, excel_filename)
             write_order_excel(
                 excel_path,
                 items,
@@ -1245,11 +1583,13 @@ def copy_per_production_and_orders(
                 project_name=project_name,
                 context_label=label,
                 context_kind="Afwerking",
+                order_remark=finish_remark or None,
             )
 
-            pdf_path = os.path.join(
+            pdf_filename = _fit_filename_within_path(
                 target_dir, f"{doc_type}{num_part}_{filename_component}_{today}.pdf"
             )
+            pdf_path = os.path.join(target_dir, pdf_filename)
             try:
                 generate_pdf_order_platypus(
                     pdf_path,
@@ -1264,6 +1604,7 @@ def copy_per_production_and_orders(
                     project_number=project_number,
                     project_name=project_name,
                     label_kind="afwerking",
+                    order_remark=finish_remark or None,
                 )
             except Exception as e:
                 print(f"[WAARSCHUWING] PDF mislukt voor {label}: {e}", file=sys.stderr)
@@ -1272,9 +1613,20 @@ def copy_per_production_and_orders(
     # the database reflecting the latest state on disk.
     if export_bom:
         try:
-            _export_bom_workbook(bom_df, dest, today)
+            bom_filename = make_bom_export_filename(
+                bom_source_path, today, _transform_export_name
+            )
+            _export_bom_workbook(
+                bom_df, dest, bom_filename
+            )
         except Exception as exc:  # pragma: no cover - unexpected
             raise RuntimeError(f"Kon BOM-export niet opslaan: {exc}") from exc
+
+    if export_bom and export_related_files and bom_source_path:
+        for src_file in find_related_bom_exports(bom_source_path, file_index):
+            transformed = _transform_export_name(os.path.basename(src_file))
+            shutil.copy2(src_file, os.path.join(dest, transformed))
+            count_copied += 1
 
     db.save(SUPPLIERS_DB_FILE)
 
@@ -1286,15 +1638,25 @@ def combine_pdfs_from_source(
     bom_df: pd.DataFrame,
     dest: str,
     date_str: str | None = None,
-) -> int:
+    *,
+    project_number: str | None = None,
+    project_name: str | None = None,
+    timestamp: datetime.datetime | None = None,
+    combine_per_production: bool = True,
+) -> CombinedPdfResult:
     """Combine PDF drawing files per production directly from ``source``.
 
     The BOM dataframe provides ``PartNumber`` to ``Production`` mappings.
     PDFs matching the part numbers are searched in ``source`` using
-    :func:`_build_file_index` and merged per production. The resulting files
-    are written to ``dest/Combined pdf``. Output filenames contain the
-    production name and current date. Returns the number of combined PDF
-    files created.
+    :func:`_build_file_index` and merged per production when
+    ``combine_per_production`` is :data:`True`. When the flag is :data:`False`,
+    every matching PDF in the BOM is merged into a single export file. The
+    resulting files are written to a newly created export directory inside
+    ``dest`` whose name contains the project number, project name (slugified)
+    and an ISO-like timestamp. Output filenames contain either the production
+    name or ``BOM`` together with the current date. The returned
+    :class:`CombinedPdfResult` provides the number of generated files and the
+    absolute output directory path.
     """
     if PdfMerger is None:
         raise ModuleNotFoundError(
@@ -1310,28 +1672,62 @@ def combine_pdfs_from_source(
         pn = str(row.get("PartNumber", ""))
         prod_to_files[prod].extend(idx.get(pn, []))
 
-    out_dir = os.path.join(dest, "Combined pdf")
-    os.makedirs(out_dir, exist_ok=True)
+    out_dir = _create_combined_output_dir(
+        dest,
+        project_number,
+        project_name,
+        timestamp=timestamp,
+    )
     count = 0
-    for prod, files in prod_to_files.items():
-        if not files:
-            continue
-        merger = PdfMerger()
-        for path in sorted(files, key=lambda x: os.path.basename(x).lower()):
-            merger.append(path)
-        out_name = f"{prod}_{date_str}_combined.pdf"
-        merger.write(os.path.join(out_dir, out_name))
-        merger.close()
-        count += 1
-    return count
+
+    if combine_per_production:
+        for prod, files in prod_to_files.items():
+            if not files:
+                continue
+            merger = PdfMerger()
+            for path in sorted(files, key=lambda x: os.path.basename(x).lower()):
+                merger.append(path)
+            out_name = f"{prod}_{date_str}_combined.pdf"
+            safe_name = _fit_filename_within_path(out_dir, out_name)
+            merger.write(os.path.join(out_dir, safe_name))
+            merger.close()
+            count += 1
+    else:
+        ordered_files: List[str] = []
+        seen = set()
+        for files in prod_to_files.values():
+            for path in files:
+                if path not in seen:
+                    ordered_files.append(path)
+                    seen.add(path)
+        if ordered_files:
+            merger = PdfMerger()
+            for path in sorted(ordered_files, key=lambda x: os.path.basename(x).lower()):
+                merger.append(path)
+            out_name = f"BOM_{date_str}_combined.pdf"
+            safe_name = _fit_filename_within_path(out_dir, out_name)
+            merger.write(os.path.join(out_dir, safe_name))
+            merger.close()
+            count = 1
+
+    return CombinedPdfResult(count=count, output_dir=out_dir)
 
 
-def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
+def combine_pdfs_per_production(
+    dest: str,
+    date_str: str | None = None,
+    *,
+    project_number: str | None = None,
+    project_name: str | None = None,
+    timestamp: datetime.datetime | None = None,
+) -> CombinedPdfResult:
     """Combine PDF drawing files per production folder into single PDFs.
 
-    The resulting files are written to a subdirectory ``Combined pdf`` inside
-    ``dest``. Output filenames contain the production name and current date.
-    Returns the number of combined PDF files created.
+    The resulting files are written to a newly created export directory inside
+    ``dest`` whose name contains the project number, project name (slugified)
+    and an ISO-like timestamp. Output filenames contain the production name
+    and current date. The returned :class:`CombinedPdfResult` provides the
+    number of generated files and the absolute output directory path.
     """
     if PdfMerger is None:
         raise ModuleNotFoundError(
@@ -1339,12 +1735,19 @@ def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
         )
 
     date_str = date_str or datetime.date.today().strftime("%Y-%m-%d")
-    out_dir = os.path.join(dest, "Combined pdf")
-    os.makedirs(out_dir, exist_ok=True)
+    out_dir = _create_combined_output_dir(
+        dest,
+        project_number,
+        project_name,
+        timestamp=timestamp,
+    )
+    out_dir_name = os.path.basename(out_dir)
     count = 0
     for prod in sorted(os.listdir(dest)):
         prod_path = os.path.join(dest, prod)
         if not os.path.isdir(prod_path):
+            continue
+        if prod == out_dir_name or prod.lower().startswith("combined pdf"):
             continue
         pdfs = [
             f
@@ -1367,7 +1770,8 @@ def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
                     zip_path = os.path.join(prod_path, fname)
                     break
             if zip_path is None:
-                fallback = os.path.join(prod_path, f"{prod}.zip")
+                fallback_name = _fit_filename_within_path(prod_path, f"{prod}.zip")
+                fallback = os.path.join(prod_path, fallback_name)
                 if not os.path.isfile(fallback):
                     continue
                 zip_path = fallback
@@ -1387,7 +1791,8 @@ def combine_pdfs_per_production(dest: str, date_str: str | None = None) -> int:
                     with zf.open(name) as fh:
                         merger.append(io.BytesIO(fh.read()))
         out_name = f"{prod}_{date_str}_combined.pdf"
-        merger.write(os.path.join(out_dir, out_name))
+        safe_name = _fit_filename_within_path(out_dir, out_name)
+        merger.write(os.path.join(out_dir, safe_name))
         merger.close()
         count += 1
-    return count
+    return CombinedPdfResult(count=count, output_dir=out_dir)

@@ -1,8 +1,8 @@
 {
-  "source_folder": "",
-  "dest_folder": "",
-  "project_number": "",
-  "project_name": "",
+  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/00. Standaard producten/01. Deuren & poorten/01. Poorten/Design museum Gent/cad",
+  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/00. Standaard producten/01. Deuren & poorten/01. Poorten/Design museum Gent/export",
+  "project_number": "53",
+  "project_name": "Gent-add-ons",
   "file_extensions": [
     {
       "key": "pdf",
@@ -10,7 +10,7 @@
       "patterns": [
         ".pdf"
       ],
-      "enabled": false
+      "enabled": true
     },
     {
       "key": "step",
@@ -19,7 +19,7 @@
         ".step",
         ".stp"
       ],
-      "enabled": false
+      "enabled": true
     },
     {
       "key": "dxf",
@@ -36,13 +36,23 @@
         ".dwg"
       ],
       "enabled": false
+    },
+    {
+      "key": "html",
+      "label": ".html",
+      "patterns": [
+        ".html"
+      ],
+      "enabled": false
     }
   ],
   "zip_per_production": true,
-  "copy_finish_exports": false,
+  "combine_pdf_per_production": false,
+  "copy_finish_exports": true,
   "zip_finish_exports": true,
   "export_processed_bom": true,
-  "export_date_prefix": false,
+  "export_related_bom_files": true,
+  "export_date_prefix": true,
   "export_date_suffix": false,
   "custom_prefix_enabled": false,
   "custom_prefix_text": "",
@@ -50,5 +60,10 @@
   "custom_suffix_text": "",
   "bundle_latest": false,
   "bundle_dry_run": false,
+<<<<<<< HEAD
   "footer_note": "Gelieve afwijkingen schriftelijk te bevestigen. Levertermijn in overleg. Betalingsvoorwaarden: 30 dagen netto. Vermeld onze productiereferentie bij levering."
+=======
+  "footer_note": "Gelieve afwijkingen schriftelijk te bevestigen. Levertermijn in overleg. Betalingsvoorwaarden: 30 dagen netto. Vermeld onze productiereferentie bij levering.",
+  "autofill_custom_bom": true
+>>>>>>> update
 }

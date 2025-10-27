@@ -57,7 +57,7 @@ import csv
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -118,6 +118,31 @@ class UndoEntry:
     action: str
     frame: pd.DataFrame
     cells: Sequence[CellCoord]
+
+
+def _dataframe_slice_to_clipboard(
+    frame: pd.DataFrame, rows: Sequence[int], cols: Sequence[int]
+) -> str:
+    """Formatteer een DataFrame-deel naar tabgescheiden klembordtekst."""
+
+    if not rows or not cols:
+        return ""
+
+    safe_rows = [index for index in rows if 0 <= index < len(frame.index)]
+    safe_cols = [index for index in cols if 0 <= index < len(frame.columns)]
+
+    if not safe_rows or not safe_cols:
+        return ""
+
+    lines: List[str] = []
+    for row in safe_rows:
+        cells: List[str] = []
+        for col in safe_cols:
+            value = frame.iat[row, col]
+            normalized = "" if pd.isna(value) else str(value)
+            cells.append(normalized)
+        lines.append("\t".join(cells))
+    return "\n".join(lines)
 
 
 class _UndoableTableModel(TableModel):
@@ -260,13 +285,30 @@ class _UndoAwareTable(Table):
     def cut(self, event=None):  # type: ignore[override]
         if not self._commit_active_edit():
             return "break"
-        base = super()
-        cut_func = getattr(base, "cut", None)
-        if callable(cut_func):
-            return cut_func(event)
-        # Fallback: copy and clear selection when Pandastable lacks cut().
-        self.copy(event)
-        self.clearData(event)
+
+        rows, cols = self._selected_cell_coordinates()
+        copied_cells = len(rows) * len(cols) if rows and cols else 0
+        if not copied_cells:
+            self._owner._update_status("Geen cellen geselecteerd om te knippen.")
+            return "break"
+
+        clipboard_text = _dataframe_slice_to_clipboard(
+            self._owner.table_model.df, rows, cols
+        )
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(clipboard_text)
+        except tk.TclError:
+            return "break"
+
+        self._owner._clear_cells(
+            rows,
+            cols,
+            undo_action="knippen",
+            empty_status="Geen cellen geselecteerd om te knippen.",
+            success_status="{count} cellen geknipt.",
+            no_change_status="Geen cellen geknipt.",
+        )
         return "break"
 
     def paste(self, event=None):  # type: ignore[override]
@@ -298,11 +340,23 @@ class _UndoAwareTable(Table):
     # Custom binding helpers
 
     def _install_custom_bindings(self) -> None:
-
-
+        self.bind("<Button-1>", self._on_primary_button, add="+")
+        self.bind("<B1-Motion>", self._extend_drag_selection, add="+")
+        self.bind("<ButtonRelease-1>", self._finalise_drag_selection, add="+")
         self.bind("<Key>", self._handle_table_key, add="+")
         self.bind("<Return>", self._on_return_key, add="+")
         self.bind("<KP_Enter>", self._on_return_key, add="+")
+        self.bind("<Tab>", self._on_tab_key, add="+")
+        try:
+            self.bind("<ISO_Left_Tab>", self._on_shift_tab_key, add="+")
+        except tk.TclError:
+            # ``ISO_Left_Tab`` is specific to X11/Unix platforms.  The binding
+            # does not exist on Windows and older Tk versions, which would
+            # otherwise raise a TclError during initialisation.  In that case
+            # we silently ignore the sequence; ``<Shift-Tab>`` (bound below)
+            # continues to provide the reverse-tab behaviour.
+            pass
+        self.bind("<Shift-Tab>", self._on_shift_tab_key, add="+")
 
 
     def _ensure_entry_bindings(self, entry: tk.Entry) -> None:
@@ -311,6 +365,7 @@ class _UndoAwareTable(Table):
         entry.bind("<FocusOut>", self._on_entry_focus_out, add="+")
         entry.bind("<Return>", self._on_entry_return, add="+")
         entry.bind("<KP_Enter>", self._on_entry_return, add="+")
+        setattr(entry, "_fh_bindings", True)
 
     # ------------------------------------------------------------------
     # Mouse helpers
@@ -320,6 +375,17 @@ class _UndoAwareTable(Table):
             committed = self._commit_active_edit()
             if not committed:
                 return "break"
+        # ``pandastable`` onthoudt welke bron (rijhoofd, kolomhoofd, cel)
+        # voor het laatst is aangeklikt.  Wanneer een gebruiker eerst op het
+        # rijhoofd klikt en daarna in het raster, bleef de bron op "row"
+        # staan waardoor ``Delete`` alsnog de volledige rij leegmaakte.
+        # Door hier expliciet terug te schakelen naar de standaardwaarde
+        # herkennen we het daarna als een cel-selectie en worden alleen de
+        # gekozen cellen geleegd.
+        try:
+            self.setLeftClickSrc("")
+        except AttributeError:
+            pass
         self._drag_selection_active = True
         return None
 
@@ -501,13 +567,44 @@ class _UndoAwareTable(Table):
         self.drawSelectedRect(new_row, new_col)
         self.rowheader.drawSelectedRows(new_row)
 
+    def _selected_cell_coordinates(self) -> Tuple[List[int], List[int]]:
+        rows, cols = self._owner._collect_selection()
+        if not rows:
+            current_row = getattr(self, "currentrow", None)
+            if current_row is not None:
+                rows = [int(current_row)]
+        if not cols:
+            current_col = getattr(self, "currentcol", None)
+            if current_col is not None:
+                cols = [int(current_col)]
+        rows = sorted(dict.fromkeys(rows))
+        cols = sorted(dict.fromkeys(cols))
+        row_count = len(self._owner.table_model.df.index)
+        col_count = len(self._owner.table_model.df.columns)
+        rows = [index for index in rows if 0 <= index < row_count]
+        cols = [index for index in cols if 0 <= index < col_count]
+        return rows, cols
+
     def _on_copy_shortcut(self, event=None):
         if not self._commit_active_edit():
             return "break"
-        base = super()
-        copy_func = getattr(base, "copy", None)
-        if callable(copy_func):
-            return copy_func(event)
+
+        rows, cols = self._selected_cell_coordinates()
+        clipboard_text = _dataframe_slice_to_clipboard(
+            self._owner.table_model.df, rows, cols
+        )
+
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(clipboard_text)
+        except tk.TclError:
+            return "break"
+
+        copied_cells = len(rows) * len(cols) if rows and cols else 0
+        if copied_cells:
+            self._owner._update_status(f"{copied_cells} cellen gekopieerd.")
+        else:
+            self._owner._update_status("Geen cellen beschikbaar om te kopiëren.")
         return "break"
 
 
@@ -535,6 +632,43 @@ class BOMCustomTab(ttk.Frame):
     )
     TEMPLATE_DEFAULT_FILENAME: str = "BOM-FileHopper-Temp.xlsx"
     DEFAULT_EMPTY_ROWS: int = 20
+    MAIN_TO_CUSTOM_COLUMN_MAP: Dict[str, str] = {
+        "PartNumber": "PartNumber",
+        "Description": "Description",
+        "Profile": "Profile",
+        "Length profile": "Length profile",
+        "Production": "Production",
+        "Materiaal": "Material",
+        "Finish": "Finish",
+        "RAL color": "RAL color",
+        "Aantal": "QTY.",
+        "Oppervlakte": "Surface Area (m²)",
+        "Gewicht": "Weight (kg)",
+        "Supplier": "Supplier",
+        "Supplier code": "Supplier code",
+        "Manufacturer": "Manufacturer",
+        "Manufacturer code": "Manufacturer code",
+    }
+    CUSTOM_TO_MAIN_COLUMN_MAP: Dict[str, str] = {
+        custom: main for main, custom in MAIN_TO_CUSTOM_COLUMN_MAP.items()
+    }
+    MAIN_COLUMN_ORDER: Tuple[str, ...] = (
+        "PartNumber",
+        "Description",
+        "Profile",
+        "Length profile",
+        "Production",
+        "Materiaal",
+        "Supplier",
+        "Supplier code",
+        "Manufacturer",
+        "Manufacturer code",
+        "Finish",
+        "RAL color",
+        "Aantal",
+        "Oppervlakte",
+        "Gewicht",
+    )
 
     def __init__(
         self,
@@ -542,6 +676,7 @@ class BOMCustomTab(ttk.Frame):
         *,
         app_name: str = "Filehopper",
         on_custom_bom_ready: Optional[Callable[[Path, int], None]] = None,
+        on_push_to_main: Optional[Callable[[pd.DataFrame], None]] = None,
         event_target: Optional[tk.Misc] = None,
         max_undo: int = 50,
     ) -> None:
@@ -551,6 +686,7 @@ class BOMCustomTab(ttk.Frame):
         self.configure(padding=(12, 12))
         self.app_name = app_name
         self.on_custom_bom_ready = on_custom_bom_ready
+        self.on_push_to_main = on_push_to_main
         self.event_target = event_target
         self.max_undo = max_undo
         self.undo_stack: List[UndoEntry] = []
@@ -574,6 +710,10 @@ class BOMCustomTab(ttk.Frame):
 
         export_btn = ttk.Button(bar, text="Exporteren", command=self._export_temp)
         export_btn.pack(side="left", padx=(0, 6))
+
+        update_btn = ttk.Button(bar, text="Update Main BOM", command=self._push_to_main)
+        update_btn.pack(side="left", padx=(0, 6))
+        self._update_main_btn = update_btn
 
         template_btn = ttk.Button(bar, text="Download template", command=self._download_template)
         template_btn.pack(side="left", padx=(0, 6))
@@ -668,6 +808,46 @@ class BOMCustomTab(ttk.Frame):
         if len(self.undo_stack) > self.max_undo:
             self.undo_stack.pop(0)
 
+    def _clear_cells(
+        self,
+        rows: Sequence[int],
+        cols: Sequence[int],
+        *,
+        undo_action: str,
+        empty_status: str,
+        success_status: str,
+        no_change_status: str,
+    ) -> int:
+        if not rows or not cols:
+            self._update_status(empty_status)
+            return 0
+
+        before = self.table_model.df.copy(deep=True)
+        changed: List[CellCoord] = []
+        self._suspend_history = True
+        try:
+            for row in rows:
+                for col in cols:
+                    current = self.table_model.df.iat[row, col]
+                    normalized = "" if pd.isna(current) else str(current)
+                    if normalized:
+                        self.table_model.df.iat[row, col] = ""
+                        changed.append((row, col))
+        finally:
+            self._suspend_history = False
+
+        after = self.table_model.df.copy(deep=True)
+        if changed and not before.equals(after):
+            self._push_undo(undo_action, before, changed)
+            self._dataframe = after
+            self._refresh_table()
+            self._ensure_minimum_rows(self.DEFAULT_EMPTY_ROWS)
+            self._update_status(success_status.format(count=len(changed)))
+            return len(changed)
+
+        self._update_status(no_change_status)
+        return 0
+
     def _collect_selection(self) -> Tuple[List[int], List[int]]:
         table = self.table
         rows = list(dict.fromkeys(table.multiplerowlist)) if table.multiplerowlist else []
@@ -721,34 +901,41 @@ class BOMCustomTab(ttk.Frame):
         if not self.table._commit_active_edit():
             return "break"
         rows, cols = self._collect_selection()
-        if not rows or not cols:
-            self._update_status("Geen cellen geselecteerd om te legen.")
+        last_src = getattr(self.table, "_Table__last_left_click_src", "")
+        if last_src == "row":
+            self._delete_rows(rows)
             return "break"
+        self._clear_cells(
+            rows,
+            cols,
+            undo_action="leegmaken",
+            empty_status="Geen cellen geselecteerd om te legen.",
+            success_status="{count} cellen geleegd.",
+            no_change_status="Geen wijzigingen bij legen.",
+        )
+        return "break"
+
+    def _delete_rows(self, rows: Sequence[int]) -> int:
+        total_rows = len(self.table_model.df)
+        unique_rows = sorted({row for row in rows if 0 <= row < total_rows})
+        if not unique_rows:
+            self._update_status("Geen rijen geselecteerd om te verwijderen.")
+            return 0
 
         before = self.table_model.df.copy(deep=True)
-        changed: List[CellCoord] = []
-        self._suspend_history = True
-        try:
-            for row in rows:
-                for col in cols:
-                    current = self.table_model.df.iat[row, col]
-                    normalized = "" if pd.isna(current) else str(current)
-                    if normalized:
-                        self.table_model.df.iat[row, col] = ""
-                        changed.append((row, col))
-        finally:
-            self._suspend_history = False
+        remaining = before.drop(index=unique_rows).reset_index(drop=True)
+        if remaining.equals(before):
+            self._update_status("Geen rijen geselecteerd om te verwijderen.")
+            return 0
 
-        after = self.table_model.df.copy(deep=True)
-        if changed and not before.equals(after):
-            self._push_undo("leegmaken", before, changed)
-            self._dataframe = after
-            self._refresh_table()
-            self._ensure_minimum_rows(self.DEFAULT_EMPTY_ROWS)
-            self._update_status(f"{len(changed)} cellen geleegd.")
-        else:
-            self._update_status("Geen wijzigingen bij legen.")
-        return "break"
+        self._push_undo("rijen verwijderen", before, [])
+        self._set_dataframe(remaining)
+        self._ensure_minimum_rows(self.DEFAULT_EMPTY_ROWS)
+
+        count = len(unique_rows)
+        label = "rij" if count == 1 else "rijen"
+        self._update_status(f"{count} {label} verwijderd.")
+        return count
 
     def _parse_clipboard_text(self, text: str) -> List[List[str]]:
         import io
@@ -903,6 +1090,36 @@ class BOMCustomTab(ttk.Frame):
 
     # ------------------------------------------------------------------
     # Export
+    def _push_to_main(self) -> None:
+        if self.on_push_to_main is None:
+            messagebox.showinfo(
+                "Niet beschikbaar",
+                (
+                    "Deze knop is alleen actief wanneer de Custom BOM-tab "
+                    "aan de hoofdinterface is gekoppeld."
+                ),
+                parent=self,
+            )
+            return
+
+        main_df = self.build_main_dataframe()
+        if main_df.empty:
+            messagebox.showwarning(
+                "Geen gegevens",
+                "Er zijn geen rijen met gegevens om naar de Main-tab te sturen.",
+                parent=self,
+            )
+            self._update_status("Geen gegevens om naar Main te sturen.")
+            return
+
+        try:
+            self.on_push_to_main(main_df)
+        except Exception as exc:
+            messagebox.showerror("Bijwerken mislukt", str(exc), parent=self)
+            self._update_status("Fout bij bijwerken van de hoofd-BOM.")
+        else:
+            self._update_status(f"Main-BOM geüpdatet met {len(main_df)} rijen.")
+
     def _export_temp(self) -> None:
         data = self._snapshot_data()
         cleaned = [row[: len(self.HEADERS)] for row in data]
@@ -913,7 +1130,7 @@ class BOMCustomTab(ttk.Frame):
             return
 
         path = self._resolve_default_export_path()
-        self._write_csv(path, cleaned)
+        self._write_csv(path, non_empty_rows)
 
         if self.on_custom_bom_ready is not None:
             self.on_custom_bom_ready(path, row_count)
@@ -973,3 +1190,62 @@ class BOMCustomTab(ttk.Frame):
         """Verwijder alle undo-stappen."""
 
         self.undo_stack.clear()
+
+    def load_from_main_dataframe(self, df: pd.DataFrame) -> None:
+        """Vul de Custom BOM met gegevens uit de hoofd-BOM."""
+
+        if df is None:
+            return
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError("df must be a pandas.DataFrame")
+
+        row_count = len(df.index)
+        target_rows = max(self.DEFAULT_EMPTY_ROWS, row_count + 1)
+        fresh = self._create_empty_dataframe(target_rows)
+        if row_count:
+            normalized = df.fillna("")
+            for main_col, custom_col in self.MAIN_TO_CUSTOM_COLUMN_MAP.items():
+                if main_col not in normalized.columns:
+                    continue
+                values = [str(value).strip() for value in normalized[main_col]]
+                col_index = fresh.columns.get_loc(custom_col)
+                fresh.iloc[: len(values), col_index] = values
+
+        self._set_dataframe(fresh)
+        self.clear_history()
+        self._update_status("Custom BOM gevuld vanuit hoofd-BOM.")
+
+    def build_main_dataframe(self) -> pd.DataFrame:
+        """Zet de huidige Custom BOM om naar het hoofd-BOM formaat."""
+
+        column_order = list(self.MAIN_COLUMN_ORDER)
+        empty = pd.DataFrame(columns=column_order)
+
+        snapshot = pd.DataFrame(self._snapshot_data(), columns=self.HEADERS)
+        trimmed = snapshot.replace("", pd.NA).dropna(how="all")
+        if trimmed.empty:
+            return empty
+
+        trimmed = trimmed.fillna("").applymap(lambda value: str(value).strip())
+        result = pd.DataFrame(index=trimmed.index)
+        for custom_col, main_col in self.CUSTOM_TO_MAIN_COLUMN_MAP.items():
+            if custom_col in trimmed.columns:
+                series = trimmed[custom_col]
+            else:
+                series = pd.Series([""] * len(trimmed), index=trimmed.index)
+            result[main_col] = series.astype(str).map(lambda value: value.strip())
+
+        if "PartNumber" not in result.columns:
+            return empty
+
+        result = result[result["PartNumber"].str.strip() != ""]
+        if result.empty:
+            return empty
+
+        if "Aantal" in result.columns:
+            qty = pd.to_numeric(result["Aantal"], errors="coerce").fillna(1).astype(int)
+            result["Aantal"] = qty.clip(lower=1, upper=999)
+
+        result = result.reindex(columns=column_order, fill_value="")
+        result.reset_index(drop=True, inplace=True)
+        return result
