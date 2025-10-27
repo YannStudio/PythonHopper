@@ -3192,18 +3192,33 @@ def start_gui():
                 return "break" if event is not None else None
 
             custom_flags = self._get_custom_row_flags(df)
+            has_custom_rows = any(custom_flags)
+            sorted_pairs = sorted(item_pairs, key=lambda pair: pair[0])
+
             removable_pairs = [
                 (idx, item)
-                for idx, item in sorted(item_pairs, key=lambda pair: pair[0])
+                for idx, item in sorted_pairs
                 if 0 <= idx < row_count
                 and idx < len(custom_flags)
                 and custom_flags[idx]
             ]
+
             if not removable_pairs:
-                self.status_var.set(
-                    "Geen Custom BOM-rijen geselecteerd om te verwijderen."
-                )
-                return "break" if event is not None else None
+                # Allow deleting regular BOM rows as a fallback when there are no
+                # custom rows flagged (e.g. when working on a freshly loaded BOM).
+                if has_custom_rows:
+                    self.status_var.set(
+                        "Geen Custom BOM-rijen geselecteerd om te verwijderen."
+                    )
+                    return "break" if event is not None else None
+
+                removable_pairs = [
+                    (idx, item)
+                    for idx, item in sorted_pairs
+                    if 0 <= idx < row_count
+                ]
+                if not removable_pairs:
+                    return "break" if event is not None else None
 
             drop_labels = [df.index[idx] for idx, _ in removable_pairs]
             if not drop_labels:
@@ -3232,10 +3247,16 @@ def start_gui():
 
             if removed:
                 skipped = len(item_pairs) - removed
-                if removed == 1:
-                    msg = "1 Custom BOM-rij verwijderd."
+                if has_custom_rows:
+                    if removed == 1:
+                        msg = "1 Custom BOM-rij verwijderd."
+                    else:
+                        msg = f"{removed} Custom BOM-rijen verwijderd."
                 else:
-                    msg = f"{removed} Custom BOM-rijen verwijderd."
+                    if removed == 1:
+                        msg = "1 rij verwijderd."
+                    else:
+                        msg = f"{removed} rijen verwijderd."
                 if skipped > 0:
                     suffix = (
                         "1 rij overgeslagen" if skipped == 1 else f"{skipped} rijen overgeslagen"
