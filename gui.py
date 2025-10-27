@@ -94,6 +94,8 @@ def start_gui():
     TREE_ODD_BG = "#FFFFFF"
     TREE_EVEN_BG = "#F5F5F5"
     STOCK_LENGTH_MM = 6000
+    LONG_STOCK_LENGTH_MM = 12000
+    DEFAULT_KERF_MM = 5.0
 
     def _entry_overflows(entry: "tk.Entry", text: str) -> bool:
         """Return True if the Entry content is wider than the widget."""
@@ -198,30 +200,40 @@ def start_gui():
 
         return int(round(amount))
 
-    def _estimate_stock_bars(lengths_mm: List[int]) -> int:
-        """Estimate bars of STOCK_LENGTH_MM required using first-fit decreasing."""
+    def _estimate_stock_bars(
+        lengths_mm: List[int],
+        stock_length_mm: int,
+        kerf_mm: float = 0.0,
+    ) -> int:
+        """Estimate bars required using first-fit decreasing with kerf loss."""
 
-        usable = [length for length in lengths_mm if length and length > 0]
+        usable = [float(length) for length in lengths_mm if length and length > 0]
         if not usable:
             return 0
 
-        remaining_capacities: List[int] = []
+        kerf_mm = max(0.0, float(kerf_mm))
+        stock_length_mm = int(stock_length_mm)
+        if stock_length_mm <= 0:
+            return 0
+
+        used_lengths: List[float] = []
         for length in sorted(usable, reverse=True):
-            if length >= STOCK_LENGTH_MM:
-                remaining_capacities.append(0)
+            if length > stock_length_mm:
+                used_lengths.append(float(stock_length_mm))
                 continue
 
             placed = False
-            for idx, capacity in enumerate(remaining_capacities):
-                if length <= capacity:
-                    remaining_capacities[idx] = capacity - length
+            for idx, used in enumerate(used_lengths):
+                extra_loss = kerf_mm if used > 0 else 0.0
+                if used + extra_loss + length <= stock_length_mm:
+                    used_lengths[idx] = used + extra_loss + length
                     placed = True
                     break
 
             if not placed:
-                remaining_capacities.append(STOCK_LENGTH_MM - length)
+                used_lengths.append(length)
 
-        return len(remaining_capacities) or 0
+        return len(used_lengths) or 0
 
     class _OverflowTooltip:
         """Show a tooltip with full text when an Entry's content overflows."""
@@ -2726,6 +2738,43 @@ def start_gui():
             self.opticutter_frame.configure(padx=12, pady=12)
             self.nb.add(self.opticutter_frame, text="Opticutter")
 
+            opticutter_header = tk.Frame(self.opticutter_frame)
+            opticutter_header.pack(fill="x", pady=(0, 8))
+
+            tk.Label(
+                opticutter_header,
+                text=(
+                    "Gebruik deze zaagoptimalisatie om lineaire materialen zoals "
+                    "balken, buizen of profielen zo efficiënt mogelijk te verdelen. "
+                    "Geef de gewenste stukken door en stel indien nodig de "
+                    "zaagbreedte in; het algoritme berekent automatisch het meest "
+                    "gunstige zaagplan."
+                ),
+                justify="left",
+                anchor="w",
+                wraplength=620,
+            ).pack(fill="x")
+
+            kerf_frame = tk.Frame(opticutter_header)
+            kerf_frame.pack(anchor="w", pady=(8, 0))
+
+            tk.Label(kerf_frame, text="Zaagbreedte (mm):").pack(side="left")
+            self.opticutter_kerf_var = tk.StringVar(
+                master=self.opticutter_frame,
+                value=f"{DEFAULT_KERF_MM:g}",
+            )
+            kerf_entry = ttk.Entry(
+                kerf_frame,
+                textvariable=self.opticutter_kerf_var,
+                width=8,
+                justify="right",
+            )
+            kerf_entry.pack(side="left", padx=(4, 0))
+            self._opticutter_kerf_after_id: Optional[str] = None
+            self.opticutter_kerf_var.trace_add(
+                "write", self._on_opticutter_kerf_change
+            )
+
             self.opticutter_info_var = tk.StringVar(
                 master=self.opticutter_frame,
                 value="Laad een BOM om profielen te bekijken.",
@@ -2734,6 +2783,7 @@ def start_gui():
                 self.opticutter_frame,
                 textvariable=self.opticutter_info_var,
                 anchor="w",
+                justify="left",
             ).pack(fill="x", pady=(0, 8))
 
             opticutter_table_container = tk.Frame(self.opticutter_frame)
@@ -2771,7 +2821,7 @@ def start_gui():
             opticutter_summary_frame = tk.Frame(opticutter_table_container)
             opticutter_summary_frame.pack(side="left", fill="y", padx=(12, 0))
 
-            summary_columns = ("Profile", "6m bars")
+            summary_columns = ("Profile", "6m bars", "12m bars")
             self.opticutter_profile_summary_tree = ttk.Treeview(
                 opticutter_summary_frame,
                 columns=summary_columns,
@@ -2786,7 +2836,7 @@ def start_gui():
                     col,
                     anchor=anchor,
                     stretch=False,
-                    minwidth=60 if col != "Profile" else 120,
+                    minwidth=70 if col != "Profile" else 140,
                 )
 
             opticutter_summary_scroll = ttk.Scrollbar(
@@ -3396,7 +3446,39 @@ def start_gui():
                 f"Custom BOM wijzigingen toegepast ({len(normalized)} rijen)."
             )
 
+        def _on_opticutter_kerf_change(self, *_args) -> None:
+            after_id = getattr(self, "_opticutter_kerf_after_id", None)
+            if after_id is not None:
+                try:
+                    self.after_cancel(after_id)
+                except tk.TclError:
+                    pass
+            self._opticutter_kerf_after_id = self.after(200, self._refresh_opticutter_table)
+
+        def _get_opticutter_kerf_mm(self) -> float:
+            var = getattr(self, "opticutter_kerf_var", None)
+            if var is None:
+                return DEFAULT_KERF_MM
+            try:
+                raw_value = str(var.get()).strip().replace(",", ".")
+            except tk.TclError:
+                return DEFAULT_KERF_MM
+            if not raw_value:
+                return DEFAULT_KERF_MM
+            try:
+                value = float(raw_value)
+            except ValueError:
+                return DEFAULT_KERF_MM
+            return max(0.0, value)
+
         def _refresh_opticutter_table(self) -> None:
+            after_id = getattr(self, "_opticutter_kerf_after_id", None)
+            if after_id is not None:
+                try:
+                    self.after_cancel(after_id)
+                except tk.TclError:
+                    pass
+                self._opticutter_kerf_after_id = None
             tree = getattr(self, "opticutter_tree", None)
             summary_tree = getattr(self, "opticutter_profile_summary_tree", None)
             if tree is None and summary_tree is None:
@@ -3469,6 +3551,7 @@ def start_gui():
             pieces_by_profile: Dict[str, List[int]] = defaultdict(list)
             unparsed_lengths: List[str] = []
             oversized_profiles: set[str] = set()
+            oversized_profiles_12m: set[str] = set()
             for _, row in filtered.iterrows():
                 profile_name = row["Profile"]
                 length_mm = row.get("Length profile mm")
@@ -3482,6 +3565,8 @@ def start_gui():
                     continue
                 if length_mm > STOCK_LENGTH_MM:
                     oversized_profiles.add(profile_name)
+                if length_mm > LONG_STOCK_LENGTH_MM:
+                    oversized_profiles_12m.add(profile_name)
                 pieces_by_profile[profile_name].extend([length_mm] * qty)
 
             total_qty = int(aggregated["Aantal"].sum()) if not aggregated.empty else 0
@@ -3500,14 +3585,26 @@ def start_gui():
                     )
                 _autosize_tree_columns(tree)
 
+            kerf_mm = self._get_opticutter_kerf_mm()
+
             if summary_tree is not None and pieces_by_profile:
                 for profile_name in sorted(pieces_by_profile):
                     lengths = pieces_by_profile[profile_name]
-                    required_bars = _estimate_stock_bars(lengths)
+                    if any(length > STOCK_LENGTH_MM for length in lengths):
+                        bars_6m = "❌"
+                    else:
+                        bars_6m = _estimate_stock_bars(lengths, STOCK_LENGTH_MM, kerf_mm)
+
+                    if any(length > LONG_STOCK_LENGTH_MM for length in lengths):
+                        bars_12m = "❌"
+                    else:
+                        bars_12m = _estimate_stock_bars(
+                            lengths, LONG_STOCK_LENGTH_MM, kerf_mm
+                        )
                     summary_tree.insert(
                         "",
                         "end",
-                        values=(profile_name, required_bars),
+                        values=(profile_name, bars_6m, bars_12m),
                     )
                 _autosize_tree_columns(summary_tree)
 
@@ -3524,9 +3621,13 @@ def start_gui():
                         f"{base_message} | {profile_types} profieltypen in overzicht"
                     )
 
+                base_message = f"{base_message} | Zaagbreedte: {kerf_mm:g} mm"
+
                 warnings: List[str] = []
                 if oversized_profiles:
                     warnings.append("Let op: sommige profielen zijn langer dan 6m.")
+                if oversized_profiles_12m:
+                    warnings.append("Let op: sommige profielen zijn langer dan 12m.")
                 if unparsed_lengths:
                     warnings.append("Sommige profiel lengtes konden niet worden gelezen.")
 
