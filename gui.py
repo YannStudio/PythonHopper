@@ -118,6 +118,28 @@ def start_gui():
         usable_width = max(1, width - int(padding) - 4)
         return font.measure(text) > usable_width
 
+    def _autosize_tree_columns(
+        tree: "ttk.Treeview", padding: int = 16
+    ) -> None:
+        """Resize Treeview columns to fit their contents with padding."""
+
+        if tree is None:
+            return
+
+        try:
+            font = tkfont.nametofont(tree.cget("font"))
+        except tk.TclError:
+            font = tkfont.nametofont("TkDefaultFont")
+
+        for column in tree["columns"]:
+            heading = tree.heading(column).get("text", "")
+            max_width = font.measure(heading)
+            for item in tree.get_children(""):
+                value = tree.set(item, column)
+                if value:
+                    max_width = max(max_width, font.measure(str(value)))
+            tree.column(column, width=max_width + padding)
+
     def _scroll_entry_to_end(entry: "tk.Entry", variable: Optional["tk.StringVar"] = None) -> None:
         """Ensure the end of the entry text remains visible."""
 
@@ -2660,9 +2682,13 @@ def start_gui():
             )
             for col in opticutter_columns:
                 anchor = "center" if col == "QTY." else "w"
-                width = 120 if col == "QTY." else 240
                 self.opticutter_tree.heading(col, text=col, anchor=anchor)
-                self.opticutter_tree.column(col, anchor=anchor, width=width)
+                self.opticutter_tree.column(
+                    col,
+                    anchor=anchor,
+                    stretch=False,
+                    minwidth=40,
+                )
 
             opticutter_scroll = ttk.Scrollbar(
                 opticutter_table_container,
@@ -2670,7 +2696,7 @@ def start_gui():
                 command=self.opticutter_tree.yview,
             )
             self.opticutter_tree.configure(yscrollcommand=opticutter_scroll.set)
-            self.opticutter_tree.pack(side="left", fill="both", expand=True)
+            self.opticutter_tree.pack(side="left", fill="y", expand=True, anchor="w")
             opticutter_scroll.pack(side="left", fill="y")
             self.main_frame = main
             self.clients_frame = ClientsManagerFrame(
@@ -3277,6 +3303,8 @@ def start_gui():
             for item in tree.get_children():
                 tree.delete(item)
 
+            _autosize_tree_columns(tree)
+
             info_var = getattr(self, "opticutter_info_var", None)
             default_message = "Laad een BOM om profielen te bekijken."
             if info_var is not None:
@@ -3333,6 +3361,8 @@ def start_gui():
                     "end",
                     values=(row["Profile"], row["Length profile"], qty),
                 )
+
+            _autosize_tree_columns(tree)
 
             if info_var is not None:
                 profile_count = len(aggregated.index)
