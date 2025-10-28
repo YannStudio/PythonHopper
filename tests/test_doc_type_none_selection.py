@@ -20,6 +20,36 @@ def _prefix_for_doc_type(doc_type: str) -> str:
     return ""
 
 
+def _normalize_doc_number(value, doc_type):
+    prefix = _prefix_for_doc_type(doc_type)
+    text = ("" if value is None else str(value)).strip()
+    if not text:
+        return ""
+    if not prefix:
+        return text
+
+    prefix_upper = prefix.upper()
+    compact = prefix_upper.replace("-", "")
+    text_upper = text.upper()
+
+    if text_upper.startswith(prefix_upper):
+        remainder = text[len(prefix) :].lstrip(" -_")
+        remainder_upper = remainder.upper()
+        if remainder_upper.startswith(prefix_upper):
+            remainder = remainder[len(prefix) :].lstrip(" -_")
+            return prefix + remainder
+        if compact and remainder_upper.startswith(compact):
+            remainder = remainder[len(compact) :].lstrip(" -_")
+            return prefix + remainder
+        return prefix + remainder
+
+    if compact and text_upper.startswith(compact):
+        remainder = text[len(compact) :].lstrip(" -_")
+        return prefix + remainder
+
+    return text
+
+
 class DummyCombo:
     def __init__(self, value=""):
         self.value = value
@@ -83,6 +113,7 @@ def _load_supplier_frame():
         "SuppliersDB": SuppliersDB,
         "DeliveryAddressesDB": DeliveryAddressesDB,
         "_prefix_for_doc_type": _prefix_for_doc_type,
+        "_normalize_doc_number": _normalize_doc_number,
     }
     exec(code, ns)
     return ns["SupplierSelectionFrame"]
