@@ -1261,6 +1261,15 @@ def start_gui():
                 if self.on_change:
                     self.on_change()
 
+    @dataclass
+    class SupplierSelectionState:
+        selections: Dict[str, str]
+        doc_types: Dict[str, str]
+        doc_numbers: Dict[str, str]
+        remarks: Dict[str, str]
+        deliveries: Dict[str, str]
+        remember: bool = True
+
     class SupplierSelectionFrame(tk.Frame):
         """Per productie: type-to-filter of dropdown; rechts detailkaart (klik = selecteer).
            Knoppen altijd zichtbaar onderaan.
@@ -1312,6 +1321,7 @@ def start_gui():
             callback,
             project_number_var: tk.StringVar,
             project_name_var: tk.StringVar,
+            initial_state: Optional["SupplierSelectionState"] = None,
         ):
             super().__init__(master)
             self.configure(padx=12, pady=12)
@@ -1680,9 +1690,76 @@ def start_gui():
 
             # Init
             self._refresh_options(initial=True)
+            if initial_state is not None:
+                try:
+                    self.apply_state(initial_state)
+                except Exception:
+                    pass
             self._update_preview_from_any_combo()
 
-        def _schedule_header_alignment(self, row_widgets: Dict[str, tk.Misc]) -> None:
+        def serialize_state(self) -> "SupplierSelectionState":
+            selections: Dict[str, str] = {}
+            for sel_key, combo in self.rows:
+                try:
+                    selections[sel_key] = combo.get()
+                except tk.TclError:
+                    continue
+
+            doc_types = {key: var.get() for key, var in self.doc_vars.items()}
+            doc_numbers = {
+                key: var.get() for key, var in self.doc_num_vars.items()
+            }
+            remarks = {key: var.get() for key, var in self.remark_vars.items()}
+            deliveries = {
+                key: var.get() for key, var in self.delivery_vars.items()
+            }
+
+            remember = bool(self.remember_var.get()) if hasattr(self, "remember_var") else True
+
+            return SupplierSelectionState(
+                selections=selections,
+                doc_types=doc_types,
+                doc_numbers=doc_numbers,
+                remarks=remarks,
+                deliveries=deliveries,
+                remember=remember,
+            )
+
+        def apply_state(self, state: "SupplierSelectionState") -> None:
+            set_combo_value = getattr(
+                type(self), "_set_combo_value", SupplierSelectionFrame._set_combo_value
+            )
+            for sel_key, combo in self.rows:
+                if sel_key in state.selections:
+                    set_combo_value(combo, state.selections[sel_key])
+
+            for sel_key, value in state.doc_types.items():
+                if sel_key in self.doc_vars:
+                    self.doc_vars[sel_key].set(value)
+
+            for sel_key, value in state.doc_numbers.items():
+                if sel_key in self.doc_num_vars:
+                    self.doc_num_vars[sel_key].set(value)
+
+            for sel_key, value in state.remarks.items():
+                if sel_key in self.remark_vars:
+                    self.remark_vars[sel_key].set(value)
+
+            for sel_key, value in state.deliveries.items():
+                dcombo = self.delivery_combos.get(sel_key)
+                if dcombo is not None:
+                    try:
+                        dcombo.set(value)
+                    except tk.TclError:
+                        pass
+
+            if hasattr(self, "remember_var"):
+                try:
+                    self.remember_var.set(1 if state.remember else 0)
+                except tk.TclError:
+                    pass
+
+        def _schedule_header_alignment(self, row_widgets: Dict[str, "tk.Misc"]) -> None:
             if not getattr(self, "_header_column_frames", None):
                 return
             if self._header_aligned or self._header_alignment_pending:
@@ -1694,7 +1771,7 @@ def start_gui():
             self._header_alignment_pending = True
             self.after_idle(_do_align)
 
-        def _align_header_columns(self, row_widgets: Dict[str, tk.Misc]) -> None:
+        def _align_header_columns(self, row_widgets: Dict[str, "tk.Misc"]) -> None:
             try:
                 column_widgets = [
                     row_widgets["label"],
@@ -2022,6 +2099,12 @@ def start_gui():
             self.status_var.set(message)
 
         def _cancel(self):
+            parent_app = getattr(self.master, "master", None)
+            if parent_app is not None:
+                try:
+                    parent_app._last_supplier_selection_state = self.serialize_state()
+                except Exception:
+                    pass
             if self.master:
                 try:
                     self.master.forget(self)
@@ -2790,6 +2873,8 @@ def start_gui():
             self.last_bundle_result: Optional[ExportBundleResult] = None
             self.bom_df: Optional["pd.DataFrame"] = None
             self.bom_source_path: Optional[str] = None
+            self.sel_frame: Optional["SupplierSelectionFrame"] = None
+            self._last_supplier_selection_state: Optional[SupplierSelectionState] = None
 
             for var in (
                 self.source_folder_var,
@@ -4675,6 +4760,13 @@ def start_gui():
                     return
                 current_bom = self.bom_df
 
+                if sel_frame is not None:
+                    try:
+                        if sel_frame.winfo_exists():
+                            self._last_supplier_selection_state = sel_frame.serialize_state()
+                    except Exception:
+                        pass
+
                 prod_override_map: Dict[str, str] = {}
                 finish_override_map: Dict[str, str] = {}
                 for key, value in sel_map.items():
@@ -4939,13 +5031,13 @@ def start_gui():
                                     parent=self,
                                 )
                         finally:
-                            if getattr(self, "sel_frame", None):
+                            current_sel = getattr(self, "sel_frame", None)
+                            if current_sel is not None:
                                 try:
-                                    self.nb.forget(self.sel_frame)
-                                    self.sel_frame.destroy()
+                                    if current_sel.winfo_exists():
+                                        self._last_supplier_selection_state = current_sel.serialize_state()
                                 except Exception:
                                     pass
-                                self.sel_frame = None
                             self.nb.select(self.main_frame)
                             set_busy_state(False)
 
@@ -4963,6 +5055,24 @@ def start_gui():
                 except Exception:
                     sup_search_restore = ""
 
+            previous_state = getattr(self, "_last_supplier_selection_state", None)
+            existing_frame = getattr(self, "sel_frame", None)
+            if existing_frame is not None:
+                try:
+                    if existing_frame.winfo_exists():
+                        previous_state = existing_frame.serialize_state()
+                except Exception:
+                    pass
+                try:
+                    self.nb.forget(existing_frame)
+                except Exception:
+                    pass
+                try:
+                    existing_frame.destroy()
+                except Exception:
+                    pass
+                self.sel_frame = None
+
             try:
                 sel_frame = SupplierSelectionFrame(
                     self.nb,
@@ -4973,6 +5083,7 @@ def start_gui():
                     on_sel,
                     self.project_number_var,
                     self.project_name_var,
+                    initial_state=previous_state,
                 )
             except Exception:
                 if sup_search_restore and hasattr(sup_frame, "restore_search_filter"):
@@ -4982,7 +5093,11 @@ def start_gui():
                         pass
                 raise
             self.sel_frame = sel_frame
-            self.nb.add(sel_frame, state="hidden")
+            try:
+                self._last_supplier_selection_state = sel_frame.serialize_state()
+            except Exception:
+                pass
+            self.nb.add(sel_frame, text="Bestelbonnen")
             self.nb.select(sel_frame)
 
             if sup_search_restore and hasattr(sup_frame, "restore_search_filter"):
