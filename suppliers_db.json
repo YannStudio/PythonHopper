@@ -1487,5 +1487,7 @@
     }
   ],
   "defaults_by_production": {},
-  "defaults_by_finish": {}
+  "defaults_by_finish": {
+    "Finish-Galva _ Paint-RAL 9005": "Van Gils Coating - Beringen/Maasmechelen"
+  }
 }
