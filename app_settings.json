@@ -1,8 +1,8 @@
 {
-  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/00. Standaard producten/01. Deuren & poorten/01. Poorten/Design museum Gent/cad",
-  "dest_folder": "C:/Users/jeroe/Desktop",
-  "project_number": "",
-  "project_name": "",
+  "source_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2025/Standaard modellen/Tecno G/20250144 - Fietsenstalling Dadizele/CAD/3D Soldiworks Files/V4 - productie/MOD 2",
+  "dest_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2025/Standaard modellen/Tecno G/20250144 - Fietsenstalling Dadizele/CAD/Bestellingen/MOD2",
+  "project_number": "20250144",
+  "project_name": "Dadizele-Mod2",
   "file_extensions": [
     {
       "key": "pdf",
@@ -19,7 +19,7 @@
         ".step",
         ".stp"
       ],
-      "enabled": true
+      "enabled": false
     },
     {
       "key": "dxf",
@@ -39,8 +39,8 @@
     }
   ],
   "zip_per_production": true,
-  "combine_pdf_per_production": true,
-  "copy_finish_exports": false,
+  "combine_pdf_per_production": false,
+  "copy_finish_exports": true,
   "zip_finish_exports": true,
   "export_processed_bom": true,
   "export_related_bom_files": true,
