@@ -28,6 +28,7 @@ from orders import (
     DEFAULT_FOOTER_NOTE,
     describe_finish_combo,
     parse_selection_key,
+    _WINDOWS_MAX_PATH,
 )
 from app_settings import AppSettings
 
@@ -514,6 +515,7 @@ def cli_copy_per_prod(args):
         else bool(args.zip_finish_folders)
     )
 
+    path_limit_warnings: List[str] = []
     cnt, chosen = copy_per_production_and_orders(
         args.source,
         bundle.bundle_dir,
@@ -542,6 +544,7 @@ def cli_copy_per_prod(args):
         finish_doc_num_map=finish_doc_num_map,
         finish_delivery_map=finish_delivery_map,
         bom_source_path=args.bom,
+        path_limit_warnings=path_limit_warnings,
     )
     print("Gekopieerd:", cnt)
     for k, v in chosen.items():
@@ -553,6 +556,16 @@ def cli_copy_per_prod(args):
             display = ident
             prefix = "Productie"
         print(f"  {prefix} {display} → {v}")
+    if path_limit_warnings:
+        print(
+            "[WAARSCHUWING] Sommige exportbestanden kregen een kortere naam omdat het pad te lang werd.",
+        )
+        print(
+            f"Windows laat maximaal {_WINDOWS_MAX_PATH} tekens per pad toe; Filehopper voegt dan automatisch een korte code toe.",
+        )
+        print("Kort de doelmap of de bestandsnaam in om dit te vermijden.")
+        for msg in path_limit_warnings:
+            print(f"  - {msg}")
     return 0
 
 
