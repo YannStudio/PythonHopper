@@ -32,6 +32,7 @@ from orders import (
     find_related_bom_exports,
     make_bom_export_filename,
     _prefix_for_doc_type,
+    _normalize_doc_number,
     _export_bom_workbook,
     describe_finish_combo,
     make_finish_selection_key,
@@ -1739,7 +1740,10 @@ def start_gui():
 
             for sel_key, value in state.doc_numbers.items():
                 if sel_key in self.doc_num_vars:
-                    self.doc_num_vars[sel_key].set(value)
+                    doc_var = self.doc_vars.get(sel_key)
+                    doc_type_text = doc_var.get() if doc_var else "Bestelbon"
+                    normalized = _normalize_doc_number(value, doc_type_text)
+                    self.doc_num_vars[sel_key].set(normalized)
 
             for sel_key, value in state.remarks.items():
                 if sel_key in self.remark_vars:
@@ -2138,7 +2142,14 @@ def start_gui():
             remarks_map: Dict[str, str] = {}
             remark_vars = getattr(self, "remark_vars", {})
             for sel_key, _combo in self.rows:
-                doc_num_map[sel_key] = self.doc_num_vars[sel_key].get().strip()
+                raw_doc_num = self.doc_num_vars[sel_key].get().strip()
+                doc_type_text = doc_map.get(sel_key, "Bestelbon")
+                normalized_doc_num = _normalize_doc_number(
+                    raw_doc_num, doc_type_text
+                )
+                if normalized_doc_num != raw_doc_num:
+                    self.doc_num_vars[sel_key].set(normalized_doc_num)
+                doc_num_map[sel_key] = normalized_doc_num
                 delivery_map[sel_key] = self.delivery_vars.get(
                     sel_key, tk.StringVar(value="Geen")
                 ).get()

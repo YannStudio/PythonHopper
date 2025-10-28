@@ -386,6 +386,43 @@ def _prefix_for_doc_type(doc_type: str) -> str:
     return ""
 
 
+def _normalize_doc_number(value: object, doc_type: object) -> str:
+    """Return a cleaned document number for a given ``doc_type``.
+
+    The GUI provides placeholder prefixes such as ``"BB-"``. When the user
+    pastes a value that already contains the prefix the placeholder should be
+    replaced instead of duplicated (``"BB-BB123"`` → ``"BB-123"``).
+    """
+
+    doc_num = _to_str(value).strip()
+    if not doc_num:
+        return ""
+
+    prefix = _prefix_for_doc_type(_to_str(doc_type))
+    if not prefix:
+        return doc_num
+
+    prefix_upper = prefix.upper()
+    doc_upper = doc_num.upper()
+    prefix_compact = re.sub(r"[^A-Z0-9]", "", prefix_upper)
+
+    if doc_upper.startswith(prefix_upper):
+        remainder = doc_num[len(prefix) :]
+        remainder_stripped = remainder.lstrip(" -_")
+        remainder_upper = remainder_stripped.upper()
+        if remainder_upper.startswith(prefix_upper):
+            remainder = remainder_stripped[len(prefix) :]
+            doc_num = prefix + remainder.lstrip(" -_")
+        elif prefix_compact and remainder_upper.startswith(prefix_compact):
+            remainder = remainder_stripped[len(prefix_compact) :]
+            doc_num = prefix + remainder.lstrip(" -_")
+    elif prefix_compact and doc_upper.startswith(prefix_compact):
+        remainder = doc_num[len(prefix_compact) :]
+        doc_num = prefix + remainder.lstrip(" -_")
+
+    return doc_num
+
+
 def _should_place_remark_in_delivery_block(
     *,
     order_remark_has_content: bool,
@@ -1288,7 +1325,7 @@ def copy_per_production_and_orders(
 
         raw_doc_type = doc_type_map.get(prod, "Bestelbon")
         doc_type = _to_str(raw_doc_type).strip() or "Bestelbon"
-        doc_num = _to_str(doc_num_map.get(prod, "")).strip()
+        doc_num = _normalize_doc_number(doc_num_map.get(prod, ""), doc_type)
         prefix = _prefix_for_doc_type(doc_type)
         if doc_num and prefix and doc_num.upper() == prefix.upper():
             doc_num = ""
@@ -1567,7 +1604,9 @@ def copy_per_production_and_orders(
             if not supplier_name_clean and not is_standaard_doc:
                 continue
 
-            doc_num = _to_str(finish_doc_num_map.get(finish_key, "")).strip()
+            doc_num = _normalize_doc_number(
+                finish_doc_num_map.get(finish_key, ""), doc_type
+            )
             prefix = _prefix_for_doc_type(doc_type)
             if doc_num and prefix and doc_num.upper() == prefix.upper():
                 doc_num = ""
