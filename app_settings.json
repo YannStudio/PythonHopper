@@ -1,8 +1,8 @@
 {
-  "source_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2023/Maatwerk overkappingen/Diverse/20230159 - Luifel Sint Gabriel Boechout/CAD/3D Soldiworks Files/V3",
-  "dest_folder": "C:/Users/jeroe/Desktop",
-  "project_number": "53",
-  "project_name": "Gent-add-ons",
+  "source_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2023/Maatwerk overkappingen/Diverse/C:\\Cloudstation\\SynologyDrive\\Documenten\\Projects\\2025\\Standaard modellen\\Tecno G\\20250144 - Fietsenstalling Dadizele\\CAD\\3D Soldiworks Files\\V4 - productie\\MOD 1",
+  "dest_folder": "C:\\Cloudstation\\SynologyDrive\\Documenten\\Projects\\2025\\Standaard modellen\\Tecno G\\20250144 - Fietsenstalling Dadizele\\CAD\\Bestellingen\\MOD1",
+  "project_number": "20250144",
+  "project_name": "Dadizele-MOD1",
   "file_extensions": [
     {
       "key": "pdf",
@@ -19,7 +19,7 @@
         ".step",
         ".stp"
       ],
-      "enabled": true
+      "enabled": false
     },
     {
       "key": "dxf",
