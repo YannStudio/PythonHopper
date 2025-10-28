@@ -137,7 +137,10 @@ def _slugify_name(value: object, fallback: str) -> str:
 
 
 def _fit_filename_within_path(
-    directory: str, filename: str, *, max_path: int = _WINDOWS_MAX_PATH
+    directory: str,
+    filename: str,
+    *,
+    max_path: int = _WINDOWS_MAX_PATH,
 ) -> str:
     """Return ``filename`` possibly shortened so ``directory/filename`` fits ``max_path``.
 
@@ -1100,6 +1103,7 @@ def copy_per_production_and_orders(
     remarks_map: Dict[str, str] | None = None,
     finish_remarks_map: Dict[str, str] | None = None,
     bom_source_path: str | None = None,
+    path_limit_warnings: List[str] | None = None,
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
 
@@ -1254,6 +1258,24 @@ def copy_per_production_and_orders(
 
     suppliers_sorted = db.suppliers_sorted()
 
+    def _record_path_warning(
+        directory: str,
+        requested: str,
+        final: str,
+        *,
+        context: str,
+    ) -> None:
+        if path_limit_warnings is None or requested == final:
+            return
+        directory_abs = os.path.abspath(directory)
+        original_abs = os.path.join(directory_abs, requested)
+        detail = (
+            f"{context}: '{requested}' → '{final}' "
+            f"(padlengte {len(original_abs)} tekens, limiet {_WINDOWS_MAX_PATH})"
+        )
+        if detail not in path_limit_warnings:
+            path_limit_warnings.append(detail)
+
     footer_note_text = (
         DEFAULT_FOOTER_NOTE
         if footer_note is None
@@ -1374,8 +1396,13 @@ def copy_per_production_and_orders(
             delivery_for_docs = None
 
         if supplier_name_clean or is_standaard_doc:
-            excel_filename = _fit_filename_within_path(
-                prod_folder, f"{doc_type}{num_part}_{prod}_{today}.xlsx"
+            excel_requested = f"{doc_type}{num_part}_{prod}_{today}.xlsx"
+            excel_filename = _fit_filename_within_path(prod_folder, excel_requested)
+            _record_path_warning(
+                prod_folder,
+                excel_requested,
+                excel_filename,
+                context=f"Productie '{prod}' – {doc_type}",
             )
             excel_path = os.path.join(prod_folder, excel_filename)
             write_order_excel(
@@ -1393,8 +1420,13 @@ def copy_per_production_and_orders(
                 order_remark=order_remark or None,
             )
 
-            pdf_filename = _fit_filename_within_path(
-                prod_folder, f"{doc_type}{num_part}_{prod}_{today}.pdf"
+            pdf_requested = f"{doc_type}{num_part}_{prod}_{today}.pdf"
+            pdf_filename = _fit_filename_within_path(prod_folder, pdf_requested)
+            _record_path_warning(
+                prod_folder,
+                pdf_requested,
+                pdf_filename,
+                context=f"Productie '{prod}' – {doc_type}",
             )
             pdf_path = os.path.join(prod_folder, pdf_filename)
             try:
@@ -1424,8 +1456,15 @@ def copy_per_production_and_orders(
                         packlist_items, preview_dir
                     )
                     if rendered_previews:
+                        packlist_requested = f"Paklijst_{prod}_{today}.pdf"
                         packlist_filename = _fit_filename_within_path(
-                            prod_folder, f"Paklijst_{prod}_{today}.pdf"
+                            prod_folder, packlist_requested
+                        )
+                        _record_path_warning(
+                            prod_folder,
+                            packlist_requested,
+                            packlist_filename,
+                            context=f"Productie '{prod}' – Paklijst",
                         )
                         packlist_path = os.path.join(prod_folder, packlist_filename)
                         try:
@@ -1566,9 +1605,15 @@ def copy_per_production_and_orders(
                 supplier_for_docs = None
                 delivery_for_docs = None
 
-            excel_filename = _fit_filename_within_path(
+            excel_requested = (
+                f"{doc_type}{num_part}_{filename_component}_{today}.xlsx"
+            )
+            excel_filename = _fit_filename_within_path(target_dir, excel_requested)
+            _record_path_warning(
                 target_dir,
-                f"{doc_type}{num_part}_{filename_component}_{today}.xlsx",
+                excel_requested,
+                excel_filename,
+                context=f"Afwerking '{label}' – {doc_type}",
             )
             excel_path = os.path.join(target_dir, excel_filename)
             write_order_excel(
@@ -1586,8 +1631,13 @@ def copy_per_production_and_orders(
                 order_remark=finish_remark or None,
             )
 
-            pdf_filename = _fit_filename_within_path(
-                target_dir, f"{doc_type}{num_part}_{filename_component}_{today}.pdf"
+            pdf_requested = f"{doc_type}{num_part}_{filename_component}_{today}.pdf"
+            pdf_filename = _fit_filename_within_path(target_dir, pdf_requested)
+            _record_path_warning(
+                target_dir,
+                pdf_requested,
+                pdf_filename,
+                context=f"Afwerking '{label}' – {doc_type}",
             )
             pdf_path = os.path.join(target_dir, pdf_filename)
             try:

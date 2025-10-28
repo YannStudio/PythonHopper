@@ -37,6 +37,7 @@ from orders import (
     make_finish_selection_key,
     make_production_selection_key,
     parse_selection_key,
+    _WINDOWS_MAX_PATH,
 )
 
 
@@ -4827,6 +4828,7 @@ def start_gui():
                     client = self.client_db.get(
                         self.client_var.get().replace("★ ", "", 1)
                     )
+                    path_limit_messages: List[str] = []
                     try:
                         cnt, chosen = copy_per_production_and_orders(
                             self.source_folder,
@@ -4863,6 +4865,7 @@ def start_gui():
                             remarks_map=production_remarks_map,
                             finish_remarks_map=finish_remarks_map,
                             bom_source_path=self.bom_source_path,
+                            path_limit_warnings=path_limit_messages,
                         )
                     except Exception as exc:
                         error_message = str(exc)
@@ -4904,6 +4907,24 @@ def start_gui():
                             if bundle.latest_symlink:
                                 info_lines.append(f"Symlink: {bundle.latest_symlink}")
                             messagebox.showinfo("Klaar", "\n".join(info_lines), parent=self)
+                            if path_limit_messages:
+                                warning_lines = [
+                                    "Sommige exportbestanden kregen een kortere naam omdat het pad te lang werd.",
+                                    f"Windows laat maximaal {_WINDOWS_MAX_PATH} tekens per pad toe; Filehopper voegt dan automatisch een korte code toe.",
+                                    "",
+                                ]
+                                warning_lines.extend(f"• {msg}" for msg in path_limit_messages)
+                                warning_lines.extend(
+                                    [
+                                        "",
+                                        "Kort de doelmap of de bestandsnaam in om dit te vermijden.",
+                                    ]
+                                )
+                                messagebox.showwarning(
+                                    "Padlimiet bereikt",
+                                    "\n".join(warning_lines),
+                                    parent=self,
+                                )
                             try:
                                 if sys.platform.startswith("win"):
                                     os.startfile(bundle_dest)
