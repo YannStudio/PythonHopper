@@ -3029,6 +3029,7 @@ def start_gui():
                 "PartNumber",
                 "Profile",
                 "Material",
+                "Production",
                 "Profile length",
                 "QTY.",
             )
@@ -3042,7 +3043,7 @@ def start_gui():
                 anchor = "center" if col == "QTY." else "w"
                 self.opticutter_tree.heading(col, text=col, anchor=anchor)
                 minwidth = 40
-                if col == "Material":
+                if col in {"Material", "Production"}:
                     minwidth = 120
                 elif col == "Profile length":
                     minwidth = 110
@@ -3070,6 +3071,7 @@ def start_gui():
             summary_columns = (
                 "Profile",
                 "Material",
+                "Production",
                 "6m bars",
                 "6m waste",
                 "6m cuts",
@@ -3101,11 +3103,13 @@ def start_gui():
                     )
                     continue
 
-                anchor = "center" if col not in {"Profile", "Material"} else "w"
+                anchor = "center" if col not in {"Profile", "Material", "Production"} else "w"
                 minwidth = 100 if "waste" in col else 90
                 if col == "Profile":
                     minwidth = 170
                 if col == "Material":
+                    minwidth = 140
+                if col == "Production":
                     minwidth = 140
                 heading_text = col
                 if col.endswith("bars"):
@@ -3822,7 +3826,12 @@ def start_gui():
                     info_var.set("BOM is leeg. Geen profielen om te tonen.")
                 return
 
-            required_columns = ["PartNumber", "Profile", "Length profile", "Aantal"]
+            required_columns = [
+                "PartNumber",
+                "Profile",
+                "Length profile",
+                "Aantal",
+            ]
             missing_columns = [col for col in required_columns if col not in df.columns]
             if missing_columns:
                 if info_var is not None:
@@ -3840,8 +3849,18 @@ def start_gui():
                 profiles_df["Material"] = (
                     df["Material"].fillna("").astype(str).str.strip()
                 )
+            elif "Materiaal" in df.columns:
+                profiles_df["Material"] = (
+                    df["Materiaal"].fillna("").astype(str).str.strip()
+                )
             else:
                 profiles_df["Material"] = ""
+            if "Production" in df.columns:
+                profiles_df["Production"] = (
+                    df["Production"].fillna("").astype(str).str.strip()
+                )
+            else:
+                profiles_df["Production"] = ""
             profiles_df["PartNumber"] = (
                 profiles_df["PartNumber"].fillna("").astype(str).str.strip()
             )
@@ -3867,19 +3886,25 @@ def start_gui():
                 _parse_length_to_mm
             )
 
-            group_columns = ["PartNumber", "Profile", "Length profile", "Material"]
+            group_columns = [
+                "PartNumber",
+                "Profile",
+                "Length profile",
+                "Material",
+                "Production",
+            ]
             aggregated = (
                 filtered.groupby(group_columns, as_index=False)["Aantal"]
                 .sum()
                 .sort_values(by=group_columns)
             )
 
-            pieces_by_profile: Dict[tuple[str, str], List[int]] = defaultdict(list)
-            profile_blockers: Dict[tuple[str, str], Dict[str, set[str]]] = defaultdict(
-                lambda: {"6m": set(), "12m": set(), "custom": set()}
-            )
+            pieces_by_profile: Dict[tuple[str, str, str], List[int]] = defaultdict(list)
+            profile_blockers: Dict[
+                tuple[str, str, str], Dict[str, set[str]]
+            ] = defaultdict(lambda: {"6m": set(), "12m": set(), "custom": set()})
             profile_piece_details: Dict[
-                tuple[str, str], List[tuple[int, str]]
+                tuple[str, str, str], List[tuple[int, str]]
             ] = defaultdict(list)
             unparsed_lengths: List[str] = []
             oversized_profiles: set[str] = set()
@@ -3887,6 +3912,7 @@ def start_gui():
             for _, row in filtered.iterrows():
                 profile_name = row["Profile"]
                 material_name = row.get("Material", "")
+                production_name = row.get("Production", "")
                 length_mm = row.get("Length profile mm")
                 qty = int(row.get("Aantal", 0))
                 if qty <= 0:
@@ -3896,11 +3922,12 @@ def start_gui():
                     if length_text:
                         unparsed_lengths.append(str(length_text))
                     continue
+                key = (profile_name, material_name, production_name)
+
                 if length_mm > STOCK_LENGTH_MM:
                     oversized_profiles.add(profile_name)
                 if length_mm > LONG_STOCK_LENGTH_MM:
                     oversized_profiles_12m.add(profile_name)
-                key = (profile_name, material_name)
                 pieces_by_profile[key].extend([length_mm] * qty)
                 description = row.get("Description", "")
                 part_number = row.get("PartNumber", "")
@@ -3929,6 +3956,7 @@ def start_gui():
                             row["PartNumber"],
                             row["Profile"],
                             row.get("Material", ""),
+                            row.get("Production", ""),
                             row["Length profile"],
                             qty,
                         ),
@@ -3971,10 +3999,15 @@ def start_gui():
                     summary_tree.heading("Custom cuts", text="Custom\nzaagsneden")
 
             if summary_tree is not None and pieces_by_profile:
-                for profile_name, material_name in sorted(
-                    pieces_by_profile.keys(), key=lambda item: (item[0], item[1])
+                for profile_name, material_name, production_name in sorted(
+                    pieces_by_profile.keys(),
+                    key=lambda item: (item[0], item[1], item[2]),
                 ):
-                    lengths = pieces_by_profile[(profile_name, material_name)]
+                    lengths = pieces_by_profile[(
+                        profile_name,
+                        material_name,
+                        production_name,
+                    )]
                     scenario_6m = _calculate_stock_scenario(
                         lengths, STOCK_LENGTH_MM, kerf_mm
                     )
@@ -4005,6 +4038,7 @@ def start_gui():
                     values = (
                         profile_name,
                         material_name,
+                        production_name,
                         _format_bars(scenario_6m),
                         _format_waste(scenario_6m),
                         _format_cuts(scenario_6m),
@@ -4025,7 +4059,9 @@ def start_gui():
                     )
                     item_id = summary_tree.insert("", "end", values=values)
 
-                    blockers = profile_blockers[(profile_name, material_name)]
+                    blockers = profile_blockers[
+                        (profile_name, material_name, production_name)
+                    ]
 
                     def _join_blockers(blocker_values: set[str], stock_length: int) -> str:
                         if not blocker_values:
