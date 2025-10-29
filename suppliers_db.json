@@ -1404,7 +1404,7 @@
       "postcode": null,
       "gemeente": null,
       "land": null,
-      "btw": "nan",
+      "btw": "BE 0411 941 776",
       "contact_sales": "Alexandra Ludewig",
       "sales_email": "info@vaneycken.be",
       "phone": "+32 (0)16 499 700",
@@ -1484,10 +1484,45 @@
       "sales_email": "nan",
       "phone": "nan",
       "favorite": false
+    },
+    {
+      "supplier": "AC Metalec",
+      "description": "Metal processing - Turning & Milling",
+      "supplier_id": "SUPP_098",
+      "adres_1": "Brownfieldlaan 7",
+      "adres_2": "2830 Willebroek",
+      "postcode": null,
+      "gemeente": null,
+      "land": null,
+      "btw": "BE 0473 741 367",
+      "contact_sales": "Chris Delaet",
+      "sales_email": "info@acmetalec.be",
+      "phone": "nan",
+      "favorite": false
+    },
+    {
+      "supplier": "AMR",
+      "description": "Metal processing - Turning & Milling",
+      "supplier_id": "SUPP_099",
+      "adres_1": "Vaartstraat 17 B2",
+      "adres_2": "2240 Zandhoven",
+      "postcode": null,
+      "gemeente": null,
+      "land": null,
+      "btw": "BE 0840 953 475",
+      "contact_sales": "Michael Oosterlynck",
+      "sales_email": "michael.oosterlynck@amrservice.be",
+      "phone": "03 320 99 10",
+      "favorite": false
     }
   ],
-  "defaults_by_production": {},
+  "defaults_by_production": {
+    "Sheetmetal": "Productora",
+    "Milling": "AMR",
+    "Lasercutting": "Productora",
+    "Cutting": "Saey"
+  },
   "defaults_by_finish": {
-    "Finish-Galva _ Paint-RAL 9005": "Van Gils Coating - Beringen/Maasmechelen"
+    "Finish-Galvanised": "Van Gils Coating - Beringen/Maasmechelen"
   }
 }

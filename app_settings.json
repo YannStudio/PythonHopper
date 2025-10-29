@@ -1,8 +1,8 @@
 {
-  "source_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2025/Standaard modellen/Tecno G/20250144 - Fietsenstalling Dadizele/CAD/3D Soldiworks Files/V4 - productie/MOD 1",
-  "dest_folder": "C:\\Cloudstation\\SynologyDrive\\Documenten\\Projects\\2025\\Standaard modellen\\Tecno G\\20250144 - Fietsenstalling Dadizele\\CAD\\Bestellingen\\MOD1",
-  "project_number": "20250144",
-  "project_name": "Dadizele-MOD1",
+  "source_folder": "C:/Cloudstation/SynologyDrive/Documenten/CAD Library/0_STANDAARD assortiment/3_Straatmeubilair/Verkeerspalen/Neerklapbare paal/cad",
+  "dest_folder": "C:/Cloudstation/SynologyDrive/Documenten/CAD Library/0_STANDAARD assortiment/3_Straatmeubilair/Verkeerspalen/Neerklapbare paal/export",
+  "project_number": "20250244",
+  "project_name": "Neerklappaal",
   "file_extensions": [
     {
       "key": "pdf",
@@ -19,7 +19,7 @@
         ".step",
         ".stp"
       ],
-      "enabled": false
+      "enabled": true
     },
     {
       "key": "dxf",
