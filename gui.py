@@ -7,7 +7,7 @@ import subprocess
 import sys
 import threading
 import unicodedata
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from dataclasses import dataclass
 from copy import deepcopy
 from pathlib import Path
@@ -3147,6 +3147,123 @@ def start_gui():
             self.opticutter_summary_column_map = {
                 name: f"#{idx + 1}" for idx, name in enumerate(summary_columns)
             }
+
+            selection_section = tk.LabelFrame(
+                self.opticutter_frame, text="Lengte selectie per profiel"
+            )
+            selection_section.pack(fill="both", expand=True, pady=(8, 0))
+
+            tk.Label(
+                selection_section,
+                text=(
+                    "Kies per profiel welke staaflengte je wilt gebruiken."
+                    " De tabel hierboven toont alle scenario's."
+                ),
+                anchor="w",
+                justify="left",
+                wraplength=620,
+            ).pack(fill="x", padx=8, pady=(8, 6))
+
+            selection_header = tk.Frame(selection_section)
+            selection_header.pack(fill="x", padx=8, pady=(0, 2))
+            header_font = ("TkDefaultFont", 10, "bold")
+            tk.Label(
+                selection_header,
+                text="Profiel",
+                anchor="w",
+                width=30,
+                font=header_font,
+            ).pack(side="left", padx=(0, 6))
+            tk.Label(
+                selection_header,
+                text="Materiaal",
+                anchor="w",
+                width=20,
+                font=header_font,
+            ).pack(side="left", padx=(0, 6))
+            tk.Label(
+                selection_header,
+                text="Productie",
+                anchor="w",
+                width=20,
+                font=header_font,
+            ).pack(side="left", padx=(0, 6))
+            tk.Label(
+                selection_header,
+                text="Gewenste lengte",
+                anchor="w",
+                font=header_font,
+            ).pack(side="left", fill="x", expand=True)
+
+            selection_body = tk.Frame(selection_section)
+            selection_body.pack(fill="both", expand=True, pady=(0, 8))
+            self.opticutter_selection_canvas = tk.Canvas(
+                selection_body, highlightthickness=0, borderwidth=0, height=200
+            )
+            self.opticutter_selection_canvas.pack(
+                side="left", fill="both", expand=True, padx=(8, 0)
+            )
+            self.opticutter_selection_scroll = ttk.Scrollbar(
+                selection_body,
+                orient="vertical",
+                command=self.opticutter_selection_canvas.yview,
+            )
+            self.opticutter_selection_scroll.pack(side="left", fill="y", padx=(0, 8))
+            self.opticutter_selection_canvas.configure(
+                yscrollcommand=self.opticutter_selection_scroll.set
+            )
+            self.opticutter_selection_inner = tk.Frame(
+                self.opticutter_selection_canvas
+            )
+            self.opticutter_selection_window = self.opticutter_selection_canvas.create_window(
+                (0, 0), window=self.opticutter_selection_inner, anchor="nw"
+            )
+            self.opticutter_selection_inner.bind(
+                "<Configure>",
+                lambda _e: self.opticutter_selection_canvas.configure(
+                    scrollregion=self.opticutter_selection_canvas.bbox("all")
+                ),
+            )
+            self.opticutter_selection_canvas.bind(
+                "<Configure>",
+                lambda e: self.opticutter_selection_canvas.itemconfigure(
+                    self.opticutter_selection_window, width=e.width
+                ),
+            )
+
+            self.opticutter_selection_empty_label = tk.Label(
+                self.opticutter_selection_inner,
+                text="Laad een BOM om profielselecties te maken.",
+                anchor="w",
+                justify="left",
+            )
+            self.opticutter_selection_empty_label.pack(fill="x", padx=8, pady=8)
+
+            self.opticutter_profile_selection_rows: Dict[
+                tuple[str, str, str], tk.Frame
+            ] = {}
+            self.opticutter_profile_selection_labels: Dict[
+                tuple[str, str, str], tuple[tk.Label, tk.Label, tk.Label]
+            ] = {}
+            self.opticutter_profile_selection_vars: Dict[
+                tuple[str, str, str], tk.StringVar
+            ] = {}
+            self.opticutter_profile_selection_combos: Dict[
+                tuple[str, str, str], ttk.Combobox
+            ] = {}
+            self.opticutter_profile_selection_display_map: Dict[
+                tuple[str, str, str], OrderedDict[str, str]
+            ] = {}
+            self.opticutter_profile_selection_value_by_display: Dict[
+                tuple[str, str, str], Dict[str, str]
+            ] = {}
+            self.opticutter_profile_selection_choice: Dict[
+                tuple[str, str, str], str
+            ] = {}
+            self.opticutter_profile_selection_scenarios: Dict[
+                tuple[str, str, str], Dict[str, "StockScenarioResult"]
+            ] = {}
+            self._opticutter_selection_update_in_progress = False
             self.main_frame = main
             self.clients_frame = ClientsManagerFrame(
                 self.nb, self.client_db, on_change=self._on_db_change
@@ -3790,6 +3907,132 @@ def start_gui():
                 return None
             return int(parsed)
 
+        def _on_opticutter_profile_selection_change(
+            self, key: tuple[str, str, str]
+        ) -> None:
+            if getattr(self, "_opticutter_selection_update_in_progress", False):
+                return
+            var = self.opticutter_profile_selection_vars.get(key)
+            if var is None:
+                return
+            value_by_display = self.opticutter_profile_selection_value_by_display.get(
+                key
+            )
+            if not value_by_display:
+                return
+            display_value = var.get()
+            canonical = value_by_display.get(display_value)
+            if canonical is None:
+                return
+            self.opticutter_profile_selection_choice[key] = canonical
+
+        def _update_opticutter_selection_rows(
+            self,
+            entries: List[
+                tuple[
+                    tuple[str, str, str],
+                    str,
+                    str,
+                    str,
+                    List[tuple[str, str]],
+                    str,
+                ]
+            ],
+        ) -> None:
+            container = getattr(self, "opticutter_selection_inner", None)
+            if container is None:
+                return
+
+            empty_label = getattr(self, "opticutter_selection_empty_label", None)
+            rows = self.opticutter_profile_selection_rows
+            labels = self.opticutter_profile_selection_labels
+            vars_map = self.opticutter_profile_selection_vars
+            combos = self.opticutter_profile_selection_combos
+            display_map = self.opticutter_profile_selection_display_map
+            value_by_display_map = self.opticutter_profile_selection_value_by_display
+
+            new_keys = {entry[0] for entry in entries}
+            for key in list(rows.keys()):
+                if key in new_keys:
+                    continue
+                row = rows.pop(key)
+                row.destroy()
+                labels.pop(key, None)
+                vars_map.pop(key, None)
+                combos.pop(key, None)
+                display_map.pop(key, None)
+                value_by_display_map.pop(key, None)
+                self.opticutter_profile_selection_choice.pop(key, None)
+
+            if not entries:
+                if empty_label is not None and not empty_label.winfo_ismapped():
+                    empty_label.pack(fill="x", padx=8, pady=8)
+                return
+
+            if empty_label is not None:
+                empty_label.pack_forget()
+
+            for key, profile_name, material_name, production_name, options, selection in entries:
+                row = rows.get(key)
+                if row is None:
+                    row = tk.Frame(container)
+                    row.pack(fill="x", padx=8, pady=2)
+                    profile_label = tk.Label(
+                        row, text=profile_name or "—", anchor="w", width=30
+                    )
+                    profile_label.pack(side="left", padx=(0, 6))
+                    material_label = tk.Label(
+                        row, text=material_name or "—", anchor="w", width=20
+                    )
+                    material_label.pack(side="left", padx=(0, 6))
+                    production_label = tk.Label(
+                        row, text=production_name or "—", anchor="w", width=20
+                    )
+                    production_label.pack(side="left", padx=(0, 6))
+                    var = tk.StringVar()
+                    combo = ttk.Combobox(
+                        row,
+                        textvariable=var,
+                        state="readonly",
+                        width=42,
+                    )
+                    combo.pack(side="left", fill="x", expand=True)
+                    combo.bind(
+                        "<<ComboboxSelected>>",
+                        lambda _e, item_key=key: self._on_opticutter_profile_selection_change(
+                            item_key
+                        ),
+                    )
+                    rows[key] = row
+                    labels[key] = (profile_label, material_label, production_label)
+                    vars_map[key] = var
+                    combos[key] = combo
+                else:
+                    row.pack_forget()
+                    row.pack(fill="x", padx=8, pady=2)
+                    profile_label, material_label, production_label = labels[key]
+                    profile_label.configure(text=profile_name or "—")
+                    material_label.configure(text=material_name or "—")
+                    production_label.configure(text=production_name or "—")
+                    combo = combos[key]
+                    var = vars_map[key]
+
+                display_by_value = OrderedDict(options)
+                display_values = list(display_by_value.values())
+                value_by_display = {display: value for value, display in display_by_value.items()}
+                display_map[key] = display_by_value
+                value_by_display_map[key] = value_by_display
+                combo.configure(values=display_values)
+
+                chosen = selection
+                if chosen not in display_by_value:
+                    chosen = next(iter(display_by_value.keys()), "")
+                selected_display = display_by_value.get(chosen, "")
+                self._opticutter_selection_update_in_progress = True
+                var.set(selected_display)
+                self._opticutter_selection_update_in_progress = False
+                self.opticutter_profile_selection_choice[key] = chosen
+
         def _refresh_opticutter_table(self) -> None:
             after_id = getattr(self, "_opticutter_refresh_after_id", None)
             if after_id is not None:
@@ -3820,10 +4063,14 @@ def start_gui():
 
             df = self.bom_df
             if df is None:
+                self.opticutter_profile_selection_scenarios = {}
+                self._update_opticutter_selection_rows([])
                 return
             if df.empty:
                 if info_var is not None:
                     info_var.set("BOM is leeg. Geen profielen om te tonen.")
+                self.opticutter_profile_selection_scenarios = {}
+                self._update_opticutter_selection_rows([])
                 return
 
             required_columns = [
@@ -3836,6 +4083,8 @@ def start_gui():
             if missing_columns:
                 if info_var is not None:
                     info_var.set("BOM mist profielgegevens.")
+                self.opticutter_profile_selection_scenarios = {}
+                self._update_opticutter_selection_rows([])
                 return
 
             profiles_df = df.loc[:, required_columns].copy()
@@ -3880,6 +4129,8 @@ def start_gui():
             if filtered.empty:
                 if info_var is not None:
                     info_var.set("Geen profielen gevonden in de BOM.")
+                self.opticutter_profile_selection_scenarios = {}
+                self._update_opticutter_selection_rows([])
                 return
 
             filtered["Length profile mm"] = filtered["Length profile"].map(
@@ -3998,43 +4249,122 @@ def start_gui():
                     summary_tree.heading("Custom waste", text="Custom\nafval")
                     summary_tree.heading("Custom cuts", text="Custom\nzaagsneden")
 
-            if summary_tree is not None and pieces_by_profile:
-                for profile_name, material_name, production_name in sorted(
-                    pieces_by_profile.keys(),
-                    key=lambda item: (item[0], item[1], item[2]),
-                ):
-                    lengths = pieces_by_profile[(
+            selection_entries: List[
+                tuple[
+                    tuple[str, str, str],
+                    str,
+                    str,
+                    str,
+                    List[tuple[str, str]],
+                    str,
+                ]
+            ] = []
+            selection_scenarios: Dict[
+                tuple[str, str, str], Dict[str, StockScenarioResult]
+            ] = {}
+
+            sorted_profiles = sorted(
+                pieces_by_profile.keys(), key=lambda item: (item[0], item[1], item[2])
+            )
+
+            def _format_bars(result: StockScenarioResult) -> str:
+                if result.dropped_pieces:
+                    return "❌"
+                return _bold_digits(str(result.bars))
+
+            def _format_waste(result: StockScenarioResult) -> str:
+                if result.dropped_pieces or result.bars == 0:
+                    return "—"
+                return f"{result.waste_pct:.1f}%"
+
+            def _format_cuts(result: StockScenarioResult) -> str:
+                if result.dropped_pieces or result.bars == 0:
+                    return "—"
+                return _bold_digits(str(result.cuts))
+
+            def _describe_option(length_label: str, result: StockScenarioResult) -> str:
+                if result.dropped_pieces or result.bars <= 0:
+                    return f"{length_label} – niet mogelijk (stukken te lang)"
+                details = [
+                    f"{result.bars} staven",
+                    f"{result.waste_pct:.1f}% afval",
+                    f"{result.cuts} zaagsneden",
+                ]
+                return f"{length_label} – {', '.join(details)}"
+
+            for profile_name, material_name, production_name in sorted_profiles:
+                key_tuple = (profile_name, material_name, production_name)
+                lengths = pieces_by_profile[key_tuple]
+                scenario_6m = _calculate_stock_scenario(
+                    lengths, STOCK_LENGTH_MM, kerf_mm
+                )
+                scenario_12m = _calculate_stock_scenario(
+                    lengths, LONG_STOCK_LENGTH_MM, kerf_mm
+                )
+                scenario_custom: Optional[StockScenarioResult] = None
+                if custom_stock_mm is not None:
+                    scenario_custom = _calculate_stock_scenario(
+                        lengths, custom_stock_mm, kerf_mm
+                    )
+
+                scenario_candidates: List[tuple[str, StockScenarioResult]] = [
+                    ("6000", scenario_6m),
+                    ("12000", scenario_12m),
+                ]
+                if scenario_custom is not None:
+                    scenario_candidates.append(("custom", scenario_custom))
+
+                selection_scenarios[key_tuple] = {
+                    name: result for name, result in scenario_candidates
+                }
+
+                option_items: List[tuple[str, str]] = [
+                    ("input", "Input lengte – per stuk zagen"),
+                    ("6000", _describe_option("6000 mm", scenario_6m)),
+                    ("12000", _describe_option("12000 mm", scenario_12m)),
+                ]
+                if scenario_custom is not None:
+                    option_items.append(
+                        (
+                            "custom",
+                            _describe_option(f"{custom_stock_mm} mm", scenario_custom),
+                        )
+                    )
+
+                best_choice: Optional[str] = None
+                best_score: Optional[tuple[int, float]] = None
+                for candidate, result in scenario_candidates:
+                    if result.dropped_pieces or result.bars <= 0:
+                        continue
+                    score = (result.bars, result.waste_pct)
+                    if best_score is None or score < best_score:
+                        best_choice = candidate
+                        best_score = score
+                if best_choice is None:
+                    best_choice = "input"
+
+                previous_choice = self.opticutter_profile_selection_choice.get(
+                    key_tuple
+                )
+                available_values = {value for value, _ in option_items}
+                selected_value = (
+                    previous_choice
+                    if previous_choice in available_values
+                    else best_choice
+                )
+
+                selection_entries.append(
+                    (
+                        key_tuple,
                         profile_name,
                         material_name,
                         production_name,
-                    )]
-                    scenario_6m = _calculate_stock_scenario(
-                        lengths, STOCK_LENGTH_MM, kerf_mm
+                        option_items,
+                        selected_value,
                     )
-                    scenario_12m = _calculate_stock_scenario(
-                        lengths, LONG_STOCK_LENGTH_MM, kerf_mm
-                    )
-                    scenario_custom: Optional[StockScenarioResult] = None
-                    if custom_stock_mm is not None:
-                        scenario_custom = _calculate_stock_scenario(
-                            lengths, custom_stock_mm, kerf_mm
-                        )
+                )
 
-                    def _format_bars(result: StockScenarioResult) -> str:
-                        if result.dropped_pieces:
-                            return "❌"
-                        return _bold_digits(str(result.bars))
-
-                    def _format_waste(result: StockScenarioResult) -> str:
-                        if result.dropped_pieces or result.bars == 0:
-                            return "—"
-                        return f"{result.waste_pct:.1f}%"
-
-                    def _format_cuts(result: StockScenarioResult) -> str:
-                        if result.dropped_pieces or result.bars == 0:
-                            return "—"
-                        return _bold_digits(str(result.cuts))
-
+                if summary_tree is not None:
                     values = (
                         profile_name,
                         material_name,
@@ -4059,9 +4389,7 @@ def start_gui():
                     )
                     item_id = summary_tree.insert("", "end", values=values)
 
-                    blockers = profile_blockers[
-                        (profile_name, material_name, production_name)
-                    ]
+                    blockers = profile_blockers[key_tuple]
 
                     def _join_blockers(blocker_values: set[str], stock_length: int) -> str:
                         if not blocker_values:
@@ -4186,7 +4514,11 @@ def start_gui():
                                     f"Geschat aantal zaagsneden: {scenario_custom.cuts}",
                                 )
 
+            if summary_tree is not None:
                 _autosize_tree_columns(summary_tree)
+
+            self.opticutter_profile_selection_scenarios = selection_scenarios
+            self._update_opticutter_selection_rows(selection_entries)
 
             if info_var is not None:
                 profile_count = len(aggregated.index)
