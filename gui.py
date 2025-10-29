@@ -3263,6 +3263,9 @@ def start_gui():
             self.opticutter_profile_selection_scenarios: Dict[
                 tuple[str, str, str], Dict[str, "StockScenarioResult"]
             ] = {}
+            self.opticutter_profile_custom_lengths: Dict[
+                tuple[str, str, str], int
+            ] = {}
             self._opticutter_selection_update_in_progress = False
             self.main_frame = main
             self.clients_frame = ClientsManagerFrame(
@@ -3907,6 +3910,30 @@ def start_gui():
                 return None
             return int(parsed)
 
+        def _prompt_opticutter_manual_length(
+            self, key: tuple[str, str, str]
+        ) -> Optional[int]:
+            existing = self.opticutter_profile_custom_lengths.get(key)
+            initial = f"{existing}" if existing is not None else ""
+            while True:
+                response = simpledialog.askstring(
+                    "Aangepaste lengte",
+                    "Voer de gewenste staaflengte in (bijv. 6400 mm):",
+                    parent=self,
+                    initialvalue=initial,
+                )
+                if response is None:
+                    return None
+                parsed = _parse_length_to_mm(response)
+                if parsed is None:
+                    messagebox.showerror(
+                        "Ongeldige lengte",
+                        "Voer een geldige lengte in millimeter, centimeter of meter in.",
+                        parent=self,
+                    )
+                    continue
+                return parsed
+
         def _on_opticutter_profile_selection_change(
             self, key: tuple[str, str, str]
         ) -> None:
@@ -3918,11 +3945,38 @@ def start_gui():
             value_by_display = self.opticutter_profile_selection_value_by_display.get(
                 key
             )
+            display_by_value = self.opticutter_profile_selection_display_map.get(key)
             if not value_by_display:
                 return
             display_value = var.get()
             canonical = value_by_display.get(display_value)
             if canonical is None:
+                return
+            if canonical == "manual_prompt":
+                length_mm = self._prompt_opticutter_manual_length(key)
+                if length_mm is None:
+                    previous_choice = self.opticutter_profile_selection_choice.get(key)
+                    fallback_display = (
+                        display_by_value.get(previous_choice)
+                        if display_by_value is not None
+                        else None
+                    )
+                    if fallback_display is None and display_by_value:
+                        first_value, fallback_display = next(
+                            iter(display_by_value.items())
+                        )
+                        self.opticutter_profile_selection_choice[key] = first_value
+                    self._opticutter_selection_update_in_progress = True
+                    try:
+                        var.set(fallback_display or "")
+                    finally:
+                        self._opticutter_selection_update_in_progress = False
+                    return
+
+                manual_value = f"manual:{length_mm}"
+                self.opticutter_profile_custom_lengths[key] = length_mm
+                self.opticutter_profile_selection_choice[key] = manual_value
+                self._refresh_opticutter_table()
                 return
             self.opticutter_profile_selection_choice[key] = canonical
 
@@ -3950,6 +4004,7 @@ def start_gui():
             combos = self.opticutter_profile_selection_combos
             display_map = self.opticutter_profile_selection_display_map
             value_by_display_map = self.opticutter_profile_selection_value_by_display
+            custom_lengths = self.opticutter_profile_custom_lengths
 
             new_keys = {entry[0] for entry in entries}
             for key in list(rows.keys()):
@@ -3963,10 +4018,12 @@ def start_gui():
                 display_map.pop(key, None)
                 value_by_display_map.pop(key, None)
                 self.opticutter_profile_selection_choice.pop(key, None)
+                custom_lengths.pop(key, None)
 
             if not entries:
                 if empty_label is not None and not empty_label.winfo_ismapped():
                     empty_label.pack(fill="x", padx=8, pady=8)
+                custom_lengths.clear()
                 return
 
             if empty_label is not None:
@@ -4267,6 +4324,12 @@ def start_gui():
                 pieces_by_profile.keys(), key=lambda item: (item[0], item[1], item[2])
             )
 
+            custom_lengths_map = self.opticutter_profile_custom_lengths
+            valid_keys = set(sorted_profiles)
+            for stored_key in list(custom_lengths_map.keys()):
+                if stored_key not in valid_keys:
+                    custom_lengths_map.pop(stored_key, None)
+
             def _format_bars(result: StockScenarioResult) -> str:
                 if result.dropped_pieces:
                     return "❌"
@@ -4306,6 +4369,24 @@ def start_gui():
                     scenario_custom = _calculate_stock_scenario(
                         lengths, custom_stock_mm, kerf_mm
                     )
+                manual_length = custom_lengths_map.get(key_tuple)
+                scenario_manual: Optional[StockScenarioResult] = None
+                manual_key: Optional[str] = None
+                if manual_length is not None:
+                    scenario_manual = _calculate_stock_scenario(
+                        lengths, manual_length, kerf_mm
+                    )
+                    manual_key = f"manual:{manual_length}"
+                    exceeding_manual = {
+                        text
+                        for length_mm, text in profile_piece_details[key_tuple]
+                        if length_mm > manual_length
+                    }
+                    blockers_entry = profile_blockers[key_tuple]
+                    if exceeding_manual:
+                        blockers_entry[manual_key] = exceeding_manual
+                    else:
+                        blockers_entry.pop(manual_key, None)
 
                 scenario_candidates: List[tuple[str, StockScenarioResult]] = [
                     ("6000", scenario_6m),
@@ -4314,9 +4395,10 @@ def start_gui():
                 if scenario_custom is not None:
                     scenario_candidates.append(("custom", scenario_custom))
 
-                selection_scenarios[key_tuple] = {
-                    name: result for name, result in scenario_candidates
-                }
+                scenario_map = {name: result for name, result in scenario_candidates}
+                if scenario_manual is not None and manual_key is not None:
+                    scenario_map[manual_key] = scenario_manual
+                selection_scenarios[key_tuple] = scenario_map
 
                 option_items: List[tuple[str, str]] = [
                     ("input", "Input lengte – per stuk zagen"),
@@ -4328,6 +4410,17 @@ def start_gui():
                         (
                             "custom",
                             _describe_option(f"{custom_stock_mm} mm", scenario_custom),
+                        )
+                    )
+                option_items.append(("manual_prompt", "Aangepaste lengte…"))
+                if scenario_manual is not None and manual_key is not None:
+                    option_items.append(
+                        (
+                            manual_key,
+                            _describe_option(
+                                f"Aangepaste lengte ({manual_length} mm)",
+                                scenario_manual,
+                            ),
                         )
                     )
 
