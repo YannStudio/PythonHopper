@@ -1,8 +1,8 @@
 {
-  "source_folder": "C:/Cloudstation/SynologyDrive/Documenten/CAD Library/0_STANDAARD assortiment/3_Straatmeubilair/Verkeerspalen/Neerklapbare paal/cad",
-  "dest_folder": "C:/Cloudstation/SynologyDrive/Documenten/CAD Library/0_STANDAARD assortiment/3_Straatmeubilair/Verkeerspalen/Neerklapbare paal/export",
-  "project_number": "20250244",
-  "project_name": "Neerklappaal",
+  "source_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2023/Maatwerk overkappingen/Speelplaatsoverkappingen/20230171 - Smeermaas/CAD/v2",
+  "dest_folder": "C:/Users/jeroe/Desktop",
+  "project_number": "6454646",
+  "project_name": "Smeermaas",
   "file_extensions": [
     {
       "key": "pdf",
@@ -52,7 +52,7 @@
   "zip_finish_exports": true,
   "export_processed_bom": true,
   "export_related_bom_files": true,
-  "export_date_prefix": true,
+  "export_date_prefix": false,
   "export_date_suffix": false,
   "custom_prefix_enabled": false,
   "custom_prefix_text": "",

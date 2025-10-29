@@ -1520,9 +1520,15 @@
     "Sheetmetal": "Productora",
     "Milling": "AMR",
     "Lasercutting": "Productora",
-    "Cutting": "Saey"
+    "Cutting": "MCB",
+    "Tube laser L": "AB-Matic (Hi-Motion)",
+    "Tube laser": "AB-Matic (Hi-Motion)",
+    "Sheetmetal +4m": "SPCM",
+    "_Onbekend": "AB-Matic (Hi-Motion)"
   },
   "defaults_by_finish": {
-    "Finish-Galvanised": "Van Gils Coating - Beringen/Maasmechelen"
+    "Finish-Galvanised": "Van Gils Coating - Beringen/Maasmechelen",
+    "Finish-Paint": "AB-Matic (Hi-Motion)",
+    "Finish-Paint-RAL7016": "AB-Matic (Hi-Motion)"
   }
 }
