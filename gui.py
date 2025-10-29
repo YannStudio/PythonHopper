@@ -4051,7 +4051,7 @@ def start_gui():
                         row,
                         textvariable=var,
                         state="readonly",
-                        width=42,
+                        width=1,
                     )
                     combo.pack(side="left", fill="x", expand=True)
                     combo.bind(
@@ -4079,7 +4079,8 @@ def start_gui():
                 value_by_display = {display: value for value, display in display_by_value.items()}
                 display_map[key] = display_by_value
                 value_by_display_map[key] = value_by_display
-                combo.configure(values=display_values)
+                combo_width = max((len(value) for value in display_values), default=1)
+                combo.configure(values=display_values, width=combo_width)
 
                 chosen = selection
                 if chosen not in display_by_value:
@@ -4412,7 +4413,6 @@ def start_gui():
                             _describe_option(f"{custom_stock_mm} mm", scenario_custom),
                         )
                     )
-                option_items.append(("manual_prompt", "Aangepaste lengte…"))
                 if scenario_manual is not None and manual_key is not None:
                     option_items.append(
                         (
@@ -4423,6 +4423,7 @@ def start_gui():
                             ),
                         )
                     )
+                option_items.append(("manual_prompt", "Aangepaste lengte…"))
 
                 best_choice: Optional[str] = None
                 best_score: Optional[tuple[int, float]] = None
