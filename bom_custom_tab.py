@@ -56,6 +56,7 @@ from __future__ import annotations
 import csv
 import os
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -118,6 +119,8 @@ class UndoEntry:
     action: str
     frame: pd.DataFrame
     cells: Sequence[CellCoord]
+    qty_multiplier_factor: Decimal = Decimal(1)
+    qty_multiplier_value: str = ""
 
 
 def _dataframe_slice_to_clipboard(
@@ -630,6 +633,7 @@ class BOMCustomTab(ttk.Frame):
         "Manufacturer",
         "Manufacturer code",
     )
+    QTY_COLUMN_INDEX: int = HEADERS.index("QTY.")
     TEMPLATE_DEFAULT_FILENAME: str = "BOM-FileHopper-Temp.xlsx"
     DEFAULT_EMPTY_ROWS: int = 20
     MAIN_TO_CUSTOM_COLUMN_MAP: Dict[str, str] = {
@@ -694,6 +698,9 @@ class BOMCustomTab(ttk.Frame):
         self._suspend_history = False
 
         self.status_var = tk.StringVar(value="")
+        self.qty_multiplier_var = tk.StringVar(value="")
+        self._qty_multiplier_last_factor: Decimal = Decimal(1)
+        self._reset_qty_multiplier_state(clear_entry=True)
 
         self._build_toolbar()
         self._build_sheet()
@@ -721,6 +728,26 @@ class BOMCustomTab(ttk.Frame):
         ttk.Label(bar, textvariable=self.status_var, anchor="w").pack(
             side="left", fill="x", expand=True
         )
+
+        multiplier_container = ttk.Frame(bar)
+        multiplier_container.pack(side="right")
+
+        ttk.Label(multiplier_container, text="Totaal aantal:").pack(side="left", padx=(0, 4))
+        multiplier_entry = ttk.Entry(
+            multiplier_container,
+            textvariable=self.qty_multiplier_var,
+            width=6,
+            justify="right",
+        )
+        multiplier_entry.pack(side="left", padx=(0, 4))
+        multiplier_entry.bind("<Return>", self._apply_qty_multiplier)
+
+        apply_btn = ttk.Button(
+            multiplier_container,
+            text="Pas toe",
+            command=self._apply_qty_multiplier,
+        )
+        apply_btn.pack(side="left")
 
     def _build_sheet(self) -> None:
         container = ttk.Frame(self)
@@ -759,6 +786,11 @@ class BOMCustomTab(ttk.Frame):
     # Helpers
     def _update_status(self, text: str) -> None:
         self.status_var.set(text)
+
+    def _reset_qty_multiplier_state(self, *, clear_entry: bool = False) -> None:
+        self._qty_multiplier_last_factor = Decimal(1)
+        if clear_entry:
+            self.qty_multiplier_var.set("")
 
     def _create_empty_dataframe(self, rows: int) -> pd.DataFrame:
         data = {header: [""] * rows for header in self.HEADERS}
@@ -804,7 +836,15 @@ class BOMCustomTab(ttk.Frame):
 
     def _push_undo(self, action: str, frame: pd.DataFrame, cells: Sequence[CellCoord]) -> None:
         snapshot = frame.copy(deep=True)
-        self.undo_stack.append(UndoEntry(action=action, frame=snapshot, cells=list(cells)))
+        self.undo_stack.append(
+            UndoEntry(
+                action=action,
+                frame=snapshot,
+                cells=list(cells),
+                qty_multiplier_factor=self._qty_multiplier_last_factor,
+                qty_multiplier_value=self.qty_multiplier_var.get(),
+            )
+        )
         if len(self.undo_stack) > self.max_undo:
             self.undo_stack.pop(0)
 
@@ -847,6 +887,86 @@ class BOMCustomTab(ttk.Frame):
 
         self._update_status(no_change_status)
         return 0
+
+    def _apply_qty_multiplier(self, event=None):
+        if not self.table._commit_active_edit():
+            return "break" if event is not None else None
+
+        raw_value = self.qty_multiplier_var.get().strip()
+        if not raw_value:
+            self._update_status("Voer een totaal aantal in om te vermenigvuldigen.")
+            return "break" if event is not None else None
+
+        normalized_value = raw_value.replace(",", ".")
+        try:
+            factor = Decimal(normalized_value)
+        except InvalidOperation:
+            self._update_status(f"Ongeldig totaal aantal: {raw_value}.")
+            return "break" if event is not None else None
+
+        if factor <= 0:
+            self._update_status("Het totaal aantal moet groter dan nul zijn.")
+            return "break" if event is not None else None
+
+        before = self.table_model.df.copy(deep=True)
+        changed: List[CellCoord] = []
+        errors = 0
+        previous_factor = self._qty_multiplier_last_factor
+        if previous_factor <= 0:
+            previous_factor = Decimal(1)
+
+        self._suspend_history = True
+        try:
+            for row in range(len(self.table_model.df)):
+                current = self.table_model.df.iat[row, self.QTY_COLUMN_INDEX]
+                normalized_current = "" if pd.isna(current) else str(current).strip()
+                if not normalized_current:
+                    continue
+
+                try:
+                    qty_value = Decimal(normalized_current.replace(",", "."))
+                except InvalidOperation:
+                    errors += 1
+                    continue
+
+                base_value = qty_value
+                if previous_factor != Decimal(1):
+                    try:
+                        base_value = qty_value / previous_factor
+                    except InvalidOperation:
+                        base_value = qty_value
+
+                new_value = base_value * factor
+                formatted = format(new_value, "f").rstrip("0").rstrip(".")
+                if not formatted:
+                    formatted = "0"
+
+                if formatted != normalized_current:
+                    self.table_model.df.iat[row, self.QTY_COLUMN_INDEX] = formatted
+                    changed.append((row, self.QTY_COLUMN_INDEX))
+        finally:
+            self._suspend_history = False
+
+        after = self.table_model.df.copy(deep=True)
+        if changed and not before.equals(after):
+            self._push_undo("QTY vermenigvuldigen", before, changed)
+            self._dataframe = after
+            self._refresh_table()
+            message = f"QTY. vermenigvuldigd met {raw_value}."
+            if errors:
+                message += f" {errors} rijen met ongeldige QTY.-waarden overgeslagen."
+            self._update_status(message)
+        else:
+            if errors and not changed:
+                self._update_status(
+                    "Alle QTY.-waarden waren ongeldig en zijn niet aangepast."
+                )
+            else:
+                self._update_status("Geen QTY.-waarden gewijzigd.")
+
+        self._qty_multiplier_last_factor = factor
+
+        return "break" if event is not None else None
 
     def _collect_selection(self) -> Tuple[List[int], List[int]]:
         table = self.table
@@ -1074,6 +1194,7 @@ class BOMCustomTab(ttk.Frame):
         self._push_undo("clear", before_df, [])
         cleared = self._create_empty_dataframe(self.DEFAULT_EMPTY_ROWS)
         self._set_dataframe(cleared)
+        self._reset_qty_multiplier_state(clear_entry=True)
         self._update_status("Custom BOM geleegd.")
 
     # ------------------------------------------------------------------
@@ -1084,6 +1205,8 @@ class BOMCustomTab(ttk.Frame):
             return "break"
         entry = self.undo_stack.pop()
         self._set_dataframe(entry.frame)
+        self._qty_multiplier_last_factor = entry.qty_multiplier_factor
+        self.qty_multiplier_var.set(entry.qty_multiplier_value)
         self._ensure_minimum_rows(self.DEFAULT_EMPTY_ROWS)
         self._update_status(f"{entry.action.capitalize()} ongedaan gemaakt.")
         return "break"
@@ -1212,6 +1335,7 @@ class BOMCustomTab(ttk.Frame):
                 fresh.iloc[: len(values), col_index] = values
 
         self._set_dataframe(fresh)
+        self._reset_qty_multiplier_state(clear_entry=True)
         self.clear_history()
         self._update_status("Custom BOM gevuld vanuit hoofd-BOM.")
 

@@ -1,5 +1,6 @@
 """Tests voor clipboardhelper van de Custom BOM-tab."""
 
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pandas as pd
@@ -44,6 +45,20 @@ def _build_tab(df: pd.DataFrame):
     tab.undo_stack = []
     tab.max_undo = 5
     tab._suspend_history = False
+    tab._qty_multiplier_last_factor = Decimal(1)
+    tab.table = SimpleNamespace(_commit_active_edit=lambda: True)
+
+    class DummyVar:
+        def __init__(self) -> None:
+            self.value = ""
+
+        def get(self) -> str:
+            return self.value
+
+        def set(self, value: str) -> None:
+            self.value = value
+
+    tab.qty_multiplier_var = DummyVar()
     status_updates = []
 
     def update_status(self, text: str) -> None:
@@ -142,3 +157,25 @@ def test_delete_rows_handles_invalid_selection() -> None:
     assert count == 0
     assert statuses[-1] == "Geen rijen geselecteerd om te verwijderen."
     assert len(tab.table_model.df) == 1
+
+
+def test_qty_multiplier_recovers_original_values_when_returning_to_one() -> None:
+    df = pd.DataFrame({header: [""] * 2 for header in BOMCustomTab.HEADERS})
+    qty_column = BOMCustomTab.HEADERS[BOMCustomTab.QTY_COLUMN_INDEX]
+    df.at[0, qty_column] = "3"
+    df.at[1, qty_column] = "1.5"
+    tab, statuses = _build_tab(df)
+
+    tab.qty_multiplier_var.set("4")
+    tab._apply_qty_multiplier()
+
+    assert tab.table_model.df.at[0, qty_column] == "12"
+    assert tab.table_model.df.at[1, qty_column] == "6"
+
+    tab.qty_multiplier_var.set("1")
+    tab._apply_qty_multiplier()
+
+    assert tab.table_model.df.at[0, qty_column] == "3"
+    assert tab.table_model.df.at[1, qty_column] == "1.5"
+    assert tab._qty_multiplier_last_factor == Decimal(1)
+    assert statuses[-1] == "QTY. vermenigvuldigd met 1."
