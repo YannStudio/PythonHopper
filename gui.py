@@ -3068,14 +3068,8 @@ def start_gui():
             opticutter_summary_frame = tk.Frame(opticutter_table_container)
             opticutter_summary_frame.pack(side="left", fill="y")
 
-            summary_columns = (
-                "Profile",
-                "Material",
-                "Production",
-                "Bars",
-                "Waste",
-                "Cuts",
-            )
+            summary_common_columns = ("Profile", "Material", "Production")
+            summary_metric_columns = ("Bars", "Waste", "Cuts")
             summary_headings = {
                 "Profile": "Profiel",
                 "Material": "Materiaal",
@@ -3084,10 +3078,50 @@ def start_gui():
                 "Waste": "Afval",
                 "Cuts": "Zaagsneden",
             }
+
+            self.opticutter_profile_summary_base_tree: Optional["ttk.Treeview"] = None
             self.opticutter_profile_summary_trees: Dict[str, "ttk.Treeview"] = {}
             self.opticutter_summary_tooltips: Dict[str, _TreeTooltipManager] = {}
             self.opticutter_summary_column_map: Dict[str, Dict[str, str]] = {}
             self.opticutter_summary_frames: Dict[str, "tk.LabelFrame"] = {}
+
+            summary_container = tk.Frame(opticutter_summary_frame)
+            summary_container.pack(fill="both", expand=True)
+
+            base_frame = tk.LabelFrame(
+                summary_container, text="Profiel, materiaal en productie"
+            )
+            base_frame.pack(side="left", fill="both", padx=(0, 8))
+
+            base_tree = ttk.Treeview(
+                base_frame,
+                columns=summary_common_columns,
+                show="headings",
+                selectmode="none",
+                height=8,
+            )
+            for col in summary_common_columns:
+                anchor = "w"
+                minwidth = 170 if col == "Profile" else 140
+                base_tree.heading(col, text=summary_headings[col], anchor=anchor)
+                base_tree.column(
+                    col,
+                    anchor=anchor,
+                    stretch=False,
+                    minwidth=minwidth,
+                )
+
+            base_scrollbar = ttk.Scrollbar(
+                base_frame, orient="vertical", command=base_tree.yview
+            )
+            base_tree.configure(yscrollcommand=base_scrollbar.set)
+            base_tree.pack(side="left", fill="both", expand=True, padx=(0, 4))
+            base_scrollbar.pack(side="left", fill="y")
+
+            self.opticutter_profile_summary_base_tree = base_tree
+
+            scenarios_frame = tk.Frame(summary_container)
+            scenarios_frame.pack(side="left", fill="both", expand=True)
 
             summary_sections = [
                 ("6m", "6000 mm parameters"),
@@ -3096,28 +3130,20 @@ def start_gui():
             ]
 
             for index, (section_key, section_title) in enumerate(summary_sections):
-                section_frame = tk.LabelFrame(
-                    opticutter_summary_frame, text=section_title
-                )
-                pady = (0, 8) if index < len(summary_sections) - 1 else (0, 0)
-                section_frame.pack(fill="both", expand=True, pady=pady)
+                section_frame = tk.LabelFrame(scenarios_frame, text=section_title)
+                padx = (0, 8) if index < len(summary_sections) - 1 else (0, 0)
+                section_frame.pack(side="left", fill="both", expand=True, padx=padx)
 
                 tree = ttk.Treeview(
                     section_frame,
-                    columns=summary_columns,
+                    columns=summary_metric_columns,
                     show="headings",
                     selectmode="none",
                     height=8,
                 )
-                for col in summary_columns:
-                    anchor = "w" if col in {"Profile", "Material", "Production"} else "center"
+                for col in summary_metric_columns:
+                    anchor = "center"
                     minwidth = 100 if col == "Waste" else 90
-                    if col == "Profile":
-                        minwidth = 170
-                    if col == "Material":
-                        minwidth = 140
-                    if col == "Production":
-                        minwidth = 140
                     tree.heading(col, text=summary_headings[col], anchor=anchor)
                     tree.column(
                         col,
@@ -3136,7 +3162,7 @@ def start_gui():
                 self.opticutter_profile_summary_trees[section_key] = tree
                 self.opticutter_summary_tooltips[section_key] = _TreeTooltipManager(tree)
                 self.opticutter_summary_column_map[section_key] = {
-                    name: f"#{idx + 1}" for idx, name in enumerate(summary_columns)
+                    name: f"#{idx + 1}" for idx, name in enumerate(summary_metric_columns)
                 }
                 self.opticutter_summary_frames[section_key] = section_frame
 
@@ -4094,13 +4120,20 @@ def start_gui():
                 self._opticutter_refresh_after_id = None
             tree = getattr(self, "opticutter_tree", None)
             summary_trees = getattr(self, "opticutter_profile_summary_trees", {})
-            if tree is None and not summary_trees:
+            base_summary_tree = getattr(
+                self, "opticutter_profile_summary_base_tree", None
+            )
+            if tree is None and base_summary_tree is None and not summary_trees:
                 return
 
             if tree is not None:
                 for item in tree.get_children():
                     tree.delete(item)
                 _autosize_tree_columns(tree)
+
+            if base_summary_tree is not None:
+                for item in base_summary_tree.get_children():
+                    base_summary_tree.delete(item)
 
             for summary_tree in summary_trees.values():
                 for item in summary_tree.get_children():
@@ -4443,6 +4476,17 @@ def start_gui():
 
                 blockers = profile_blockers[key_tuple]
 
+                if base_summary_tree is not None:
+                    base_summary_tree.insert(
+                        "",
+                        "end",
+                        values=(
+                            profile_name,
+                            material_name,
+                            production_name,
+                        ),
+                    )
+
                 def _join_blockers(blocker_values: set[str], stock_length: int) -> str:
                     if not blocker_values:
                         return "Past niet binnen de staaflengte; sommige stukken zijn te lang."
@@ -4456,9 +4500,6 @@ def start_gui():
                 tree_6m = summary_trees.get("6m")
                 if tree_6m is not None:
                     values_6m = (
-                        profile_name,
-                        material_name,
-                        production_name,
                         _format_bars(scenario_6m),
                         _format_waste(scenario_6m),
                         _format_cuts(scenario_6m),
@@ -4517,9 +4558,6 @@ def start_gui():
                 tree_12m = summary_trees.get("12m")
                 if tree_12m is not None:
                     values_12m = (
-                        profile_name,
-                        material_name,
-                        production_name,
                         _format_bars(scenario_12m),
                         _format_waste(scenario_12m),
                         _format_cuts(scenario_12m),
@@ -4578,9 +4616,6 @@ def start_gui():
                 tree_custom = summary_trees.get("custom")
                 if tree_custom is not None:
                     values_custom = (
-                        profile_name,
-                        material_name,
-                        production_name,
                         _format_bars(scenario_custom)
                         if scenario_custom is not None
                         else "—",
@@ -4648,6 +4683,9 @@ def start_gui():
                                     column_id,
                                     f"Geschat aantal zaagsneden: {scenario_custom.cuts}",
                                 )
+
+            if base_summary_tree is not None:
+                _autosize_tree_columns(base_summary_tree)
 
             for summary_tree in summary_trees.values():
                 _autosize_tree_columns(summary_tree)
