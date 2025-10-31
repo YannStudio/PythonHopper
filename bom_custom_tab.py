@@ -719,11 +719,6 @@ class BOMCustomTab(ttk.Frame):
         clear_btn = ttk.Button(bar, text="Clear Custom BOM", command=self._confirm_clear)
         clear_btn.pack(side="left", padx=(0, 6))
 
-        reset_btn = ttk.Button(
-            bar, text="Reset naar origineel", command=self._reset_to_baseline
-        )
-        reset_btn.pack(side="left", padx=(0, 6))
-
         export_btn = ttk.Button(bar, text="Exporteren", command=self._export_temp)
         export_btn.pack(side="left", padx=(0, 6))
 
@@ -739,6 +734,11 @@ class BOMCustomTab(ttk.Frame):
 
         redo_btn = ttk.Button(bar, text="Redo", command=self._handle_toolbar_redo)
         redo_btn.pack(side="left", padx=(0, 6))
+
+        reset_btn = ttk.Button(
+            bar, text="Reset naar origineel", command=self._reset_to_baseline
+        )
+        reset_btn.pack(side="left", padx=(0, 6))
 
         ttk.Label(bar, textvariable=self.status_var, anchor="w").pack(
             side="left", fill="x", expand=True
