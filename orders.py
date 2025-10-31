@@ -70,6 +70,7 @@ _BOM_STATUS_COLUMNS: Tuple[str, ...] = ("Bestanden gevonden", "Status", "Link")
 _BOM_EXPORT_BASE_COLUMNS: Tuple[str, ...] = (
     "PartNumber",
     "Description",
+    "QTY.",
     "Profile",
     "Length profile",
     "Production",
@@ -80,7 +81,6 @@ _BOM_EXPORT_BASE_COLUMNS: Tuple[str, ...] = (
     "Manufacturer code",
     "Finish",
     "RAL color",
-    "Aantal",
     "Oppervlakte",
     "Gewicht",
 )
@@ -226,6 +226,24 @@ def _export_bom_workbook(bom_df: pd.DataFrame, dest: str, filename: str) -> str:
     to_drop = [col for col in _BOM_STATUS_COLUMNS if col in export_df.columns]
     if to_drop:
         export_df = export_df.drop(columns=to_drop)
+
+    # Normalise quantity column naming to ``QTY.`` and drop aliases.
+    qty_aliases: Tuple[str, ...] = ("QTY.", "Qty.", "Qty", "Quantity", "Aantal")
+    qty_columns = [col for col in qty_aliases if col in export_df.columns]
+    if "QTY." not in export_df.columns:
+        if qty_columns:
+            export_df = export_df.rename(columns={qty_columns[0]: "QTY."})
+        else:
+            export_df["QTY."] = ""
+    for alias in qty_columns:
+        if alias == "QTY." or alias not in export_df.columns:
+            continue
+        source = export_df[alias]
+        destination = export_df["QTY."]
+        dest_str = destination.astype(str)
+        missing_mask = dest_str.str.strip().isin(("", "nan"))
+        export_df.loc[missing_mask, "QTY."] = source[missing_mask]
+        export_df = export_df.drop(columns=alias)
 
     # Ensure all primary BOM columns are present and appear first.
     for column in _BOM_EXPORT_BASE_COLUMNS:

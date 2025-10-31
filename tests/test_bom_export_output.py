@@ -69,9 +69,12 @@ def test_bom_export_written_with_iso_date(tmp_path, monkeypatch):
 
     exported = pd.read_excel(export_path)
     expected = df.drop(columns=["Bestanden gevonden", "Status", "Link"], errors="ignore")
+    if "Aantal" in expected.columns and "QTY." not in expected.columns:
+        expected = expected.rename(columns={"Aantal": "QTY."})
     expected_columns = [
         "PartNumber",
         "Description",
+        "QTY.",
         "Profile",
         "Length profile",
         "Production",
@@ -82,7 +85,6 @@ def test_bom_export_written_with_iso_date(tmp_path, monkeypatch):
         "Manufacturer code",
         "Finish",
         "RAL color",
-        "Aantal",
         "Oppervlakte",
         "Gewicht",
     ]
