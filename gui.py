@@ -3193,7 +3193,8 @@ def start_gui():
                 selection_body, highlightthickness=0, borderwidth=0, height=200
             )
             self.opticutter_selection_canvas.pack(
-                side="left", fill="both", expand=True, padx=(8, 0)
+                # Keep the column content aligned with the header underline.
+                side="left", fill="both", expand=True, padx=0
             )
             self.opticutter_selection_scroll = ttk.Scrollbar(
                 selection_body,
