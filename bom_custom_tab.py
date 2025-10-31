@@ -699,6 +699,9 @@ class BOMCustomTab(ttk.Frame):
         self._suspend_history = False
         self._qty_multiplier_reference: pd.Series = pd.Series(dtype=object)
         self._current_qty_multiplier: Decimal = Decimal(1)
+        self._baseline_dataframe: pd.DataFrame = pd.DataFrame()
+        self._baseline_qty_reference: pd.Series = pd.Series(dtype=object)
+        self._baseline_multiplier: Decimal = Decimal(1)
 
         self.status_var = tk.StringVar(value="")
         self.qty_multiplier_var = tk.StringVar(value="")
@@ -715,6 +718,11 @@ class BOMCustomTab(ttk.Frame):
 
         clear_btn = ttk.Button(bar, text="Clear Custom BOM", command=self._confirm_clear)
         clear_btn.pack(side="left", padx=(0, 6))
+
+        reset_btn = ttk.Button(
+            bar, text="Reset naar origineel", command=self._reset_to_baseline
+        )
+        reset_btn.pack(side="left", padx=(0, 6))
 
         export_btn = ttk.Button(bar, text="Exporteren", command=self._export_temp)
         export_btn.pack(side="left", padx=(0, 6))
@@ -804,6 +812,7 @@ class BOMCustomTab(ttk.Frame):
             self.table.bind(sequence, self._clear_selection, add="+")
 
         self._reset_qty_multiplier_reference()
+        self._store_baseline_state()
 
 
     # ------------------------------------------------------------------
@@ -849,6 +858,13 @@ class BOMCustomTab(ttk.Frame):
     def _reset_qty_multiplier_reference(self, *, update_entry: bool = True) -> None:
         self._qty_multiplier_reference = self._make_qty_series(self.table_model.df)
         self._set_current_multiplier(Decimal(1), update_entry=update_entry)
+
+    def _store_baseline_state(self) -> None:
+        """Bewaar de huidige dataset als referentie voor de resetknop."""
+
+        self._baseline_dataframe = self.table_model.df.copy(deep=True)
+        self._baseline_qty_reference = self._capture_qty_reference_snapshot()
+        self._baseline_multiplier = self._current_qty_multiplier
 
     def _capture_qty_reference_snapshot(self) -> pd.Series:
         return self._align_qty_reference().copy(deep=True)
@@ -1361,6 +1377,52 @@ class BOMCustomTab(ttk.Frame):
         self._set_dataframe(cleared)
         self._update_status("Custom BOM geleegd.")
 
+    def _reset_to_baseline(self) -> None:
+        """Herstel de huidige tabel naar de laatst opgeslagen beginsituatie."""
+
+        baseline_df = getattr(self, "_baseline_dataframe", None)
+        baseline_reference = getattr(self, "_baseline_qty_reference", None)
+        baseline_multiplier = getattr(self, "_baseline_multiplier", Decimal(1))
+
+        if not isinstance(baseline_df, pd.DataFrame):
+            self._update_status("Geen oorspronkelijke waarden beschikbaar om te herstellen.")
+            return
+
+        current_df = self.table_model.df.copy(deep=True)
+        current_reference = self._capture_qty_reference_snapshot()
+
+        same_df = current_df.equals(baseline_df)
+        same_multiplier = self._current_qty_multiplier == baseline_multiplier
+        if isinstance(baseline_reference, pd.Series):
+            baseline_series = baseline_reference
+            same_reference = current_reference.equals(baseline_series)
+        else:
+            baseline_series = None
+            same_reference = False
+
+        if same_df and same_multiplier and same_reference:
+            self._update_status("Custom BOM komt al overeen met oorspronkelijke waarden.")
+            return
+
+        self._push_undo(
+            "reset",
+            current_df,
+            [],
+            qty_reference=current_reference,
+            qty_multiplier=self._current_qty_multiplier,
+        )
+
+        entry = UndoEntry(
+            action="reset",
+            frame=baseline_df.copy(deep=True),
+            cells=[],
+            qty_reference=baseline_series.copy(deep=True) if baseline_series is not None else None,
+            qty_multiplier=baseline_multiplier,
+        )
+        self._restore_history_entry(entry)
+        self._ensure_minimum_rows(self.DEFAULT_EMPTY_ROWS)
+        self._update_status("Custom BOM teruggezet naar oorspronkelijke waarden.")
+
     # ------------------------------------------------------------------
     # Undo
     def _handle_toolbar_undo(self) -> None:
@@ -1553,6 +1615,7 @@ class BOMCustomTab(ttk.Frame):
                 fresh.iloc[: len(values), col_index] = values
 
         self._set_dataframe(fresh)
+        self._store_baseline_state()
         self.clear_history()
         self._update_status("Custom BOM gevuld vanuit hoofd-BOM.")
 
