@@ -3066,87 +3066,79 @@ def start_gui():
             opticutter_scroll.pack(side="left", fill="y")
 
             opticutter_summary_frame = tk.Frame(opticutter_table_container)
-            opticutter_summary_frame.pack(side="left", fill="both")
+            opticutter_summary_frame.pack(side="left", fill="y")
 
             summary_columns = (
                 "Profile",
                 "Material",
                 "Production",
-                "6m bars",
-                "6m waste",
-                "6m cuts",
-                "Spacer1",
-                "12m bars",
-                "12m waste",
-                "12m cuts",
-                "Spacer2",
-                "Custom bars",
-                "Custom waste",
-                "Custom cuts",
+                "Bars",
+                "Waste",
+                "Cuts",
             )
-            self.opticutter_profile_summary_tree = ttk.Treeview(
-                opticutter_summary_frame,
-                columns=summary_columns,
-                show="headings",
-                selectmode="none",
-                height=12,
-            )
-            for col in summary_columns:
-                if col in {"Spacer1", "Spacer2"}:
-                    self.opticutter_profile_summary_tree.heading(col, text="")
-                    self.opticutter_profile_summary_tree.column(
-                        col,
-                        anchor="center",
-                        stretch=False,
-                        width=16,
-                        minwidth=12,
-                    )
-                    continue
-
-                anchor = "center" if col not in {"Profile", "Material", "Production"} else "w"
-                minwidth = 100 if "waste" in col else 90
-                if col == "Profile":
-                    minwidth = 170
-                if col == "Material":
-                    minwidth = 140
-                if col == "Production":
-                    minwidth = 140
-                heading_text = col
-                if col.endswith("bars"):
-                    heading_text = col.replace(" bars", "\nstaven")
-                elif col.endswith("waste"):
-                    heading_text = col.replace(" waste", "\nafval")
-                elif col.endswith("cuts"):
-                    heading_text = col.replace(" cuts", "\nzaagsneden")
-                self.opticutter_profile_summary_tree.heading(
-                    col, text=heading_text, anchor=anchor
-                )
-                self.opticutter_profile_summary_tree.column(
-                    col,
-                    anchor=anchor,
-                    stretch=False,
-                    minwidth=minwidth,
-                )
-
-            opticutter_summary_scroll = ttk.Scrollbar(
-                opticutter_summary_frame,
-                orient="vertical",
-                command=self.opticutter_profile_summary_tree.yview,
-            )
-            self.opticutter_profile_summary_tree.configure(
-                yscrollcommand=opticutter_summary_scroll.set
-            )
-            self.opticutter_profile_summary_tree.pack(
-                side="left", fill="both", expand=False, padx=(0, 4)
-            )
-            opticutter_summary_scroll.pack(side="left", fill="y")
-
-            self.opticutter_summary_tooltips = _TreeTooltipManager(
-                self.opticutter_profile_summary_tree
-            )
-            self.opticutter_summary_column_map = {
-                name: f"#{idx + 1}" for idx, name in enumerate(summary_columns)
+            summary_headings = {
+                "Profile": "Profiel",
+                "Material": "Materiaal",
+                "Production": "Productie",
+                "Bars": "Staven",
+                "Waste": "Afval",
+                "Cuts": "Zaagsneden",
             }
+            self.opticutter_profile_summary_trees: Dict[str, "ttk.Treeview"] = {}
+            self.opticutter_summary_tooltips: Dict[str, _TreeTooltipManager] = {}
+            self.opticutter_summary_column_map: Dict[str, Dict[str, str]] = {}
+            self.opticutter_summary_frames: Dict[str, "tk.LabelFrame"] = {}
+
+            summary_sections = [
+                ("6m", "6000 mm parameters"),
+                ("12m", "12000 mm parameters"),
+                ("custom", "Aangepaste lengte"),
+            ]
+
+            for index, (section_key, section_title) in enumerate(summary_sections):
+                section_frame = tk.LabelFrame(
+                    opticutter_summary_frame, text=section_title
+                )
+                pady = (0, 8) if index < len(summary_sections) - 1 else (0, 0)
+                section_frame.pack(fill="both", expand=True, pady=pady)
+
+                tree = ttk.Treeview(
+                    section_frame,
+                    columns=summary_columns,
+                    show="headings",
+                    selectmode="none",
+                    height=8,
+                )
+                for col in summary_columns:
+                    anchor = "w" if col in {"Profile", "Material", "Production"} else "center"
+                    minwidth = 100 if col == "Waste" else 90
+                    if col == "Profile":
+                        minwidth = 170
+                    if col == "Material":
+                        minwidth = 140
+                    if col == "Production":
+                        minwidth = 140
+                    tree.heading(col, text=summary_headings[col], anchor=anchor)
+                    tree.column(
+                        col,
+                        anchor=anchor,
+                        stretch=False,
+                        minwidth=minwidth,
+                    )
+
+                scrollbar = ttk.Scrollbar(
+                    section_frame, orient="vertical", command=tree.yview
+                )
+                tree.configure(yscrollcommand=scrollbar.set)
+                tree.pack(side="left", fill="both", expand=True, padx=(0, 4))
+                scrollbar.pack(side="left", fill="y")
+
+                self.opticutter_profile_summary_trees[section_key] = tree
+                self.opticutter_summary_tooltips[section_key] = _TreeTooltipManager(tree)
+                self.opticutter_summary_column_map[section_key] = {
+                    name: f"#{idx + 1}" for idx, name in enumerate(summary_columns)
+                }
+                self.opticutter_summary_frames[section_key] = section_frame
 
             selection_section = tk.LabelFrame(
                 self.opticutter_frame, text="Lengte selectie per profiel"
@@ -4100,8 +4092,8 @@ def start_gui():
                     pass
                 self._opticutter_refresh_after_id = None
             tree = getattr(self, "opticutter_tree", None)
-            summary_tree = getattr(self, "opticutter_profile_summary_tree", None)
-            if tree is None and summary_tree is None:
+            summary_trees = getattr(self, "opticutter_profile_summary_trees", {})
+            if tree is None and not summary_trees:
                 return
 
             if tree is not None:
@@ -4109,10 +4101,14 @@ def start_gui():
                     tree.delete(item)
                 _autosize_tree_columns(tree)
 
-            if summary_tree is not None:
+            for summary_tree in summary_trees.values():
                 for item in summary_tree.get_children():
                     summary_tree.delete(item)
-                _autosize_tree_columns(summary_tree)
+
+            tooltip_managers = getattr(self, "opticutter_summary_tooltips", {})
+            for manager in tooltip_managers.values():
+                manager.clear()
+            column_maps = getattr(self, "opticutter_summary_column_map", {})
 
             info_var = getattr(self, "opticutter_info_var", None)
             default_message = "Laad een BOM om profielen te bekijken."
@@ -4283,29 +4279,15 @@ def start_gui():
                     if exceeding:
                         profile_blockers[key]["custom"].update(exceeding)
 
-            tooltip_manager = getattr(self, "opticutter_summary_tooltips", None)
-            column_map = getattr(self, "opticutter_summary_column_map", {})
-            if tooltip_manager is not None:
-                tooltip_manager.clear()
-
-            if summary_tree is not None:
+            summary_frames = getattr(self, "opticutter_summary_frames", {})
+            custom_frame = summary_frames.get("custom")
+            if custom_frame is not None:
                 if custom_stock_mm is not None:
-                    summary_tree.heading(
-                        "Custom bars",
-                        text=f"Custom ({custom_stock_mm} mm)\nstaven",
-                    )
-                    summary_tree.heading(
-                        "Custom waste",
-                        text=f"Custom ({custom_stock_mm} mm)\nafval",
-                    )
-                    summary_tree.heading(
-                        "Custom cuts",
-                        text=f"Custom ({custom_stock_mm} mm)\nzaagsneden",
+                    custom_frame.configure(
+                        text=f"Aangepaste lengte ({custom_stock_mm} mm)"
                     )
                 else:
-                    summary_tree.heading("Custom bars", text="Custom\nstaven")
-                    summary_tree.heading("Custom waste", text="Custom\nafval")
-                    summary_tree.heading("Custom cuts", text="Custom\nzaagsneden")
+                    custom_frame.configure(text="Aangepaste lengte")
 
             selection_entries: List[
                 tuple[
@@ -4458,19 +4440,146 @@ def start_gui():
                     )
                 )
 
-                if summary_tree is not None:
-                    values = (
+                blockers = profile_blockers[key_tuple]
+
+                def _join_blockers(blocker_values: set[str], stock_length: int) -> str:
+                    if not blocker_values:
+                        return "Past niet binnen de staaflengte; sommige stukken zijn te lang."
+                    lines = [
+                        "Past niet binnen de staaflengte:",
+                        *(f"- {text}" for text in sorted(blocker_values)),
+                        f"Max. lengte: {stock_length} mm",
+                    ]
+                    return "\n".join(lines)
+
+                tree_6m = summary_trees.get("6m")
+                if tree_6m is not None:
+                    values_6m = (
                         profile_name,
                         material_name,
                         production_name,
                         _format_bars(scenario_6m),
                         _format_waste(scenario_6m),
                         _format_cuts(scenario_6m),
-                        "",
+                    )
+                    item_id_6m = tree_6m.insert("", "end", values=values_6m)
+                    tooltip_6m = tooltip_managers.get("6m")
+                    columns_6m = column_maps.get("6m", {})
+                    if tooltip_6m is not None:
+                        if scenario_6m.dropped_pieces:
+                            column_id = columns_6m.get("Bars")
+                            if column_id:
+                                tooltip_6m.set(
+                                    item_id_6m,
+                                    column_id,
+                                    _join_blockers(
+                                        blockers.get("6m", set()), STOCK_LENGTH_MM
+                                    ),
+                                )
+                            column_id = columns_6m.get("Waste")
+                            if column_id:
+                                tooltip_6m.set(
+                                    item_id_6m,
+                                    column_id,
+                                    "Afval niet beschikbaar door te lange stukken.",
+                                )
+                            column_id = columns_6m.get("Cuts")
+                            if column_id:
+                                tooltip_6m.set(
+                                    item_id_6m,
+                                    column_id,
+                                    "Zaagplan niet beschikbaar door te lange stukken.",
+                                )
+                        else:
+                            column_id = columns_6m.get("Waste")
+                            if column_id:
+                                tooltip_6m.set(
+                                    item_id_6m,
+                                    column_id,
+                                    f"Totale restlengte: {scenario_6m.waste_mm:.0f} mm",
+                                )
+                            column_id = columns_6m.get("Bars")
+                            if column_id:
+                                tooltip_6m.set(
+                                    item_id_6m,
+                                    column_id,
+                                    f"{scenario_6m.bars} staaf/staven nodig",
+                                )
+                            column_id = columns_6m.get("Cuts")
+                            if column_id:
+                                tooltip_6m.set(
+                                    item_id_6m,
+                                    column_id,
+                                    f"Geschat aantal zaagsneden: {scenario_6m.cuts}",
+                                )
+
+                tree_12m = summary_trees.get("12m")
+                if tree_12m is not None:
+                    values_12m = (
+                        profile_name,
+                        material_name,
+                        production_name,
                         _format_bars(scenario_12m),
                         _format_waste(scenario_12m),
                         _format_cuts(scenario_12m),
-                        "",
+                    )
+                    item_id_12m = tree_12m.insert("", "end", values=values_12m)
+                    tooltip_12m = tooltip_managers.get("12m")
+                    columns_12m = column_maps.get("12m", {})
+                    if tooltip_12m is not None:
+                        if scenario_12m.dropped_pieces:
+                            column_id = columns_12m.get("Bars")
+                            if column_id:
+                                tooltip_12m.set(
+                                    item_id_12m,
+                                    column_id,
+                                    _join_blockers(
+                                        blockers.get("12m", set()), LONG_STOCK_LENGTH_MM
+                                    ),
+                                )
+                            column_id = columns_12m.get("Waste")
+                            if column_id:
+                                tooltip_12m.set(
+                                    item_id_12m,
+                                    column_id,
+                                    "Afval niet beschikbaar door te lange stukken.",
+                                )
+                            column_id = columns_12m.get("Cuts")
+                            if column_id:
+                                tooltip_12m.set(
+                                    item_id_12m,
+                                    column_id,
+                                    "Zaagplan niet beschikbaar door te lange stukken.",
+                                )
+                        else:
+                            column_id = columns_12m.get("Waste")
+                            if column_id:
+                                tooltip_12m.set(
+                                    item_id_12m,
+                                    column_id,
+                                    f"Totale restlengte: {scenario_12m.waste_mm:.0f} mm",
+                                )
+                            column_id = columns_12m.get("Bars")
+                            if column_id:
+                                tooltip_12m.set(
+                                    item_id_12m,
+                                    column_id,
+                                    f"{scenario_12m.bars} staaf/staven nodig",
+                                )
+                            column_id = columns_12m.get("Cuts")
+                            if column_id:
+                                tooltip_12m.set(
+                                    item_id_12m,
+                                    column_id,
+                                    f"Geschat aantal zaagsneden: {scenario_12m.cuts}",
+                                )
+
+                tree_custom = summary_trees.get("custom")
+                if tree_custom is not None:
+                    values_custom = (
+                        profile_name,
+                        material_name,
+                        production_name,
                         _format_bars(scenario_custom)
                         if scenario_custom is not None
                         else "—",
@@ -4481,134 +4590,65 @@ def start_gui():
                         if scenario_custom is not None
                         else "—",
                     )
-                    item_id = summary_tree.insert("", "end", values=values)
-
-                    blockers = profile_blockers[key_tuple]
-
-                    def _join_blockers(blocker_values: set[str], stock_length: int) -> str:
-                        if not blocker_values:
-                            return (
-                                "Past niet binnen de staaflengte; sommige stukken zijn te lang."
-                            )
-                        lines = [
-                            "Past niet binnen de staaflengte:",
-                            *(f"- {text}" for text in sorted(blocker_values)),
-                            f"Max. lengte: {stock_length} mm",
-                        ]
-                        return "\n".join(lines)
-
-                    if tooltip_manager is not None:
-                        if scenario_6m.dropped_pieces:
-                            tooltip_manager.set(
-                                item_id,
-                                column_map.get("6m bars", "#2"),
-                                _join_blockers(
-                                    blockers.get("6m", set()), STOCK_LENGTH_MM
-                                ),
-                            )
-                            tooltip_manager.set(
-                                item_id,
-                                column_map.get("6m waste", "#3"),
-                                "Afval niet beschikbaar door te lange stukken.",
-                            )
-                            tooltip_manager.set(
-                                item_id,
-                                column_map.get("6m cuts", "#5"),
-                                "Zaagplan niet beschikbaar door te lange stukken.",
-                            )
-                        else:
-                            tooltip_manager.set(
-                                item_id,
-                                column_map.get("6m waste", "#3"),
-                                f"Totale restlengte: {scenario_6m.waste_mm:.0f} mm",
-                            )
-                            tooltip_manager.set(
-                                item_id,
-                                column_map.get("6m bars", "#2"),
-                                f"{scenario_6m.bars} staaf/staven nodig",
-                            )
-                            tooltip_manager.set(
-                                item_id,
-                                column_map.get("6m cuts", "#5"),
-                                f"Geschat aantal zaagsneden: {scenario_6m.cuts}",
-                            )
-
-                        if scenario_12m.dropped_pieces:
-                            tooltip_manager.set(
-                                item_id,
-                                column_map.get("12m bars", "#6"),
-                                _join_blockers(
-                                    blockers.get("12m", set()), LONG_STOCK_LENGTH_MM
-                                ),
-                            )
-                            tooltip_manager.set(
-                                item_id,
-                                column_map.get("12m waste", "#7"),
-                                "Afval niet beschikbaar door te lange stukken.",
-                            )
-                            tooltip_manager.set(
-                                item_id,
-                                column_map.get("12m cuts", "#9"),
-                                "Zaagplan niet beschikbaar door te lange stukken.",
-                            )
-                        else:
-                            tooltip_manager.set(
-                                item_id,
-                                column_map.get("12m waste", "#7"),
-                                f"Totale restlengte: {scenario_12m.waste_mm:.0f} mm",
-                            )
-                            tooltip_manager.set(
-                                item_id,
-                                column_map.get("12m bars", "#6"),
-                                f"{scenario_12m.bars} staaf/staven nodig",
-                            )
-                            tooltip_manager.set(
-                                item_id,
-                                column_map.get("12m cuts", "#9"),
-                                f"Geschat aantal zaagsneden: {scenario_12m.cuts}",
-                            )
-
-                        if scenario_custom is not None:
-                            column_bars = column_map.get("Custom bars", "#11")
-                            column_waste = column_map.get("Custom waste", "#12")
-                            column_cuts = column_map.get("Custom cuts", "#13")
-                            if scenario_custom.dropped_pieces:
-                                tooltip_manager.set(
-                                    item_id,
-                                    column_bars,
+                    item_id_custom = tree_custom.insert("", "end", values=values_custom)
+                    tooltip_custom = tooltip_managers.get("custom")
+                    columns_custom = column_maps.get("custom", {})
+                    if tooltip_custom is not None:
+                        if scenario_custom is None:
+                            message = "Stel een aangepaste staaflengte in om scenario's te berekenen."
+                            for column_key in ("Bars", "Waste", "Cuts"):
+                                column_id = columns_custom.get(column_key)
+                                if column_id:
+                                    tooltip_custom.set(item_id_custom, column_id, message)
+                        elif scenario_custom.dropped_pieces:
+                            column_id = columns_custom.get("Bars")
+                            if column_id:
+                                tooltip_custom.set(
+                                    item_id_custom,
+                                    column_id,
                                     _join_blockers(
                                         blockers.get("custom", set()),
-                                        custom_stock_mm,
+                                        custom_stock_mm if custom_stock_mm is not None else 0,
                                     ),
                                 )
-                                tooltip_manager.set(
-                                    item_id,
-                                    column_waste,
+                            column_id = columns_custom.get("Waste")
+                            if column_id:
+                                tooltip_custom.set(
+                                    item_id_custom,
+                                    column_id,
                                     "Afval niet beschikbaar door te lange stukken.",
                                 )
-                                tooltip_manager.set(
-                                    item_id,
-                                    column_cuts,
+                            column_id = columns_custom.get("Cuts")
+                            if column_id:
+                                tooltip_custom.set(
+                                    item_id_custom,
+                                    column_id,
                                     "Zaagplan niet beschikbaar door te lange stukken.",
                                 )
-                            else:
-                                tooltip_manager.set(
-                                    item_id,
-                                    column_waste,
+                        else:
+                            column_id = columns_custom.get("Waste")
+                            if column_id:
+                                tooltip_custom.set(
+                                    item_id_custom,
+                                    column_id,
                                     f"Totale restlengte: {scenario_custom.waste_mm:.0f} mm",
                                 )
-                                tooltip_manager.set(
-                                    item_id,
-                                    column_bars,
+                            column_id = columns_custom.get("Bars")
+                            if column_id:
+                                tooltip_custom.set(
+                                    item_id_custom,
+                                    column_id,
                                     f"{scenario_custom.bars} staaf/staven nodig",
                                 )
-                                tooltip_manager.set(
-                                    item_id,
-                                    column_cuts,
+                            column_id = columns_custom.get("Cuts")
+                            if column_id:
+                                tooltip_custom.set(
+                                    item_id_custom,
+                                    column_id,
                                     f"Geschat aantal zaagsneden: {scenario_custom.cuts}",
                                 )
 
-            if summary_tree is not None:
+            for summary_tree in summary_trees.values():
                 _autosize_tree_columns(summary_tree)
 
             self.opticutter_profile_selection_scenarios = selection_scenarios
