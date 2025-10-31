@@ -55,7 +55,7 @@ from __future__ import annotations
 
 import csv
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -119,6 +119,8 @@ class UndoEntry:
     action: str
     frame: pd.DataFrame
     cells: Sequence[CellCoord]
+    qty_reference: Optional[pd.Series] = None
+    qty_multiplier: Decimal = field(default_factory=lambda: Decimal(1))
 
 
 def _dataframe_slice_to_clipboard(
@@ -692,8 +694,11 @@ class BOMCustomTab(ttk.Frame):
         self.event_target = event_target
         self.max_undo = max_undo
         self.undo_stack: List[UndoEntry] = []
+        self.redo_stack: List[UndoEntry] = []
         self.last_temp_csv_path: Optional[Path] = None
         self._suspend_history = False
+        self._qty_multiplier_reference: pd.Series = pd.Series(dtype=object)
+        self._current_qty_multiplier: Decimal = Decimal(1)
 
         self.status_var = tk.StringVar(value="")
         self.qty_multiplier_var = tk.StringVar(value="")
@@ -720,6 +725,12 @@ class BOMCustomTab(ttk.Frame):
 
         template_btn = ttk.Button(bar, text="Download template", command=self._download_template)
         template_btn.pack(side="left", padx=(0, 6))
+
+        undo_btn = ttk.Button(bar, text="Undo", command=self._handle_toolbar_undo)
+        undo_btn.pack(side="left", padx=(0, 6))
+
+        redo_btn = ttk.Button(bar, text="Redo", command=self._handle_toolbar_redo)
+        redo_btn.pack(side="left", padx=(0, 6))
 
         ttk.Label(bar, textvariable=self.status_var, anchor="w").pack(
             side="left", fill="x", expand=True
@@ -774,8 +785,25 @@ class BOMCustomTab(ttk.Frame):
             "<Meta-Z>",
         ):
             self.table.bind(sequence, self._on_undo, add="+")
+        for sequence in (
+            "<Control-y>",
+            "<Control-Y>",
+            "<Control-Shift-z>",
+            "<Control-Shift-Z>",
+            "<Command-y>",
+            "<Command-Y>",
+            "<Command-Shift-z>",
+            "<Command-Shift-Z>",
+            "<Meta-y>",
+            "<Meta-Y>",
+            "<Meta-Shift-z>",
+            "<Meta-Shift-Z>",
+        ):
+            self.table.bind(sequence, self._on_redo, add="+")
         for sequence in ("<Delete>", "<BackSpace>"):
             self.table.bind(sequence, self._clear_selection, add="+")
+
+        self._reset_qty_multiplier_reference()
 
 
     # ------------------------------------------------------------------
@@ -783,11 +811,112 @@ class BOMCustomTab(ttk.Frame):
     def _update_status(self, text: str) -> None:
         self.status_var.set(text)
 
+    def _format_decimal(self, value: Decimal) -> str:
+        text = format(value, "f")
+        if "." in text:
+            text = text.rstrip("0").rstrip(".")
+        return text or "0"
+
+    def _set_current_multiplier(self, value: Decimal, *, update_entry: bool = True) -> None:
+        self._current_qty_multiplier = value
+        if update_entry and hasattr(self, "qty_multiplier_var"):
+            self.qty_multiplier_var.set(self._format_decimal(value))
+
+    def _make_qty_series(self, frame: Optional[pd.DataFrame] = None) -> pd.Series:
+        target = frame if frame is not None else self.table_model.df
+        values: List[str] = []
+        for value in target.iloc[:, self.QTY_COLUMN_INDEX]:
+            if pd.isna(value):
+                values.append("")
+            else:
+                values.append(str(value).strip())
+        return pd.Series(values, index=target.index, dtype=object)
+
+    def _align_qty_reference(self) -> pd.Series:
+        df = self.table_model.df
+        if not hasattr(self, "_qty_multiplier_reference"):
+            self._qty_multiplier_reference = pd.Series(dtype=object)
+        reference = self._qty_multiplier_reference
+        if not isinstance(reference, pd.Series):
+            reference = self._make_qty_series(df)
+        else:
+            reference = reference.reindex(df.index, fill_value="")
+        self._qty_multiplier_reference = reference
+        if not hasattr(self, "_current_qty_multiplier"):
+            self._current_qty_multiplier = Decimal(1)
+        return self._qty_multiplier_reference
+
+    def _reset_qty_multiplier_reference(self, *, update_entry: bool = True) -> None:
+        self._qty_multiplier_reference = self._make_qty_series(self.table_model.df)
+        self._set_current_multiplier(Decimal(1), update_entry=update_entry)
+
+    def _capture_qty_reference_snapshot(self) -> pd.Series:
+        return self._align_qty_reference().copy(deep=True)
+
+    def _update_qty_reference_for_row(self, row: int, value: Any) -> None:
+        reference = self._align_qty_reference()
+        if row not in reference.index:
+            return
+        normalized = "" if pd.isna(value) else str(value).strip()
+        if not normalized:
+            reference.iloc[row] = ""
+            return
+        raw_value = normalized.replace(",", ".")
+        multiplier = self._current_qty_multiplier
+        if multiplier == 0:
+            reference.iloc[row] = normalized
+            return
+        try:
+            qty_decimal = Decimal(raw_value)
+        except InvalidOperation:
+            reference.iloc[row] = normalized
+            return
+        if multiplier == 1:
+            base_decimal = qty_decimal
+        else:
+            base_decimal = qty_decimal / multiplier
+        formatted = format(base_decimal, "f")
+        if "." in formatted:
+            formatted = formatted.rstrip("0").rstrip(".")
+        reference.iloc[row] = formatted or "0"
+
+    def _sync_qty_reference_for_cells(self, cells: Sequence[CellCoord]) -> None:
+        if not cells:
+            return
+        reference = self._align_qty_reference()
+        for row, col in cells:
+            if col != self.QTY_COLUMN_INDEX:
+                continue
+            if row not in reference.index:
+                continue
+            value = self.table_model.df.iat[row, col]
+            self._update_qty_reference_for_row(row, value)
+
+    def _restore_history_entry(self, entry: UndoEntry) -> None:
+        self._set_dataframe(
+            entry.frame,
+            reset_multiplier_reference=False,
+            update_multiplier_entry=False,
+        )
+        self._dataframe = self.table_model.df.copy(deep=True)
+        if entry.qty_reference is not None:
+            self._qty_multiplier_reference = entry.qty_reference.copy(deep=True)
+        else:
+            self._qty_multiplier_reference = self._make_qty_series(self.table_model.df)
+        self._align_qty_reference()
+        self._set_current_multiplier(entry.qty_multiplier)
+
     def _create_empty_dataframe(self, rows: int) -> pd.DataFrame:
         data = {header: [""] * rows for header in self.HEADERS}
         return pd.DataFrame(data, columns=self.HEADERS)
 
-    def _set_dataframe(self, df: pd.DataFrame) -> None:
+    def _set_dataframe(
+        self,
+        df: pd.DataFrame,
+        *,
+        reset_multiplier_reference: bool = True,
+        update_multiplier_entry: bool = True,
+    ) -> None:
         normalized = df.reindex(columns=self.HEADERS, fill_value="")
         self._suspend_history = True
         try:
@@ -796,6 +925,10 @@ class BOMCustomTab(ttk.Frame):
         finally:
             self._suspend_history = False
         self._dataframe = self.table_model.df.copy(deep=True)
+        if reset_multiplier_reference:
+            self._reset_qty_multiplier_reference(update_entry=update_multiplier_entry)
+        else:
+            self._align_qty_reference()
 
     def _refresh_table(self) -> None:
         self.table.updateModel(self.table_model)
@@ -808,6 +941,7 @@ class BOMCustomTab(ttk.Frame):
         self.table_model.df = pd.concat(
             [self.table_model.df, extension], ignore_index=True
         )
+        self._align_qty_reference()
 
     def _ensure_minimum_rows(self, minimum: int = 1) -> None:
         if minimum <= 0:
@@ -818,18 +952,48 @@ class BOMCustomTab(ttk.Frame):
         missing = minimum - current_rows
         extension = self._create_empty_dataframe(missing)
         extended = pd.concat([self.table_model.df, extension], ignore_index=True)
-        self._set_dataframe(extended)
+        self._set_dataframe(extended, reset_multiplier_reference=False, update_multiplier_entry=False)
 
     def _snapshot_data(self, frame: Optional[pd.DataFrame] = None) -> List[List[str]]:
         df = frame if frame is not None else self.table_model.df
         normalized = df.reindex(columns=self.HEADERS)
         return normalized.fillna("").astype(str).values.tolist()
 
-    def _push_undo(self, action: str, frame: pd.DataFrame, cells: Sequence[CellCoord]) -> None:
+    def _push_undo(
+        self,
+        action: str,
+        frame: pd.DataFrame,
+        cells: Sequence[CellCoord],
+        *,
+        qty_reference: Optional[pd.Series] = None,
+        qty_multiplier: Optional[Decimal] = None,
+    ) -> None:
         snapshot = frame.copy(deep=True)
-        self.undo_stack.append(UndoEntry(action=action, frame=snapshot, cells=list(cells)))
+        if qty_reference is not None:
+            reference_snapshot = qty_reference.copy(deep=True)
+        else:
+            reference_snapshot = self._capture_qty_reference_snapshot()
+        multiplier_snapshot = (
+            qty_multiplier if qty_multiplier is not None else self._current_qty_multiplier
+        )
+        if not hasattr(self, "undo_stack"):
+            self.undo_stack = []
+        if not hasattr(self, "redo_stack"):
+            self.redo_stack = []
+        if not hasattr(self, "max_undo"):
+            self.max_undo = 50
+        self.undo_stack.append(
+            UndoEntry(
+                action=action,
+                frame=snapshot,
+                cells=list(cells),
+                qty_reference=reference_snapshot,
+                qty_multiplier=multiplier_snapshot,
+            )
+        )
         if len(self.undo_stack) > self.max_undo:
             self.undo_stack.pop(0)
+        self.redo_stack.clear()
 
     def _clear_cells(
         self,
@@ -846,6 +1010,7 @@ class BOMCustomTab(ttk.Frame):
             return 0
 
         before = self.table_model.df.copy(deep=True)
+        before_reference = self._capture_qty_reference_snapshot()
         changed: List[CellCoord] = []
         self._suspend_history = True
         try:
@@ -861,9 +1026,12 @@ class BOMCustomTab(ttk.Frame):
 
         after = self.table_model.df.copy(deep=True)
         if changed and not before.equals(after):
-            self._push_undo(undo_action, before, changed)
+            self._push_undo(
+                undo_action, before, changed, qty_reference=before_reference
+            )
             self._dataframe = after
             self._refresh_table()
+            self._sync_qty_reference_for_cells(changed)
             self._ensure_minimum_rows(self.DEFAULT_EMPTY_ROWS)
             self._update_status(success_status.format(count=len(changed)))
             return len(changed)
@@ -892,31 +1060,39 @@ class BOMCustomTab(ttk.Frame):
             return "break" if event is not None else None
 
         before = self.table_model.df.copy(deep=True)
+        reference = self._align_qty_reference()
+        reference_values = list(reference.tolist())
         changed: List[CellCoord] = []
         errors = 0
 
         self._suspend_history = True
         try:
-            for row in range(len(self.table_model.df)):
-                current = self.table_model.df.iat[row, self.QTY_COLUMN_INDEX]
-                normalized_current = "" if pd.isna(current) else str(current).strip()
-                if not normalized_current:
+            for row_index, base_value in enumerate(reference_values):
+                if pd.isna(base_value):
+                    normalized_base = ""
+                else:
+                    normalized_base = str(base_value).strip()
+                if not normalized_base:
                     continue
 
                 try:
-                    qty_value = Decimal(normalized_current.replace(",", "."))
+                    base_decimal = Decimal(normalized_base.replace(",", "."))
                 except InvalidOperation:
                     errors += 1
                     continue
 
-                new_value = qty_value * factor
-                formatted = format(new_value, "f").rstrip("0").rstrip(".")
+                new_value = base_decimal * factor
+                formatted = format(new_value, "f")
+                if "." in formatted:
+                    formatted = formatted.rstrip("0").rstrip(".")
                 if not formatted:
                     formatted = "0"
 
-                if formatted != normalized_current:
-                    self.table_model.df.iat[row, self.QTY_COLUMN_INDEX] = formatted
-                    changed.append((row, self.QTY_COLUMN_INDEX))
+                current = self.table_model.df.iat[row_index, self.QTY_COLUMN_INDEX]
+                normalized_current = "" if pd.isna(current) else str(current).strip()
+                if normalized_current != formatted:
+                    self.table_model.df.iat[row_index, self.QTY_COLUMN_INDEX] = formatted
+                    changed.append((row_index, self.QTY_COLUMN_INDEX))
         finally:
             self._suspend_history = False
 
@@ -925,11 +1101,13 @@ class BOMCustomTab(ttk.Frame):
             self._push_undo("QTY vermenigvuldigen", before, changed)
             self._dataframe = after
             self._refresh_table()
+            self._set_current_multiplier(factor)
             message = f"QTY. vermenigvuldigd met {raw_value}."
             if errors:
                 message += f" {errors} rijen met ongeldige QTY.-waarden overgeslagen."
             self._update_status(message)
         else:
+            self._set_current_multiplier(factor)
             if errors and not changed:
                 self._update_status(
                     "Alle QTY.-waarden waren ongeldig en zijn niet aangepast."
@@ -981,11 +1159,15 @@ class BOMCustomTab(ttk.Frame):
             return
         if before.equals(after):
             return
-        self._push_undo("bewerking", before, [cell])
+        before_reference = self._capture_qty_reference_snapshot()
+        self._push_undo("bewerking", before, [cell], qty_reference=before_reference)
         self._dataframe = after
         target_minimum = max(self.DEFAULT_EMPTY_ROWS, cell[0] + 2)
         self._ensure_minimum_rows(target_minimum)
         row, col = cell
+        if col == self.QTY_COLUMN_INDEX:
+            value = after.iat[row, col]
+            self._update_qty_reference_for_row(row, value)
         self._update_status(f"Cel ({row + 1}, {col + 1}) bijgewerkt.")
 
     def _clear_selection(self, event=None):
@@ -1014,13 +1196,22 @@ class BOMCustomTab(ttk.Frame):
             return 0
 
         before = self.table_model.df.copy(deep=True)
+        before_reference = self._capture_qty_reference_snapshot()
         remaining = before.drop(index=unique_rows).reset_index(drop=True)
         if remaining.equals(before):
             self._update_status("Geen rijen geselecteerd om te verwijderen.")
             return 0
 
-        self._push_undo("rijen verwijderen", before, [])
-        self._set_dataframe(remaining)
+        after_reference = before_reference.drop(index=unique_rows, errors="ignore")
+        after_reference = after_reference.reset_index(drop=True)
+
+        self._push_undo(
+            "rijen verwijderen", before, [], qty_reference=before_reference
+        )
+        self._qty_multiplier_reference = after_reference
+        self._set_dataframe(
+            remaining, reset_multiplier_reference=False, update_multiplier_entry=False
+        )
         self._ensure_minimum_rows(self.DEFAULT_EMPTY_ROWS)
 
         count = len(unique_rows)
@@ -1090,6 +1281,7 @@ class BOMCustomTab(ttk.Frame):
         self._ensure_minimum_rows(required_rows)
 
         before = self.table_model.df.copy(deep=True)
+        before_reference = self._capture_qty_reference_snapshot()
         changed: List[CellCoord] = []
         self._suspend_history = True
         try:
@@ -1112,9 +1304,10 @@ class BOMCustomTab(ttk.Frame):
 
         after = self.table_model.df.copy(deep=True)
         if changed and not before.equals(after):
-            self._push_undo("plakken", before, changed)
+            self._push_undo("plakken", before, changed, qty_reference=before_reference)
             self._dataframe = after
             self._refresh_table()
+            self._sync_qty_reference_for_cells(changed)
             max_row = max(row for row, _ in changed)
             self._ensure_minimum_rows(max(self.DEFAULT_EMPTY_ROWS, max_row + 2))
             self._update_status(f"{len(changed)} cellen geplakt.")
@@ -1156,27 +1349,81 @@ class BOMCustomTab(ttk.Frame):
 
     def _confirm_clear(self) -> None:
         before_df = self.table_model.df.copy(deep=True)
+        before_reference = self._capture_qty_reference_snapshot()
         trimmed = before_df.replace("", pd.NA).dropna(how="all")
         if trimmed.empty:
             self._update_status("Sheet was al leeg.")
             return
         if not messagebox.askyesno("Bevestigen", "Alle custom BOM-data verwijderen?", parent=self):
             return
-        self._push_undo("clear", before_df, [])
+        self._push_undo("clear", before_df, [], qty_reference=before_reference)
         cleared = self._create_empty_dataframe(self.DEFAULT_EMPTY_ROWS)
         self._set_dataframe(cleared)
         self._update_status("Custom BOM geleegd.")
 
     # ------------------------------------------------------------------
     # Undo
+    def _handle_toolbar_undo(self) -> None:
+        self._on_undo()
+
+    def _handle_toolbar_redo(self) -> None:
+        self._on_redo()
+
     def _on_undo(self, event=None):
+        if not hasattr(self, "undo_stack"):
+            self.undo_stack = []
+        if not hasattr(self, "redo_stack"):
+            self.redo_stack = []
         if not self.undo_stack:
             self._update_status("Niets om ongedaan te maken.")
             return "break"
+        current_snapshot = self.table_model.df.copy(deep=True)
+        current_reference = self._capture_qty_reference_snapshot()
+        current_multiplier = self._current_qty_multiplier
         entry = self.undo_stack.pop()
-        self._set_dataframe(entry.frame)
+        self.redo_stack.append(
+            UndoEntry(
+                action=entry.action,
+                frame=current_snapshot,
+                cells=[],
+                qty_reference=current_reference,
+                qty_multiplier=current_multiplier,
+            )
+        )
+        if len(self.redo_stack) > self.max_undo:
+            self.redo_stack.pop(0)
+        self._restore_history_entry(entry)
         self._ensure_minimum_rows(self.DEFAULT_EMPTY_ROWS)
         self._update_status(f"{entry.action.capitalize()} ongedaan gemaakt.")
+        return "break"
+
+    def _on_redo(self, event=None):
+        if not hasattr(self, "redo_stack"):
+            self.redo_stack = []
+        if not hasattr(self, "undo_stack"):
+            self.undo_stack = []
+        if not self.redo_stack:
+            self._update_status("Niets om te herhalen.")
+            return "break"
+
+        current_snapshot = self.table_model.df.copy(deep=True)
+        current_reference = self._capture_qty_reference_snapshot()
+        current_multiplier = self._current_qty_multiplier
+        entry = self.redo_stack.pop()
+        self.undo_stack.append(
+            UndoEntry(
+                action=entry.action,
+                frame=current_snapshot,
+                cells=[],
+                qty_reference=current_reference,
+                qty_multiplier=current_multiplier,
+            )
+        )
+        if len(self.undo_stack) > self.max_undo:
+            self.undo_stack.pop(0)
+        self._restore_history_entry(entry)
+        self._ensure_minimum_rows(self.DEFAULT_EMPTY_ROWS)
+        self._update_status(f"{entry.action.capitalize()} opnieuw toegepast.")
         return "break"
 
     # ------------------------------------------------------------------
@@ -1280,7 +1527,10 @@ class BOMCustomTab(ttk.Frame):
     def clear_history(self) -> None:
         """Verwijder alle undo-stappen."""
 
-        self.undo_stack.clear()
+        if hasattr(self, "undo_stack"):
+            self.undo_stack.clear()
+        if hasattr(self, "redo_stack"):
+            self.redo_stack.clear()
 
     def load_from_main_dataframe(self, df: pd.DataFrame) -> None:
         """Vul de Custom BOM met gegevens uit de hoofd-BOM."""
