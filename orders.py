@@ -2007,17 +2007,23 @@ def copy_per_production_and_orders(
                 scenario_df.to_excel(writer, sheet_name="Scenario", index=False)
                 pieces_df.to_excel(writer, sheet_name="Stukken", index=False)
                 settings_df.to_excel(writer, sheet_name="Instellingen", index=False)
+                if not order_df.empty:
+                    order_df.to_excel(writer, sheet_name="Bestelling", index=False)
 
-            order_requested = f"Bestelbon_brutemateriaal_{prod}_{today}.xlsx"
-            order_filename = _fit_filename_within_path(prod_folder, order_requested)
-            _record_path_warning(
-                prod_folder,
-                order_requested,
-                order_filename,
-                context=f"Productie '{prod}' – Brutebestelling",
-            )
-            order_path = os.path.join(prod_folder, order_filename)
-            order_df.to_excel(order_path, index=False)
+            order_overview_path: str | None = None
+            should_write_order_overview = not order_df.empty
+            if should_write_order_overview:
+                order_requested = f"Bestelbon_brutemateriaal_{prod}_{today}.xlsx"
+                order_filename = _fit_filename_within_path(
+                    prod_folder, order_requested
+                )
+                _record_path_warning(
+                    prod_folder,
+                    order_requested,
+                    order_filename,
+                    context=f"Productie '{prod}' – Brutebestelling",
+                )
+                order_overview_path = os.path.join(prod_folder, order_filename)
 
             opticutter_order_items = list(comp.raw_items)
             opticutter_total_weight = comp.total_weight_kg
@@ -2079,9 +2085,13 @@ def copy_per_production_and_orders(
                 supplier_for_opticutter_docs = None
                 delivery_for_opticutter_docs = None
 
-            if opticutter_order_items and (
-                opticutter_supplier_name or opticutter_is_standaard
-            ):
+            should_generate_opticutter_order = (
+                bool(opticutter_order_items)
+                and (opticutter_supplier_name or opticutter_is_standaard)
+            )
+            if should_generate_opticutter_order:
+                should_write_order_overview = False
+
                 opticutter_excel_requested = (
                     f"{opticutter_doc_type}{opticutter_num_part}_"
                     f"{prod}_Brutemateriaal_{today}.xlsx"
@@ -2150,6 +2160,9 @@ def copy_per_production_and_orders(
                         f"[WAARSCHUWING] PDF brutemateriaal mislukt voor {prod}: {exc}",
                         file=sys.stderr,
                     )
+
+            if should_write_order_overview and order_overview_path:
+                order_df.to_excel(order_overview_path, index=False)
 
         packlist_items = step_entries.get(prod, [])
         if packlist_items and REPORTLAB_OK:

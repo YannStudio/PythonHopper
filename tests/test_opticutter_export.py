@@ -71,20 +71,17 @@ def test_opticutter_files_written(tmp_path):
     today = datetime.date.today().strftime("%Y-%m-%d")
     prod1_dir = dest / "Prod1"
     scenario_path = prod1_dir / f"Opticutter_Prod1_{today}.xlsx"
-    order_path = prod1_dir / f"Bestelbon_brutemateriaal_Prod1_{today}.xlsx"
-
     assert scenario_path.exists(), "Opticutter scenario workbook ontbreekt"
-    assert order_path.exists(), "Bestelbon brutemateriaal workbook ontbreekt"
 
     scenario_df = pd.read_excel(scenario_path, sheet_name="Scenario")
     assert "Keuze" in scenario_df.columns
     assert scenario_df["Keuze"].astype(str).str.len().max() > 0
 
-    order_df = pd.read_excel(order_path)
-    assert "Aantal staven" in order_df.columns
-    assert order_df["Aantal staven"].notna().any()
-    assert "Totaal gewicht (kg)" in order_df.columns
-    assert order_df["Totaal gewicht (kg)"].fillna(0).sum() > 0
+    order_overview_df = pd.read_excel(scenario_path, sheet_name="Bestelling")
+    assert "Aantal staven" in order_overview_df.columns
+    assert order_overview_df["Aantal staven"].notna().any()
+    assert "Totaal gewicht (kg)" in order_overview_df.columns
+    assert order_overview_df["Totaal gewicht (kg)"].fillna(0).sum() > 0
 
     raw_docs = [
         f
@@ -93,9 +90,9 @@ def test_opticutter_files_written(tmp_path):
         and "Brutemateriaal" in f
         and f.lower().endswith(".xlsx")
     ]
-    assert raw_docs, "Bestelbon brutemateriaal XLS ontbreekt"
+    assert len(raw_docs) == 1, "Onverwacht aantal Bestelbon brutemateriaal bestanden"
 
-    raw_order_path = prod1_dir / sorted(raw_docs)[0]
+    raw_order_path = prod1_dir / raw_docs[0]
     wb = openpyxl.load_workbook(raw_order_path)
     ws = wb.active
     header_row = None
@@ -116,5 +113,9 @@ def test_opticutter_files_written(tmp_path):
     total_weight_cell = ws.cell(row=total_row_idx, column=5).value
     total_weight_value = str(total_weight_cell or "").replace(",", ".")
     assert total_weight_value, "Totaal gewicht waarde ontbreekt"
-    expected_total = round(order_df["Totaal gewicht (kg)"].fillna(0).sum(), 2)
+    expected_total = round(order_overview_df["Totaal gewicht (kg)"].fillna(0).sum(), 2)
     assert pytest.approx(float(total_weight_value), abs=0.01) == expected_total
+
+    assert not (
+        prod1_dir / f"Bestelbon_brutemateriaal_Prod1_{today}.xlsx"
+    ).exists(), "Overzichtsbestand Bestelbon_brutemateriaal zou niet mogen bestaan"
