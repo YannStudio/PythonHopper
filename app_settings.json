@@ -1,8 +1,15 @@
 {
+<<<<<<< HEAD
   "source_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2025/Standaard modellen/Tecno G/20250144 - Fietsenstalling Dadizele/CAD/3D Soldiworks Files/V4 - productie/MOD 2",
   "dest_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2025/Standaard modellen/Tecno G/20250144 - Fietsenstalling Dadizele/CAD/Bestellingen/MOD2",
   "project_number": "20250144",
   "project_name": "Dadizele-Mod2",
+=======
+  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/De Lijn/53. De Lijn - Infopunten/cad",
+  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/De Lijn/53. De Lijn - Infopunten/export/00. Frames",
+  "project_number": "53",
+  "project_name": "DeLijn-FramesDiamant",
+>>>>>>> update
   "file_extensions": [
     {
       "key": "pdf",

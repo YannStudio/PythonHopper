@@ -70,6 +70,7 @@ _BOM_STATUS_COLUMNS: Tuple[str, ...] = ("Bestanden gevonden", "Status", "Link")
 _BOM_EXPORT_BASE_COLUMNS: Tuple[str, ...] = (
     "PartNumber",
     "Description",
+    "QTY.",
     "Profile",
     "Length profile",
     "Production",
@@ -80,7 +81,6 @@ _BOM_EXPORT_BASE_COLUMNS: Tuple[str, ...] = (
     "Manufacturer code",
     "Finish",
     "RAL color",
-    "Aantal",
     "Oppervlakte",
     "Gewicht",
 )
@@ -137,7 +137,10 @@ def _slugify_name(value: object, fallback: str) -> str:
 
 
 def _fit_filename_within_path(
-    directory: str, filename: str, *, max_path: int = _WINDOWS_MAX_PATH
+    directory: str,
+    filename: str,
+    *,
+    max_path: int = _WINDOWS_MAX_PATH,
 ) -> str:
     """Return ``filename`` possibly shortened so ``directory/filename`` fits ``max_path``.
 
@@ -223,6 +226,24 @@ def _export_bom_workbook(bom_df: pd.DataFrame, dest: str, filename: str) -> str:
     to_drop = [col for col in _BOM_STATUS_COLUMNS if col in export_df.columns]
     if to_drop:
         export_df = export_df.drop(columns=to_drop)
+
+    # Normalise quantity column naming to ``QTY.`` and drop aliases.
+    qty_aliases: Tuple[str, ...] = ("QTY.", "Qty.", "Qty", "Quantity", "Aantal")
+    qty_columns = [col for col in qty_aliases if col in export_df.columns]
+    if "QTY." not in export_df.columns:
+        if qty_columns:
+            export_df = export_df.rename(columns={qty_columns[0]: "QTY."})
+        else:
+            export_df["QTY."] = ""
+    for alias in qty_columns:
+        if alias == "QTY." or alias not in export_df.columns:
+            continue
+        source = export_df[alias]
+        destination = export_df["QTY."]
+        dest_str = destination.astype(str)
+        missing_mask = dest_str.str.strip().isin(("", "nan"))
+        export_df.loc[missing_mask, "QTY."] = source[missing_mask]
+        export_df = export_df.drop(columns=alias)
 
     # Ensure all primary BOM columns are present and appear first.
     for column in _BOM_EXPORT_BASE_COLUMNS:
@@ -381,6 +402,43 @@ def _prefix_for_doc_type(doc_type: str) -> str:
     if t.startswith("offerte"):
         return "OFF-"
     return ""
+
+
+def _normalize_doc_number(value: object, doc_type: object) -> str:
+    """Return a cleaned document number for a given ``doc_type``.
+
+    The GUI provides placeholder prefixes such as ``"BB-"``. When the user
+    pastes a value that already contains the prefix the placeholder should be
+    replaced instead of duplicated (``"BB-BB123"`` → ``"BB-123"``).
+    """
+
+    doc_num = _to_str(value).strip()
+    if not doc_num:
+        return ""
+
+    prefix = _prefix_for_doc_type(_to_str(doc_type))
+    if not prefix:
+        return doc_num
+
+    prefix_upper = prefix.upper()
+    doc_upper = doc_num.upper()
+    prefix_compact = re.sub(r"[^A-Z0-9]", "", prefix_upper)
+
+    if doc_upper.startswith(prefix_upper):
+        remainder = doc_num[len(prefix) :]
+        remainder_stripped = remainder.lstrip(" -_")
+        remainder_upper = remainder_stripped.upper()
+        if remainder_upper.startswith(prefix_upper):
+            remainder = remainder_stripped[len(prefix) :]
+            doc_num = prefix + remainder.lstrip(" -_")
+        elif prefix_compact and remainder_upper.startswith(prefix_compact):
+            remainder = remainder_stripped[len(prefix_compact) :]
+            doc_num = prefix + remainder.lstrip(" -_")
+    elif prefix_compact and doc_upper.startswith(prefix_compact):
+        remainder = doc_num[len(prefix_compact) :]
+        doc_num = prefix + remainder.lstrip(" -_")
+
+    return doc_num
 
 
 def _should_place_remark_in_delivery_block(
@@ -1100,6 +1158,7 @@ def copy_per_production_and_orders(
     remarks_map: Dict[str, str] | None = None,
     finish_remarks_map: Dict[str, str] | None = None,
     bom_source_path: str | None = None,
+    path_limit_warnings: List[str] | None = None,
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
 
@@ -1254,6 +1313,24 @@ def copy_per_production_and_orders(
 
     suppliers_sorted = db.suppliers_sorted()
 
+    def _record_path_warning(
+        directory: str,
+        requested: str,
+        final: str,
+        *,
+        context: str,
+    ) -> None:
+        if path_limit_warnings is None or requested == final:
+            return
+        directory_abs = os.path.abspath(directory)
+        original_abs = os.path.join(directory_abs, requested)
+        detail = (
+            f"{context}: '{requested}' → '{final}' "
+            f"(padlengte {len(original_abs)} tekens, limiet {_WINDOWS_MAX_PATH})"
+        )
+        if detail not in path_limit_warnings:
+            path_limit_warnings.append(detail)
+
     footer_note_text = (
         DEFAULT_FOOTER_NOTE
         if footer_note is None
@@ -1266,7 +1343,7 @@ def copy_per_production_and_orders(
 
         raw_doc_type = doc_type_map.get(prod, "Bestelbon")
         doc_type = _to_str(raw_doc_type).strip() or "Bestelbon"
-        doc_num = _to_str(doc_num_map.get(prod, "")).strip()
+        doc_num = _normalize_doc_number(doc_num_map.get(prod, ""), doc_type)
         prefix = _prefix_for_doc_type(doc_type)
         if doc_num and prefix and doc_num.upper() == prefix.upper():
             doc_num = ""
@@ -1374,8 +1451,13 @@ def copy_per_production_and_orders(
             delivery_for_docs = None
 
         if supplier_name_clean or is_standaard_doc:
-            excel_filename = _fit_filename_within_path(
-                prod_folder, f"{doc_type}{num_part}_{prod}_{today}.xlsx"
+            excel_requested = f"{doc_type}{num_part}_{prod}_{today}.xlsx"
+            excel_filename = _fit_filename_within_path(prod_folder, excel_requested)
+            _record_path_warning(
+                prod_folder,
+                excel_requested,
+                excel_filename,
+                context=f"Productie '{prod}' – {doc_type}",
             )
             excel_path = os.path.join(prod_folder, excel_filename)
             write_order_excel(
@@ -1393,8 +1475,13 @@ def copy_per_production_and_orders(
                 order_remark=order_remark or None,
             )
 
-            pdf_filename = _fit_filename_within_path(
-                prod_folder, f"{doc_type}{num_part}_{prod}_{today}.pdf"
+            pdf_requested = f"{doc_type}{num_part}_{prod}_{today}.pdf"
+            pdf_filename = _fit_filename_within_path(prod_folder, pdf_requested)
+            _record_path_warning(
+                prod_folder,
+                pdf_requested,
+                pdf_filename,
+                context=f"Productie '{prod}' – {doc_type}",
             )
             pdf_path = os.path.join(prod_folder, pdf_filename)
             try:
@@ -1424,8 +1511,15 @@ def copy_per_production_and_orders(
                         packlist_items, preview_dir
                     )
                     if rendered_previews:
+                        packlist_requested = f"Paklijst_{prod}_{today}.pdf"
                         packlist_filename = _fit_filename_within_path(
-                            prod_folder, f"Paklijst_{prod}_{today}.pdf"
+                            prod_folder, packlist_requested
+                        )
+                        _record_path_warning(
+                            prod_folder,
+                            packlist_requested,
+                            packlist_filename,
+                            context=f"Productie '{prod}' – Paklijst",
                         )
                         packlist_path = os.path.join(prod_folder, packlist_filename)
                         try:
@@ -1528,7 +1622,9 @@ def copy_per_production_and_orders(
             if not supplier_name_clean and not is_standaard_doc:
                 continue
 
-            doc_num = _to_str(finish_doc_num_map.get(finish_key, "")).strip()
+            doc_num = _normalize_doc_number(
+                finish_doc_num_map.get(finish_key, ""), doc_type
+            )
             prefix = _prefix_for_doc_type(doc_type)
             if doc_num and prefix and doc_num.upper() == prefix.upper():
                 doc_num = ""
@@ -1566,9 +1662,15 @@ def copy_per_production_and_orders(
                 supplier_for_docs = None
                 delivery_for_docs = None
 
-            excel_filename = _fit_filename_within_path(
+            excel_requested = (
+                f"{doc_type}{num_part}_{filename_component}_{today}.xlsx"
+            )
+            excel_filename = _fit_filename_within_path(target_dir, excel_requested)
+            _record_path_warning(
                 target_dir,
-                f"{doc_type}{num_part}_{filename_component}_{today}.xlsx",
+                excel_requested,
+                excel_filename,
+                context=f"Afwerking '{label}' – {doc_type}",
             )
             excel_path = os.path.join(target_dir, excel_filename)
             write_order_excel(
@@ -1586,8 +1688,13 @@ def copy_per_production_and_orders(
                 order_remark=finish_remark or None,
             )
 
-            pdf_filename = _fit_filename_within_path(
-                target_dir, f"{doc_type}{num_part}_{filename_component}_{today}.pdf"
+            pdf_requested = f"{doc_type}{num_part}_{filename_component}_{today}.pdf"
+            pdf_filename = _fit_filename_within_path(target_dir, pdf_requested)
+            _record_path_warning(
+                target_dir,
+                pdf_requested,
+                pdf_filename,
+                context=f"Afwerking '{label}' – {doc_type}",
             )
             pdf_path = os.path.join(target_dir, pdf_filename)
             try:

@@ -10,7 +10,11 @@ from PyPDF2 import PdfReader
 
 from models import Supplier
 from suppliers_db import SuppliersDB
-from orders import copy_per_production_and_orders, _prefix_for_doc_type
+from orders import (
+    copy_per_production_and_orders,
+    _prefix_for_doc_type,
+    _normalize_doc_number,
+)
 
 
 def test_doc_number_in_name_and_header(tmp_path):
@@ -69,6 +73,13 @@ def test_prefix_helper():
     assert _prefix_for_doc_type("Standaard bon") == "BOM-"
     assert _prefix_for_doc_type("Offerteaanvraag") == "OFF-"
     assert _prefix_for_doc_type("Onbekend") == ""
+
+
+def test_normalize_doc_number_removes_duplicate_prefix():
+    assert _normalize_doc_number("BB-BB64646", "Bestelbon") == "BB-64646"
+    assert _normalize_doc_number("BB64646", "Bestelbon") == "BB-64646"
+    assert _normalize_doc_number("64646", "Bestelbon") == "64646"
+    assert _normalize_doc_number(None, "Bestelbon") == ""
 
 
 def test_offerte_prefix_in_output(tmp_path):
