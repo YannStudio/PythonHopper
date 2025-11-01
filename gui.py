@@ -11,7 +11,7 @@ from collections import defaultdict, OrderedDict
 from dataclasses import dataclass
 from copy import deepcopy
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, TYPE_CHECKING
 
 import pandas as pd
 
@@ -37,6 +37,9 @@ from orders import (
     describe_finish_combo,
     make_finish_selection_key,
     make_production_selection_key,
+    make_opticutter_selection_key,
+    make_opticutter_default_key,
+    compute_opticutter_order_details,
     parse_selection_key,
     _WINDOWS_MAX_PATH,
 )
@@ -47,7 +50,11 @@ from opticutter import (
     StockScenarioResult,
     analyse_profiles,
     parse_length_to_mm,
+    prepare_opticutter_export,
 )
+
+if TYPE_CHECKING:
+    from orders import OpticutterOrderComputation
 
 
 CLIENT_LOGO_DIR = Path("client_logos")
@@ -1259,6 +1266,7 @@ def start_gui():
             callback,
             project_number_var: tk.StringVar,
             project_name_var: tk.StringVar,
+            opticutter_details: Dict[str, "OpticutterOrderComputation"] | None = None,
             initial_state: Optional["SupplierSelectionState"] = None,
         ):
             super().__init__(master)
@@ -1268,6 +1276,7 @@ def start_gui():
             self.callback = callback
             self.project_number_var = project_number_var
             self.project_name_var = project_name_var
+            self.opticutter_details = opticutter_details or {}
             self._preview_supplier: Optional[Supplier] = None
             self._active_key: Optional[str] = None  # laatst gefocuste rij
             self.sel_vars: Dict[str, tk.StringVar] = {}
@@ -1571,6 +1580,28 @@ def start_gui():
                     {"kind": "production", "identifier": prod, "display": prod},
                 )
 
+                comp = (self.opticutter_details or {}).get(prod)
+                if comp and getattr(comp, "selection_count", 0):
+                    summary_bits: List[str] = []
+                    if getattr(comp, "total_bars", 0):
+                        summary_bits.append(f"{comp.total_bars} staven")
+                    if comp.total_weight_kg is not None:
+                        summary_bits.append(f"{comp.total_weight_kg:.1f} kg")
+                    summary_text = ", ".join(summary_bits)
+                    label_text = "  ↳ Brutemateriaal"
+                    if summary_text:
+                        label_text = f"{label_text} ({summary_text})"
+                    add_row(
+                        label_text,
+                        make_opticutter_selection_key(prod),
+                        {
+                            "kind": "opticutter",
+                            "identifier": prod,
+                            "display": f"{prod} – Brutemateriaal",
+                            "summary": summary_text,
+                        },
+                    )
+
             if finishes:
                 ttk.Separator(left, orient="horizontal").pack(fill="x", pady=(12, 6))
                 finishes_header = tk.Frame(left)
@@ -1797,7 +1828,7 @@ def start_gui():
 
             if "::" in key:
                 prefix, identifier = key.split("::", 1)
-                if prefix in ("production", "finish"):
+                if prefix in ("production", "finish", "opticutter"):
                     return prefix, identifier
 
             return "production", key
@@ -1827,6 +1858,8 @@ def start_gui():
                         set_combo_value(combo, self._base_options[0])
                         continue
                     name = self.db.get_default(identifier)
+                elif kind == "opticutter":
+                    name = self.db.get_default(make_opticutter_default_key(identifier))
                 else:
                     name = self.db.get_default_finish(identifier)
                 if typed:
@@ -5141,6 +5174,28 @@ def start_gui():
             ):
                 opticutter_notice_message = opticutter_analysis.error
 
+            opticutter_context = None
+            opticutter_details: Dict[str, OpticutterOrderComputation] = {}
+            if (
+                opticutter_analysis is not None
+                and opticutter_analysis.profiles
+                and scenarios_ready
+            ):
+                try:
+                    opticutter_context = prepare_opticutter_export(
+                        opticutter_analysis,
+                        dict(self.opticutter_profile_selection_choice),
+                    )
+                except Exception:
+                    opticutter_context = None
+            if opticutter_context is not None:
+                try:
+                    opticutter_details = compute_opticutter_order_details(
+                        bom_df, opticutter_context
+                    )
+                except Exception:
+                    opticutter_details = {}
+
             def on_sel(
                 sel_map: Dict[str, str],
                 doc_map: Dict[str, str],
@@ -5168,33 +5223,43 @@ def start_gui():
 
                 prod_override_map: Dict[str, str] = {}
                 finish_override_map: Dict[str, str] = {}
+                opticutter_override_map: Dict[str, str] = {}
                 for key, value in sel_map.items():
                     kind, identifier = parse_selection_key(key)
                     if kind == "finish":
                         finish_override_map[identifier] = value
+                    elif kind == "opticutter":
+                        opticutter_override_map[identifier] = value
                     else:
                         prod_override_map[identifier] = value
 
                 doc_type_map: Dict[str, str] = {}
                 finish_doc_type_map: Dict[str, str] = {}
+                opticutter_doc_type_map: Dict[str, str] = {}
                 for key, value in doc_map.items():
                     kind, identifier = parse_selection_key(key)
                     if kind == "finish":
                         finish_doc_type_map[identifier] = value
+                    elif kind == "opticutter":
+                        opticutter_doc_type_map[identifier] = value
                     else:
                         doc_type_map[identifier] = value
 
                 prod_doc_num_map: Dict[str, str] = {}
                 finish_doc_num_map: Dict[str, str] = {}
+                opticutter_doc_num_map: Dict[str, str] = {}
                 for key, value in doc_num_map.items():
                     kind, identifier = parse_selection_key(key)
                     if kind == "finish":
                         finish_doc_num_map[identifier] = value
+                    elif kind == "opticutter":
+                        opticutter_doc_num_map[identifier] = value
                     else:
                         prod_doc_num_map[identifier] = value
 
                 production_delivery_map: Dict[str, DeliveryAddress | None] = {}
                 finish_delivery_map: Dict[str, DeliveryAddress | None] = {}
+                opticutter_delivery_map: Dict[str, DeliveryAddress | None] = {}
                 for key, name in delivery_map_raw.items():
                     clean = name.replace("★ ", "", 1)
                     if clean == "Geen":
@@ -5209,11 +5274,14 @@ def start_gui():
                     kind, identifier = parse_selection_key(key)
                     if kind == "finish":
                         finish_delivery_map[identifier] = resolved
+                    elif kind == "opticutter":
+                        opticutter_delivery_map[identifier] = resolved
                     else:
                         production_delivery_map[identifier] = resolved
 
                 production_remarks_map: Dict[str, str] = {}
                 finish_remarks_map: Dict[str, str] = {}
+                opticutter_remarks_map: Dict[str, str] = {}
                 for key, text in remarks_map_raw.items():
                     clean_text = text.strip()
                     if not clean_text:
@@ -5221,6 +5289,8 @@ def start_gui():
                     kind, identifier = parse_selection_key(key)
                     if kind == "finish":
                         finish_remarks_map[identifier] = clean_text
+                    elif kind == "opticutter":
+                        opticutter_remarks_map[identifier] = clean_text
                     else:
                         production_remarks_map[identifier] = clean_text
 
@@ -5365,6 +5435,11 @@ def start_gui():
                             path_limit_warnings=path_limit_messages,
                             opticutter_analysis=opticutter_analysis_snapshot,
                             opticutter_choices=opticutter_choices_snapshot,
+                            opticutter_override_map=opticutter_override_map,
+                            opticutter_doc_type_map=opticutter_doc_type_map,
+                            opticutter_doc_num_map=opticutter_doc_num_map,
+                            opticutter_delivery_map=opticutter_delivery_map,
+                            opticutter_remarks_map=opticutter_remarks_map,
                         )
                     except Exception as exc:
                         error_message = str(exc)
@@ -5388,6 +5463,9 @@ def start_gui():
                             if kind == "finish":
                                 label = finish_label_lookup.get(identifier, identifier)
                                 prefix = "Afwerking"
+                            elif kind == "opticutter":
+                                label = identifier
+                                prefix = "Brutemateriaal"
                             else:
                                 label = identifier
                                 prefix = "Productie"
@@ -5495,6 +5573,7 @@ def start_gui():
                     on_sel,
                     self.project_number_var,
                     self.project_name_var,
+                    opticutter_details=opticutter_details,
                     initial_state=previous_state,
                 )
             except Exception:

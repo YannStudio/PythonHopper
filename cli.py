@@ -558,6 +558,9 @@ def cli_copy_per_prod(args):
         if kind == "finish":
             display = finish_meta_lookup.get(ident, {}).get("label", ident)
             prefix = "Afwerking"
+        elif kind == "opticutter":
+            display = f"{ident} (brutemateriaal)"
+            prefix = "Brutemateriaal"
         else:
             display = ident
             prefix = "Productie"

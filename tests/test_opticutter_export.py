@@ -1,4 +1,5 @@
 import datetime
+import os
 import pandas as pd
 
 from opticutter import analyse_profiles
@@ -22,6 +23,7 @@ def test_opticutter_files_written(tmp_path):
                 "Length profile": 2500,
                 "Materiaal": "Staal",
                 "Aantal": 2,
+                "Gewicht": 5.0,
             },
             {
                 "PartNumber": "P-002",
@@ -31,6 +33,7 @@ def test_opticutter_files_written(tmp_path):
                 "Length profile": 1500,
                 "Materiaal": "Staal",
                 "Aantal": 1,
+                "Gewicht": 3.0,
             },
             {
                 "PartNumber": "P-003",
@@ -40,6 +43,7 @@ def test_opticutter_files_written(tmp_path):
                 "Length profile": 3200,
                 "Materiaal": "Alu",
                 "Aantal": 3,
+                "Gewicht": 2.5,
             },
         ]
     )
@@ -77,3 +81,14 @@ def test_opticutter_files_written(tmp_path):
     order_df = pd.read_excel(order_path)
     assert "Aantal staven" in order_df.columns
     assert order_df["Aantal staven"].notna().any()
+    assert "Totaal gewicht (kg)" in order_df.columns
+    assert order_df["Totaal gewicht (kg)"].fillna(0).sum() > 0
+
+    raw_docs = [
+        f
+        for f in os.listdir(prod1_dir)
+        if f.startswith("Bestelbon_")
+        and "Brutemateriaal" in f
+        and f.lower().endswith(".xlsx")
+    ]
+    assert raw_docs, "Bestelbon brutemateriaal XLS ontbreekt"
