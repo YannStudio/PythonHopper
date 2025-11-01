@@ -777,19 +777,13 @@ def _compute_opticutter_order_exports(
         if bars_value and bars_value > 0:
             has_valid_bars = True
             total_bars += int(bars_value)
-            desc = _to_str(profile.profile)
-            if profile.material:
-                desc = f"{desc} – {profile.material}" if desc else profile.material
-            if stock_length:
-                desc = f"{desc} ({stock_length} mm)" if desc else f"{stock_length} mm"
             raw_items.append(
                 {
-                    "PartNumber": profile.profile or "Brutemateriaal",
-                    "Description": desc,
+                    "Profiel": profile.profile or "Brutemateriaal",
                     "Materiaal": profile.material,
-                    "Aantal": int(bars_value),
-                    "Oppervlakte": "",
-                    "Gewicht": _format_weight_kg(weight_total),
+                    "Lengte": stock_length or "",
+                    "St.": int(bars_value),
+                    "kg": _format_weight_kg(weight_total),
                 }
             )
 
@@ -862,7 +856,7 @@ def generate_pdf_order_platypus(
     company_info: Dict[str, object],
     supplier: Supplier | None,
     production: str,
-    items: List[Dict[str, str]],
+    items: List[Dict[str, object]],
     doc_type: str = "Bestelbon",
     doc_number: str | None = None,
     footer_note: Optional[str] = None,
@@ -871,6 +865,7 @@ def generate_pdf_order_platypus(
     project_name: str | None = None,
     label_kind: str = "productie",
     order_remark: str | None = None,
+    total_weight_kg: float | None = None,
 ) -> None:
     """Generate a PDF order using ReportLab if available.
 
@@ -919,6 +914,7 @@ def generate_pdf_order_platypus(
     doc_lines.append(f"Datum: {today}")
     label_kind_clean = (_to_str(label_kind) or "productie").strip() or "productie"
     label_title = label_kind_clean[0].upper() + label_kind_clean[1:]
+    is_raw_material_order = label_kind_clean.lower().startswith("brutemateriaal")
     if production:
         doc_lines.append(f"{label_title}: {production}")
     if project_number:
@@ -1063,7 +1059,10 @@ def generate_pdf_order_platypus(
     story.append(Spacer(0, 10))
 
     # Headers and data
-    head = ["PartNumber", "Omschrijving", "Materiaal", "St.", "m²", "kg"]
+    if is_raw_material_order:
+        head = ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
+    else:
+        head = ["PartNumber", "Omschrijving", "Materiaal", "St.", "m²", "kg"]
 
     def wrap_cell_html(val: str, small=False, align=None):
         style = ParagraphStyle(
@@ -1078,82 +1077,124 @@ def generate_pdf_order_platypus(
         return Paragraph(str(val if (val is not None) else ""), style)
 
     data = [head]
-    for it in items:
-        pn = _pn_wrap_25(it.get("PartNumber", ""))
-        desc = _to_str(it.get("Description", ""))
-        mat = _material_nowrap(it.get("Materiaal", ""))
-        qty = it.get("Aantal", "")
-        opp = _num_to_2dec(it.get("Oppervlakte", ""))
-        gew = _num_to_2dec(it.get("Gewicht", ""))
-        data.append(
-            [
-                wrap_cell_html(pn, small=False, align="LEFT"),
-                wrap_cell_html(desc, small=False, align="LEFT"),
-                wrap_cell_html(mat, small=True, align="RIGHT"),
-                wrap_cell_html(qty, small=True, align="RIGHT"),
-                wrap_cell_html(opp, small=True, align="RIGHT"),
-                wrap_cell_html(gew, small=True, align="RIGHT"),
+    total_row_index: int | None = None
+    if is_raw_material_order:
+        for it in items:
+            prof = _to_str(it.get("Profiel", ""))
+            mat = _to_str(it.get("Materiaal", ""))
+            length_val = it.get("Lengte", "")
+            length = _to_str("" if length_val in (None, "") else length_val)
+            qty_val = it.get("St.", "")
+            qty = _to_str("" if qty_val in (None, "") else qty_val)
+            weight_val = it.get("kg", "")
+            weight = _num_to_2dec(weight_val)
+            data.append(
+                [
+                    wrap_cell_html(prof, small=False, align="LEFT"),
+                    wrap_cell_html(mat, small=False, align="LEFT"),
+                    wrap_cell_html(length, small=True, align="RIGHT"),
+                    wrap_cell_html(qty, small=True, align="RIGHT"),
+                    wrap_cell_html(weight, small=True, align="RIGHT"),
+                ]
+            )
+        if total_weight_kg is not None:
+            total_row_index = len(data)
+            total_row = [
+                wrap_cell_html("Totaal", small=False, align="LEFT"),
+                wrap_cell_html("", small=False, align="LEFT"),
+                wrap_cell_html("", small=True, align="RIGHT"),
+                wrap_cell_html("", small=True, align="RIGHT"),
+                wrap_cell_html(_num_to_2dec(total_weight_kg), small=True, align="RIGHT"),
             ]
-        )
+            data.append(total_row)
+            total_row_index = len(data) - 1
+    else:
+        for it in items:
+            pn = _pn_wrap_25(it.get("PartNumber", ""))
+            desc = _to_str(it.get("Description", ""))
+            mat = _material_nowrap(it.get("Materiaal", ""))
+            qty = it.get("Aantal", "")
+            opp = _num_to_2dec(it.get("Oppervlakte", ""))
+            gew = _num_to_2dec(it.get("Gewicht", ""))
+            data.append(
+                [
+                    wrap_cell_html(pn, small=False, align="LEFT"),
+                    wrap_cell_html(desc, small=False, align="LEFT"),
+                    wrap_cell_html(mat, small=True, align="RIGHT"),
+                    wrap_cell_html(qty, small=True, align="RIGHT"),
+                    wrap_cell_html(opp, small=True, align="RIGHT"),
+                    wrap_cell_html(gew, small=True, align="RIGHT"),
+                ]
+            )
 
     usable_w = width - 2 * margin
-    col_fracs = [0.22, 0.40, 0.14, 0.06, 0.09, 0.09]
-    desc_w = usable_w * col_fracs[1]
-    mat_w = usable_w * col_fracs[2]
-    try:
-        header_width = stringWidth("Materiaal", "Helvetica-Bold", 10) + 6
-        value_width = (
-            max(
-                stringWidth(
-                    _material_nowrap(it.get("Materiaal", "")), "Helvetica", 9
+    if is_raw_material_order:
+        col_fracs = [0.32, 0.24, 0.16, 0.12, 0.16]
+        col_widths = [usable_w * frac for frac in col_fracs]
+    else:
+        col_fracs = [0.22, 0.40, 0.14, 0.06, 0.09, 0.09]
+        desc_w = usable_w * col_fracs[1]
+        mat_w = usable_w * col_fracs[2]
+        try:
+            header_width = stringWidth("Materiaal", "Helvetica-Bold", 10) + 6
+            value_width = (
+                max(
+                    stringWidth(
+                        _material_nowrap(it.get("Materiaal", "")), "Helvetica", 9
+                    )
+                    for it in items
                 )
-                for it in items
+                + 6
             )
-            + 6
-        )
-        max_mat = max(header_width, value_width)
-        if max_mat < mat_w:
-            desc_w += mat_w - max_mat
-            mat_w = max_mat
-        elif max_mat > mat_w:
-            desc_w -= max_mat - mat_w
-            mat_w = max_mat
-        min_desc_w = 40 * mm
-        if desc_w < min_desc_w:
-            diff = min_desc_w - desc_w
-            desc_w = min_desc_w
-            mat_w = max(0, mat_w - diff)
-    except Exception:
-        pass
-    col_widths = [
-        usable_w * col_fracs[0],
-        desc_w,
-        mat_w,
-        usable_w * col_fracs[3],
-        usable_w * col_fracs[4],
-        usable_w * col_fracs[5],
-    ]
+            max_mat = max(header_width, value_width)
+            if max_mat < mat_w:
+                desc_w += mat_w - max_mat
+                mat_w = max_mat
+            elif max_mat > mat_w:
+                desc_w -= max_mat - mat_w
+                mat_w = max_mat
+            min_desc_w = 40 * mm
+            if desc_w < min_desc_w:
+                diff = min_desc_w - desc_w
+                desc_w = min_desc_w
+                mat_w = max(0, mat_w - diff)
+        except Exception:
+            pass
+        col_widths = [
+            usable_w * col_fracs[0],
+            desc_w,
+            mat_w,
+            usable_w * col_fracs[3],
+            usable_w * col_fracs[4],
+            usable_w * col_fracs[5],
+        ]
 
     tbl = LongTable(data, colWidths=col_widths, repeatRows=1)
-    tbl.setStyle(
-        TableStyle(
+    style_cmds = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(MIAMI_PINK)),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 10),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+    ]
+    if is_raw_material_order:
+        style_cmds.append(("ALIGN", (2, 0), (4, -1), "RIGHT"))
+    else:
+        style_cmds.extend(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(MIAMI_PINK)),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, 0), 10),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("ALIGN", (2, 0), (5, 0), "RIGHT"),
                 ("ALIGN", (2, 1), (5, -1), "RIGHT"),
-                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
-                ("LEFTPADDING", (0, 0), (-1, -1), 3),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-                ("TOPPADDING", (0, 0), (-1, -1), 2),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
             ]
         )
-    )
+    if total_row_index is not None:
+        style_cmds.append(("FONTNAME", (0, total_row_index), (-1, total_row_index), "Helvetica-Bold"))
+    tbl.setStyle(TableStyle(style_cmds))
     story.append(tbl)
 
     if footer_note is None:
@@ -1248,7 +1289,7 @@ def generate_packlist_pdf(
 
 def write_order_excel(
     path: str,
-    items: List[Dict[str, str]],
+    items: List[Dict[str, object]],
     company_info: Dict[str, str] | None = None,
     supplier: Supplier | None = None,
     delivery: DeliveryAddress | None = None,
@@ -1259,12 +1300,25 @@ def write_order_excel(
     context_label: str | None = None,
     context_kind: str = "productie",
     order_remark: str | None = None,
+    total_weight_kg: float | None = None,
 ) -> None:
     """Write order information to an Excel file with header info."""
-    df = pd.DataFrame(
-        items,
-        columns=["PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht"],
-    )
+    context_kind_clean = (_to_str(context_kind) or "productie").strip() or "productie"
+    is_raw_material_order = context_kind_clean.lower().startswith("brutemateriaal")
+    if is_raw_material_order:
+        df_columns = ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
+    else:
+        df_columns = ["PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht"]
+    df = pd.DataFrame(items, columns=df_columns)
+    if is_raw_material_order and total_weight_kg is not None:
+        total_row = {
+            "Profiel": "Totaal",
+            "Materiaal": "",
+            "Lengte": "",
+            "St.": "",
+            "kg": _format_weight_kg(total_weight_kg),
+        }
+        df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
 
     doc_type_text = (_to_str(doc_type).strip() or "Bestelbon")
     doc_type_text_lower = doc_type_text.lower()
@@ -1285,8 +1339,7 @@ def write_order_excel(
         header_lines.append(("Nummer", str(doc_number)))
     header_lines.append(("Datum", today))
     if context_label:
-        kind_clean = (_to_str(context_kind) or "productie").strip() or "productie"
-        header_lines.append((kind_clean.capitalize(), context_label))
+        header_lines.append((context_kind_clean.capitalize(), context_label))
     if project_number:
         header_lines.append(("Projectnummer", project_number))
     if project_name:
@@ -1366,14 +1419,21 @@ def write_order_excel(
                 ws.cell(row=r, column=1, value=label)
                 ws.cell(row=r, column=2, value=value)
 
-            left_cols = {"PartNumber", "Description"}
-            wrap_cols = {"PartNumber", "Description"}
+            if is_raw_material_order:
+                left_cols = {"Profiel", "Materiaal"}
+                wrap_cols = {"Profiel", "Materiaal"}
+            else:
+                left_cols = {"PartNumber", "Description"}
+                wrap_cols = {"PartNumber", "Description"}
             for col_idx, col_name in enumerate(df.columns, start=1):
                 align = Alignment(
                     horizontal="left" if col_name in left_cols else "right",
                     wrap_text=col_name in wrap_cols,
                 )
-                if col_name == "PartNumber" and get_column_letter is not None:
+                if (
+                    col_name in {"PartNumber", "Profiel"}
+                    and get_column_letter is not None
+                ):
                     column_letter = get_column_letter(col_idx)
                     ws.column_dimensions[column_letter].width = 25
                 for row in range(startrow + 1, startrow + len(df) + 2):
@@ -2051,6 +2111,7 @@ def copy_per_production_and_orders(
                     context_label=prod,
                     context_kind="Brutemateriaal",
                     order_remark=opticutter_remark_text or None,
+                    total_weight_kg=opticutter_total_weight,
                 )
 
                 opticutter_pdf_requested = (
@@ -2082,6 +2143,7 @@ def copy_per_production_and_orders(
                         project_name=project_name,
                         label_kind="brutemateriaal",
                         order_remark=opticutter_remark_text or None,
+                        total_weight_kg=opticutter_total_weight,
                     )
                 except Exception as exc:
                     print(

@@ -1,6 +1,8 @@
 import datetime
 import os
+import openpyxl
 import pandas as pd
+import pytest
 
 from opticutter import analyse_profiles
 from orders import copy_per_production_and_orders
@@ -92,3 +94,27 @@ def test_opticutter_files_written(tmp_path):
         and f.lower().endswith(".xlsx")
     ]
     assert raw_docs, "Bestelbon brutemateriaal XLS ontbreekt"
+
+    raw_order_path = prod1_dir / sorted(raw_docs)[0]
+    wb = openpyxl.load_workbook(raw_order_path)
+    ws = wb.active
+    header_row = None
+    for row_idx in range(1, ws.max_row + 1):
+        if ws.cell(row=row_idx, column=1).value == "Profiel":
+            header_row = row_idx
+            break
+    assert header_row is not None, "Profiel header niet gevonden"
+    headers = [ws.cell(row=header_row, column=col).value for col in range(1, 6)]
+    assert headers == ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
+
+    total_row_idx = None
+    for row_idx in range(header_row + 1, ws.max_row + 1):
+        if ws.cell(row=row_idx, column=1).value == "Totaal":
+            total_row_idx = row_idx
+            break
+    assert total_row_idx is not None, "Totaal gewicht rij ontbreekt"
+    total_weight_cell = ws.cell(row=total_row_idx, column=5).value
+    total_weight_value = str(total_weight_cell or "").replace(",", ".")
+    assert total_weight_value, "Totaal gewicht waarde ontbreekt"
+    expected_total = round(order_df["Totaal gewicht (kg)"].fillna(0).sum(), 2)
+    assert pytest.approx(float(total_weight_value), abs=0.01) == expected_total
