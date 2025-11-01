@@ -31,6 +31,7 @@ from orders import (
     _WINDOWS_MAX_PATH,
 )
 from app_settings import AppSettings
+from opticutter import analyse_profiles
 
 DEFAULT_ALLOWED_EXTS = "pdf,dxf,dwg,step,stp"
 
@@ -516,6 +517,9 @@ def cli_copy_per_prod(args):
     )
 
     path_limit_warnings: List[str] = []
+    opticutter_analysis = analyse_profiles(df)
+    if opticutter_analysis.error and not opticutter_analysis.profiles:
+        print(f"[INFO] Opticutter: {opticutter_analysis.error}")
     cnt, chosen = copy_per_production_and_orders(
         args.source,
         bundle.bundle_dir,
@@ -545,6 +549,8 @@ def cli_copy_per_prod(args):
         finish_delivery_map=finish_delivery_map,
         bom_source_path=args.bom,
         path_limit_warnings=path_limit_warnings,
+        opticutter_analysis=opticutter_analysis,
+        opticutter_choices={},
     )
     print("Gekopieerd:", cnt)
     for k, v in chosen.items():

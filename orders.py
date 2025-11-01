@@ -53,6 +53,12 @@ try:
 except Exception:
     REPORTLAB_OK = False
 
+from opticutter import (
+    OpticutterAnalysis,
+    OpticutterExportContext,
+    OpticutterSelection,
+    prepare_opticutter_export,
+)
 
 MIAMI_PINK = "#FF77FF"
 DEFAULT_FOOTER_NOTE = (
@@ -1159,6 +1165,8 @@ def copy_per_production_and_orders(
     finish_remarks_map: Dict[str, str] | None = None,
     bom_source_path: str | None = None,
     path_limit_warnings: List[str] | None = None,
+    opticutter_analysis: OpticutterAnalysis | None = None,
+    opticutter_choices: Mapping[tuple[str, str, str], str] | None = None,
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
 
@@ -1174,7 +1182,13 @@ def copy_per_production_and_orders(
     ``remarks_map`` and ``finish_remarks_map`` allow passing additional notes for
     productions and finishes respectively. When provided, the remarks are added
     to the generated Excel- en PDF-bestanden.
-    
+
+    ``opticutter_analysis`` en ``opticutter_choices`` laten toe om per
+    productie extra Opticutter-overzichten en bestelbonnen voor brutemateriaal
+    aan te maken. Wanneer beide waarden aanwezig zijn wordt in iedere
+    productiemap een Opticutter-werkboek met scenario-informatie en een
+    besteloverzicht voor volle lengten geschreven.
+
     If ``zip_parts`` is ``True``, all export files for a production are
     collected into a single ``<production>.zip`` archive instead of individual
     ``PartNumber`` files. Only the generated order Excel/PDF remain unzipped in
@@ -1243,6 +1257,15 @@ def copy_per_production_and_orders(
         if text:
             finish_remarks_clean[key] = text
     finish_remarks_map = finish_remarks_clean
+
+    opticutter_context: OpticutterExportContext | None = None
+    if opticutter_analysis is not None and opticutter_analysis.profiles:
+        try:
+            opticutter_context = prepare_opticutter_export(
+                opticutter_analysis, opticutter_choices or {}
+            )
+        except Exception:
+            opticutter_context = None
 
     prod_to_rows: Dict[str, List[dict]] = defaultdict(list)
     step_entries: Dict[str, List[tuple[str, str]]] = defaultdict(list)
@@ -1340,6 +1363,10 @@ def copy_per_production_and_orders(
     for prod, rows in prod_to_rows.items():
         prod_folder = os.path.join(dest, prod)
         os.makedirs(prod_folder, exist_ok=True)
+
+        opticutter_prod = None
+        if opticutter_context is not None:
+            opticutter_prod = opticutter_context.productions.get(prod)
 
         raw_doc_type = doc_type_map.get(prod, "Bestelbon")
         doc_type = _to_str(raw_doc_type).strip() or "Bestelbon"
@@ -1502,6 +1529,163 @@ def copy_per_production_and_orders(
                 )
             except Exception as e:
                 print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
+
+        if opticutter_prod is not None and opticutter_prod.selections:
+            scenario_rows: List[Dict[str, object]] = []
+            piece_rows: List[Dict[str, object]] = []
+            order_rows: List[Dict[str, object]] = []
+
+            for selection in opticutter_prod.selections:
+                profile = selection.profile
+                result = selection.result
+                stock_length = selection.stock_length_mm
+
+                remark_lines: List[str] = []
+                if selection.choice == "input":
+                    remark_lines.append("Per stuk zagen (inputlengte).")
+                elif result is None:
+                    remark_lines.append("Geen scenario berekend.")
+                elif result.dropped_pieces:
+                    remark_lines.append(
+                        f"Niet mogelijk: {result.dropped_pieces} stuk(ken) zijn te lang."
+                    )
+                if selection.blockers:
+                    remark_lines.append("Blokkerende stukken:")
+                    remark_lines.extend(f"- {text}" for text in selection.blockers)
+                elif result is not None and not result.dropped_pieces:
+                    remark_lines.append(
+                        f"Totale restlengte: {result.waste_mm:.0f} mm."
+                    )
+                scenario_remark = "\n".join(remark_lines).strip()
+
+                bars_value = (
+                    result.bars if result is not None and not result.dropped_pieces else None
+                )
+                waste_pct_value = (
+                    round(result.waste_pct, 1)
+                    if result is not None and not result.dropped_pieces
+                    else None
+                )
+                waste_mm_value = (
+                    round(result.waste_mm, 0)
+                    if result is not None and not result.dropped_pieces
+                    else None
+                )
+                cuts_value = (
+                    result.cuts if result is not None and not result.dropped_pieces else None
+                )
+
+                scenario_rows.append(
+                    {
+                        "Profiel": profile.profile,
+                        "Materiaal": profile.material,
+                        "Productie": profile.production,
+                        "Keuze": selection.choice_label,
+                        "Staaflengte (mm)": stock_length,
+                        "Aantal staven": bars_value,
+                        "Afval %": waste_pct_value,
+                        "Afval (mm)": waste_mm_value,
+                        "Zaagsneden": cuts_value,
+                        "Opmerking": scenario_remark,
+                    }
+                )
+
+                for piece in profile.pieces:
+                    piece_rows.append(
+                        {
+                            "Profiel": profile.profile,
+                            "Materiaal": profile.material,
+                            "Productie": profile.production,
+                            "Onderdeel": piece.label,
+                            "Lengte (mm)": piece.length_mm,
+                        }
+                    )
+
+                if selection.choice == "input":
+                    order_remark_text = "Handmatig zagen per stuk."
+                elif result is None or result.dropped_pieces:
+                    blockers_text = "; ".join(selection.blockers)
+                    if blockers_text:
+                        order_remark_text = (
+                            f"Handmatig controleren – {blockers_text}"
+                        )
+                    else:
+                        order_remark_text = (
+                            "Handmatig controleren – scenario niet mogelijk."
+                        )
+                else:
+                    order_remark_text = (
+                        f"Afval {result.waste_pct:.1f}% ({result.waste_mm:.0f} mm)."
+                    )
+
+                total_length_m = None
+                if (
+                    result is not None
+                    and not result.dropped_pieces
+                    and stock_length is not None
+                ):
+                    total_length_m = round(result.bars * stock_length / 1000, 3)
+
+                order_rows.append(
+                    {
+                        "Profiel": profile.profile,
+                        "Materiaal": profile.material,
+                        "Productie": profile.production,
+                        "Keuze": selection.choice_label,
+                        "Staaflengte (mm)": stock_length,
+                        "Aantal staven": bars_value,
+                        "Totale lengte (m)": total_length_m,
+                        "Opmerking": order_remark_text,
+                    }
+                )
+
+            settings_rows = [
+                {"Parameter": "Exportdatum", "Waarde": today},
+                {
+                    "Parameter": "Zaagbreedte (kerf) [mm]",
+                    "Waarde": opticutter_context.kerf_mm if opticutter_context else None,
+                },
+            ]
+            if opticutter_context and opticutter_context.custom_stock_mm is not None:
+                settings_rows.append(
+                    {
+                        "Parameter": "Aangepaste staaflengte (mm)",
+                        "Waarde": opticutter_context.custom_stock_mm,
+                    }
+                )
+            settings_rows.append({"Parameter": "Productie", "Waarde": prod})
+
+            scenario_df = pd.DataFrame(scenario_rows)
+            pieces_df = pd.DataFrame(piece_rows)
+            settings_df = pd.DataFrame(settings_rows)
+            order_df = pd.DataFrame(order_rows)
+
+            opticutter_requested = f"Opticutter_{prod}_{today}.xlsx"
+            opticutter_filename = _fit_filename_within_path(
+                prod_folder, opticutter_requested
+            )
+            _record_path_warning(
+                prod_folder,
+                opticutter_requested,
+                opticutter_filename,
+                context=f"Productie '{prod}' – Opticutter",
+            )
+            opticutter_path = os.path.join(prod_folder, opticutter_filename)
+            with pd.ExcelWriter(opticutter_path) as writer:
+                scenario_df.to_excel(writer, sheet_name="Scenario", index=False)
+                pieces_df.to_excel(writer, sheet_name="Stukken", index=False)
+                settings_df.to_excel(writer, sheet_name="Instellingen", index=False)
+
+            order_requested = f"Bestelbon_brutemateriaal_{prod}_{today}.xlsx"
+            order_filename = _fit_filename_within_path(prod_folder, order_requested)
+            _record_path_warning(
+                prod_folder,
+                order_requested,
+                order_filename,
+                context=f"Productie '{prod}' – Brutebestelling",
+            )
+            order_path = os.path.join(prod_folder, order_filename)
+            order_df.to_excel(order_path, index=False)
 
         packlist_items = step_entries.get(prod, [])
         if packlist_items and REPORTLAB_OK:
