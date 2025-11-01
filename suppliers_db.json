@@ -1517,20 +1517,11 @@
     }
   ],
   "defaults_by_production": {
+    "Weld assembly": "Productora",
+    "Assembly": "Productora",
     "Sheetmetal": "Productora",
-    "Milling": "AMR",
-    "Lasercutting": "Productora",
-    "Cutting": "Productora",
-    "Tube laser L": "AB-Matic (Hi-Motion)",
-    "Tube laser": "AB-Matic (Hi-Motion)",
-    "Sheetmetal +4m": "SPCM",
-    "_Onbekend": "AB-Matic (Hi-Motion)",
-    "Weld assembly": "Productora"
+    "Tube Laser": "Productora",
+    "Lasercutting": "Productora"
   },
-  "defaults_by_finish": {
-    "Finish-Galvanised": "Van Gils Coating - Beringen/Maasmechelen",
-    "Finish-Paint": "AB-Matic (Hi-Motion)",
-    "Finish-Paint-RAL7016": "AB-Matic (Hi-Motion)",
-    "Finish-Grind excentric": "Productora"
-  }
+  "defaults_by_finish": {}
 }
