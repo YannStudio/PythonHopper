@@ -1517,11 +1517,20 @@
     }
   ],
   "defaults_by_production": {
-    "Weld assembly": "Productora",
-    "Assembly": "Productora",
-    "Sheetmetal": "Productora",
-    "Tube Laser": "Productora",
-    "Lasercutting": "Productora"
+    "Tube laser L": "Productora",
+    "Tube laser L::Opticutter": "Saey",
+    "Tube laser": "Productora",
+    "Tube laser::Opticutter": "MCB",
+    "Spare part::Opticutter": "Joriside",
+    "Cutting::Opticutter": "MCB",
+    "Lasercutting": "AB-Matic (Hi-Motion)",
+    "Sheetmetal +4m": "AB-Matic (Hi-Motion)",
+    "Sheetmetal": "AB-Matic (Hi-Motion)",
+    "Cutting": "AB-Matic (Hi-Motion)",
+    "_Onbekend": "AB-Matic (Hi-Motion)"
   },
-  "defaults_by_finish": {}
+  "defaults_by_finish": {
+    "Finish-Paint": "AB-Matic (Hi-Motion)",
+    "Finish-Paint-RAL7016": "AB-Matic (Hi-Motion)"
+  }
 }
