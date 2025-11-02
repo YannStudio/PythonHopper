@@ -59,7 +59,7 @@ if TYPE_CHECKING:
 
 CLIENT_LOGO_DIR = Path("client_logos")
 # A softer brand accent for manufacturing-focused actions.
-MANUFACT_BRAND_COLOR = "#F9C74F"
+MANUFACT_BRAND_COLOR = "#FADFA8"
 
 
 def _norm(text: str) -> str:
@@ -3513,9 +3513,10 @@ def start_gui():
             act = tk.Frame(main); act.pack(fill="x", padx=8, pady=8)
             button_style = dict(
                 bg=MANUFACT_BRAND_COLOR,
-                activebackground="#F7B538",
+                activebackground="#F4C46C",
                 fg="black",
                 activeforeground="black",
+                highlightthickness=0,
             )
             tk.Button(
                 act, text="Kopieer zonder submappen", command=self._copy_flat, **button_style

@@ -721,6 +721,7 @@ class BOMCustomTab(ttk.Frame):
             activebackground="#F4C46C",
             fg="black",
             activeforeground="black",
+            highlightthickness=0,
         )
 
         update_btn = tk.Button(
