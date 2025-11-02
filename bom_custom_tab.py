@@ -716,15 +716,26 @@ class BOMCustomTab(ttk.Frame):
         bar = ttk.Frame(self)
         bar.pack(fill="x", padx=8, pady=6)
 
-        clear_btn = ttk.Button(bar, text="Clear Custom BOM", command=self._confirm_clear)
+        button_style = dict(
+            bg="#F9C74F",
+            activebackground="#F7B538",
+            fg="black",
+            activeforeground="black",
+        )
+
+        update_btn = tk.Button(
+            bar, text="Update Main BOM", command=self._push_to_main, **button_style
+        )
+        update_btn.pack(side="left", padx=(0, 6))
+        self._update_main_btn = update_btn
+
+        clear_btn = tk.Button(
+            bar, text="Clear BOM", command=self._confirm_clear, **button_style
+        )
         clear_btn.pack(side="left", padx=(0, 6))
 
         export_btn = ttk.Button(bar, text="Exporteren", command=self._export_temp)
         export_btn.pack(side="left", padx=(0, 6))
-
-        update_btn = ttk.Button(bar, text="Update Main BOM", command=self._push_to_main)
-        update_btn.pack(side="left", padx=(0, 6))
-        self._update_main_btn = update_btn
 
         template_btn = ttk.Button(bar, text="Download template", command=self._download_template)
         template_btn.pack(side="left", padx=(0, 6))
