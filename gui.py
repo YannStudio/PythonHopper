@@ -3305,13 +3305,18 @@ def start_gui():
             self.settings_frame.configure(padx=12, pady=12)
             self.nb.add(self.settings_frame, text="")
             self.nb.tab(self.settings_frame, padding=(0, 0, 0, 0))
+            self.nb.tab(self.settings_frame, state="hidden")
+
+            def _show_settings_tab() -> None:
+                self.nb.tab(self.settings_frame, state="normal")
+                self.nb.select(self.settings_frame)
 
             self.settings_tab_button = ttk.Button(
                 tabs_container,
                 text="⚙ Settings",
                 style="SettingsTab.TButton",
                 takefocus=False,
-                command=lambda: self.nb.select(self.settings_frame),
+                command=_show_settings_tab,
             )
 
             def _place_settings_tab_button(_event=None) -> None:
@@ -3330,8 +3335,10 @@ def start_gui():
             def _sync_settings_tab_button_state(_event=None) -> None:
                 if self.nb.select() == str(self.settings_frame):
                     self.settings_tab_button.state(["selected"])
+                    self.nb.tab(self.settings_frame, state="normal")
                 else:
                     self.settings_tab_button.state(["!selected"])
+                    self.nb.tab(self.settings_frame, state="hidden")
 
             tabs_container.bind("<Configure>", _place_settings_tab_button, add="+")
             self.nb.bind("<Configure>", _place_settings_tab_button, add="+")
