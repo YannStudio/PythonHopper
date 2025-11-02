@@ -2346,18 +2346,31 @@ def start_gui():
                 wraplength=520,
             ).grid(row=0, column=0, sticky="ew", padx=12, pady=(8, 4))
 
-            self.footer_note_text = tk.Text(
-                footer_frame,
-                height=5,
-                wrap="word",
-            )
-            self.footer_note_text.grid(
+            footer_text_container = tk.Frame(footer_frame)
+            footer_text_container.grid(
                 row=1,
                 column=0,
                 sticky="nsew",
                 padx=12,
                 pady=(0, 4),
             )
+            footer_text_container.columnconfigure(0, weight=1)
+            footer_text_container.rowconfigure(0, weight=1)
+
+            self.footer_note_text = tk.Text(
+                footer_text_container,
+                height=5,
+                wrap="word",
+            )
+            self.footer_note_text.grid(row=0, column=0, sticky="nsew")
+
+            footer_scrollbar = tk.Scrollbar(
+                footer_text_container,
+                orient="vertical",
+                command=self.footer_note_text.yview,
+            )
+            footer_scrollbar.grid(row=0, column=1, sticky="ns")
+            self.footer_note_text.configure(yscrollcommand=footer_scrollbar.set)
             self._reload_footer_note()
 
             footer_btns = tk.Frame(footer_frame)
