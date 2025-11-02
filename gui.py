@@ -3517,6 +3517,11 @@ def start_gui():
                 fg="black",
                 activeforeground="black",
                 highlightthickness=0,
+                highlightbackground=MANUFACT_BRAND_COLOR,
+                highlightcolor=MANUFACT_BRAND_COLOR,
+                takefocus=False,
+                padx=14,
+                pady=6,
             )
             tk.Button(
                 act, text="Kopieer zonder submappen", command=self._copy_flat, **button_style
