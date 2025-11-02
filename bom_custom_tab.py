@@ -717,8 +717,8 @@ class BOMCustomTab(ttk.Frame):
         bar.pack(fill="x", padx=8, pady=6)
 
         button_style = dict(
-            bg="#F9C74F",
-            activebackground="#F7B538",
+            bg="#FADFA8",
+            activebackground="#F4C46C",
             fg="black",
             activeforeground="black",
         )
@@ -734,11 +734,18 @@ class BOMCustomTab(ttk.Frame):
         )
         clear_btn.pack(side="left", padx=(0, 6))
 
-        export_btn = ttk.Button(bar, text="Exporteren", command=self._export_temp)
-        export_btn.pack(side="left", padx=(0, 6))
+        export_container = ttk.Frame(bar)
+        export_container.pack(side="right", padx=(6, 0))
 
-        template_btn = ttk.Button(bar, text="Download template", command=self._download_template)
-        template_btn.pack(side="left", padx=(0, 6))
+        export_btn = ttk.Button(
+            export_container, text="Exporteren", command=self._export_temp
+        )
+        export_btn.pack(side="left")
+
+        template_btn = ttk.Button(
+            export_container, text="Download template", command=self._download_template
+        )
+        template_btn.pack(side="left", padx=(6, 0))
 
         undo_btn = ttk.Button(bar, text="Undo", command=self._handle_toolbar_undo)
         undo_btn.pack(side="left", padx=(0, 6))
