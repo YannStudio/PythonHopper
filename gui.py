@@ -2779,6 +2779,22 @@ def start_gui():
                     style.configure("Tab.TButton", padding=(12, 4))
 
             _configure_tab_like_button_style()
+            tab_button_config = style.configure("Tab.TButton")
+            if tab_button_config:
+                style.configure("SettingsTab.TButton", **tab_button_config)
+            for opt in (
+                "background",
+                "foreground",
+                "bordercolor",
+                "focuscolor",
+                "lightcolor",
+                "darkcolor",
+                "relief",
+            ):
+                states = style.map("Tab.TButton", opt)
+                if states:
+                    style.map("SettingsTab.TButton", **{opt: states})
+
             self.title("Filehopper")
             self.minsize(1024, 720)
 
@@ -3287,7 +3303,41 @@ def start_gui():
 
             self.settings_frame = SettingsFrame(self.nb, self)
             self.settings_frame.configure(padx=12, pady=12)
-            self.nb.add(self.settings_frame, text="⚙ Settings")
+            self.nb.add(self.settings_frame, text="")
+            self.nb.tab(self.settings_frame, padding=(0, 0, 0, 0))
+
+            self.settings_tab_button = ttk.Button(
+                tabs_container,
+                text="⚙ Settings",
+                style="SettingsTab.TButton",
+                takefocus=False,
+                command=lambda: self.nb.select(self.settings_frame),
+            )
+
+            def _place_settings_tab_button(_event=None) -> None:
+                try:
+                    button_height = self.settings_tab_button.winfo_reqheight()
+                except tk.TclError:
+                    return
+                try:
+                    tab_height = self.nb.winfo_reqheight() - self.nb.winfo_height()
+                except tk.TclError:
+                    tab_height = button_height
+                vertical_offset = max(0, (tab_height - button_height) // 2)
+                self.settings_tab_button.place(relx=1.0, x=-2, y=vertical_offset, anchor="ne")
+                self.settings_tab_button.lift()
+
+            def _sync_settings_tab_button_state(_event=None) -> None:
+                if self.nb.select() == str(self.settings_frame):
+                    self.settings_tab_button.state(["selected"])
+                else:
+                    self.settings_tab_button.state(["!selected"])
+
+            tabs_container.bind("<Configure>", _place_settings_tab_button, add="+")
+            self.nb.bind("<Configure>", _place_settings_tab_button, add="+")
+            self.nb.bind("<<NotebookTabChanged>>", _sync_settings_tab_button_state, add="+")
+            self.after_idle(_place_settings_tab_button)
+            self.after_idle(_sync_settings_tab_button_state)
 
             # Top folders
             top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
