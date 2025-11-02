@@ -3301,22 +3301,53 @@ def start_gui():
             self.suppliers_frame.configure(padx=12, pady=12)
             self.nb.add(self.suppliers_frame, text="Leverancier beheer")
 
-            self.settings_frame = SettingsFrame(self.nb, self)
-            self.settings_frame.configure(padx=12, pady=12)
-            self.nb.add(self.settings_frame, text="")
-            self.nb.tab(self.settings_frame, padding=(0, 0, 0, 0))
-            self.nb.tab(self.settings_frame, state="hidden")
+            self._settings_window: Optional["tk.Toplevel"] = None
 
-            def _show_settings_tab() -> None:
-                self.nb.tab(self.settings_frame, state="normal")
-                self.nb.select(self.settings_frame)
+            def _cleanup_settings_window(_event=None) -> None:
+                if self._settings_window is None:
+                    return
+                if _event is not None and getattr(_event, "widget", None) is not self._settings_window:
+                    return
+                self._settings_window = None
+                self.settings_tab_button.state(["!selected"])
+
+            def _show_settings_window() -> None:
+                if self._settings_window is not None:
+                    try:
+                        self._settings_window.deiconify()
+                        self._settings_window.lift()
+                        self._settings_window.focus_set()
+                        self.settings_tab_button.state(["selected"])
+                        return
+                    except tk.TclError:
+                        self._settings_window = None
+
+                win = tk.Toplevel(self)
+                win.title("Instellingen")
+                win.transient(self)
+                _place_window_near_parent(win, self)
+
+                frame = SettingsFrame(win, self)
+                frame.pack(fill="both", expand=True)
+
+                def _on_close() -> None:
+                    try:
+                        win.destroy()
+                    except tk.TclError:
+                        pass
+
+                win.protocol("WM_DELETE_WINDOW", _on_close)
+                win.bind("<Destroy>", _cleanup_settings_window, add="+")
+
+                self._settings_window = win
+                self.settings_tab_button.state(["selected"])
 
             self.settings_tab_button = ttk.Button(
                 tabs_container,
                 text="⚙ Settings",
                 style="SettingsTab.TButton",
                 takefocus=False,
-                command=_show_settings_tab,
+                command=_show_settings_window,
             )
 
             def _place_settings_tab_button(_event=None) -> None:
@@ -3332,19 +3363,9 @@ def start_gui():
                 self.settings_tab_button.place(relx=1.0, x=-2, y=vertical_offset, anchor="ne")
                 self.settings_tab_button.lift()
 
-            def _sync_settings_tab_button_state(_event=None) -> None:
-                if self.nb.select() == str(self.settings_frame):
-                    self.settings_tab_button.state(["selected"])
-                    self.nb.tab(self.settings_frame, state="normal")
-                else:
-                    self.settings_tab_button.state(["!selected"])
-                    self.nb.tab(self.settings_frame, state="hidden")
-
             tabs_container.bind("<Configure>", _place_settings_tab_button, add="+")
             self.nb.bind("<Configure>", _place_settings_tab_button, add="+")
-            self.nb.bind("<<NotebookTabChanged>>", _sync_settings_tab_button_state, add="+")
             self.after_idle(_place_settings_tab_button)
-            self.after_idle(_sync_settings_tab_button_state)
 
             # Top folders
             top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
