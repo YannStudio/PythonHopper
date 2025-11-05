@@ -5644,6 +5644,7 @@ def start_gui():
                             combine_per_production=bool(
                                 self.combine_pdf_per_production_var.get()
                             ),
+                            bom_source_path=self.bom_source_path,
                         )
                     except ModuleNotFoundError:
                         self.status_var.set("PyPDF2 ontbreekt")

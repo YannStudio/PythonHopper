@@ -2411,6 +2411,7 @@ def combine_pdfs_from_source(
     project_name: str | None = None,
     timestamp: datetime.datetime | None = None,
     combine_per_production: bool = True,
+    bom_source_path: str | None = None,
 ) -> CombinedPdfResult:
     """Combine PDF drawing files per production directly from ``source``.
 
@@ -2434,6 +2435,18 @@ def combine_pdfs_from_source(
     date_str = date_str or datetime.date.today().strftime("%Y-%m-%d")
     idx = _build_file_index(source, [".pdf"])
 
+    related_bom_pdfs: List[str] = []
+    if bom_source_path:
+        seen_related: set[str] = set()
+        for path in find_related_bom_exports(bom_source_path, idx):
+            if not path.lower().endswith(".pdf"):
+                continue
+            if path in seen_related:
+                continue
+            related_bom_pdfs.append(path)
+            seen_related.add(path)
+    related_bom_pdfs.sort(key=lambda x: os.path.basename(x).lower())
+
     prod_to_files: Dict[str, List[str]] = defaultdict(list)
     for _, row in bom_df.iterrows():
         prod = (row.get("Production") or "").strip() or "_Onbekend"
@@ -2450,11 +2463,24 @@ def combine_pdfs_from_source(
 
     if combine_per_production:
         for prod, files in prod_to_files.items():
-            if not files:
+            candidates = list(files)
+            if not candidates and not related_bom_pdfs:
                 continue
             merger = PdfMerger()
-            for path in sorted(files, key=lambda x: os.path.basename(x).lower()):
+            appended: set[str] = set()
+            for path in related_bom_pdfs:
+                if path in appended:
+                    continue
                 merger.append(path)
+                appended.add(path)
+            for path in sorted(candidates, key=lambda x: os.path.basename(x).lower()):
+                if path in appended:
+                    continue
+                merger.append(path)
+                appended.add(path)
+            if not appended:
+                merger.close()
+                continue
             out_name = f"{prod}_{date_str}_combined.pdf"
             safe_name = _fit_filename_within_path(out_dir, out_name)
             merger.write(os.path.join(out_dir, safe_name))
@@ -2463,6 +2489,10 @@ def combine_pdfs_from_source(
     else:
         ordered_files: List[str] = []
         seen = set()
+        for path in related_bom_pdfs:
+            if path not in seen:
+                ordered_files.append(path)
+                seen.add(path)
         for files in prod_to_files.values():
             for path in files:
                 if path not in seen:
@@ -2470,7 +2500,14 @@ def combine_pdfs_from_source(
                     seen.add(path)
         if ordered_files:
             merger = PdfMerger()
-            for path in sorted(ordered_files, key=lambda x: os.path.basename(x).lower()):
+            ordered_files.sort(key=lambda x: os.path.basename(x).lower())
+            if related_bom_pdfs:
+                related_sorted = sorted(related_bom_pdfs, key=lambda x: os.path.basename(x).lower())
+                related_set = set(related_sorted)
+                # Preserve related PDFs at the front by reordering ``ordered_files``.
+                rest = [path for path in ordered_files if path not in related_set]
+                ordered_files = related_sorted + rest
+            for path in ordered_files:
                 merger.append(path)
             out_name = f"BOM_{date_str}_combined.pdf"
             safe_name = _fit_filename_within_path(out_dir, out_name)
