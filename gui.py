@@ -5611,7 +5611,18 @@ def start_gui():
                 self._last_supplier_selection_state = sel_frame.serialize_state()
             except Exception:
                 pass
-            self.nb.add(sel_frame, text="Bestelbonnen")
+            settings_frame = getattr(self, "settings_frame", None)
+            if settings_frame is not None:
+                try:
+                    settings_index = self.nb.index(settings_frame)
+                except tk.TclError:
+                    settings_index = None
+            else:
+                settings_index = None
+            if settings_index is None:
+                self.nb.add(sel_frame, text="Bestelbonnen")
+            else:
+                self.nb.insert(settings_index, sel_frame, text="Bestelbonnen")
             self.nb.select(sel_frame)
 
             if sup_search_restore and hasattr(sup_frame, "restore_search_filter"):
