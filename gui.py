@@ -4026,6 +4026,7 @@ def start_gui():
                 return
 
             empty_label = getattr(self, "opticutter_selection_empty_label", None)
+            scrollbar = getattr(self, "opticutter_selection_scroll", None)
             rows = self.opticutter_profile_selection_rows
             labels = self.opticutter_profile_selection_labels
             vars_map = self.opticutter_profile_selection_vars
@@ -4051,11 +4052,15 @@ def start_gui():
             if not entries:
                 if empty_label is not None and not empty_label.winfo_ismapped():
                     empty_label.pack(fill="x", padx=8, pady=8)
+                if scrollbar is not None and scrollbar.winfo_ismapped():
+                    scrollbar.pack_forget()
                 custom_lengths.clear()
                 return
 
             if empty_label is not None:
                 empty_label.pack_forget()
+            if scrollbar is not None and not scrollbar.winfo_ismapped():
+                scrollbar.pack(side="left", fill="y", padx=(0, 8))
 
             for key, profile_name, material_name, production_name, options, selection in entries:
                 row = rows.get(key)
