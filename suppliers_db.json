@@ -1517,8 +1517,21 @@
     }
   ],
   "defaults_by_production": {
+<<<<<<< HEAD
+<<<<<<< HEAD
+    "Weld assembly": "AB-Matic (Hi-Motion)"
+  },
+  "defaults_by_finish": {
+    "Finish-Galva _ Paint-RAL 9005": "Van Gils Coating - Beringen/Maasmechelen"
+  }
+=======
+    "Weld assembly": "Productora",
+    "Assembly": "Productora",
+=======
+>>>>>>> update
     "Sheetmetal": "Productora",
     "Lasercutting": "Productora"
   },
   "defaults_by_finish": {}
+>>>>>>> update
 }

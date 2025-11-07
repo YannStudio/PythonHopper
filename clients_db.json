@@ -5,31 +5,45 @@
       "address": "Belgiëlei 85, 2018 Antwerpen",
       "vat": "BE0700.304.366",
       "email": "jeroen@manufact.be",
-      "favorite": true
+      "favorite": true,
+      "logo_path": null,
+      "logo_crop": null
     },
     {
       "name": "Tecno Art bvba",
       "address": "Kwade Weide 13, 2920 Kalmthout",
       "vat": "BE0460.973.296",
-      "email": "jeroen@tecnoart.be"
+      "email": "jeroen@tecnoart.be",
+      "favorite": false,
+      "logo_path": null,
+      "logo_crop": null
     },
     {
       "name": "SLIM P BV",
       "address": "Veilingstraat 13, 2320 Hoogstraten – België",
       "vat": "BE0801.098.353",
-      "email": "info@slimp.be"
+      "email": "info@slimp.be",
+      "favorite": false,
+      "logo_path": null,
+      "logo_crop": null
     },
     {
       "name": "StuvEx International NV",
       "address": "Heiveldekens 8, 2550 Kontich – België",
       "vat": "BE0428.678.335",
-      "email": "info@stuvex.be"
+      "email": "info@stuvex.be",
+      "favorite": false,
+      "logo_path": null,
+      "logo_crop": null
     },
     {
       "name": "Alton",
       "address": "Zagerijstraat 2, 2240 Massenhoven",
       "vat": "BE0749.799.013",
-      "email": "cadservice@alton.be"
+      "email": "cadservice@alton.be",
+      "favorite": false,
+      "logo_path": null,
+      "logo_crop": null
     }
   ]
 }
