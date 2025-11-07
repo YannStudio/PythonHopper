@@ -3128,7 +3128,12 @@ def start_gui():
             ]
 
             for index, (section_key, section_title) in enumerate(summary_sections):
-                section_frame = tk.LabelFrame(scenarios_frame, text=section_title)
+                section_frame = tk.LabelFrame(
+                    scenarios_frame,
+                    text=section_title,
+                    padx=8,
+                    pady=8,
+                )
                 padx = (0, 8) if index < len(summary_sections) - 1 else (0, 0)
                 section_frame.pack(side="left", fill="both", expand=True, padx=padx)
 
