@@ -3230,7 +3230,6 @@ def start_gui():
                 orient="vertical",
                 command=self.opticutter_selection_canvas.yview,
             )
-            self.opticutter_selection_scroll.pack(side="left", fill="y", padx=(0, 8))
             self.opticutter_selection_canvas.configure(
                 yscrollcommand=self.opticutter_selection_scroll.set
             )
