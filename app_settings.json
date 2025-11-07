@@ -1,15 +1,8 @@
 {
-<<<<<<< HEAD
   "source_folder": "",
   "dest_folder": "",
   "project_number": "",
   "project_name": "",
-=======
-  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/De Lijn/53. De Lijn - Infopunten/cad",
-  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/De Lijn/53. De Lijn - Infopunten/export/00. Frames",
-  "project_number": "53",
-  "project_name": "DeLijn-ElectroBoards",
->>>>>>> update
   "file_extensions": [
     {
       "key": "pdf",
