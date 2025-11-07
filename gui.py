@@ -3084,7 +3084,10 @@ def start_gui():
             summary_container.pack(fill="both", expand=True)
 
             base_frame = tk.LabelFrame(
-                summary_container, text="Profiel, materiaal en productie"
+                summary_container,
+                text="Profiel, materiaal en productie",
+                padx=8,
+                pady=8,
             )
             base_frame.pack(side="left", fill="both", padx=(0, 8))
 
