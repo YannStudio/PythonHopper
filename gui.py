@@ -3105,7 +3105,7 @@ def start_gui():
                 base_tree.column(
                     col,
                     anchor=anchor,
-                    stretch=False,
+                    stretch=True,
                     minwidth=minwidth,
                 )
 
@@ -3151,7 +3151,7 @@ def start_gui():
                     tree.column(
                         col,
                         anchor=anchor,
-                        stretch=False,
+                        stretch=True,
                         minwidth=minwidth,
                     )
 
