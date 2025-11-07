@@ -3078,18 +3078,51 @@ def start_gui():
             self.opticutter_profile_summary_trees: Dict[str, "ttk.Treeview"] = {}
             self.opticutter_summary_tooltips: Dict[str, _TreeTooltipManager] = {}
             self.opticutter_summary_column_map: Dict[str, Dict[str, str]] = {}
-            self.opticutter_summary_frames: Dict[str, "tk.LabelFrame"] = {}
+            self.opticutter_summary_frames: Dict[str, "_SummarySectionFrame"] = {}
+
+            class _SummarySectionFrame:
+                def __init__(self, container: "tk.Frame", label: "tk.Label") -> None:
+                    self.container = container
+                    self.label = label
+
+                def configure(self, **kwargs) -> None:
+                    text = kwargs.pop("text", None)
+                    if text is not None:
+                        self.label.configure(text=text)
+                    if kwargs:
+                        self.container.configure(**kwargs)
+
+            def _create_summary_section(parent: "tk.Widget", title: str) -> tuple[
+                _SummarySectionFrame, "tk.Frame"
+            ]:
+                frame = tk.Frame(parent, borderwidth=1, relief="groove")
+                frame.pack_propagate(False)
+                bg = parent.cget("bg")
+                header_font = tkfont.nametofont("TkDefaultFont").copy()
+                header_font.configure(weight="bold")
+                label = tk.Label(
+                    frame,
+                    text=title,
+                    anchor="w",
+                    font=header_font,
+                    bg=bg,
+                )
+                label._font = header_font  # type: ignore[attr-defined]
+                label.place(x=10, y=0)
+                content = tk.Frame(frame, borderwidth=0)
+                content.pack(fill="both", expand=True, padx=8, pady=(4, 8))
+                return _SummarySectionFrame(frame, label), content
 
             summary_container = tk.Frame(opticutter_summary_frame)
             summary_container.pack(fill="both", expand=True)
 
-            base_frame = tk.LabelFrame(
-                summary_container, text="Profiel, materiaal en productie"
+            base_section, base_inner = _create_summary_section(
+                summary_container, "Profiel, materiaal en productie"
             )
-            base_frame.pack(side="left", fill="both", padx=(0, 8))
+            base_section.container.pack(side="left", fill="both", padx=(0, 8))
 
             base_tree = ttk.Treeview(
-                base_frame,
+                base_inner,
                 columns=summary_common_columns,
                 show="headings",
                 selectmode="none",
@@ -3107,7 +3140,7 @@ def start_gui():
                 )
 
             base_scrollbar = ttk.Scrollbar(
-                base_frame, orient="vertical", command=base_tree.yview
+                base_inner, orient="vertical", command=base_tree.yview
             )
             base_tree.configure(yscrollcommand=base_scrollbar.set)
             base_tree.pack(side="left", fill="both", expand=True, padx=(0, 4))
@@ -3125,12 +3158,14 @@ def start_gui():
             ]
 
             for index, (section_key, section_title) in enumerate(summary_sections):
-                section_frame = tk.LabelFrame(scenarios_frame, text=section_title)
+                section, section_inner = _create_summary_section(
+                    scenarios_frame, section_title
+                )
                 padx = (0, 8) if index < len(summary_sections) - 1 else (0, 0)
-                section_frame.pack(side="left", fill="both", expand=True, padx=padx)
+                section.container.pack(side="left", fill="both", expand=True, padx=padx)
 
                 tree = ttk.Treeview(
-                    section_frame,
+                    section_inner,
                     columns=summary_metric_columns,
                     show="headings",
                     selectmode="none",
@@ -3148,7 +3183,7 @@ def start_gui():
                     )
 
                 scrollbar = ttk.Scrollbar(
-                    section_frame, orient="vertical", command=tree.yview
+                    section_inner, orient="vertical", command=tree.yview
                 )
                 tree.configure(yscrollcommand=scrollbar.set)
                 tree.pack(side="left", fill="both", expand=True, padx=(0, 4))
@@ -3159,7 +3194,7 @@ def start_gui():
                 self.opticutter_summary_column_map[section_key] = {
                     name: f"#{idx + 1}" for idx, name in enumerate(summary_metric_columns)
                 }
-                self.opticutter_summary_frames[section_key] = section_frame
+                self.opticutter_summary_frames[section_key] = section
 
             selection_section = tk.LabelFrame(
                 self.opticutter_frame, text="Lengte selectie per profiel"
