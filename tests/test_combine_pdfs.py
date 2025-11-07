@@ -3,14 +3,14 @@ import zipfile
 from pathlib import Path
 
 import pandas as pd
-from PyPDF2 import PdfWriter
+from PyPDF2 import PdfReader, PdfWriter
 
 from orders import combine_pdfs_per_production, combine_pdfs_from_source
 
 
-def _blank_pdf(path: Path) -> None:
+def _blank_pdf(path: Path, *, width: float = 72, height: float = 72) -> None:
     writer = PdfWriter()
-    writer.add_blank_page(width=72, height=72)
+    writer.add_blank_page(width=width, height=height)
     with path.open("wb") as fh:
         writer.write(fh)
 
@@ -172,4 +172,85 @@ def test_combine_from_source_single_pdf(tmp_path):
     assert sorted(p.name for p in out_dir.glob("*.pdf")) == [
         "BOM_2023-01-01_combined.pdf",
     ]
+
+
+def test_combine_from_source_includes_related_bom_pdf(tmp_path):
+    source = tmp_path / "src"
+    dest = tmp_path / "out"
+    bom_source = tmp_path / "Project123-BOM.xlsx"
+    source.mkdir()
+    dest.mkdir()
+    bom_source.write_text("dummy")
+
+    _blank_pdf(source / "Project123.pdf", width=150)
+    _blank_pdf(source / "part1.pdf", width=80)
+    _blank_pdf(source / "part2.pdf", width=90)
+
+    bom_df = pd.DataFrame(
+        [
+            {"PartNumber": "part1", "Production": "prod1"},
+            {"PartNumber": "part2", "Production": "prod1"},
+        ]
+    )
+
+    result = combine_pdfs_from_source(
+        str(source),
+        bom_df,
+        str(dest),
+        "2023-01-01",
+        bom_source_path=str(bom_source),
+    )
+
+    out_dir = Path(result.output_dir)
+    combined_path = out_dir / "prod1_2023-01-01_combined.pdf"
+    reader = PdfReader(str(combined_path))
+
+    assert result.count == 1
+    assert len(reader.pages) == 3
+    assert float(reader.pages[0].mediabox.width) == 150
+    assert {float(reader.pages[1].mediabox.width), float(reader.pages[2].mediabox.width)} == {
+        80,
+        90,
+    }
+
+
+def test_combine_all_pdfs_places_related_first(tmp_path):
+    source = tmp_path / "src"
+    dest = tmp_path / "out"
+    bom_source = tmp_path / "Project123-BOM.xlsx"
+    source.mkdir()
+    dest.mkdir()
+    bom_source.write_text("dummy")
+
+    _blank_pdf(source / "Project123.pdf", width=130)
+    _blank_pdf(source / "part1.pdf", width=85)
+    _blank_pdf(source / "part2.pdf", width=95)
+
+    bom_df = pd.DataFrame(
+        [
+            {"PartNumber": "part1", "Production": "prod1"},
+            {"PartNumber": "part2", "Production": "prod2"},
+        ]
+    )
+
+    result = combine_pdfs_from_source(
+        str(source),
+        bom_df,
+        str(dest),
+        "2023-01-01",
+        combine_per_production=False,
+        bom_source_path=str(bom_source),
+    )
+
+    out_dir = Path(result.output_dir)
+    combined_path = out_dir / "BOM_2023-01-01_combined.pdf"
+    reader = PdfReader(str(combined_path))
+
+    assert result.count == 1
+    assert len(reader.pages) == 3
+    assert float(reader.pages[0].mediabox.width) == 130
+    assert {
+        float(reader.pages[1].mediabox.width),
+        float(reader.pages[2].mediabox.width),
+    } == {85, 95}
 

@@ -1518,6 +1518,7 @@
   ],
   "defaults_by_production": {
 <<<<<<< HEAD
+<<<<<<< HEAD
     "Weld assembly": "AB-Matic (Hi-Motion)"
   },
   "defaults_by_finish": {
@@ -1526,8 +1527,9 @@
 =======
     "Weld assembly": "Productora",
     "Assembly": "Productora",
+=======
+>>>>>>> update
     "Sheetmetal": "Productora",
-    "Tube Laser": "Productora",
     "Lasercutting": "Productora"
   },
   "defaults_by_finish": {}

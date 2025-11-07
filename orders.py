@@ -53,6 +53,14 @@ try:
 except Exception:
     REPORTLAB_OK = False
 
+from opticutter import (
+    OpticutterAnalysis,
+    OpticutterExportContext,
+    OpticutterProductionExport,
+    OpticutterSelection,
+    parse_length_to_mm,
+    prepare_opticutter_export,
+)
 
 MIAMI_PINK = "#FF77FF"
 DEFAULT_FOOTER_NOTE = (
@@ -92,6 +100,34 @@ class CombinedPdfResult:
 
     count: int
     output_dir: str
+
+
+@dataclass(slots=True)
+class OpticutterProfileStats:
+    """Aggregated length/weight data for a single Opticutter profile."""
+
+    total_length_mm: float = 0.0
+    total_weight_kg: float = 0.0
+
+    @property
+    def weight_per_mm(self) -> float | None:
+        if self.total_length_mm <= 0 or self.total_weight_kg <= 0:
+            return None
+        return self.total_weight_kg / self.total_length_mm
+
+
+@dataclass(slots=True)
+class OpticutterOrderComputation:
+    """Computed data for Opticutter raw material exports per production."""
+
+    scenario_rows: List[Dict[str, object]]
+    piece_rows: List[Dict[str, object]]
+    order_rows: List[Dict[str, object]]
+    raw_items: List[Dict[str, object]]
+    has_valid_bars: bool
+    total_bars: int
+    total_weight_kg: float | None
+    selection_count: int
 
 
 _INVALID_PATH_CHARS = set('<>:"/\\|?*')
@@ -461,6 +497,8 @@ def _should_place_remark_in_delivery_block(
 
 FINISH_KEY_PREFIX = "finish::"
 PRODUCTION_KEY_PREFIX = "production::"
+OPTICUTTER_KEY_PREFIX = "opticutter::"
+OPTICUTTER_DEFAULT_SUFFIX = "::Opticutter"
 
 
 def _normalize_finish_folder(value: object) -> str:
@@ -484,6 +522,8 @@ def _selection_key(kind: str, identifier: str) -> str:
     identifier = _to_str(identifier)
     if kind == "finish":
         return f"{FINISH_KEY_PREFIX}{identifier}"
+    if kind == "opticutter":
+        return f"{OPTICUTTER_KEY_PREFIX}{identifier}"
     return f"{PRODUCTION_KEY_PREFIX}{identifier}"
 
 
@@ -499,6 +539,19 @@ def make_finish_selection_key(finish_key: str) -> str:
     return _selection_key("finish", finish_key)
 
 
+def make_opticutter_selection_key(name: str) -> str:
+    """Return a stable selection key for Opticutter raw material orders."""
+
+    return _selection_key("opticutter", name)
+
+
+def make_opticutter_default_key(name: str) -> str:
+    """Return the SuppliersDB default key for Opticutter raw material orders."""
+
+    base = _to_str(name)
+    return f"{base}{OPTICUTTER_DEFAULT_SUFFIX}" if base else OPTICUTTER_DEFAULT_SUFFIX
+
+
 def parse_selection_key(key: str) -> Tuple[str, str]:
     """Return the kind (``"production"``/``"finish"``) and identifier."""
 
@@ -506,8 +559,260 @@ def parse_selection_key(key: str) -> Tuple[str, str]:
         return "finish", key[len(FINISH_KEY_PREFIX) :]
     if key.startswith(PRODUCTION_KEY_PREFIX):
         return "production", key[len(PRODUCTION_KEY_PREFIX) :]
+    if key.startswith(OPTICUTTER_KEY_PREFIX):
+        return "opticutter", key[len(OPTICUTTER_KEY_PREFIX) :]
     # Fallback for legacy keys without explicit prefix.
     return "production", key
+
+
+def _parse_weight_kg(value: object) -> float | None:
+    """Parse a textual kilogram value to float."""
+
+    text = _to_str(value).strip()
+    if not text:
+        return None
+    text = text.replace(" ", "")
+    text = text.replace(",", ".")
+    cleaned = []
+    for ch in text:
+        if ch.isdigit():
+            cleaned.append(ch)
+        elif ch in "+-":
+            if not cleaned:
+                cleaned.append(ch)
+        elif ch == ".":
+            cleaned.append(".")
+    if not cleaned:
+        return None
+    candidate = "".join(cleaned)
+    if candidate.count(".") > 1:
+        first = candidate.find(".")
+        candidate = candidate[: first + 1] + candidate[first + 1 :].replace(".", "")
+    if candidate in {"", "+", "-", ".", "+.", "-."}:
+        return None
+    try:
+        return float(candidate)
+    except Exception:
+        return None
+
+
+def _collect_opticutter_profile_stats(
+    bom_df: pd.DataFrame,
+) -> Dict[tuple[str, str, str], OpticutterProfileStats]:
+    """Aggregate length and weight per (profile, material, production)."""
+
+    stats: Dict[tuple[str, str, str], OpticutterProfileStats] = defaultdict(
+        OpticutterProfileStats
+    )
+    for _, row in bom_df.iterrows():
+        profile_name = _to_str(row.get("Profile")).strip()
+        if not profile_name:
+            continue
+        material_name = _to_str(row.get("Materiaal") or row.get("Material")).strip()
+        production_name = _to_str(row.get("Production")).strip() or "_Onbekend"
+        weight_each = _parse_weight_kg(row.get("Gewicht"))
+        if weight_each is None or weight_each <= 0:
+            continue
+        qty_raw = row.get("Aantal", 0)
+        try:
+            qty = int(float(qty_raw))
+        except Exception:
+            qty = 0
+        if qty <= 0:
+            continue
+        length_mm: int | None = None
+        length_value = row.get("Length profile mm")
+        if length_value is not None and not pd.isna(length_value):
+            try:
+                length_mm = int(round(float(length_value)))
+            except Exception:
+                length_mm = None
+        if length_mm is None or length_mm <= 0:
+            length_mm = parse_length_to_mm(row.get("Length profile"))
+        if length_mm is None or length_mm <= 0:
+            continue
+        key = (profile_name, material_name, production_name)
+        entry = stats[key]
+        entry.total_length_mm += float(length_mm) * qty
+        entry.total_weight_kg += float(weight_each) * qty
+    return stats
+
+
+def _format_weight_kg(value: float | None) -> str:
+    if value is None:
+        return ""
+    return f"{value:.2f}"
+
+
+def _compute_opticutter_order_exports(
+    opticutter_prod: OpticutterProductionExport,
+    stats_map: Mapping[tuple[str, str, str], OpticutterProfileStats],
+) -> OpticutterOrderComputation:
+    scenario_rows: List[Dict[str, object]] = []
+    piece_rows: List[Dict[str, object]] = []
+    order_rows: List[Dict[str, object]] = []
+    raw_items: List[Dict[str, object]] = []
+    has_valid_bars = False
+    total_bars = 0
+    total_weight_known = False
+    total_weight_kg = 0.0
+    selection_count = 0
+
+    for selection in opticutter_prod.selections:
+        selection_count += 1
+        profile = selection.profile
+        result = selection.result
+        stock_length = selection.stock_length_mm
+
+        remark_lines: List[str] = []
+        if selection.choice == "input":
+            remark_lines.append("Per stuk zagen (inputlengte).")
+        elif result is None:
+            remark_lines.append("Geen scenario berekend.")
+        elif result.dropped_pieces:
+            remark_lines.append(
+                f"Niet mogelijk: {result.dropped_pieces} stuk(ken) zijn te lang."
+            )
+        if selection.blockers:
+            remark_lines.append("Blokkerende stukken:")
+            remark_lines.extend(f"- {text}" for text in selection.blockers)
+        elif result is not None and not result.dropped_pieces:
+            remark_lines.append(f"Totale restlengte: {result.waste_mm:.0f} mm.")
+        scenario_remark = "\n".join(remark_lines).strip()
+
+        bars_value = (
+            result.bars if result is not None and not result.dropped_pieces else None
+        )
+        waste_pct_value = (
+            round(result.waste_pct, 1)
+            if result is not None and not result.dropped_pieces
+            else None
+        )
+        waste_mm_value = (
+            round(result.waste_mm, 0)
+            if result is not None and not result.dropped_pieces
+            else None
+        )
+        cuts_value = (
+            result.cuts if result is not None and not result.dropped_pieces else None
+        )
+
+        scenario_rows.append(
+            {
+                "Profiel": profile.profile,
+                "Materiaal": profile.material,
+                "Productie": profile.production,
+                "Keuze": selection.choice_label,
+                "Staaflengte (mm)": stock_length,
+                "Aantal staven": bars_value,
+                "Afval %": waste_pct_value,
+                "Afval (mm)": waste_mm_value,
+                "Zaagsneden": cuts_value,
+                "Opmerking": scenario_remark,
+            }
+        )
+
+        for piece in profile.pieces:
+            piece_rows.append(
+                {
+                    "Profiel": profile.profile,
+                    "Materiaal": profile.material,
+                    "Productie": profile.production,
+                    "Onderdeel": piece.label,
+                    "Lengte (mm)": piece.length_mm,
+                }
+            )
+
+        if selection.choice == "input":
+            order_remark_text = "Handmatig zagen per stuk."
+        elif result is None or result.dropped_pieces:
+            blockers_text = "; ".join(selection.blockers)
+            if blockers_text:
+                order_remark_text = f"Handmatig controleren – {blockers_text}"
+            else:
+                order_remark_text = "Handmatig controleren – scenario niet mogelijk."
+        else:
+            order_remark_text = (
+                f"Afval {result.waste_pct:.1f}% ({result.waste_mm:.0f} mm)."
+            )
+
+        total_length_m = None
+        if result is not None and not result.dropped_pieces and stock_length is not None:
+            total_length_m = round(result.bars * stock_length / 1000, 3)
+
+        weight_total = None
+        stats_key = (profile.profile, profile.material, profile.production)
+        stats_entry = stats_map.get(stats_key)
+        if (
+            stats_entry is not None
+            and stats_entry.weight_per_mm is not None
+            and stock_length is not None
+            and bars_value
+        ):
+            weight_total = (
+                float(stats_entry.weight_per_mm)
+                * float(stock_length)
+                * float(bars_value)
+                / 1.0
+            )
+            total_weight_known = True
+            total_weight_kg += weight_total
+
+        order_rows.append(
+            {
+                "Profiel": profile.profile,
+                "Materiaal": profile.material,
+                "Productie": profile.production,
+                "Keuze": selection.choice_label,
+                "Staaflengte (mm)": stock_length,
+                "Aantal staven": bars_value,
+                "Totale lengte (m)": total_length_m,
+                "Totaal gewicht (kg)": round(weight_total, 3)
+                if weight_total is not None
+                else None,
+                "Opmerking": order_remark_text,
+            }
+        )
+
+        if bars_value and bars_value > 0:
+            has_valid_bars = True
+            total_bars += int(bars_value)
+            raw_items.append(
+                {
+                    "Profiel": profile.profile or "Brutemateriaal",
+                    "Materiaal": profile.material,
+                    "Lengte": stock_length or "",
+                    "St.": int(bars_value),
+                    "kg": _format_weight_kg(weight_total),
+                }
+            )
+
+    summary_weight = total_weight_kg if total_weight_known else None
+    return OpticutterOrderComputation(
+        scenario_rows=scenario_rows,
+        piece_rows=piece_rows,
+        order_rows=order_rows,
+        raw_items=raw_items,
+        has_valid_bars=has_valid_bars,
+        total_bars=total_bars,
+        total_weight_kg=summary_weight,
+        selection_count=selection_count,
+    )
+
+
+def compute_opticutter_order_details(
+    bom_df: pd.DataFrame,
+    context: OpticutterExportContext | None,
+) -> Dict[str, OpticutterOrderComputation]:
+    """Return computed Opticutter export data per production."""
+
+    if context is None:
+        return {}
+    stats_map = _collect_opticutter_profile_stats(bom_df)
+    details: Dict[str, OpticutterOrderComputation] = {}
+    for prod_key, export in context.productions.items():
+        details[prod_key] = _compute_opticutter_order_exports(export, stats_map)
+    return details
 
 
 def describe_finish_combo(
@@ -551,7 +856,7 @@ def generate_pdf_order_platypus(
     company_info: Dict[str, object],
     supplier: Supplier | None,
     production: str,
-    items: List[Dict[str, str]],
+    items: List[Dict[str, object]],
     doc_type: str = "Bestelbon",
     doc_number: str | None = None,
     footer_note: Optional[str] = None,
@@ -560,6 +865,7 @@ def generate_pdf_order_platypus(
     project_name: str | None = None,
     label_kind: str = "productie",
     order_remark: str | None = None,
+    total_weight_kg: float | None = None,
 ) -> None:
     """Generate a PDF order using ReportLab if available.
 
@@ -608,6 +914,7 @@ def generate_pdf_order_platypus(
     doc_lines.append(f"Datum: {today}")
     label_kind_clean = (_to_str(label_kind) or "productie").strip() or "productie"
     label_title = label_kind_clean[0].upper() + label_kind_clean[1:]
+    is_raw_material_order = label_kind_clean.lower().startswith("brutemateriaal")
     if production:
         doc_lines.append(f"{label_title}: {production}")
     if project_number:
@@ -752,7 +1059,10 @@ def generate_pdf_order_platypus(
     story.append(Spacer(0, 10))
 
     # Headers and data
-    head = ["PartNumber", "Omschrijving", "Materiaal", "St.", "m²", "kg"]
+    if is_raw_material_order:
+        head = ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
+    else:
+        head = ["PartNumber", "Omschrijving", "Materiaal", "St.", "m²", "kg"]
 
     def wrap_cell_html(val: str, small=False, align=None):
         style = ParagraphStyle(
@@ -767,82 +1077,124 @@ def generate_pdf_order_platypus(
         return Paragraph(str(val if (val is not None) else ""), style)
 
     data = [head]
-    for it in items:
-        pn = _pn_wrap_25(it.get("PartNumber", ""))
-        desc = _to_str(it.get("Description", ""))
-        mat = _material_nowrap(it.get("Materiaal", ""))
-        qty = it.get("Aantal", "")
-        opp = _num_to_2dec(it.get("Oppervlakte", ""))
-        gew = _num_to_2dec(it.get("Gewicht", ""))
-        data.append(
-            [
-                wrap_cell_html(pn, small=False, align="LEFT"),
-                wrap_cell_html(desc, small=False, align="LEFT"),
-                wrap_cell_html(mat, small=True, align="RIGHT"),
-                wrap_cell_html(qty, small=True, align="RIGHT"),
-                wrap_cell_html(opp, small=True, align="RIGHT"),
-                wrap_cell_html(gew, small=True, align="RIGHT"),
+    total_row_index: int | None = None
+    if is_raw_material_order:
+        for it in items:
+            prof = _to_str(it.get("Profiel", ""))
+            mat = _to_str(it.get("Materiaal", ""))
+            length_val = it.get("Lengte", "")
+            length = _to_str("" if length_val in (None, "") else length_val)
+            qty_val = it.get("St.", "")
+            qty = _to_str("" if qty_val in (None, "") else qty_val)
+            weight_val = it.get("kg", "")
+            weight = _num_to_2dec(weight_val)
+            data.append(
+                [
+                    wrap_cell_html(prof, small=False, align="LEFT"),
+                    wrap_cell_html(mat, small=False, align="LEFT"),
+                    wrap_cell_html(length, small=True, align="RIGHT"),
+                    wrap_cell_html(qty, small=True, align="RIGHT"),
+                    wrap_cell_html(weight, small=True, align="RIGHT"),
+                ]
+            )
+        if total_weight_kg is not None:
+            total_row_index = len(data)
+            total_row = [
+                wrap_cell_html("Totaal", small=False, align="LEFT"),
+                wrap_cell_html("", small=False, align="LEFT"),
+                wrap_cell_html("", small=True, align="RIGHT"),
+                wrap_cell_html("", small=True, align="RIGHT"),
+                wrap_cell_html(_num_to_2dec(total_weight_kg), small=True, align="RIGHT"),
             ]
-        )
+            data.append(total_row)
+            total_row_index = len(data) - 1
+    else:
+        for it in items:
+            pn = _pn_wrap_25(it.get("PartNumber", ""))
+            desc = _to_str(it.get("Description", ""))
+            mat = _material_nowrap(it.get("Materiaal", ""))
+            qty = it.get("Aantal", "")
+            opp = _num_to_2dec(it.get("Oppervlakte", ""))
+            gew = _num_to_2dec(it.get("Gewicht", ""))
+            data.append(
+                [
+                    wrap_cell_html(pn, small=False, align="LEFT"),
+                    wrap_cell_html(desc, small=False, align="LEFT"),
+                    wrap_cell_html(mat, small=True, align="RIGHT"),
+                    wrap_cell_html(qty, small=True, align="RIGHT"),
+                    wrap_cell_html(opp, small=True, align="RIGHT"),
+                    wrap_cell_html(gew, small=True, align="RIGHT"),
+                ]
+            )
 
     usable_w = width - 2 * margin
-    col_fracs = [0.22, 0.40, 0.14, 0.06, 0.09, 0.09]
-    desc_w = usable_w * col_fracs[1]
-    mat_w = usable_w * col_fracs[2]
-    try:
-        header_width = stringWidth("Materiaal", "Helvetica-Bold", 10) + 6
-        value_width = (
-            max(
-                stringWidth(
-                    _material_nowrap(it.get("Materiaal", "")), "Helvetica", 9
+    if is_raw_material_order:
+        col_fracs = [0.32, 0.24, 0.16, 0.12, 0.16]
+        col_widths = [usable_w * frac for frac in col_fracs]
+    else:
+        col_fracs = [0.22, 0.40, 0.14, 0.06, 0.09, 0.09]
+        desc_w = usable_w * col_fracs[1]
+        mat_w = usable_w * col_fracs[2]
+        try:
+            header_width = stringWidth("Materiaal", "Helvetica-Bold", 10) + 6
+            value_width = (
+                max(
+                    stringWidth(
+                        _material_nowrap(it.get("Materiaal", "")), "Helvetica", 9
+                    )
+                    for it in items
                 )
-                for it in items
+                + 6
             )
-            + 6
-        )
-        max_mat = max(header_width, value_width)
-        if max_mat < mat_w:
-            desc_w += mat_w - max_mat
-            mat_w = max_mat
-        elif max_mat > mat_w:
-            desc_w -= max_mat - mat_w
-            mat_w = max_mat
-        min_desc_w = 40 * mm
-        if desc_w < min_desc_w:
-            diff = min_desc_w - desc_w
-            desc_w = min_desc_w
-            mat_w = max(0, mat_w - diff)
-    except Exception:
-        pass
-    col_widths = [
-        usable_w * col_fracs[0],
-        desc_w,
-        mat_w,
-        usable_w * col_fracs[3],
-        usable_w * col_fracs[4],
-        usable_w * col_fracs[5],
-    ]
+            max_mat = max(header_width, value_width)
+            if max_mat < mat_w:
+                desc_w += mat_w - max_mat
+                mat_w = max_mat
+            elif max_mat > mat_w:
+                desc_w -= max_mat - mat_w
+                mat_w = max_mat
+            min_desc_w = 40 * mm
+            if desc_w < min_desc_w:
+                diff = min_desc_w - desc_w
+                desc_w = min_desc_w
+                mat_w = max(0, mat_w - diff)
+        except Exception:
+            pass
+        col_widths = [
+            usable_w * col_fracs[0],
+            desc_w,
+            mat_w,
+            usable_w * col_fracs[3],
+            usable_w * col_fracs[4],
+            usable_w * col_fracs[5],
+        ]
 
     tbl = LongTable(data, colWidths=col_widths, repeatRows=1)
-    tbl.setStyle(
-        TableStyle(
+    style_cmds = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(MIAMI_PINK)),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 10),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+    ]
+    if is_raw_material_order:
+        style_cmds.append(("ALIGN", (2, 0), (4, -1), "RIGHT"))
+    else:
+        style_cmds.extend(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(MIAMI_PINK)),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, 0), 10),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("ALIGN", (2, 0), (5, 0), "RIGHT"),
                 ("ALIGN", (2, 1), (5, -1), "RIGHT"),
-                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
-                ("LEFTPADDING", (0, 0), (-1, -1), 3),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-                ("TOPPADDING", (0, 0), (-1, -1), 2),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
             ]
         )
-    )
+    if total_row_index is not None:
+        style_cmds.append(("FONTNAME", (0, total_row_index), (-1, total_row_index), "Helvetica-Bold"))
+    tbl.setStyle(TableStyle(style_cmds))
     story.append(tbl)
 
     if footer_note is None:
@@ -937,7 +1289,7 @@ def generate_packlist_pdf(
 
 def write_order_excel(
     path: str,
-    items: List[Dict[str, str]],
+    items: List[Dict[str, object]],
     company_info: Dict[str, str] | None = None,
     supplier: Supplier | None = None,
     delivery: DeliveryAddress | None = None,
@@ -948,12 +1300,25 @@ def write_order_excel(
     context_label: str | None = None,
     context_kind: str = "productie",
     order_remark: str | None = None,
+    total_weight_kg: float | None = None,
 ) -> None:
     """Write order information to an Excel file with header info."""
-    df = pd.DataFrame(
-        items,
-        columns=["PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht"],
-    )
+    context_kind_clean = (_to_str(context_kind) or "productie").strip() or "productie"
+    is_raw_material_order = context_kind_clean.lower().startswith("brutemateriaal")
+    if is_raw_material_order:
+        df_columns = ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
+    else:
+        df_columns = ["PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht"]
+    df = pd.DataFrame(items, columns=df_columns)
+    if is_raw_material_order and total_weight_kg is not None:
+        total_row = {
+            "Profiel": "Totaal",
+            "Materiaal": "",
+            "Lengte": "",
+            "St.": "",
+            "kg": _format_weight_kg(total_weight_kg),
+        }
+        df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
 
     doc_type_text = (_to_str(doc_type).strip() or "Bestelbon")
     doc_type_text_lower = doc_type_text.lower()
@@ -974,8 +1339,7 @@ def write_order_excel(
         header_lines.append(("Nummer", str(doc_number)))
     header_lines.append(("Datum", today))
     if context_label:
-        kind_clean = (_to_str(context_kind) or "productie").strip() or "productie"
-        header_lines.append((kind_clean.capitalize(), context_label))
+        header_lines.append((context_kind_clean.capitalize(), context_label))
     if project_number:
         header_lines.append(("Projectnummer", project_number))
     if project_name:
@@ -1055,14 +1419,21 @@ def write_order_excel(
                 ws.cell(row=r, column=1, value=label)
                 ws.cell(row=r, column=2, value=value)
 
-            left_cols = {"PartNumber", "Description"}
-            wrap_cols = {"PartNumber", "Description"}
+            if is_raw_material_order:
+                left_cols = {"Profiel", "Materiaal"}
+                wrap_cols = {"Profiel", "Materiaal"}
+            else:
+                left_cols = {"PartNumber", "Description"}
+                wrap_cols = {"PartNumber", "Description"}
             for col_idx, col_name in enumerate(df.columns, start=1):
                 align = Alignment(
                     horizontal="left" if col_name in left_cols else "right",
                     wrap_text=col_name in wrap_cols,
                 )
-                if col_name == "PartNumber" and get_column_letter is not None:
+                if (
+                    col_name in {"PartNumber", "Profiel"}
+                    and get_column_letter is not None
+                ):
                     column_letter = get_column_letter(col_idx)
                     ws.column_dimensions[column_letter].width = 25
                 for row in range(startrow + 1, startrow + len(df) + 2):
@@ -1097,6 +1468,32 @@ def pick_supplier_for_production(
             if s.supplier.lower() == default.lower():
                 return s
     # Geen eerder geselecteerde leverancier onthouden: vul de placeholder in.
+    return Supplier(supplier=NO_SUPPLIER_PLACEHOLDER)
+
+
+def pick_supplier_for_opticutter(
+    prod: str,
+    db: SuppliersDB,
+    override_map: Dict[str, str],
+    suppliers_sorted: List[Supplier] | None = None,
+) -> Supplier:
+    """Select a supplier for Opticutter raw material orders."""
+
+    key = make_opticutter_default_key(prod)
+    name = override_map.get(prod)
+    sups = suppliers_sorted if suppliers_sorted is not None else db.suppliers_sorted()
+    if name is not None:
+        if not name.strip():
+            return Supplier(supplier="")
+        for s in sups:
+            if s.supplier.lower() == name.lower():
+                return s
+        return Supplier(supplier=name)
+    default = db.get_default(key)
+    if default:
+        for s in sups:
+            if s.supplier.lower() == default.lower():
+                return s
     return Supplier(supplier=NO_SUPPLIER_PLACEHOLDER)
 
 
@@ -1159,6 +1556,13 @@ def copy_per_production_and_orders(
     finish_remarks_map: Dict[str, str] | None = None,
     bom_source_path: str | None = None,
     path_limit_warnings: List[str] | None = None,
+    opticutter_analysis: OpticutterAnalysis | None = None,
+    opticutter_choices: Mapping[tuple[str, str, str], str] | None = None,
+    opticutter_override_map: Dict[str, str] | None = None,
+    opticutter_doc_type_map: Dict[str, str] | None = None,
+    opticutter_doc_num_map: Dict[str, str] | None = None,
+    opticutter_delivery_map: Dict[str, DeliveryAddress | None] | None = None,
+    opticutter_remarks_map: Dict[str, str] | None = None,
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
 
@@ -1174,7 +1578,17 @@ def copy_per_production_and_orders(
     ``remarks_map`` and ``finish_remarks_map`` allow passing additional notes for
     productions and finishes respectively. When provided, the remarks are added
     to the generated Excel- en PDF-bestanden.
-    
+
+    ``opticutter_analysis`` en ``opticutter_choices`` laten toe om per
+    productie extra Opticutter-overzichten en bestelbonnen voor brutemateriaal
+    aan te maken. Wanneer beide waarden aanwezig zijn wordt in iedere
+    productiemap een Opticutter-werkboek met scenario-informatie en een
+    besteloverzicht voor volle lengten geschreven. Extra kaarten voor
+    Opticutter-bestellingen kunnen voorzien worden via
+    ``opticutter_override_map``, ``opticutter_doc_type_map``,
+    ``opticutter_doc_num_map``, ``opticutter_delivery_map`` en
+    ``opticutter_remarks_map``.
+
     If ``zip_parts`` is ``True``, all export files for a production are
     collected into a single ``<production>.zip`` archive instead of individual
     ``PartNumber`` files. Only the generated order Excel/PDF remain unzipped in
@@ -1230,6 +1644,15 @@ def copy_per_production_and_orders(
     finish_doc_type_map = finish_doc_type_map or {}
     finish_doc_num_map = finish_doc_num_map or {}
     finish_delivery_map = finish_delivery_map or {}
+    opticutter_override_map = opticutter_override_map or {}
+    opticutter_doc_type_map = opticutter_doc_type_map or {}
+    opticutter_doc_num_map = opticutter_doc_num_map or {}
+    opticutter_delivery_map = opticutter_delivery_map or {}
+    opticutter_remarks_map = {
+        key: _to_str(value).strip()
+        for key, value in (opticutter_remarks_map or {}).items()
+        if _to_str(value).strip()
+    }
     remarks_clean: Dict[str, str] = {}
     for key, value in (remarks_map or {}).items():
         text = _to_str(value).strip()
@@ -1243,6 +1666,30 @@ def copy_per_production_and_orders(
         if text:
             finish_remarks_clean[key] = text
     finish_remarks_map = finish_remarks_clean
+
+    opticutter_context: OpticutterExportContext | None = None
+    if opticutter_analysis is not None and opticutter_analysis.profiles:
+        try:
+            opticutter_context = prepare_opticutter_export(
+                opticutter_analysis, opticutter_choices or {}
+            )
+        except Exception:
+            opticutter_context = None
+
+    opticutter_details_map: Dict[str, OpticutterOrderComputation] = {}
+    opticutter_stats_map: Dict[
+        tuple[str, str, str], OpticutterProfileStats
+    ] = {}
+    if opticutter_context is not None:
+        try:
+            opticutter_stats_map = _collect_opticutter_profile_stats(bom_df)
+            for prod_key, export in opticutter_context.productions.items():
+                opticutter_details_map[prod_key] = _compute_opticutter_order_exports(
+                    export, opticutter_stats_map
+                )
+        except Exception:
+            opticutter_details_map = {}
+            opticutter_stats_map = {}
 
     prod_to_rows: Dict[str, List[dict]] = defaultdict(list)
     step_entries: Dict[str, List[tuple[str, str]]] = defaultdict(list)
@@ -1340,6 +1787,12 @@ def copy_per_production_and_orders(
     for prod, rows in prod_to_rows.items():
         prod_folder = os.path.join(dest, prod)
         os.makedirs(prod_folder, exist_ok=True)
+
+        opticutter_prod = None
+        opticutter_comp: OpticutterOrderComputation | None = None
+        if opticutter_context is not None:
+            opticutter_prod = opticutter_context.productions.get(prod)
+            opticutter_comp = opticutter_details_map.get(prod)
 
         raw_doc_type = doc_type_map.get(prod, "Bestelbon")
         doc_type = _to_str(raw_doc_type).strip() or "Bestelbon"
@@ -1502,6 +1955,214 @@ def copy_per_production_and_orders(
                 )
             except Exception as e:
                 print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
+
+        opticutter_order_items: List[Dict[str, object]] = []
+        opticutter_total_weight: float | None = None
+        if opticutter_prod is not None and opticutter_prod.selections:
+            comp = opticutter_comp
+            if comp is None:
+                stats_map = opticutter_stats_map or {}
+                comp = _compute_opticutter_order_exports(opticutter_prod, stats_map)
+
+            settings_rows = [
+                {"Parameter": "Exportdatum", "Waarde": today},
+                {
+                    "Parameter": "Zaagbreedte (kerf) [mm]",
+                    "Waarde": opticutter_context.kerf_mm if opticutter_context else None,
+                },
+            ]
+            if opticutter_context and opticutter_context.custom_stock_mm is not None:
+                settings_rows.append(
+                    {
+                        "Parameter": "Aangepaste staaflengte (mm)",
+                        "Waarde": opticutter_context.custom_stock_mm,
+                    }
+                )
+            if comp.total_weight_kg is not None:
+                settings_rows.append(
+                    {
+                        "Parameter": "Totaal brutogewicht (kg)",
+                        "Waarde": round(comp.total_weight_kg, 2),
+                    }
+                )
+            settings_rows.append({"Parameter": "Productie", "Waarde": prod})
+
+            scenario_df = pd.DataFrame(comp.scenario_rows)
+            pieces_df = pd.DataFrame(comp.piece_rows)
+            settings_df = pd.DataFrame(settings_rows)
+            order_df = pd.DataFrame(comp.order_rows)
+
+            opticutter_requested = f"Opticutter_{prod}_{today}.xlsx"
+            opticutter_filename = _fit_filename_within_path(
+                prod_folder, opticutter_requested
+            )
+            _record_path_warning(
+                prod_folder,
+                opticutter_requested,
+                opticutter_filename,
+                context=f"Productie '{prod}' – Opticutter",
+            )
+            opticutter_path = os.path.join(prod_folder, opticutter_filename)
+            with pd.ExcelWriter(opticutter_path) as writer:
+                scenario_df.to_excel(writer, sheet_name="Scenario", index=False)
+                pieces_df.to_excel(writer, sheet_name="Stukken", index=False)
+                settings_df.to_excel(writer, sheet_name="Instellingen", index=False)
+                if not order_df.empty:
+                    order_df.to_excel(writer, sheet_name="Bestelling", index=False)
+
+            order_overview_path: str | None = None
+            should_write_order_overview = not order_df.empty
+            if should_write_order_overview:
+                order_requested = f"Bestelbon_brutemateriaal_{prod}_{today}.xlsx"
+                order_filename = _fit_filename_within_path(
+                    prod_folder, order_requested
+                )
+                _record_path_warning(
+                    prod_folder,
+                    order_requested,
+                    order_filename,
+                    context=f"Productie '{prod}' – Brutebestelling",
+                )
+                order_overview_path = os.path.join(prod_folder, order_filename)
+
+            opticutter_order_items = list(comp.raw_items)
+            opticutter_total_weight = comp.total_weight_kg
+
+        if opticutter_prod is not None and opticutter_prod.selections:
+            opticutter_sel_key = make_opticutter_selection_key(prod)
+            opticutter_supplier = pick_supplier_for_opticutter(
+                prod, db, opticutter_override_map, suppliers_sorted=suppliers_sorted
+            )
+            chosen[opticutter_sel_key] = opticutter_supplier.supplier
+            if remember_defaults and opticutter_supplier.supplier not in (
+                "",
+                "Onbekend",
+                NO_SUPPLIER_PLACEHOLDER,
+            ):
+                db.set_default(
+                    make_opticutter_default_key(prod), opticutter_supplier.supplier
+                )
+
+            opticutter_doc_type_raw = opticutter_doc_type_map.get(prod, "Bestelbon")
+            opticutter_doc_type = (
+                _to_str(opticutter_doc_type_raw).strip() or "Bestelbon"
+            )
+            opticutter_doc_num = _normalize_doc_number(
+                opticutter_doc_num_map.get(prod, ""), opticutter_doc_type
+            )
+            opticutter_prefix = _prefix_for_doc_type(opticutter_doc_type)
+            if (
+                opticutter_doc_num
+                and opticutter_prefix
+                and opticutter_doc_num.upper() == opticutter_prefix.upper()
+            ):
+                opticutter_doc_num = ""
+            opticutter_doc_token = (
+                _sanitize_component(opticutter_doc_num) if opticutter_doc_num else ""
+            )
+            opticutter_num_part = (
+                f"_{opticutter_doc_token}" if opticutter_doc_token else ""
+            )
+            opticutter_doc_lower = opticutter_doc_type.lower()
+            opticutter_is_standaard = opticutter_doc_lower.startswith("standaard")
+
+            opticutter_delivery = opticutter_delivery_map.get(prod)
+            opticutter_remark_text = opticutter_remarks_map.get(prod, "")
+            if opticutter_total_weight is not None:
+                weight_line = f"Totaal brutogewicht: {opticutter_total_weight:.2f} kg"
+                if opticutter_remark_text:
+                    if weight_line not in opticutter_remark_text:
+                        opticutter_remark_text = (
+                            f"{opticutter_remark_text}\n{weight_line}"
+                        )
+                else:
+                    opticutter_remark_text = weight_line
+
+            opticutter_supplier_name = _to_str(opticutter_supplier.supplier).strip()
+            supplier_for_opticutter_docs: Supplier | None = opticutter_supplier
+            delivery_for_opticutter_docs = opticutter_delivery
+            if opticutter_is_standaard and not opticutter_supplier_name:
+                supplier_for_opticutter_docs = None
+                delivery_for_opticutter_docs = None
+
+            should_generate_opticutter_order = (
+                bool(opticutter_order_items)
+                and (opticutter_supplier_name or opticutter_is_standaard)
+            )
+            if should_generate_opticutter_order:
+                should_write_order_overview = False
+
+                opticutter_excel_requested = (
+                    f"{opticutter_doc_type}{opticutter_num_part}_"
+                    f"{prod}_Brutemateriaal_{today}.xlsx"
+                )
+                opticutter_excel_filename = _fit_filename_within_path(
+                    prod_folder, opticutter_excel_requested
+                )
+                _record_path_warning(
+                    prod_folder,
+                    opticutter_excel_requested,
+                    opticutter_excel_filename,
+                    context=f"Productie '{prod}' – Brutemateriaal {opticutter_doc_type}",
+                )
+                opticutter_excel_path = os.path.join(
+                    prod_folder, opticutter_excel_filename
+                )
+                write_order_excel(
+                    opticutter_excel_path,
+                    opticutter_order_items,
+                    company,
+                    supplier_for_opticutter_docs,
+                    delivery_for_opticutter_docs,
+                    opticutter_doc_type,
+                    opticutter_doc_num or None,
+                    project_number=project_number,
+                    project_name=project_name,
+                    context_label=prod,
+                    context_kind="Brutemateriaal",
+                    order_remark=opticutter_remark_text or None,
+                    total_weight_kg=opticutter_total_weight,
+                )
+
+                opticutter_pdf_requested = (
+                    f"{opticutter_doc_type}{opticutter_num_part}_"
+                    f"{prod}_Brutemateriaal_{today}.pdf"
+                )
+                opticutter_pdf_filename = _fit_filename_within_path(
+                    prod_folder, opticutter_pdf_requested
+                )
+                _record_path_warning(
+                    prod_folder,
+                    opticutter_pdf_requested,
+                    opticutter_pdf_filename,
+                    context=f"Productie '{prod}' – Brutemateriaal {opticutter_doc_type}",
+                )
+                opticutter_pdf_path = os.path.join(prod_folder, opticutter_pdf_filename)
+                try:
+                    generate_pdf_order_platypus(
+                        opticutter_pdf_path,
+                        company,
+                        supplier_for_opticutter_docs,
+                        prod,
+                        opticutter_order_items,
+                        doc_type=opticutter_doc_type,
+                        doc_number=opticutter_doc_num or None,
+                        footer_note=footer_note_text,
+                        delivery=delivery_for_opticutter_docs,
+                        project_number=project_number,
+                        project_name=project_name,
+                        label_kind="brutemateriaal",
+                        order_remark=opticutter_remark_text or None,
+                        total_weight_kg=opticutter_total_weight,
+                    )
+                except Exception as exc:
+                    print(
+                        f"[WAARSCHUWING] PDF brutemateriaal mislukt voor {prod}: {exc}",
+                        file=sys.stderr,
+                    )
+
+            if should_write_order_overview and order_overview_path:
+                order_df.to_excel(order_overview_path, index=False)
 
         packlist_items = step_entries.get(prod, [])
         if packlist_items and REPORTLAB_OK:
@@ -1750,6 +2411,7 @@ def combine_pdfs_from_source(
     project_name: str | None = None,
     timestamp: datetime.datetime | None = None,
     combine_per_production: bool = True,
+    bom_source_path: str | None = None,
 ) -> CombinedPdfResult:
     """Combine PDF drawing files per production directly from ``source``.
 
@@ -1773,6 +2435,18 @@ def combine_pdfs_from_source(
     date_str = date_str or datetime.date.today().strftime("%Y-%m-%d")
     idx = _build_file_index(source, [".pdf"])
 
+    related_bom_pdfs: List[str] = []
+    if bom_source_path:
+        seen_related: set[str] = set()
+        for path in find_related_bom_exports(bom_source_path, idx):
+            if not path.lower().endswith(".pdf"):
+                continue
+            if path in seen_related:
+                continue
+            related_bom_pdfs.append(path)
+            seen_related.add(path)
+    related_bom_pdfs.sort(key=lambda x: os.path.basename(x).lower())
+
     prod_to_files: Dict[str, List[str]] = defaultdict(list)
     for _, row in bom_df.iterrows():
         prod = (row.get("Production") or "").strip() or "_Onbekend"
@@ -1789,11 +2463,24 @@ def combine_pdfs_from_source(
 
     if combine_per_production:
         for prod, files in prod_to_files.items():
-            if not files:
+            candidates = list(files)
+            if not candidates and not related_bom_pdfs:
                 continue
             merger = PdfMerger()
-            for path in sorted(files, key=lambda x: os.path.basename(x).lower()):
+            appended: set[str] = set()
+            for path in related_bom_pdfs:
+                if path in appended:
+                    continue
                 merger.append(path)
+                appended.add(path)
+            for path in sorted(candidates, key=lambda x: os.path.basename(x).lower()):
+                if path in appended:
+                    continue
+                merger.append(path)
+                appended.add(path)
+            if not appended:
+                merger.close()
+                continue
             out_name = f"{prod}_{date_str}_combined.pdf"
             safe_name = _fit_filename_within_path(out_dir, out_name)
             merger.write(os.path.join(out_dir, safe_name))
@@ -1802,6 +2489,10 @@ def combine_pdfs_from_source(
     else:
         ordered_files: List[str] = []
         seen = set()
+        for path in related_bom_pdfs:
+            if path not in seen:
+                ordered_files.append(path)
+                seen.add(path)
         for files in prod_to_files.values():
             for path in files:
                 if path not in seen:
@@ -1809,7 +2500,14 @@ def combine_pdfs_from_source(
                     seen.add(path)
         if ordered_files:
             merger = PdfMerger()
-            for path in sorted(ordered_files, key=lambda x: os.path.basename(x).lower()):
+            ordered_files.sort(key=lambda x: os.path.basename(x).lower())
+            if related_bom_pdfs:
+                related_sorted = sorted(related_bom_pdfs, key=lambda x: os.path.basename(x).lower())
+                related_set = set(related_sorted)
+                # Preserve related PDFs at the front by reordering ``ordered_files``.
+                rest = [path for path in ordered_files if path not in related_set]
+                ordered_files = related_sorted + rest
+            for path in ordered_files:
                 merger.append(path)
             out_name = f"BOM_{date_str}_combined.pdf"
             safe_name = _fit_filename_within_path(out_dir, out_name)

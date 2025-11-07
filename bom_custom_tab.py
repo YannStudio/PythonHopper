@@ -716,18 +716,37 @@ class BOMCustomTab(ttk.Frame):
         bar = ttk.Frame(self)
         bar.pack(fill="x", padx=8, pady=6)
 
-        clear_btn = ttk.Button(bar, text="Clear Custom BOM", command=self._confirm_clear)
-        clear_btn.pack(side="left", padx=(0, 6))
+        button_style = dict(
+            bg="#FADFA8",
+            activebackground="#F4C46C",
+            fg="black",
+            activeforeground="black",
+            highlightthickness=0,
+        )
 
-        export_btn = ttk.Button(bar, text="Exporteren", command=self._export_temp)
-        export_btn.pack(side="left", padx=(0, 6))
-
-        update_btn = ttk.Button(bar, text="Update Main BOM", command=self._push_to_main)
+        update_btn = tk.Button(
+            bar, text="Update Main BOM", command=self._push_to_main, **button_style
+        )
         update_btn.pack(side="left", padx=(0, 6))
         self._update_main_btn = update_btn
 
-        template_btn = ttk.Button(bar, text="Download template", command=self._download_template)
-        template_btn.pack(side="left", padx=(0, 6))
+        clear_btn = tk.Button(
+            bar, text="Clear BOM", command=self._confirm_clear, **button_style
+        )
+        clear_btn.pack(side="left", padx=(0, 6))
+
+        export_container = ttk.Frame(bar)
+        export_container.pack(side="right", padx=(6, 0))
+
+        export_btn = ttk.Button(
+            export_container, text="Exporteren", command=self._export_temp
+        )
+        export_btn.pack(side="left")
+
+        template_btn = ttk.Button(
+            export_container, text="Download template", command=self._download_template
+        )
+        template_btn.pack(side="left", padx=(6, 0))
 
         undo_btn = ttk.Button(bar, text="Undo", command=self._handle_toolbar_undo)
         undo_btn.pack(side="left", padx=(0, 6))
