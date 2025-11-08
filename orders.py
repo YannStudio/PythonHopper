@@ -870,6 +870,7 @@ def generate_pdf_order_platypus(
     order_remark: str | None = None,
     total_weight_kg: float | None = None,
     en1090_required: bool = False,
+    en1090_note: Optional[str] = None,
 ) -> None:
     """Generate a PDF order using ReportLab if available.
 
@@ -1202,9 +1203,11 @@ def generate_pdf_order_platypus(
     story.append(tbl)
 
     if en1090_required:
-        story.append(Spacer(0, 6))
-        en1090_note_html = EN1090_NOTE_TEXT.replace("\n", "<br/>")
-        story.append(Paragraph(en1090_note_html, small_style))
+        note_text = EN1090_NOTE_TEXT if en1090_note is None else _to_str(en1090_note)
+        if note_text:
+            story.append(Spacer(0, 6))
+            en1090_note_html = note_text.replace("\n", "<br/>")
+            story.append(Paragraph(en1090_note_html, small_style))
 
     if footer_note is None:
         note = DEFAULT_FOOTER_NOTE
@@ -1311,6 +1314,7 @@ def write_order_excel(
     order_remark: str | None = None,
     total_weight_kg: float | None = None,
     en1090_required: bool = False,
+    en1090_note: Optional[str] = None,
 ) -> None:
     """Write order information to an Excel file with header info."""
     context_kind_clean = (_to_str(context_kind) or "productie").strip() or "productie"
@@ -1330,14 +1334,16 @@ def write_order_excel(
         }
         df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
 
-    append_note_to_df = en1090_required and (
+    note_text = EN1090_NOTE_TEXT if en1090_note is None else _to_str(en1090_note)
+
+    append_note_to_df = en1090_required and note_text and (
         Alignment is None or not hasattr(pd, "ExcelWriter")
     )
     if append_note_to_df:
         blank_row = {col: "" for col in df_columns}
         note_row = {col: "" for col in df_columns}
         if df_columns:
-            note_row[df_columns[0]] = EN1090_NOTE_TEXT
+            note_row[df_columns[0]] = note_text
         df = pd.concat(
             [df, pd.DataFrame([blank_row, note_row])], ignore_index=True
         )
@@ -1461,9 +1467,9 @@ def write_order_excel(
                 for row in range(startrow + 1, startrow + len(df) + 2):
                     ws.cell(row=row, column=col_idx).alignment = align
 
-            if en1090_required and not append_note_to_df:
+            if en1090_required and note_text and not append_note_to_df:
                 note_row = ws.max_row + 2
-                cell = ws.cell(row=note_row, column=1, value=EN1090_NOTE_TEXT)
+                cell = ws.cell(row=note_row, column=1, value=note_text)
                 if Font is not None:
                     cell.font = Font(bold=True)
                 if Alignment is not None:
@@ -1593,7 +1599,9 @@ def copy_per_production_and_orders(
     opticutter_doc_num_map: Dict[str, str] | None = None,
     opticutter_delivery_map: Dict[str, DeliveryAddress | None] | None = None,
     opticutter_remarks_map: Dict[str, str] | None = None,
+    en1090_enabled: bool = True,
     en1090_overrides: Mapping[str, bool] | None = None,
+    en1090_note: Optional[str] = None,
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
 
@@ -1664,6 +1672,10 @@ def copy_per_production_and_orders(
     :func:`make_production_selection_key` for productions and
     :func:`make_finish_selection_key` for finish selections.
     """
+    en1090_active = bool(en1090_enabled)
+    en1090_note_text = (
+        EN1090_NOTE_TEXT if en1090_note is None else _to_str(en1090_note)
+    )
     os.makedirs(dest, exist_ok=True)
     file_index = _build_file_index(source, selected_exts)
     selected_exts_set = {ext.lower() for ext in selected_exts}
@@ -1905,6 +1917,8 @@ def copy_per_production_and_orders(
             db.set_default(prod, supplier.supplier)
 
         en1090_required = should_require_en1090(prod, en1090_overrides)
+        if not en1090_active:
+            en1090_required = False
 
         items = []
         for row in rows:
@@ -1960,6 +1974,7 @@ def copy_per_production_and_orders(
                 context_kind="Productie",
                 order_remark=order_remark or None,
                 en1090_required=en1090_required,
+                en1090_note=en1090_note_text,
             )
 
             pdf_requested = f"{doc_type}{num_part}_{prod}_{today}.pdf"
@@ -1987,6 +2002,7 @@ def copy_per_production_and_orders(
                     label_kind="productie",
                     order_remark=order_remark or None,
                     en1090_required=en1090_required,
+                    en1090_note=en1090_note_text,
                 )
             except Exception as e:
                 print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
@@ -2144,6 +2160,8 @@ def copy_per_production_and_orders(
                     prod_folder, opticutter_excel_filename
                 )
                 opticutter_en1090 = should_require_en1090(prod, en1090_overrides)
+                if not en1090_active:
+                    opticutter_en1090 = False
 
                 write_order_excel(
                     opticutter_excel_path,
@@ -2160,6 +2178,7 @@ def copy_per_production_and_orders(
                     order_remark=opticutter_remark_text or None,
                     total_weight_kg=opticutter_total_weight,
                     en1090_required=opticutter_en1090,
+                    en1090_note=en1090_note_text,
                 )
 
                 opticutter_pdf_requested = (
@@ -2193,6 +2212,7 @@ def copy_per_production_and_orders(
                         order_remark=opticutter_remark_text or None,
                         total_weight_kg=opticutter_total_weight,
                         en1090_required=opticutter_en1090,
+                        en1090_note=en1090_note_text,
                     )
                 except Exception as exc:
                     print(

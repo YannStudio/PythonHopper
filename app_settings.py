@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from suppliers_db import SUPPLIERS_DB_FILE
 from orders import DEFAULT_FOOTER_NOTE
+from en1090 import EN1090_NOTE_TEXT
 
 SETTINGS_FILE = Path(SUPPLIERS_DB_FILE).with_name("app_settings.json")
 
@@ -198,6 +199,8 @@ class AppSettings:
     bundle_dry_run: bool = False
     footer_note: str = DEFAULT_FOOTER_NOTE
     autofill_custom_bom: bool = True
+    en1090_enabled: bool = True
+    en1090_note: str = EN1090_NOTE_TEXT
     en1090_preferences: Dict[str, bool] = field(default_factory=dict)
     _path: Path = field(default=SETTINGS_FILE, repr=False, compare=False)
 
