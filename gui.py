@@ -1554,7 +1554,6 @@ def start_gui():
                 en1090_var = tk.IntVar(value=0)
                 self.en1090_vars[sel_key] = en1090_var
                 en1090_frame = tk.Frame(row, width=self.EN1090_COLUMN_WIDTH)
-                en1090_frame.pack_propagate(False)
                 en1090_widget: tk.Misc = en1090_frame
 
                 if meta_kind in {"production", "opticutter"}:
@@ -2330,12 +2329,71 @@ def start_gui():
                 self.app.settings.file_extensions
             )
 
-            self.configure(padx=12, pady=12)
             self.columnconfigure(0, weight=1)
-            self.rowconfigure(4, weight=1)
+            self.rowconfigure(0, weight=1)
+
+            scroll_container = tk.Frame(self)
+            scroll_container.grid(row=0, column=0, sticky="nsew")
+
+            settings_canvas = tk.Canvas(
+                scroll_container,
+                highlightthickness=0,
+                background=self.cget("background"),
+            )
+            settings_canvas.pack(side="left", fill="both", expand=True)
+
+            settings_scrollbar = ttk.Scrollbar(
+                scroll_container, orient="vertical", command=settings_canvas.yview
+            )
+            settings_scrollbar.pack(side="right", fill="y")
+            settings_canvas.configure(yscrollcommand=settings_scrollbar.set)
+
+            content = tk.Frame(settings_canvas)
+            content.configure(padx=12, pady=12)
+            content_id = settings_canvas.create_window(
+                (0, 0), window=content, anchor="nw"
+            )
+
+            def _update_scroll_region(_event: "tk.Event") -> None:
+                try:
+                    bbox = settings_canvas.bbox("all")
+                except tk.TclError:
+                    bbox = None
+                if bbox:
+                    settings_canvas.configure(scrollregion=bbox)
+
+            content.bind("<Configure>", _update_scroll_region)
+
+            def _resize_content(event: "tk.Event") -> None:
+                try:
+                    settings_canvas.itemconfigure(content_id, width=event.width)
+                except tk.TclError:
+                    pass
+
+            settings_canvas.bind("<Configure>", _resize_content)
+
+            def _on_mousewheel(event: "tk.Event") -> None:
+                if getattr(event, "delta", 0):
+                    step = -1 if event.delta > 0 else 1
+                elif getattr(event, "num", None) == 4:
+                    step = -1
+                elif getattr(event, "num", None) == 5:
+                    step = 1
+                else:
+                    step = 0
+                if step:
+                    settings_canvas.yview_scroll(step, "units")
+
+            settings_canvas.bind("<Enter>", lambda _e: settings_canvas.focus_set())
+            settings_canvas.bind("<MouseWheel>", _on_mousewheel)
+            settings_canvas.bind("<Button-4>", _on_mousewheel)
+            settings_canvas.bind("<Button-5>", _on_mousewheel)
+
+            content.columnconfigure(0, weight=1)
+            content.rowconfigure(4, weight=1)
 
             export_options = tk.LabelFrame(
-                self, text="Exportopties", labelanchor="n"
+                content, text="Exportopties", labelanchor="n"
             )
             export_options.grid(row=0, column=0, sticky="ew")
             export_options.columnconfigure(0, weight=1)
@@ -2420,7 +2478,7 @@ def start_gui():
             )
 
             template_frame = tk.LabelFrame(
-                self,
+                content,
                 text="BOM-template",
             )
             template_frame.grid(
@@ -2450,7 +2508,7 @@ def start_gui():
             ).grid(row=1, column=0, sticky="w", padx=10, pady=(0, 10))
 
             en1090_frame = tk.LabelFrame(
-                self,
+                content,
                 text="EN 1090",
                 labelanchor="n",
             )
@@ -2516,7 +2574,7 @@ def start_gui():
             ).pack(side="left", padx=4)
 
             footer_frame = tk.LabelFrame(
-                self,
+                content,
                 text="Bestelbon/offerte onderschrift",
                 labelanchor="n",
             )
@@ -2574,7 +2632,7 @@ def start_gui():
             ).pack(side="left", padx=4)
 
             extensions_frame = tk.LabelFrame(
-                self, text="Bestandstypen", labelanchor="n"
+                content, text="Bestandstypen", labelanchor="n"
             )
             extensions_frame.grid(row=4, column=0, sticky="nsew", pady=(12, 0))
             extensions_frame.columnconfigure(0, weight=1)
@@ -3140,8 +3198,10 @@ def start_gui():
             self.zip_finish_var.trace_add("write", self._update_zip_per_finish_var)
             self._update_zip_per_finish_var()
 
-            tabs_wrapper = tk.Frame(self)
-            tabs_wrapper.pack(fill="both", expand=True, padx=8, pady=(12, 0))
+            content.rowconfigure(5, weight=1)
+
+            tabs_wrapper = tk.Frame(content)
+            tabs_wrapper.grid(row=5, column=0, sticky="nsew", padx=8, pady=(12, 0))
 
             tabs_background = (
                 style.lookup("TNotebook", "background")
