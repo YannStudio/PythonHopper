@@ -1501,6 +1501,11 @@
       "favorite": false
     }
   ],
-  "defaults_by_production": {},
+  "defaults_by_production": {
+    "Lasercutting": "Productora",
+    "Sheetmetal +4m": "SPCM",
+    "Cutting": "Productora",
+    "Cutting::Opticutter": "Saey"
+  },
   "defaults_by_finish": {}
 }

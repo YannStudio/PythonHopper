@@ -1,8 +1,8 @@
 {
-  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/De Lijn/53. De Lijn - Infopunten/cad",
-  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/De Lijn/53. De Lijn - Infopunten/export/01. Locaties",
+  "source_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2023/Maatwerk overkappingen/Speelplaatsoverkappingen/20230171 - Smeermaas/CAD/v2",
+  "dest_folder": "C:/Users/jeroe/Desktop",
   "project_number": "53",
-  "project_name": "DeLijn-DiamantC-Trespa",
+  "project_name": "Smeermaas",
   "file_extensions": [
     {
       "key": "pdf",
@@ -53,5 +53,6 @@
   "bundle_latest": false,
   "bundle_dry_run": false,
   "footer_note": "Gelieve afwijkingen schriftelijk te bevestigen. Levertermijn in overleg. Betalingsvoorwaarden: 30 dagen netto. Vermeld onze productiereferentie bij levering.",
-  "autofill_custom_bom": true
+  "autofill_custom_bom": true,
+  "en1090_preferences": {}
 }
