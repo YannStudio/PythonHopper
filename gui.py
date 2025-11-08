@@ -11,7 +11,7 @@ from collections import defaultdict, OrderedDict
 from dataclasses import dataclass, field
 from copy import deepcopy
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional, TYPE_CHECKING
+from typing import Callable, Dict, Iterable, List, Optional, Tuple, TYPE_CHECKING
 
 import pandas as pd
 
@@ -43,7 +43,7 @@ from orders import (
     parse_selection_key,
     _WINDOWS_MAX_PATH,
 )
-from en1090 import default_en1090_enabled, normalize_en1090_key
+from en1090 import EN1090_NOTE_TEXT, default_en1090_enabled, normalize_en1090_key
 from opticutter import (
     DEFAULT_KERF_MM,
     LONG_STOCK_LENGTH_MM,
@@ -1214,6 +1214,7 @@ def start_gui():
         """
 
         LABEL_COLUMN_WIDTH = 30
+        EN1090_COLUMN_WIDTH = 70
 
         @staticmethod
         def _install_supplier_focus_behavior(combo: "ttk.Combobox") -> None:
@@ -1270,6 +1271,7 @@ def start_gui():
             project_name_var: tk.StringVar,
             opticutter_details: Dict[str, "OpticutterOrderComputation"] | None = None,
             initial_state: Optional["SupplierSelectionState"] = None,
+            en1090_enabled: bool = True,
             en1090_getter=None,
             en1090_setter=None,
         ):
@@ -1281,6 +1283,7 @@ def start_gui():
             self.project_number_var = project_number_var
             self.project_name_var = project_name_var
             self.opticutter_details = opticutter_details or {}
+            self._en1090_enabled = bool(en1090_enabled)
             self._preview_supplier: Optional[Supplier] = None
             self._active_key: Optional[str] = None  # laatst gefocuste rij
             self.sel_vars: Dict[str, tk.StringVar] = {}
@@ -1294,6 +1297,7 @@ def start_gui():
             self._en1090_getter = en1090_getter
             self._en1090_setter = en1090_setter
             self.finish_entries = finishes
+            self._row_widget_maps: List[Dict[str, tk.Misc]] = []
 
             # Grid layout: content (row=0, weight=1), buttons (row=1)
             self.grid_columnconfigure(0, weight=1)
@@ -1463,27 +1467,33 @@ def start_gui():
                 background=left.cget("bg"),
             )
             header_font = ("TkDefaultFont", 10, "bold")
-            header_columns = [
-                ("Producttype", self.LABEL_COLUMN_WIDTH, header_font),
-                ("Leverancier", 50, None),
-                ("Documenttype", 18, None),
-                ("EN 1090", 10, None),
-                ("Nr.", 12, None),
-                ("Opmerking", 24, None),
-                ("Leveradres", 50, None),
+
+            self._column_specs: List[Tuple[str, str, int, Optional[Tuple[str, int, str]]]] = [
+                ("label", "Producttype", self.LABEL_COLUMN_WIDTH, header_font),
+                ("supplier_combo", "Leverancier", 50, None),
+                ("doc_combo", "Documenttype", 18, None),
+                ("en1090_widget", "EN 1090", 12, None),
+                ("doc_entry", "Nr.", 12, None),
+                ("remark_entry", "Opmerking", 24, None),
+                ("delivery_combo", "Leveradres", 50, None),
+            ]
+            self._column_keys = [key for key, *_ in self._column_specs]
+            self._visible_column_keys = [
+                key
+                for key in self._column_keys
+                if key != "en1090_widget" or self._en1090_enabled
             ]
 
-            self._header_column_frames: List[tk.Frame] = []
-            self._header_labels: List[tk.Label] = []
+            self._header_column_frames_map: Dict[str, tk.Frame] = {}
+            self._header_labels_map: Dict[str, tk.Label] = {}
             self._header_aligned = False
             self._header_alignment_pending = False
 
-            for text, width, font in header_columns:
+            for key, text, width, font in self._column_specs:
                 label_kwargs = dict(header_label_kwargs)
                 if font is not None:
                     label_kwargs["font"] = font
                 column_frame = tk.Frame(header_row, background=left.cget("bg"))
-                column_frame.pack(side="left", padx=(0, 6))
                 label = tk.Label(
                     column_frame,
                     text=text,
@@ -1491,8 +1501,10 @@ def start_gui():
                     **label_kwargs,
                 )
                 label.pack(fill="x", anchor="w")
-                self._header_column_frames.append(column_frame)
-                self._header_labels.append(label)
+                self._header_column_frames_map[key] = column_frame
+                self._header_labels_map[key] = label
+
+            self._repack_header_columns()
 
             self.finish_label_by_key: Dict[str, str] = {
                 entry.get("key", ""): _to_str(entry.get("label")) or _to_str(entry.get("key"))
@@ -1511,11 +1523,9 @@ def start_gui():
                     width=self.LABEL_COLUMN_WIDTH,
                     anchor="w",
                 )
-                row_label.pack(side="left", padx=(0, 6))
                 var = tk.StringVar()
                 self.sel_vars[sel_key] = var
                 combo = ttk.Combobox(row, textvariable=var, state="normal", width=50)
-                combo.pack(side="left", padx=(0, 6))
                 combo.bind("<<ComboboxSelected>>", self._on_combo_change)
                 combo.bind(
                     "<FocusIn>", lambda _e, key=sel_key: self._on_focus_key(key)
@@ -1535,7 +1545,6 @@ def start_gui():
                     state="readonly",
                     width=18,
                 )
-                doc_combo.pack(side="left", padx=(0, 6))
                 doc_combo.bind(
                     "<<ComboboxSelected>>",
                     lambda _e, key=sel_key: self._on_doc_type_change(key),
@@ -1544,6 +1553,10 @@ def start_gui():
                 meta_kind = metadata.get("kind")
                 en1090_var = tk.IntVar(value=0)
                 self.en1090_vars[sel_key] = en1090_var
+                en1090_frame = tk.Frame(row, width=self.EN1090_COLUMN_WIDTH)
+                en1090_frame.pack_propagate(False)
+                en1090_widget: tk.Misc = en1090_frame
+
                 if meta_kind in {"production", "opticutter"}:
                     default_flag = False
                     if self._en1090_getter is not None:
@@ -1552,26 +1565,23 @@ def start_gui():
                         except Exception:
                             default_flag = False
                     en1090_var.set(1 if default_flag else 0)
-                    en1090_widget: tk.Misc = tk.Checkbutton(
-                        row,
+                    checkbutton = tk.Checkbutton(
+                        en1090_frame,
                         variable=en1090_var,
                         command=lambda key=sel_key: self._on_en1090_toggle(key),
                         takefocus=False,
                     )
-                    en1090_widget.pack(side="left", padx=(0, 6))
+                    checkbutton.pack(anchor="w")
                 else:
-                    en1090_widget = tk.Label(row, text="", width=4)
-                    en1090_widget.pack(side="left", padx=(0, 6))
+                    tk.Label(en1090_frame, text="").pack(anchor="w")
 
                 doc_num_var = tk.StringVar()
                 self.doc_num_vars[sel_key] = doc_num_var
                 doc_entry = tk.Entry(row, textvariable=doc_num_var, width=12)
-                doc_entry.pack(side="left", padx=(0, 6))
 
                 remark_var = tk.StringVar()
                 self.remark_vars[sel_key] = remark_var
                 remark_entry = tk.Entry(row, textvariable=remark_var, width=24)
-                remark_entry.pack(side="left", padx=(0, 6))
                 _scroll_entry_to_end(remark_entry, remark_var)
                 _OverflowTooltip(remark_entry, lambda v=remark_var: v.get().strip())
 
@@ -1584,12 +1594,23 @@ def start_gui():
                     state="readonly",
                     width=50,
                 )
-                dcombo.pack(side="left", padx=(0, 6))
                 self.delivery_combos[sel_key] = dcombo
 
                 self.rows.append((sel_key, combo))
                 self.combo_by_key[sel_key] = combo
                 self.row_meta[sel_key] = dict(metadata)
+
+                row_widgets = {
+                    "label": row_label,
+                    "supplier_combo": combo,
+                    "doc_combo": doc_combo,
+                    "en1090_widget": en1090_frame,
+                    "doc_entry": doc_entry,
+                    "remark_entry": remark_entry,
+                    "delivery_combo": dcombo,
+                }
+                self._row_widget_maps.append(row_widgets)
+                self._pack_row_widgets(row_widgets)
 
                 self._schedule_header_alignment(
                     {
@@ -1785,7 +1806,7 @@ def start_gui():
                     pass
 
         def _schedule_header_alignment(self, row_widgets: Dict[str, "tk.Misc"]) -> None:
-            if not getattr(self, "_header_column_frames", None):
+            if not getattr(self, "_header_column_frames_map", None):
                 return
             if self._header_aligned or self._header_alignment_pending:
                 return
@@ -1813,26 +1834,21 @@ def start_gui():
 
         def _align_header_columns(self, row_widgets: Dict[str, "tk.Misc"]) -> None:
             try:
-                column_widgets = [
-                    row_widgets["label"],
-                    row_widgets["supplier_combo"],
-                    row_widgets["doc_combo"],
-                    row_widgets["en1090_widget"],
-                    row_widgets["doc_entry"],
-                    row_widgets["remark_entry"],
-                    row_widgets["delivery_combo"],
-                ]
+                column_widgets = [row_widgets[key] for key in self._visible_column_keys]
             except KeyError:
                 self._header_alignment_pending = False
                 return
 
             self.update_idletasks()
 
-            for frame, label, widget in zip(
-                self._header_column_frames,
-                self._header_labels,
-                column_widgets,
-            ):
+            header_frames = [
+                self._header_column_frames_map[key] for key in self._visible_column_keys
+            ]
+            header_labels = [
+                self._header_labels_map[key] for key in self._visible_column_keys
+            ]
+
+            for frame, label, widget in zip(header_frames, header_labels, column_widgets):
                 frame.pack_propagate(False)
                 width = widget.winfo_width() or widget.winfo_reqwidth()
                 height = label.winfo_reqheight() or widget.winfo_reqheight()
@@ -1842,6 +1858,52 @@ def start_gui():
 
             self._header_aligned = True
             self._header_alignment_pending = False
+
+        def _repack_header_columns(self) -> None:
+            for frame in self._header_column_frames_map.values():
+                frame.pack_forget()
+            for key in self._visible_column_keys:
+                frame = self._header_column_frames_map.get(key)
+                if frame is not None:
+                    frame.pack(side="left", padx=(0, 6))
+
+        def _pack_row_widgets(self, widgets: Dict[str, "tk.Misc"]) -> None:
+            for key in self._column_keys:
+                widget = widgets.get(key)
+                if widget is None:
+                    continue
+                try:
+                    widget.pack_forget()
+                except Exception:
+                    pass
+            for key in self._visible_column_keys:
+                widget = widgets.get(key)
+                if widget is None:
+                    continue
+                widget.pack(side="left", padx=(0, 6))
+
+        def _repack_all_rows(self) -> None:
+            for widgets in self._row_widget_maps:
+                self._pack_row_widgets(widgets)
+
+        def set_en1090_enabled(self, enabled: bool) -> None:
+            desired = bool(enabled)
+            if desired == self._en1090_enabled:
+                return
+            self._en1090_enabled = desired
+            if desired and "en1090_widget" not in self._visible_column_keys:
+                insert_at = self._column_keys.index("en1090_widget")
+                self._visible_column_keys.insert(insert_at, "en1090_widget")
+            elif not desired:
+                self._visible_column_keys = [
+                    key for key in self._visible_column_keys if key != "en1090_widget"
+                ]
+            self._repack_header_columns()
+            self._repack_all_rows()
+            self._header_aligned = False
+            self._header_alignment_pending = False
+            if self._row_widget_maps:
+                self._schedule_header_alignment(self._row_widget_maps[0])
 
         def _clear_saved_suppliers(self) -> None:
             self.db.defaults_by_production.clear()
@@ -2270,7 +2332,7 @@ def start_gui():
 
             self.configure(padx=12, pady=12)
             self.columnconfigure(0, weight=1)
-            self.rowconfigure(3, weight=1)
+            self.rowconfigure(4, weight=1)
 
             export_options = tk.LabelFrame(
                 self, text="Exportopties", labelanchor="n"
@@ -2387,12 +2449,78 @@ def start_gui():
                 command=self._download_bom_template,
             ).grid(row=1, column=0, sticky="w", padx=10, pady=(0, 10))
 
+            en1090_frame = tk.LabelFrame(
+                self,
+                text="EN 1090",
+                labelanchor="n",
+            )
+            en1090_frame.grid(row=2, column=0, sticky="nsew", pady=(12, 0))
+            en1090_frame.columnconfigure(0, weight=1)
+            en1090_frame.rowconfigure(2, weight=1)
+
+            tk.Label(
+                en1090_frame,
+                text=(
+                    "Schakel hier de EN 1090-kolom op de bestelbonpagina in of uit "
+                    "en pas de begeleidende tekst aan."
+                ),
+                justify="left",
+                anchor="w",
+                wraplength=520,
+            ).grid(row=0, column=0, sticky="ew", padx=12, pady=(8, 4))
+
+            tk.Checkbutton(
+                en1090_frame,
+                text="Toon EN 1090-kolom bij bestelbonnen",
+                variable=self.app.en1090_enabled_var,
+                anchor="w",
+                command=self._toggle_en1090_setting,
+            ).grid(row=1, column=0, sticky="w", padx=12, pady=(0, 6))
+
+            en1090_note_container = tk.Frame(en1090_frame)
+            en1090_note_container.grid(
+                row=2,
+                column=0,
+                sticky="nsew",
+                padx=12,
+                pady=(0, 4),
+            )
+            en1090_note_container.columnconfigure(0, weight=1)
+            en1090_note_container.rowconfigure(0, weight=1)
+
+            self.en1090_note_text = tk.Text(
+                en1090_note_container,
+                height=5,
+                wrap="word",
+            )
+            self.en1090_note_text.grid(row=0, column=0, sticky="nsew")
+
+            en1090_scrollbar = tk.Scrollbar(
+                en1090_note_container,
+                orient="vertical",
+                command=self.en1090_note_text.yview,
+            )
+            en1090_scrollbar.grid(row=0, column=1, sticky="ns")
+            self.en1090_note_text.configure(yscrollcommand=en1090_scrollbar.set)
+            self._reload_en1090_note()
+
+            en1090_btns = tk.Frame(en1090_frame)
+            en1090_btns.grid(row=3, column=0, sticky="e", padx=12, pady=(0, 8))
+            tk.Button(
+                en1090_btns, text="Opslaan", command=self._save_en1090_note
+            ).pack(side="left", padx=4)
+            tk.Button(
+                en1090_btns,
+                text="Reset naar standaard",
+                command=self._reset_en1090_note,
+            ).pack(side="left", padx=4)
+
             footer_frame = tk.LabelFrame(
                 self,
                 text="Bestelbon/offerte onderschrift",
                 labelanchor="n",
             )
-            footer_frame.grid(row=2, column=0, sticky="nsew", pady=(12, 0))
+            footer_frame.grid(row=3, column=0, sticky="nsew", pady=(12, 0))
             footer_frame.columnconfigure(0, weight=1)
             footer_frame.rowconfigure(1, weight=1)
 
@@ -2448,7 +2576,7 @@ def start_gui():
             extensions_frame = tk.LabelFrame(
                 self, text="Bestandstypen", labelanchor="n"
             )
-            extensions_frame.grid(row=3, column=0, sticky="nsew", pady=(12, 0))
+            extensions_frame.grid(row=4, column=0, sticky="nsew", pady=(12, 0))
             extensions_frame.columnconfigure(0, weight=1)
             extensions_frame.rowconfigure(1, weight=1)
 
@@ -2544,6 +2672,28 @@ def start_gui():
         def _reset_footer_note(self) -> None:
             self.app.update_footer_note(DEFAULT_FOOTER_NOTE)
             self._reload_footer_note()
+
+        def _reload_en1090_note(self) -> None:
+            text = self.app.en1090_note_var.get()
+            self.en1090_note_text.delete("1.0", "end")
+            if text:
+                self.en1090_note_text.insert("1.0", text)
+
+        def _current_en1090_note_text(self) -> str:
+            raw = self.en1090_note_text.get("1.0", "end-1c")
+            return raw.replace("\r\n", "\n")
+
+        def _save_en1090_note(self) -> None:
+            note = self._current_en1090_note_text()
+            self.app.update_en1090_note(note)
+            self._reload_en1090_note()
+
+        def _reset_en1090_note(self) -> None:
+            self.app.update_en1090_note(EN1090_NOTE_TEXT)
+            self._reload_en1090_note()
+
+        def _toggle_en1090_setting(self) -> None:
+            self.app.set_en1090_enabled(bool(self.app.en1090_enabled_var.get()))
 
         def _download_bom_template(self) -> None:
             path_str = filedialog.asksaveasfilename(
@@ -2937,6 +3087,17 @@ def start_gui():
             self.autofill_custom_bom_var = tk.IntVar(
                 master=self, value=1 if self.settings.autofill_custom_bom else 0
             )
+            self.en1090_enabled_var = tk.IntVar(
+                master=self,
+                value=1 if getattr(self.settings, "en1090_enabled", True) else 0,
+            )
+            raw_en1090_note = getattr(self.settings, "en1090_note", EN1090_NOTE_TEXT)
+            note_text = (
+                EN1090_NOTE_TEXT
+                if raw_en1090_note is None
+                else _to_str(raw_en1090_note)
+            ).replace("\r\n", "\n")
+            self.en1090_note_var = tk.StringVar(master=self, value=note_text)
             self.footer_note_var = tk.StringVar(
                 master=self, value=self.settings.footer_note or ""
             )
@@ -3704,6 +3865,8 @@ def start_gui():
                 self.autofill_custom_bom_var.get()
             )
             self.settings.footer_note = self.footer_note_var.get().replace("\r\n", "\n")
+            self.settings.en1090_enabled = bool(self.en1090_enabled_var.get())
+            self.settings.en1090_note = self.en1090_note_var.get().replace("\r\n", "\n")
             for ext in self.settings.file_extensions:
                 var = self.extension_vars.get(ext.key)
                 if var is not None:
@@ -3835,6 +3998,34 @@ def start_gui():
             finally:
                 self._suspend_save = prev
             self._save_settings()
+
+        def update_en1090_note(self, text: str) -> None:
+            normalized = (text or "").replace("\r\n", "\n")
+            prev = getattr(self, "_suspend_save", False)
+            self._suspend_save = True
+            try:
+                self.en1090_note_var.set(normalized)
+            finally:
+                self._suspend_save = prev
+            self._save_settings()
+
+        def set_en1090_enabled(self, enabled: bool) -> None:
+            desired = 1 if enabled else 0
+            prev = getattr(self, "_suspend_save", False)
+            self._suspend_save = True
+            try:
+                if self.en1090_enabled_var.get() != desired:
+                    self.en1090_enabled_var.set(desired)
+            finally:
+                self._suspend_save = prev
+            self._save_settings()
+            sel_frame = getattr(self, "sel_frame", None)
+            if sel_frame is not None:
+                try:
+                    if sel_frame.winfo_exists():
+                        sel_frame.set_en1090_enabled(bool(desired))
+                except Exception:
+                    pass
 
         def _pick_src(self):
             from tkinter import filedialog
@@ -5583,6 +5774,8 @@ def start_gui():
                             opticutter_delivery_map=opticutter_delivery_map,
                             opticutter_remarks_map=opticutter_remarks_map,
                             en1090_overrides=en1090_override_map or None,
+                            en1090_enabled=bool(self.en1090_enabled_var.get()),
+                            en1090_note=self.en1090_note_var.get(),
                         )
                     except Exception as exc:
                         error_message = str(exc)
@@ -5718,6 +5911,7 @@ def start_gui():
                     self.project_name_var,
                     opticutter_details=opticutter_details,
                     initial_state=previous_state,
+                    en1090_enabled=bool(self.en1090_enabled_var.get()),
                     en1090_getter=self._get_en1090_preference,
                     en1090_setter=self._set_en1090_preference,
                 )
