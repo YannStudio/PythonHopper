@@ -1214,7 +1214,7 @@ def start_gui():
         """
 
         LABEL_COLUMN_WIDTH = 30
-        EN1090_COLUMN_WIDTH = 90
+        EN1090_COLUMN_WIDTH = 120
 
         @staticmethod
         def _install_supplier_focus_behavior(combo: "ttk.Combobox") -> None:
@@ -1554,6 +1554,7 @@ def start_gui():
                 en1090_var = tk.IntVar(value=0)
                 self.en1090_vars[sel_key] = en1090_var
                 en1090_frame = tk.Frame(row, width=self.EN1090_COLUMN_WIDTH)
+                en1090_frame.pack_propagate(False)
                 en1090_widget: tk.Misc = en1090_frame
 
                 if meta_kind in {"production", "opticutter"}:
@@ -1570,9 +1571,9 @@ def start_gui():
                         command=lambda key=sel_key: self._on_en1090_toggle(key),
                         takefocus=False,
                     )
-                    checkbutton.pack(anchor="w")
+                    checkbutton.pack(anchor="w", padx=(2, 0))
                 else:
-                    tk.Label(en1090_frame, text="").pack(anchor="w")
+                    tk.Label(en1090_frame, text="").pack(anchor="w", fill="x")
 
                 doc_num_var = tk.StringVar()
                 self.doc_num_vars[sel_key] = doc_num_var
