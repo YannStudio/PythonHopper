@@ -198,6 +198,7 @@ class AppSettings:
     bundle_dry_run: bool = False
     footer_note: str = DEFAULT_FOOTER_NOTE
     autofill_custom_bom: bool = True
+    en1090_preferences: Dict[str, bool] = field(default_factory=dict)
     _path: Path = field(default=SETTINGS_FILE, repr=False, compare=False)
 
     @classmethod
@@ -292,6 +293,12 @@ class AppSettings:
                             if ext.key in legacy_flags:
                                 ext.enabled = legacy_flags[ext.key]
                 setattr(inst, name, extensions)
+            elif isinstance(cur_val, dict) and name == "en1090_preferences":
+                cleaned: Dict[str, bool] = {}
+                if isinstance(raw, dict):
+                    for key, value in raw.items():
+                        cleaned[_as_str(key)] = _as_bool(value)
+                setattr(inst, name, cleaned)
             else:
                 setattr(inst, name, _as_str(raw))
         return inst

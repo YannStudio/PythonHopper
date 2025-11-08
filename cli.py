@@ -32,6 +32,7 @@ from orders import (
 )
 from app_settings import AppSettings
 from opticutter import analyse_profiles
+from en1090 import normalize_en1090_key
 
 DEFAULT_ALLOWED_EXTS = "pdf,dxf,dwg,step,stp"
 
@@ -516,6 +517,23 @@ def cli_copy_per_prod(args):
         else bool(args.zip_finish_folders)
     )
 
+    en1090_overrides: Dict[str, bool] = {}
+    for key, value in (getattr(settings, "en1090_preferences", {}) or {}).items():
+        norm_key = normalize_en1090_key(key)
+        if norm_key:
+            en1090_overrides[norm_key] = bool(value)
+    if args.en1090:
+        for prod in args.en1090:
+            norm_key = normalize_en1090_key(prod)
+            if norm_key:
+                en1090_overrides[norm_key] = True
+    if args.no_en1090:
+        for prod in args.no_en1090:
+            norm_key = normalize_en1090_key(prod)
+            if norm_key:
+                en1090_overrides[norm_key] = False
+    en1090_override_map = en1090_overrides or None
+
     path_limit_warnings: List[str] = []
     opticutter_analysis = analyse_profiles(df)
     if opticutter_analysis.error and not opticutter_analysis.profiles:
@@ -551,6 +569,7 @@ def cli_copy_per_prod(args):
         path_limit_warnings=path_limit_warnings,
         opticutter_analysis=opticutter_analysis,
         opticutter_choices={},
+        en1090_overrides=en1090_override_map,
     )
     print("Gekopieerd:", cnt)
     for k, v in chosen.items():
@@ -745,6 +764,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--project-name",
         dest="project_name",
         help="Projectnaam voor documentkoppen",
+    )
+    cpp.add_argument(
+        "--en1090",
+        action="append",
+        metavar="PROD",
+        help="Activeer EN 1090-vereiste voor productie PROD (meerdere keren mogelijk)",
+    )
+    cpp.add_argument(
+        "--no-en1090",
+        action="append",
+        metavar="PROD",
+        help="Schakel EN 1090-vereiste uit voor productie PROD",
     )
     cpp.add_argument(
         "--export-prefix-text",

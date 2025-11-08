@@ -38,6 +38,7 @@ def test_app_settings_roundtrip(tmp_path):
         bundle_latest=True,
         bundle_dry_run=True,
         footer_note="Aangepaste voorwaarden",
+        en1090_preferences={"Lasercutting": True, "Weld Assembly": False},
     )
     settings.save(path)
 
