@@ -1203,7 +1203,8 @@ def generate_pdf_order_platypus(
 
     if en1090_required:
         story.append(Spacer(0, 6))
-        story.append(Paragraph(f"<b>{EN1090_NOTE_TEXT}</b>", text_style))
+        en1090_note_html = EN1090_NOTE_TEXT.replace("\n", "<br/>")
+        story.append(Paragraph(en1090_note_html, small_style))
 
     if footer_note is None:
         note = DEFAULT_FOOTER_NOTE

@@ -1214,6 +1214,7 @@ def start_gui():
         """
 
         LABEL_COLUMN_WIDTH = 30
+        EN1090_COLUMN_WIDTH = 70
 
         @staticmethod
         def _install_supplier_focus_behavior(combo: "ttk.Combobox") -> None:
@@ -1467,7 +1468,7 @@ def start_gui():
                 ("Producttype", self.LABEL_COLUMN_WIDTH, header_font),
                 ("Leverancier", 50, None),
                 ("Documenttype", 18, None),
-                ("EN 1090", 10, None),
+                ("EN 1090", 12, None),
                 ("Nr.", 12, None),
                 ("Opmerking", 24, None),
                 ("Leveradres", 50, None),
@@ -1544,6 +1545,11 @@ def start_gui():
                 meta_kind = metadata.get("kind")
                 en1090_var = tk.IntVar(value=0)
                 self.en1090_vars[sel_key] = en1090_var
+                en1090_frame = tk.Frame(row, width=self.EN1090_COLUMN_WIDTH)
+                en1090_frame.pack(side="left", padx=(0, 6))
+                en1090_frame.pack_propagate(False)
+                en1090_widget: tk.Misc = en1090_frame
+
                 if meta_kind in {"production", "opticutter"}:
                     default_flag = False
                     if self._en1090_getter is not None:
@@ -1552,16 +1558,15 @@ def start_gui():
                         except Exception:
                             default_flag = False
                     en1090_var.set(1 if default_flag else 0)
-                    en1090_widget: tk.Misc = tk.Checkbutton(
-                        row,
+                    checkbutton = tk.Checkbutton(
+                        en1090_frame,
                         variable=en1090_var,
                         command=lambda key=sel_key: self._on_en1090_toggle(key),
                         takefocus=False,
                     )
-                    en1090_widget.pack(side="left", padx=(0, 6))
+                    checkbutton.pack(anchor="w")
                 else:
-                    en1090_widget = tk.Label(row, text="", width=4)
-                    en1090_widget.pack(side="left", padx=(0, 6))
+                    tk.Label(en1090_frame, text="").pack(anchor="w")
 
                 doc_num_var = tk.StringVar()
                 self.doc_num_vars[sel_key] = doc_num_var
