@@ -1,21 +1,6 @@
 {
   "suppliers": [
     {
-      "supplier": "ACME",
-      "description": null,
-      "supplier_id": null,
-      "adres_1": null,
-      "adres_2": null,
-      "postcode": null,
-      "gemeente": null,
-      "land": null,
-      "btw": null,
-      "contact_sales": null,
-      "sales_email": null,
-      "phone": null,
-      "favorite": false
-    },
-    {
       "supplier": "AB-Matic (Hi-Motion)",
       "description": "Door accessories - Locks, hinges & other",
       "supplier_id": "SUPP_001",
@@ -1471,21 +1456,6 @@
       "favorite": false
     },
     {
-      "supplier": "nan",
-      "description": "nan",
-      "supplier_id": "SUPP_152",
-      "adres_1": "nan",
-      "adres_2": "nan",
-      "postcode": null,
-      "gemeente": null,
-      "land": null,
-      "btw": "nan",
-      "contact_sales": "nan",
-      "sales_email": "nan",
-      "phone": "nan",
-      "favorite": false
-    },
-    {
       "supplier": "AC Metalec",
       "description": "Metal processing - Turning & Milling",
       "supplier_id": "SUPP_098",
@@ -1514,24 +1484,23 @@
       "sales_email": "michael.oosterlynck@amrservice.be",
       "phone": "03 320 99 10",
       "favorite": false
+    },
+    {
+      "supplier": "nan",
+      "description": "nan",
+      "supplier_id": "SUPP_152",
+      "adres_1": "nan",
+      "adres_2": "nan",
+      "postcode": null,
+      "gemeente": null,
+      "land": null,
+      "btw": "nan",
+      "contact_sales": "nan",
+      "sales_email": "nan",
+      "phone": "nan",
+      "favorite": false
     }
   ],
-  "defaults_by_production": {
-<<<<<<< HEAD
-<<<<<<< HEAD
-    "Weld assembly": "AB-Matic (Hi-Motion)"
-  },
-  "defaults_by_finish": {
-    "Finish-Galva _ Paint-RAL 9005": "Van Gils Coating - Beringen/Maasmechelen"
-  }
-=======
-    "Weld assembly": "Productora",
-    "Assembly": "Productora",
-=======
->>>>>>> update
-    "Sheetmetal": "Productora",
-    "Lasercutting": "Productora"
-  },
+  "defaults_by_production": {},
   "defaults_by_finish": {}
->>>>>>> update
 }
