@@ -1467,12 +1467,19 @@ def start_gui():
                 background=left.cget("bg"),
             )
             header_font = ("TkDefaultFont", 10, "bold")
+            self._en1090_column_width_px = self.EN1090_COLUMN_WIDTH
+            self._en1090_header_font = tkfont.Font(font=header_font)
 
             self._column_specs: List[Tuple[str, str, int, Optional[Tuple[str, int, str]]]] = [
                 ("label", "Producttype", self.LABEL_COLUMN_WIDTH, header_font),
                 ("supplier_combo", "Leverancier", 50, None),
                 ("doc_combo", "Documenttype", 18, None),
-                ("en1090_widget", "EN 1090", 16, None),
+                (
+                    "en1090_widget",
+                    "EN 1090",
+                    self._compute_en1090_header_char_width(),
+                    None,
+                ),
                 ("doc_entry", "Nr.", 12, None),
                 ("remark_entry", "Opmerking", 24, None),
                 ("delivery_combo", "Leveradres", 50, None),
@@ -1505,6 +1512,7 @@ def start_gui():
                 self._header_labels_map[key] = label
 
             self._repack_header_columns()
+            self._refresh_en1090_header_width()
 
             self.finish_label_by_key: Dict[str, str] = {
                 entry.get("key", ""): _to_str(entry.get("label")) or _to_str(entry.get("key"))
@@ -1513,6 +1521,7 @@ def start_gui():
 
             self.rows = []
             self.combo_by_key: Dict[str, ttk.Combobox] = {}
+            self._en1090_frames: List[tk.Frame] = []
 
             def add_row(display_text: str, sel_key: str, metadata: Dict[str, str]):
                 row = tk.Frame(left)
@@ -1553,8 +1562,9 @@ def start_gui():
                 meta_kind = metadata.get("kind")
                 en1090_var = tk.IntVar(value=0)
                 self.en1090_vars[sel_key] = en1090_var
-                en1090_frame = tk.Frame(row, width=self.EN1090_COLUMN_WIDTH)
+                en1090_frame = tk.Frame(row, width=self._en1090_column_width_px)
                 en1090_frame.pack_propagate(False)
+                self._en1090_frames.append(en1090_frame)
                 en1090_widget: tk.Misc = en1090_frame
 
                 if meta_kind in {"production", "opticutter"}:
@@ -1572,8 +1582,13 @@ def start_gui():
                         takefocus=False,
                     )
                     checkbutton.pack(anchor="w", padx=(2, 0))
+                    en1090_frame.update_idletasks()
+                    needed_width = checkbutton.winfo_reqwidth() + 4
+                    self._ensure_en1090_width(needed_width)
+                    en1090_frame.configure(width=self._en1090_column_width_px)
                 else:
                     tk.Label(en1090_frame, text="").pack(anchor="w", fill="x")
+                    en1090_frame.configure(width=self._en1090_column_width_px)
 
                 doc_num_var = tk.StringVar()
                 self.doc_num_vars[sel_key] = doc_num_var
@@ -1804,6 +1819,55 @@ def start_gui():
                     self.remember_var.set(1 if state.remember else 0)
                 except tk.TclError:
                     pass
+
+        def _compute_en1090_header_char_width(self) -> int:
+            text = "EN 1090"
+            font = getattr(self, "_en1090_header_font", None)
+            if font is None:
+                return len(text)
+            try:
+                zero_width = font.measure("0")
+            except tk.TclError:
+                zero_width = 0
+            if not zero_width:
+                return len(text)
+            return max(len(text), math.ceil(self._en1090_column_width_px / zero_width))
+
+        def _refresh_en1090_header_width(self) -> None:
+            label = self._header_labels_map.get("en1090_widget")
+            if label is None:
+                return
+            try:
+                label.configure(width=self._compute_en1090_header_char_width())
+            except tk.TclError:
+                pass
+
+        def _set_en1090_column_width(self, width: int) -> None:
+            width = int(max(width, 0))
+            if width == self._en1090_column_width_px:
+                for frame in self._en1090_frames:
+                    try:
+                        frame.configure(width=width)
+                    except tk.TclError:
+                        continue
+                return
+            self._en1090_column_width_px = width
+            for frame in self._en1090_frames:
+                try:
+                    frame.configure(width=width)
+                except tk.TclError:
+                    continue
+            self._refresh_en1090_header_width()
+            self._header_aligned = False
+            self._header_alignment_pending = False
+            if self._row_widget_maps:
+                self._schedule_header_alignment(self._row_widget_maps[0])
+
+        def _ensure_en1090_width(self, min_width: int) -> None:
+            if min_width > self._en1090_column_width_px:
+                self._set_en1090_column_width(min_width)
+            else:
+                self._set_en1090_column_width(self._en1090_column_width_px)
 
         def _schedule_header_alignment(self, row_widgets: Dict[str, "tk.Misc"]) -> None:
             if not getattr(self, "_header_column_frames_map", None):
