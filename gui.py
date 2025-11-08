@@ -8,10 +8,10 @@ import sys
 import threading
 import unicodedata
 from collections import defaultdict, OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from copy import deepcopy
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, TYPE_CHECKING
+from typing import Callable, Dict, Iterable, List, Optional, TYPE_CHECKING
 
 import pandas as pd
 
@@ -43,6 +43,7 @@ from orders import (
     parse_selection_key,
     _WINDOWS_MAX_PATH,
 )
+from en1090 import default_en1090_enabled, normalize_en1090_key
 from opticutter import (
     DEFAULT_KERF_MM,
     LONG_STOCK_LENGTH_MM,
@@ -1204,6 +1205,7 @@ def start_gui():
         doc_numbers: Dict[str, str]
         remarks: Dict[str, str]
         deliveries: Dict[str, str]
+        en1090: Dict[str, bool] = field(default_factory=dict)
         remember: bool = True
 
     class SupplierSelectionFrame(tk.Frame):
@@ -1268,6 +1270,8 @@ def start_gui():
             project_name_var: tk.StringVar,
             opticutter_details: Dict[str, "OpticutterOrderComputation"] | None = None,
             initial_state: Optional["SupplierSelectionState"] = None,
+            en1090_getter=None,
+            en1090_setter=None,
         ):
             super().__init__(master)
             self.configure(padx=12, pady=12)
@@ -1286,6 +1290,9 @@ def start_gui():
             self.delivery_vars: Dict[str, tk.StringVar] = {}
             self.delivery_combos: Dict[str, ttk.Combobox] = {}
             self.row_meta: Dict[str, Dict[str, str]] = {}
+            self.en1090_vars: Dict[str, tk.IntVar] = {}
+            self._en1090_getter = en1090_getter
+            self._en1090_setter = en1090_setter
             self.finish_entries = finishes
 
             # Grid layout: content (row=0, weight=1), buttons (row=1)
@@ -1460,6 +1467,7 @@ def start_gui():
                 ("Producttype", self.LABEL_COLUMN_WIDTH, header_font),
                 ("Leverancier", 50, None),
                 ("Documenttype", 18, None),
+                ("EN 1090", 10, None),
                 ("Nr.", 12, None),
                 ("Opmerking", 24, None),
                 ("Leveradres", 50, None),
@@ -1533,6 +1541,28 @@ def start_gui():
                     lambda _e, key=sel_key: self._on_doc_type_change(key),
                 )
 
+                meta_kind = metadata.get("kind")
+                en1090_var = tk.IntVar(value=0)
+                self.en1090_vars[sel_key] = en1090_var
+                if meta_kind in {"production", "opticutter"}:
+                    default_flag = False
+                    if self._en1090_getter is not None:
+                        try:
+                            default_flag = bool(self._en1090_getter(metadata))
+                        except Exception:
+                            default_flag = False
+                    en1090_var.set(1 if default_flag else 0)
+                    en1090_widget: tk.Misc = tk.Checkbutton(
+                        row,
+                        variable=en1090_var,
+                        command=lambda key=sel_key: self._on_en1090_toggle(key),
+                        takefocus=False,
+                    )
+                    en1090_widget.pack(side="left", padx=(0, 6))
+                else:
+                    en1090_widget = tk.Label(row, text="", width=4)
+                    en1090_widget.pack(side="left", padx=(0, 6))
+
                 doc_num_var = tk.StringVar()
                 self.doc_num_vars[sel_key] = doc_num_var
                 doc_entry = tk.Entry(row, textvariable=doc_num_var, width=12)
@@ -1559,13 +1589,14 @@ def start_gui():
 
                 self.rows.append((sel_key, combo))
                 self.combo_by_key[sel_key] = combo
-                self.row_meta[sel_key] = metadata
+                self.row_meta[sel_key] = dict(metadata)
 
                 self._schedule_header_alignment(
                     {
                         "label": row_label,
                         "supplier_combo": combo,
                         "doc_combo": doc_combo,
+                        "en1090_widget": en1090_widget,
                         "doc_entry": doc_entry,
                         "remark_entry": remark_entry,
                         "delivery_combo": dcombo,
@@ -1694,6 +1725,7 @@ def start_gui():
             deliveries = {
                 key: var.get() for key, var in self.delivery_vars.items()
             }
+            en1090 = {key: bool(var.get()) for key, var in self.en1090_vars.items()}
 
             remember = bool(self.remember_var.get()) if hasattr(self, "remember_var") else True
 
@@ -1703,6 +1735,7 @@ def start_gui():
                 doc_numbers=doc_numbers,
                 remarks=remarks,
                 deliveries=deliveries,
+                en1090=en1090,
                 remember=remember,
             )
 
@@ -1737,6 +1770,14 @@ def start_gui():
                     except tk.TclError:
                         pass
 
+            for sel_key, enabled in state.en1090.items():
+                var = self.en1090_vars.get(sel_key)
+                if var is not None:
+                    try:
+                        var.set(1 if enabled else 0)
+                    except tk.TclError:
+                        pass
+
             if hasattr(self, "remember_var"):
                 try:
                     self.remember_var.set(1 if state.remember else 0)
@@ -1755,12 +1796,28 @@ def start_gui():
             self._header_alignment_pending = True
             self.after_idle(_do_align)
 
+        def _on_en1090_toggle(self, sel_key: str) -> None:
+            setter = getattr(self, "_en1090_setter", None)
+            if setter is None:
+                return
+            metadata = self.row_meta.get(sel_key, {})
+            if metadata.get("kind") not in {"production", "opticutter"}:
+                return
+            var = self.en1090_vars.get(sel_key)
+            if var is None:
+                return
+            try:
+                setter(metadata, bool(var.get()))
+            except Exception:
+                pass
+
         def _align_header_columns(self, row_widgets: Dict[str, "tk.Misc"]) -> None:
             try:
                 column_widgets = [
                     row_widgets["label"],
                     row_widgets["supplier_combo"],
                     row_widgets["doc_combo"],
+                    row_widgets["en1090_widget"],
                     row_widgets["doc_entry"],
                     row_widgets["remark_entry"],
                     row_widgets["delivery_combo"],
@@ -2138,6 +2195,9 @@ def start_gui():
                 remark_var = remark_vars.get(sel_key)
                 remarks_map[sel_key] = remark_var.get().strip() if remark_var else ""
 
+            en1090_vars = getattr(self, "en1090_vars", {}) or {}
+            en1090_map = {key: bool(var.get()) for key, var in en1090_vars.items()}
+
             project_number = self.project_number_var.get().strip()
             project_name = self.project_name_var.get().strip()
 
@@ -2162,7 +2222,7 @@ def start_gui():
                     for p in params
                 ):
                     use_new_signature = True
-                elif len(params) >= 8:
+                elif len(params) >= 9:
                     use_new_signature = True
 
             if use_new_signature:
@@ -2173,6 +2233,7 @@ def start_gui():
                         doc_num_map,
                         delivery_map,
                         remarks_map,
+                        en1090_map,
                         project_number,
                         project_name,
                         remember_flag,
@@ -2801,6 +2862,12 @@ def start_gui():
 
             self.settings = AppSettings.load()
             self._suspend_save = False
+            raw_en1090 = getattr(self.settings, "en1090_preferences", {}) or {}
+            self.en1090_preferences: Dict[str, bool] = {}
+            for key, value in raw_en1090.items():
+                norm = normalize_en1090_key(key)
+                if norm:
+                    self.en1090_preferences[norm] = bool(value)
 
             self.source_folder_var = tk.StringVar(
                 master=self, value=self.settings.source_folder
@@ -3641,10 +3708,44 @@ def start_gui():
                 var = self.extension_vars.get(ext.key)
                 if var is not None:
                     ext.enabled = bool(var.get())
+            self._sync_en1090_preferences()
             try:
                 self.settings.save()
             except Exception as exc:
                 print(f"Kon instellingen niet opslaan: {exc}", file=sys.stderr)
+
+        def _sync_en1090_preferences(self) -> None:
+            try:
+                mapping = {
+                    key: bool(value) for key, value in self.en1090_preferences.items()
+                }
+            except AttributeError:
+                mapping = {}
+            self.settings.en1090_preferences = mapping
+
+        def _get_en1090_preference(self, metadata: Dict[str, str]) -> bool:
+            if metadata.get("kind") not in {"production", "opticutter"}:
+                return False
+            identifier = metadata.get("identifier") or metadata.get("display") or ""
+            norm = normalize_en1090_key(identifier)
+            if not norm:
+                return False
+            existing = self.en1090_preferences.get(norm)
+            if existing is not None:
+                return existing
+            default_flag = default_en1090_enabled(identifier or metadata.get("display", ""))
+            self.en1090_preferences[norm] = default_flag
+            return default_flag
+
+        def _set_en1090_preference(self, metadata: Dict[str, str], enabled: bool) -> None:
+            if metadata.get("kind") not in {"production", "opticutter"}:
+                return
+            identifier = metadata.get("identifier") or metadata.get("display") or ""
+            norm = normalize_en1090_key(identifier)
+            if not norm:
+                return
+            self.en1090_preferences[norm] = bool(enabled)
+            self._save_settings()
 
         def _sync_extension_vars_from_settings(self) -> None:
             prev = getattr(self, "_suspend_save", False)
@@ -5233,6 +5334,7 @@ def start_gui():
                 doc_num_map: Dict[str, str],
                 delivery_map_raw: Dict[str, str],
                 remarks_map_raw: Dict[str, str],
+                en1090_map_raw: Dict[str, bool],
                 project_number: str,
                 project_name: str,
                 remember: bool,
@@ -5324,6 +5426,15 @@ def start_gui():
                         opticutter_remarks_map[identifier] = clean_text
                     else:
                         production_remarks_map[identifier] = clean_text
+
+                en1090_override_map: Dict[str, bool] = {}
+                for key, flag in en1090_map_raw.items():
+                    kind, identifier = parse_selection_key(key)
+                    if kind not in {"production", "opticutter"}:
+                        continue
+                    norm = normalize_en1090_key(identifier)
+                    if norm:
+                        en1090_override_map[norm] = bool(flag)
 
                 custom_prefix_text = self.export_name_custom_prefix_text.get().strip()
                 custom_prefix_enabled = bool(
@@ -5471,6 +5582,7 @@ def start_gui():
                             opticutter_doc_num_map=opticutter_doc_num_map,
                             opticutter_delivery_map=opticutter_delivery_map,
                             opticutter_remarks_map=opticutter_remarks_map,
+                            en1090_overrides=en1090_override_map or None,
                         )
                     except Exception as exc:
                         error_message = str(exc)
@@ -5606,6 +5718,8 @@ def start_gui():
                     self.project_name_var,
                     opticutter_details=opticutter_details,
                     initial_state=previous_state,
+                    en1090_getter=self._get_en1090_preference,
+                    en1090_setter=self._set_en1090_preference,
                 )
             except Exception:
                 if sup_search_restore and hasattr(sup_frame, "restore_search_filter"):
