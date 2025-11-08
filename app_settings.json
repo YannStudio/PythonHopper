@@ -39,8 +39,8 @@
     }
   ],
   "zip_per_production": true,
-  "combine_pdf_per_production": true,
-  "copy_finish_exports": false,
+  "combine_pdf_per_production": false,
+  "copy_finish_exports": true,
   "zip_finish_exports": true,
   "export_processed_bom": true,
   "export_related_bom_files": true,
@@ -56,5 +56,15 @@
   "autofill_custom_bom": true,
   "en1090_enabled": true,
   "en1090_note": "Note:\nBestelling conform EN 1090-2:2018+A1:2024.\nMateriaalspecificatie: IPE-profielen in constructiestaal S235JR/S355J2 conform EN 10025-2 met toleranties volgens EN 10034.\nLevering met materiaalcertificaat type 2.2 of 3.1 volgens EN 10204.\nGelieve afwijkingen schriftelijk te bevestigen. Levertermijn in overleg. Betalingsvoorwaarden: 30 dagen netto. Vermeld onze productiereferentie bij levering.",
-  "en1090_preferences": {}
+  "en1090_preferences": {
+    "cutting": true,
+    "dummy part": false,
+    "lasercutting": true,
+    "sheetmetal": true,
+    "sheetmetal 4m": false,
+    "spare part": false,
+    "tube laser": true,
+    "tube laser l": false,
+    "onbekend": false
+  }
 }
