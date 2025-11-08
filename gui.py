@@ -1214,7 +1214,7 @@ def start_gui():
         """
 
         LABEL_COLUMN_WIDTH = 30
-        EN1090_COLUMN_WIDTH = 70
+        EN1090_COLUMN_WIDTH = 90
 
         @staticmethod
         def _install_supplier_focus_behavior(combo: "ttk.Combobox") -> None:
@@ -1472,7 +1472,7 @@ def start_gui():
                 ("label", "Producttype", self.LABEL_COLUMN_WIDTH, header_font),
                 ("supplier_combo", "Leverancier", 50, None),
                 ("doc_combo", "Documenttype", 18, None),
-                ("en1090_widget", "EN 1090", 12, None),
+                ("en1090_widget", "EN 1090", 16, None),
                 ("doc_entry", "Nr.", 12, None),
                 ("remark_entry", "Opmerking", 24, None),
                 ("delivery_combo", "Leveradres", 50, None),
