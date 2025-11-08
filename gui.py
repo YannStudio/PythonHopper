@@ -3198,6 +3198,13 @@ def start_gui():
             self.zip_finish_var.trace_add("write", self._update_zip_per_finish_var)
             self._update_zip_per_finish_var()
 
+            self.grid_columnconfigure(0, weight=1)
+            self.grid_rowconfigure(0, weight=1)
+
+            content = tk.Frame(self)
+            content.grid(row=0, column=0, sticky="nsew")
+            content.grid_columnconfigure(0, weight=1)
+
             content.rowconfigure(5, weight=1)
 
             tabs_wrapper = tk.Frame(content)
