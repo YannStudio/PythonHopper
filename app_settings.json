@@ -55,6 +55,6 @@
   "footer_note": "Gelieve afwijkingen schriftelijk te bevestigen. Levertermijn in overleg. Betalingsvoorwaarden: 30 dagen netto. Vermeld onze productiereferentie bij levering.",
   "autofill_custom_bom": true,
   "en1090_enabled": true,
-  "en1090_note": "Note:\nBestelling conform EN 1090-2:2018+A1:2024.\nMateriaalspecificatie: IPE-profielen in constructiestaal S235JR/S355J2 conform EN 10025-2 met toleranties volgens EN 10034.\nLevering met materiaalcertificaat type 2.2 of 3.1 volgens EN 10204.\nGelieve afwijkingen schriftelijk te bevestigen. Levertermijn in overleg. Betalingsvoorwaarden: 30 dagen netto. Vermeld onze productiereferentie bij levering.",
+  "en1090_note": "Bestelling conform EN 1090-2:2018+A1:2024.\nMateriaalspecificatie: profielen in constructiestaal S235JR/S355J2 conform EN 10025-2 met toleranties volgens EN 10034.\nLevering met materiaalcertificaat type 2.2 of 3.1 volgens EN 10204.",
   "en1090_preferences": {}
 }
