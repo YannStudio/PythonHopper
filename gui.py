@@ -1214,7 +1214,10 @@ def start_gui():
         """
 
         LABEL_COLUMN_WIDTH = 30
-        EN1090_COLUMN_WIDTH = 120
+        EN1090_COLUMN_WIDTH = 64
+        EN1090_MIN_COLUMN_WIDTH = 32
+        EN1090_COLUMN_PADDING = 12
+        EN1090_HEADER_TEXT = "EN 1090"
 
         @staticmethod
         def _install_supplier_focus_behavior(combo: "ttk.Combobox") -> None:
@@ -1467,8 +1470,8 @@ def start_gui():
                 background=left.cget("bg"),
             )
             header_font = ("TkDefaultFont", 10, "bold")
-            self._en1090_column_width_px = self.EN1090_COLUMN_WIDTH
             self._en1090_header_font = tkfont.Font(font=header_font)
+            self._en1090_column_width_px = self._compute_initial_en1090_width()
 
             self._column_specs: List[Tuple[str, str, int, Optional[Tuple[str, int, str]]]] = [
                 ("label", "Producttype", self.LABEL_COLUMN_WIDTH, header_font),
@@ -1476,7 +1479,7 @@ def start_gui():
                 ("doc_combo", "Documenttype", 18, None),
                 (
                     "en1090_widget",
-                    "EN 1090",
+                    self.EN1090_HEADER_TEXT,
                     self._compute_en1090_header_char_width(),
                     None,
                 ),
@@ -1820,8 +1823,23 @@ def start_gui():
                 except tk.TclError:
                     pass
 
+        def _compute_initial_en1090_width(self) -> int:
+            width = self.EN1090_COLUMN_WIDTH
+            font = getattr(self, "_en1090_header_font", None)
+            if font is not None:
+                try:
+                    text_width = font.measure(self.EN1090_HEADER_TEXT)
+                except tk.TclError:
+                    text_width = 0
+                if text_width:
+                    width = min(
+                        width,
+                        text_width + self.EN1090_COLUMN_PADDING,
+                    )
+            return max(self.EN1090_MIN_COLUMN_WIDTH, int(width))
+
         def _compute_en1090_header_char_width(self) -> int:
-            text = "EN 1090"
+            text = self.EN1090_HEADER_TEXT
             font = getattr(self, "_en1090_header_font", None)
             if font is None:
                 return len(text)
