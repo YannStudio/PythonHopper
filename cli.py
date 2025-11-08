@@ -32,7 +32,7 @@ from orders import (
 )
 from app_settings import AppSettings
 from opticutter import analyse_profiles
-from en1090 import normalize_en1090_key
+from en1090 import EN1090_NOTE_TEXT, normalize_en1090_key
 
 DEFAULT_ALLOWED_EXTS = "pdf,dxf,dwg,step,stp"
 
@@ -505,6 +505,13 @@ def cli_copy_per_prod(args):
 
     settings = AppSettings.load()
     settings_note = settings.footer_note
+    settings_en1090_enabled = bool(getattr(settings, "en1090_enabled", True))
+    raw_en1090_note = getattr(settings, "en1090_note", EN1090_NOTE_TEXT)
+    if raw_en1090_note is None:
+        settings_en1090_note = EN1090_NOTE_TEXT
+    else:
+        settings_en1090_note = _to_str(raw_en1090_note)
+    settings_en1090_note = settings_en1090_note.replace("\r\n", "\n")
     footer_note = settings_note if args.note is None else args.note
     copy_finish_exports = (
         settings.copy_finish_exports
@@ -570,6 +577,8 @@ def cli_copy_per_prod(args):
         opticutter_analysis=opticutter_analysis,
         opticutter_choices={},
         en1090_overrides=en1090_override_map,
+        en1090_enabled=settings_en1090_enabled,
+        en1090_note=settings_en1090_note,
     )
     print("Gekopieerd:", cnt)
     for k, v in chosen.items():

@@ -1,6 +1,8 @@
 import json
+import json
 
 from app_settings import AppSettings, FileExtensionSetting, DEFAULT_FILE_EXTENSIONS
+from en1090 import EN1090_NOTE_TEXT
 from orders import DEFAULT_FOOTER_NOTE
 
 
@@ -38,6 +40,8 @@ def test_app_settings_roundtrip(tmp_path):
         bundle_latest=True,
         bundle_dry_run=True,
         footer_note="Aangepaste voorwaarden",
+        en1090_enabled=False,
+        en1090_note="Aangepaste EN 1090-tekst",
         en1090_preferences={"Lasercutting": True, "Weld Assembly": False},
     )
     settings.save(path)
@@ -77,3 +81,9 @@ def test_app_settings_loads_legacy_extension_flags(tmp_path):
 
 def test_default_footer_note_matches_orders_constant():
     assert AppSettings().footer_note == DEFAULT_FOOTER_NOTE
+
+
+def test_default_en1090_settings_match_constants():
+    defaults = AppSettings()
+    assert defaults.en1090_enabled is True
+    assert defaults.en1090_note == EN1090_NOTE_TEXT

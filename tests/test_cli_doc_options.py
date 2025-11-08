@@ -3,6 +3,7 @@ from models import Supplier
 from suppliers_db import SuppliersDB
 from clients_db import ClientsDB
 from delivery_addresses_db import DeliveryAddressesDB
+from app_settings import AppSettings
 import cli
 from cli import build_parser, cli_copy_per_prod
 
@@ -36,6 +37,15 @@ def test_cli_doc_options_parsing(monkeypatch, tmp_path):
 
     captured = {}
 
+    settings = AppSettings()
+    settings.en1090_enabled = False
+    settings.en1090_note = "Custom EN 1090\r\nNote"
+    monkeypatch.setattr(
+        AppSettings,
+        "load",
+        classmethod(lambda cls, path=None: settings),
+    )
+
     def fake_copy(*args, **kwargs):
         captured.update(kwargs)
         return 0, {}
@@ -47,3 +57,6 @@ def test_cli_doc_options_parsing(monkeypatch, tmp_path):
     assert captured["doc_num_map"] == {"Laser": "123", "Plasma": "456"}
     assert captured["export_name_prefix_text"] == ""
     assert captured["export_name_suffix_text"] == ""
+    assert captured["en1090_enabled"] is False
+    assert captured["en1090_note"] == "Custom EN 1090\nNote"
+    assert captured["en1090_overrides"] is None

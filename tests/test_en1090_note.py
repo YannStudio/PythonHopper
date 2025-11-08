@@ -62,3 +62,57 @@ def test_en1090_note_present_in_excel(tmp_path):
         if cell
     )
     assert note_found, "EN 1090 vermelding niet gevonden in Excel"
+
+
+def test_custom_en1090_note_replaces_default(tmp_path):
+    src = tmp_path / "src_custom"
+    dest = tmp_path / "dest_custom"
+    src.mkdir()
+    dest.mkdir()
+
+    export_file = src / "123.pdf"
+    export_file.write_text("dummy")
+
+    bom_df = pd.DataFrame(
+        [
+            {
+                "PartNumber": "123",
+                "Description": "Test onderdeel",
+                "Production": "LaserCutting",
+                "Materiaal": "S235",
+                "Aantal": 1,
+                "Oppervlakte": 0,
+                "Gewicht": 0,
+            }
+        ]
+    )
+
+    custom_note = "Aangepaste EN 1090 opmerking"
+    copy_per_production_and_orders(
+        str(src),
+        str(dest),
+        bom_df,
+        [".pdf"],
+        _make_db(),
+        {"LaserCutting": "ACME"},
+        {},
+        {},
+        remember_defaults=False,
+        en1090_overrides={"LaserCutting": True},
+        en1090_note=custom_note,
+    )
+
+    production_dir = dest / "LaserCutting"
+    excel_files = sorted(production_dir.glob("*.xlsx"))
+    assert excel_files, "Bestelbon Excel niet gevonden"
+
+    workbook = load_workbook(excel_files[0])
+    sheet = workbook.active
+    cells = [
+        str(cell)
+        for row in sheet.iter_rows(values_only=True)
+        for cell in row
+        if cell
+    ]
+    assert any(custom_note in cell for cell in cells)
+    assert all(EN1090_NOTE_TEXT not in cell for cell in cells)
