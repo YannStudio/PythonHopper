@@ -1,8 +1,8 @@
 {
   "source_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2023/Maatwerk overkappingen/Speelplaatsoverkappingen/20230171 - Smeermaas/CAD/v2",
   "dest_folder": "C:/Users/jeroe/Desktop",
-  "project_number": "949",
-  "project_name": "jozeoje",
+  "project_number": "34",
+  "project_name": "hj",
   "file_extensions": [
     {
       "key": "pdf",
@@ -55,22 +55,6 @@
   "footer_note": "Gelieve afwijkingen schriftelijk te bevestigen. Levertermijn in overleg. Betalingsvoorwaarden: 30 dagen netto. Vermeld onze productiereferentie bij levering.",
   "autofill_custom_bom": true,
   "en1090_enabled": true,
-<<<<<<< HEAD
-  "en1090_note": "Note:\nBestelling conform EN 1090-2:2018+A1:2024.\nMateriaalspecificatie: IPE-profielen in constructiestaal S235JR/S355J2 conform EN 10025-2 met toleranties volgens EN 10034.\nLevering met materiaalcertificaat type 2.2 of 3.1 volgens EN 10204.\nGelieve afwijkingen schriftelijk te bevestigen. Levertermijn in overleg. Betalingsvoorwaarden: 30 dagen netto. Vermeld onze productiereferentie bij levering.",
-  "en1090_preferences": {
-    "cutting": true,
-    "dummy part": false,
-    "lasercutting": true,
-    "sheetmetal": true,
-    "sheetmetal 4m": false,
-    "spare part": false,
-    "tube laser": true,
-    "tube laser l": false,
-    "onbekend": false
-  }
-}
-=======
   "en1090_note": "Bestelling conform EN 1090-2:2018+A1:2024.\nMateriaalspecificatie: profielen in constructiestaal S235JR/S355J2 conform EN 10025-2 met toleranties volgens EN 10034.\nLevering met materiaalcertificaat type 2.2 of 3.1 volgens EN 10204.",
   "en1090_preferences": {}
 }
->>>>>>> 2bf0c5eb3344bde549b283e6515224a952e32a7b
