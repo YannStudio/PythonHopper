@@ -1501,21 +1501,6 @@
       "favorite": false
     }
   ],
-  "defaults_by_production": {
-    "Lasercutting": "Productora",
-    "Sheetmetal +4m": "SPCM",
-    "Cutting": "Productora",
-    "Cutting::Opticutter": "Saey",
-    "Tube laser L": "AB-Matic (Hi-Motion)",
-    "Tube laser L::Opticutter": "AB-Matic (Hi-Motion)",
-    "Tube laser": "AB-Matic (Hi-Motion)",
-    "Tube laser::Opticutter": "AB-Matic (Hi-Motion)",
-    "Spare part::Opticutter": "AB-Matic (Hi-Motion)",
-    "Sheetmetal": "AB-Matic (Hi-Motion)",
-    "_Onbekend": "AB-Matic (Hi-Motion)"
-  },
-  "defaults_by_finish": {
-    "Finish-Paint": "AB-Matic (Hi-Motion)",
-    "Finish-Paint-RAL7016": "AB-Matic (Hi-Motion)"
-  }
+  "defaults_by_production": {},
+  "defaults_by_finish": {}
 }
