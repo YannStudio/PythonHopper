@@ -87,3 +87,7 @@ def test_default_en1090_settings_match_constants():
     defaults = AppSettings()
     assert defaults.en1090_enabled is True
     assert defaults.en1090_note == EN1090_NOTE_TEXT
+
+
+def test_finish_export_enabled_by_default():
+    assert AppSettings().copy_finish_exports is True

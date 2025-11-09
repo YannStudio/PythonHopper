@@ -2079,13 +2079,6 @@ def start_gui():
                 if typed:
                     set_combo_value(combo, typed)
                     continue
-                if not name and initial:
-                    favs = [x for x in src if x.favorite]
-                    name = (
-                        favs[0].supplier
-                        if favs
-                        else (src[0].supplier if src else "")
-                    )
                 disp = None
                 for k, v in self._disp_to_name.items():
                     if v and name and v.lower() == name.lower():
@@ -2094,12 +2087,7 @@ def start_gui():
                 if disp:
                     set_combo_value(combo, disp)
                 elif self._base_options:
-                    set_combo_value(
-                        combo,
-                        self._base_options[1]
-                        if len(self._base_options) > 1
-                        else self._base_options[0],
-                    )
+                    set_combo_value(combo, self._base_options[0])
 
             delivery_opts = [
                 "Geen",
