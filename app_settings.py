@@ -185,7 +185,7 @@ class AppSettings:
     )
     zip_per_production: bool = True
     combine_pdf_per_production: bool = True
-    copy_finish_exports: bool = False
+    copy_finish_exports: bool = True
     zip_finish_exports: bool = True
     export_processed_bom: bool = True
     export_related_bom_files: bool = True
