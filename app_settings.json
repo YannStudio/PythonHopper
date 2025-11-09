@@ -56,5 +56,15 @@
   "autofill_custom_bom": true,
   "en1090_enabled": true,
   "en1090_note": "Bestelling conform EN 1090-2:2018+A1:2024.\nMateriaalspecificatie: profielen in constructiestaal S235JR/S355J2 conform EN 10025-2 met toleranties volgens EN 10034.\nLevering met materiaalcertificaat type 2.2 of 3.1 volgens EN 10204.",
-  "en1090_preferences": {}
+  "en1090_preferences": {
+    "cutting": true,
+    "dummy part": false,
+    "lasercutting": true,
+    "sheetmetal": true,
+    "sheetmetal 4m": false,
+    "spare part": false,
+    "tube laser": true,
+    "tube laser l": false,
+    "onbekend": false
+  }
 }
