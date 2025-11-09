@@ -1588,10 +1588,18 @@ def start_gui():
                     en1090_frame.update_idletasks()
                     needed_width = checkbutton.winfo_reqwidth() + 4
                     self._ensure_en1090_width(needed_width)
-                    en1090_frame.configure(width=self._en1090_column_width_px)
+                    en1090_frame.configure(
+                        width=self._en1090_column_width_px,
+                        height=checkbutton.winfo_reqheight(),
+                    )
                 else:
-                    tk.Label(en1090_frame, text="").pack(anchor="w", fill="x")
-                    en1090_frame.configure(width=self._en1090_column_width_px)
+                    placeholder = tk.Label(en1090_frame, text="")
+                    placeholder.pack(anchor="w", fill="x")
+                    en1090_frame.update_idletasks()
+                    en1090_frame.configure(
+                        width=self._en1090_column_width_px,
+                        height=placeholder.winfo_reqheight(),
+                    )
 
                 doc_num_var = tk.StringVar()
                 self.doc_num_vars[sel_key] = doc_num_var
