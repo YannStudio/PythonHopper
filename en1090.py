@@ -9,9 +9,8 @@ from typing import Mapping
 
 EN1090_NOTE_TEXT = (
     "Bestelling conform EN 1090-2:2018+A1:2024.\n"
-    "Materiaalspecificatie: profielen in constructiestaal S235JR/S355J2 conform EN 10025-2 "
-    "met toleranties volgens EN 10034.\n"
-    "Levering met materiaalcertificaat type 2.2 of 3.1 volgens EN 10204."
+    "Levering met materiaalcertificaat type 2.2 of 3.1 volgens EN 10204.\n"
+    "Profielen in constructiestaal S235JR/S355J2 conform EN 10025-2 met toleranties volgens EN 10034."
 )
 
 
