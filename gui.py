@@ -1708,6 +1708,9 @@ def start_gui():
                         },
                     )
 
+            # Zorg dat de kolomhoofden overeenkomen met de zichtbare kolommen bij opstart
+            self.set_en1090_enabled(self._en1090_enabled)
+
             # Container voor kaarten
             preview_frame = tk.LabelFrame(
                 content,
@@ -1978,16 +1981,18 @@ def start_gui():
 
         def set_en1090_enabled(self, enabled: bool) -> None:
             desired = bool(enabled)
-            if desired == self._en1090_enabled:
-                return
+            state_changed = desired != self._en1090_enabled
             self._en1090_enabled = desired
-            if desired and "en1090_widget" not in self._visible_column_keys:
-                insert_at = self._column_keys.index("en1090_widget")
-                self._visible_column_keys.insert(insert_at, "en1090_widget")
-            elif not desired:
-                self._visible_column_keys = [
-                    key for key in self._visible_column_keys if key != "en1090_widget"
-                ]
+            if state_changed:
+                if desired and "en1090_widget" not in self._visible_column_keys:
+                    insert_at = self._column_keys.index("en1090_widget")
+                    self._visible_column_keys.insert(insert_at, "en1090_widget")
+                elif not desired:
+                    self._visible_column_keys = [
+                        key
+                        for key in self._visible_column_keys
+                        if key != "en1090_widget"
+                    ]
             self._repack_header_columns()
             self._repack_all_rows()
             self._header_aligned = False
