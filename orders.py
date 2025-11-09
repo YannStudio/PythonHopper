@@ -1205,7 +1205,7 @@ def generate_pdf_order_platypus(
     if en1090_required:
         note_text = EN1090_NOTE_TEXT if en1090_note is None else _to_str(en1090_note)
         if note_text:
-            story.append(Spacer(0, 6))
+            story.append(Spacer(0, 12))
             en1090_note_html = note_text.replace("\n", "<br/>")
             if note_text == EN1090_NOTE_TEXT:
                 en1090_note_html = f"<b>{en1090_note_html}</b>"
