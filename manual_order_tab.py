@@ -151,7 +151,7 @@ class ManualOrderTab(tk.Frame):
         header.configure(padx=12, pady=12)
         header.grid(row=0, column=0, sticky="nsew")
 
-        field_width_px = int(self.winfo_fpixels("12c"))
+        field_width_px = int(self.winfo_fpixels("6c"))
         manage_spacing_px = int(self.winfo_fpixels("3m"))
         base_font = font.nametofont("TkDefaultFont")
         char_width = max(1, base_font.measure("0"))
@@ -170,6 +170,8 @@ class ManualOrderTab(tk.Frame):
             values=self.DOC_TYPE_OPTIONS,
             state="readonly",
             width=field_char_width,
+            takefocus=False,
+            exportselection=False,
         )
         self.doc_type_combo.grid(row=0, column=1, sticky="w", padx=(6, 0))
 
@@ -186,7 +188,11 @@ class ManualOrderTab(tk.Frame):
             row=1, column=0, sticky="w", pady=(6, 0)
         )
         self.doc_number_var = tk.StringVar()
-        self.doc_number_entry = tk.Entry(header, textvariable=self.doc_number_var, width=18)
+        self.doc_number_entry = tk.Entry(
+            header,
+            textvariable=self.doc_number_var,
+            width=field_char_width,
+        )
         self.doc_number_entry.grid(row=1, column=1, sticky="w", padx=(6, 0), pady=(6, 0))
 
         tk.Label(header, text="Projectnaam:").grid(
