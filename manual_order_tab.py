@@ -173,9 +173,10 @@ class ManualOrderTab(tk.Frame):
         )
         self.doc_type_combo.grid(row=0, column=1, sticky="w", padx=(6, 0))
 
-        info_spacing_px = int(self.winfo_fpixels("1c"))
+        info_spacing_px = int(self.winfo_fpixels("10m"))
+        header.columnconfigure(2, minsize=info_spacing_px)
         tk.Label(header, text="Projectnummer:").grid(
-            row=0, column=3, sticky="w", padx=(info_spacing_px, 0)
+            row=0, column=3, sticky="w"
         )
         tk.Label(header, textvariable=self.project_number_var, anchor="w").grid(
             row=0, column=4, sticky="w", padx=(6, 0)
@@ -189,7 +190,7 @@ class ManualOrderTab(tk.Frame):
         self.doc_number_entry.grid(row=1, column=1, sticky="w", padx=(6, 0), pady=(6, 0))
 
         tk.Label(header, text="Projectnaam:").grid(
-            row=1, column=3, sticky="w", padx=(info_spacing_px, 0), pady=(6, 0)
+            row=1, column=3, sticky="w", pady=(6, 0)
         )
         tk.Label(header, textvariable=self.project_name_var, anchor="w").grid(
             row=1, column=4, sticky="w", padx=(6, 0), pady=(6, 0)
