@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, TYPE_CHECKING
 
 import tkinter as tk
 from tkinter import ttk, messagebox
 
 from orders import _prefix_for_doc_type
+
+if TYPE_CHECKING:
+    from clients_db import ClientsDB
 
 
 def _normalize_numeric(value: str) -> object:
@@ -119,16 +122,19 @@ class ManualOrderTab(tk.Frame):
         *,
         suppliers_db,
         delivery_db,
+        clients_db: Optional["ClientsDB"] = None,
         project_number_var: tk.StringVar,
         project_name_var: tk.StringVar,
         client_var: Optional[tk.StringVar] = None,
         on_export: Callable[[Dict[str, object]], None],
+        on_manage_clients: Optional[Callable[[], None]] = None,
         on_manage_suppliers: Optional[Callable[[], None]] = None,
         on_manage_deliveries: Optional[Callable[[], None]] = None,
     ) -> None:
         super().__init__(master)
         self.suppliers_db = suppliers_db
         self.delivery_db = delivery_db
+        self.clients_db = clients_db
         self.project_number_var = project_number_var
         self.project_name_var = project_name_var
         self.client_var = client_var or tk.StringVar()
@@ -187,13 +193,19 @@ class ManualOrderTab(tk.Frame):
         self.doc_type_var.trace_add("write", _handle_doc_type_change)
 
         tk.Label(header, text="Opdrachtgever:").grid(row=1, column=0, sticky="w", pady=(8, 0))
-        self.client_display = ttk.Entry(
+        self.client_combo = SearchableCombobox(
             header,
             textvariable=self.client_var,
-            state="readonly",
             width=40,
         )
-        self.client_display.grid(row=1, column=1, columnspan=3, sticky="ew", padx=(6, 0), pady=(8, 0))
+        self.client_combo.grid(row=1, column=1, sticky="ew", padx=(6, 0), pady=(8, 0))
+        if on_manage_clients:
+            tk.Button(
+                header,
+                text="Beheer",
+                command=on_manage_clients,
+                width=10,
+            ).grid(row=1, column=2, columnspan=2, sticky="e", pady=(8, 0))
 
         tk.Label(header, text="Leverancier:").grid(row=2, column=0, sticky="w", pady=(8, 0))
         self.supplier_var = tk.StringVar()
@@ -338,7 +350,25 @@ class ManualOrderTab(tk.Frame):
 
     # Public helpers -------------------------------------------------
     def refresh_data(self) -> None:
-        """Reload supplier/delivery options from databases."""
+        """Reload client/supplier/delivery options from databases."""
+
+        if self.clients_db is not None:
+            client_opts = [
+                self.clients_db.display_name(c)
+                for c in self.clients_db.clients_sorted()
+            ]
+        else:
+            client_opts = []
+        current_client = self.client_var.get()
+        try:
+            self.client_combo.set_choices(client_opts)
+        except Exception:
+            self.client_combo.configure(values=client_opts)
+        if current_client not in client_opts:
+            if client_opts:
+                self.client_var.set(client_opts[0])
+            else:
+                self.client_var.set("")
 
         supplier_opts = ["Geen"] + [
             self.suppliers_db.display_name(s)
