@@ -357,6 +357,7 @@ class ManualOrderTab(tk.Frame):
         base_font = font.nametofont("TkDefaultFont")
         char_width = max(1, base_font.measure("0"))
         field_char_width = max(1, round(field_width_px / char_width))
+        self._entry_char_pixels = char_width
         self.profile_material_chars = field_char_width
 
         header.columnconfigure(1, weight=0, minsize=field_width_px)
@@ -724,15 +725,18 @@ class ManualOrderTab(tk.Frame):
             if values is not None and column["key"] in values:
                 value = values[column["key"]]
                 var.set("" if value is None else str(value))
+            display_chars, min_width_px = self._column_display_metrics(column)
             entry = tk.Entry(
                 widgets.frame,
                 textvariable=var,
-                width=column.get("width", 12),
+                width=display_chars,
                 justify=column.get("justify", "left"),
             )
             entry.grid(row=0, column=idx, sticky="ew", padx=(6 if idx else 0, 6))
             if column.get("stretch"):
-                widgets.frame.columnconfigure(idx, weight=1)
+                widgets.frame.columnconfigure(idx, weight=1, minsize=min_width_px)
+            else:
+                widgets.frame.columnconfigure(idx, weight=0, minsize=min_width_px)
             var.trace_add("write", lambda *_args: self._update_totals())
             widgets.vars[column["key"]] = var
             widgets.entries[column["key"]] = entry
@@ -863,7 +867,33 @@ class ManualOrderTab(tk.Frame):
                     if column.get("key") == "Materiaal":
                         column["width"] = material_width
                         break
+        for column in cloned:
+            self._ensure_column_metrics(column)
         return cloned
+
+    def _ensure_column_metrics(self, column: Dict[str, object]) -> None:
+        """Ensure helper sizing metadata is present on a column definition."""
+
+        width_value = column.get("width", 12)
+        try:
+            base_width = int(width_value)
+        except Exception:
+            try:
+                base_width = int(float(width_value))
+            except Exception:
+                base_width = 12
+        label_text = str(column.get("label") or column.get("key") or "")
+        display_chars = max(base_width, len(label_text))
+        column["_display_chars"] = display_chars
+        min_width_px = max(1, int(round(display_chars * getattr(self, "_entry_char_pixels", 1))))
+        column["_min_width_px"] = min_width_px
+
+    def _column_display_metrics(self, column: Dict[str, object]) -> tuple[int, int]:
+        """Return the preferred width in characters and pixels for a column."""
+
+        if "_display_chars" not in column or "_min_width_px" not in column:
+            self._ensure_column_metrics(column)
+        return column["_display_chars"], column["_min_width_px"]
 
     def _capture_rows(self) -> List[Dict[str, str]]:
         captured: List[Dict[str, str]] = []
@@ -886,17 +916,19 @@ class ManualOrderTab(tk.Frame):
             except Exception:
                 pass
         for idx, column in enumerate(self.current_columns):
+            display_chars, min_width_px = self._column_display_metrics(column)
             lbl = tk.Label(
                 self.header_row,
                 text=column.get("label", column.get("key", "")),
                 anchor="w",
                 font=("TkDefaultFont", 10, "bold"),
+                width=display_chars,
             )
             lbl.grid(row=0, column=idx, sticky="ew", padx=(6 if idx else 0, 6))
             if column.get("stretch"):
-                self.header_row.columnconfigure(idx, weight=1)
+                self.header_row.columnconfigure(idx, weight=1, minsize=min_width_px)
             else:
-                self.header_row.columnconfigure(idx, weight=0)
+                self.header_row.columnconfigure(idx, weight=0, minsize=min_width_px)
 
     def _apply_template(self, template: str, *, store_previous: bool = True) -> None:
         if store_previous and self.current_template_name:
