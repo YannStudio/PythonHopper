@@ -37,6 +37,8 @@ class DummyCombo:
     def __init__(self, value=""):
         self.value = value
         self.values = []
+        self._selection = ""
+        self.cursor = 0
 
     def get(self):
         return self.value
@@ -47,6 +49,25 @@ class DummyCombo:
 
     def set(self, val):
         self.value = val
+
+    def delete(self, *_args):
+        self.value = ""
+
+    def insert(self, _index, text):
+        self.value = text
+
+    def selection_clear(self, *_args):
+        self._selection = ""
+
+    def selection_present(self):
+        return bool(self._selection)
+
+    def icursor(self, index):
+        self.cursor = index
+
+    # Helpers for tests to simulate selection state
+    def set_selection(self, text):
+        self._selection = text
 
 
 def _load_supplier_frame():
@@ -108,6 +129,8 @@ def _load_supplier_frame():
         Checkbutton=Frame,
         Button=Frame,
         LabelFrame=Frame,
+        END="end",
+        TclError=Exception,
     )
     ttk_stub = types.SimpleNamespace(Combobox=type("Combobox", (), {}))
     ns = {
@@ -146,6 +169,7 @@ class DummySel:
         self.delivery_combos = {}
         self._preview_supplier = None
         self.cards_frame = SupplierSelectionFrame._Frame(None)
+        self._type_filter_by_key = {}
 
     def _update_preview_for_text(self, text):
         self._preview_supplier = self._resolve_text_to_supplier(text)
@@ -159,8 +183,11 @@ def test_unaccented_filter_and_selects_supplier():
     sel = DummySel(sdb)
     sel._refresh_options(initial=True)
     combo = sel.rows[0][1]
-    combo.set("Cafe")
-    sel._on_combo_type(types.SimpleNamespace(keysym="Return"), "Prod", combo)
+    for ch in "Cafe":
+        sel._on_combo_type(
+            types.SimpleNamespace(keysym=ch, char=ch, state=0), "Prod", combo
+        )
+    sel._on_combo_type(types.SimpleNamespace(keysym="Return", char="", state=0), "Prod", combo)
     assert combo.values == ["Café"]
     assert combo.get() == "Café"
     assert sel._preview_supplier and sel._preview_supplier.supplier == "Café"
@@ -178,8 +205,30 @@ def test_populate_cards_not_called_for_empty_text():
         calls.append(options)
 
     sel._populate_cards = fake_populate
-    sel._on_combo_type(types.SimpleNamespace(keysym="a"), "Prod", combo)
-    assert calls == []
+    sel._on_combo_type(
+        types.SimpleNamespace(keysym="a", char="a", state=0), "Prod", combo
+    )
+    assert calls == [["Alpha"]]
+
+
+def test_filters_use_supplier_name_not_display_prefix():
+    suppliers = [
+        Supplier(supplier="Alpha", favorite=True),
+        Supplier(supplier="Delta"),
+        Supplier(supplier="Beta"),
+    ]
+    sdb = SuppliersDB(suppliers)
+    sel = DummySel(sdb)
+    sel._refresh_options(initial=True)
+    combo = sel.rows[0][1]
+    sel._on_combo_type(
+        types.SimpleNamespace(keysym="d", char="d", state=0), "Prod", combo
+    )
+    assert combo.values and combo.values[0] == "Delta"
+    sel._on_combo_type(
+        types.SimpleNamespace(keysym="e", char="e", state=0), "Prod", combo
+    )
+    assert combo.values == ["Delta"]
 
 
 def test_populate_cards_card_format():

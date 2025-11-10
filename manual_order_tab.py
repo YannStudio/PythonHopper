@@ -582,13 +582,14 @@ class ManualOrderTab(tk.Frame):
                 pass
 
         self.template_combo.bind("<FocusIn>", _reset_template_focus, add="+")
+        self.template_combo.bind("<<ComboboxSelected>>", _reset_template_focus, add="+")
 
         self.header_row = tk.Frame(table_container)
-        self.header_row.grid(row=1, column=0, sticky="ew", padx=4, pady=(0, 6))
+        self.header_row.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 6))
         self.header_row.columnconfigure(0, weight=1)
 
         self.table_canvas = tk.Canvas(table_container, highlightthickness=0)
-        self.table_canvas.grid(row=2, column=0, sticky="nsew", padx=(4, 0))
+        self.table_canvas.grid(row=2, column=0, sticky="nsew", padx=(0, 0))
         table_scroll = ttk.Scrollbar(
             table_container, orient="vertical", command=self.table_canvas.yview
         )
