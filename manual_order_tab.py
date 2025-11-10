@@ -64,7 +64,8 @@ class SearchableCombobox(ttk.Combobox):
 
     # Internal -------------------------------------------------------
     def _apply_filter(self, query: str) -> None:
-        normalized = query.casefold().strip()
+        display_text = query
+        normalized = display_text.casefold().strip()
         if not normalized:
             filtered = self._all_values
         else:
@@ -78,9 +79,24 @@ class SearchableCombobox(ttk.Combobox):
         if filtered:
             # Toon de dropdown zodat de gebruiker direct kan kiezen
             try:
-                self.event_generate("<Down>")
+                self.tk.call("ttk::combobox::Post", self._w)
             except Exception:
-                pass
+                try:
+                    self.event_generate("<Down>")
+                except Exception:
+                    pass
+
+            def _restore_entry() -> None:
+                try:
+                    self.delete(0, tk.END)
+                    self.insert(0, display_text)
+                    self.selection_clear()
+                    self.icursor(tk.END)
+                    self.focus_set()
+                except Exception:
+                    pass
+
+            self.after_idle(_restore_entry)
 
     def _on_key_release(self, event: tk.Event) -> None:
         if event.keysym in {"Up", "Down", "Return", "Escape", "Tab"}:
@@ -178,13 +194,22 @@ class ManualOrderTab(tk.Frame):
         ],
         "Spare parts": [
             {
-                "key": "Supplier",
-                "label": "Supplier",
+                "key": "Artikel",
+                "label": "Artikel",
                 "width": 20,
                 "justify": "left",
                 "stretch": True,
                 "wrap": True,
                 "weight": 2.0,
+            },
+            {
+                "key": "Supplier",
+                "label": "Supplier",
+                "width": 18,
+                "justify": "left",
+                "stretch": False,
+                "wrap": True,
+                "weight": 1.6,
             },
             {
                 "key": "SupplierCode",
@@ -235,6 +260,15 @@ class ManualOrderTab(tk.Frame):
             },
         ],
         "Profielen": [
+            {
+                "key": "ArtikelNummer",
+                "label": "Artikel nr.",
+                "width": 16,
+                "justify": "left",
+                "stretch": False,
+                "wrap": False,
+                "weight": 1.4,
+            },
             {
                 "key": "ProfielType",
                 "label": "Profiel type",
@@ -323,6 +357,7 @@ class ManualOrderTab(tk.Frame):
         base_font = font.nametofont("TkDefaultFont")
         char_width = max(1, base_font.measure("0"))
         field_char_width = max(1, round(field_width_px / char_width))
+        self.profile_material_chars = field_char_width
 
         header.columnconfigure(1, weight=0, minsize=field_width_px)
         header.columnconfigure(2, weight=0)
@@ -536,6 +571,18 @@ class ManualOrderTab(tk.Frame):
         )
         self.template_combo.pack(side="left", padx=(6, 0))
 
+        def _reset_template_focus(_event: tk.Event | None = None) -> None:
+            try:
+                self.template_combo.selection_clear(0, tk.END)
+            except Exception:
+                pass
+            try:
+                self.template_combo.icursor(tk.END)
+            except Exception:
+                pass
+
+        self.template_combo.bind("<FocusIn>", _reset_template_focus, add="+")
+
         self.header_row = tk.Frame(table_container)
         self.header_row.grid(row=1, column=0, sticky="ew", padx=4, pady=(0, 6))
         self.header_row.columnconfigure(0, weight=1)
@@ -723,11 +770,7 @@ class ManualOrderTab(tk.Frame):
         except Exception:
             desired = 1
         desired = max(1, min(desired, 500))
-        current = len(self.rows)
-        to_add = max(0, desired - current)
-        if to_add == 0:
-            return
-        for _ in range(to_add):
+        for _ in range(desired):
             self.add_row()
 
     # Data collection ------------------------------------------------
@@ -811,7 +854,15 @@ class ManualOrderTab(tk.Frame):
 
     def _clone_columns(self, template: str) -> List[Dict[str, object]]:
         columns = self.COLUMN_TEMPLATES.get(template, [])
-        return [dict(col) for col in columns]
+        cloned = [dict(col) for col in columns]
+        if template == "Profielen":
+            material_width = getattr(self, "profile_material_chars", None)
+            if material_width:
+                for column in cloned:
+                    if column.get("key") == "Materiaal":
+                        column["width"] = material_width
+                        break
+        return cloned
 
     def _capture_rows(self) -> List[Dict[str, str]]:
         captured: List[Dict[str, str]] = []
@@ -834,11 +885,10 @@ class ManualOrderTab(tk.Frame):
             except Exception:
                 pass
         for idx, column in enumerate(self.current_columns):
-            anchor = "w" if column.get("justify") != "right" else "e"
             lbl = tk.Label(
                 self.header_row,
                 text=column.get("label", column.get("key", "")),
-                anchor=anchor,
+                anchor="w",
                 font=("TkDefaultFont", 10, "bold"),
             )
             lbl.grid(row=0, column=idx, sticky="ew", padx=(6 if idx else 0, 6))
