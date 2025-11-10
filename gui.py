@@ -3327,11 +3327,12 @@ def start_gui():
                 delivery_db=self.delivery_db,
                 project_number_var=self.project_number_var,
                 project_name_var=self.project_name_var,
+                client_var=getattr(self, "client_var", None),
                 on_export=self._export_manual_order,
                 on_manage_suppliers=lambda: self.nb.select(self.suppliers_frame),
                 on_manage_deliveries=lambda: self.nb.select(self.delivery_frame),
             )
-            self.nb.add(self.manual_order_tab, text="Handmatige bon")
+            self.nb.add(self.manual_order_tab, text="Bestelbon-editor")
             self.opticutter_frame = tk.Frame(self.nb)
             self.opticutter_frame.configure(padx=12, pady=12)
             self.nb.add(self.opticutter_frame, text="Opticutter")
@@ -3990,7 +3991,10 @@ def start_gui():
                 return
 
             remark_text = _to_str(payload.get("remark")).strip()
-            context_label = _to_str(payload.get("context_label")).strip() or "Handmatige bon"
+            context_label = (
+                _to_str(payload.get("context_label")).strip()
+                or ManualOrderTab.DEFAULT_CONTEXT_LABEL
+            )
             context_kind = _to_str(payload.get("context_kind")).strip() or "document"
 
             dest = self.dest_folder_var.get().strip()
@@ -4020,7 +4024,10 @@ def start_gui():
             today = today_date.strftime("%Y-%m-%d")
             doc_token = _sanitize_component(doc_number) if doc_number else ""
             num_part = f"_{doc_token}" if doc_token else ""
-            context_token = _sanitize_component(context_label) or "Handmatige-bon"
+            default_context_token = _sanitize_component(
+                ManualOrderTab.DEFAULT_CONTEXT_LABEL
+            )
+            context_token = _sanitize_component(context_label) or default_context_token
             if project_number:
                 pn_token = _sanitize_component(project_number)
                 if pn_token:

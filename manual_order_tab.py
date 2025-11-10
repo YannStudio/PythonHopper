@@ -9,6 +9,8 @@ from typing import Callable, Dict, List, Optional
 import tkinter as tk
 from tkinter import ttk, messagebox
 
+from orders import _prefix_for_doc_type
+
 
 def _normalize_numeric(value: str) -> object:
     """Try to convert ``value`` to ``int``/``float`` while respecting decimals."""
@@ -35,9 +37,66 @@ class _ManualRowWidgets:
     remove_btn: tk.Button
 
 
+DEFAULT_MANUAL_CONTEXT = "Bestelbon-editor"
+
+
+class SearchableCombobox(ttk.Combobox):
+    """``ttk.Combobox`` variant met eenvoudige zoek/filter-functionaliteit."""
+
+    def __init__(self, master: tk.Misc, *, values=(), **kwargs) -> None:
+        self._all_values: List[str] = list(values or ())
+        self._last_query: str = ""
+        super().__init__(master, values=values, **kwargs)
+        self.bind("<KeyRelease>", self._on_key_release, add="+")
+        self.bind("<<ComboboxSelected>>", self._on_selection, add="+")
+        self.bind("<FocusIn>", self._restore_values, add="+")
+
+    # Public helpers -------------------------------------------------
+    def set_choices(self, values: List[str]) -> None:
+        """Update beschikbare opties en hergebruik de huidige filter."""
+
+        self._all_values = list(values)
+        self._apply_filter(self._last_query)
+
+    # Internal -------------------------------------------------------
+    def _apply_filter(self, query: str) -> None:
+        normalized = query.casefold().strip()
+        if not normalized:
+            filtered = self._all_values
+        else:
+            filtered = [
+                option
+                for option in self._all_values
+                if normalized in option.casefold()
+            ]
+        self.configure(values=filtered)
+        self._last_query = normalized
+        if filtered:
+            # Toon de dropdown zodat de gebruiker direct kan kiezen
+            try:
+                self.event_generate("<Down>")
+            except Exception:
+                pass
+
+    def _on_key_release(self, event: tk.Event) -> None:
+        if event.keysym in {"Up", "Down", "Return", "Escape", "Tab"}:
+            if event.keysym == "Escape":
+                self._restore_values()
+            return
+        self.after_idle(lambda: self._apply_filter(self.get()))
+
+    def _on_selection(self, _event: tk.Event) -> None:
+        self._restore_values()
+
+    def _restore_values(self, _event: tk.Event | None = None) -> None:
+        self.configure(values=self._all_values)
+        self._last_query = ""
+
+
 class ManualOrderTab(tk.Frame):
     """Tab om handmatige orderregels in te geven."""
 
+    DEFAULT_CONTEXT_LABEL = DEFAULT_MANUAL_CONTEXT
     COLUMNS: List[Dict[str, object]] = [
         {"key": "PartNumber", "label": "Artikel nr.", "width": 16, "justify": "left"},
         {"key": "Description", "label": "Omschrijving", "width": 32, "justify": "left"},
@@ -62,6 +121,7 @@ class ManualOrderTab(tk.Frame):
         delivery_db,
         project_number_var: tk.StringVar,
         project_name_var: tk.StringVar,
+        client_var: Optional[tk.StringVar] = None,
         on_export: Callable[[Dict[str, object]], None],
         on_manage_suppliers: Optional[Callable[[], None]] = None,
         on_manage_deliveries: Optional[Callable[[], None]] = None,
@@ -71,6 +131,7 @@ class ManualOrderTab(tk.Frame):
         self.delivery_db = delivery_db
         self.project_number_var = project_number_var
         self.project_name_var = project_name_var
+        self.client_var = client_var or tk.StringVar()
         self._on_export = on_export
         self._on_manage_suppliers = on_manage_suppliers
         self._on_manage_deliveries = on_manage_deliveries
@@ -81,6 +142,7 @@ class ManualOrderTab(tk.Frame):
         self.rowconfigure(1, weight=1)
 
         header = tk.LabelFrame(self, text="Documentgegevens", labelanchor="n")
+        header.configure(padx=12, pady=12)
         header.grid(row=0, column=0, sticky="nsew")
         header.columnconfigure(1, weight=1)
         header.columnconfigure(3, weight=1)
@@ -101,43 +163,81 @@ class ManualOrderTab(tk.Frame):
         self.doc_number_entry = tk.Entry(header, textvariable=self.doc_number_var, width=18)
         self.doc_number_entry.grid(row=0, column=3, sticky="w", padx=(6, 0))
 
-        tk.Label(header, text="Leverancier:").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        self._doc_number_prefix = _prefix_for_doc_type(self.doc_type_var.get())
+        if self._doc_number_prefix:
+            self.doc_number_var.set(self._doc_number_prefix)
+
+        def _handle_doc_type_change(*_args):
+            old_prefix = getattr(self, "_doc_number_prefix", "")
+            new_prefix = _prefix_for_doc_type(self.doc_type_var.get())
+            current = self.doc_number_var.get().strip()
+            if not current:
+                if new_prefix:
+                    self.doc_number_var.set(new_prefix)
+            elif old_prefix and current.startswith(old_prefix):
+                remainder = current[len(old_prefix) :].lstrip(" -_")
+                if new_prefix:
+                    self.doc_number_var.set(new_prefix + remainder)
+                else:
+                    self.doc_number_var.set(remainder)
+            elif current == old_prefix and new_prefix:
+                self.doc_number_var.set(new_prefix)
+            self._doc_number_prefix = new_prefix
+
+        self.doc_type_var.trace_add("write", _handle_doc_type_change)
+
+        tk.Label(header, text="Opdrachtgever:").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        self.client_display = ttk.Entry(
+            header,
+            textvariable=self.client_var,
+            state="readonly",
+            width=40,
+        )
+        self.client_display.grid(row=1, column=1, columnspan=3, sticky="ew", padx=(6, 0), pady=(8, 0))
+
+        tk.Label(header, text="Leverancier:").grid(row=2, column=0, sticky="w", pady=(8, 0))
         self.supplier_var = tk.StringVar()
-        self.supplier_combo = ttk.Combobox(header, textvariable=self.supplier_var, width=40)
-        self.supplier_combo.grid(row=1, column=1, sticky="ew", pady=(8, 0))
+        self.supplier_combo = SearchableCombobox(
+            header, textvariable=self.supplier_var, width=40
+        )
+        self.supplier_combo.grid(row=2, column=1, sticky="ew", padx=(6, 0), pady=(8, 0))
         if on_manage_suppliers:
             tk.Button(
                 header,
                 text="Beheer",
                 command=on_manage_suppliers,
                 width=10,
-            ).grid(row=1, column=2, columnspan=2, sticky="e", pady=(8, 0))
+            ).grid(row=2, column=2, columnspan=2, sticky="e", pady=(8, 0))
 
-        tk.Label(header, text="Leveradres:").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        tk.Label(header, text="Leveradres:").grid(row=3, column=0, sticky="w", pady=(6, 0))
         self.delivery_var = tk.StringVar()
-        self.delivery_combo = ttk.Combobox(header, textvariable=self.delivery_var, width=40)
-        self.delivery_combo.grid(row=2, column=1, sticky="ew", pady=(6, 0))
+        self.delivery_combo = SearchableCombobox(
+            header, textvariable=self.delivery_var, width=40
+        )
+        self.delivery_combo.grid(row=3, column=1, sticky="ew", padx=(6, 0), pady=(6, 0))
         if on_manage_deliveries:
             tk.Button(
                 header,
                 text="Beheer",
                 command=on_manage_deliveries,
                 width=10,
-            ).grid(row=2, column=2, columnspan=2, sticky="e", pady=(6, 0))
+            ).grid(row=3, column=2, columnspan=2, sticky="e", pady=(6, 0))
 
-        tk.Label(header, text="Projectnummer:").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        tk.Label(header, text="Projectnummer:").grid(row=4, column=0, sticky="w", pady=(6, 0))
         tk.Label(header, textvariable=self.project_number_var, anchor="w").grid(
-            row=3, column=1, sticky="w", pady=(6, 0)
+            row=4, column=1, sticky="w", pady=(6, 0)
         )
-        tk.Label(header, text="Projectnaam:").grid(row=3, column=2, sticky="w", padx=(12, 0), pady=(6, 0))
+        tk.Label(header, text="Projectnaam:").grid(row=4, column=2, sticky="w", padx=(12, 0), pady=(6, 0))
         tk.Label(header, textvariable=self.project_name_var, anchor="w").grid(
-            row=3, column=3, sticky="w", pady=(6, 0)
+            row=4, column=3, sticky="w", pady=(6, 0)
         )
 
-        tk.Label(header, text="Documentnaam:").grid(row=4, column=0, sticky="w", pady=(6, 0))
-        self.context_label_var = tk.StringVar(value=self.project_name_var.get().strip() or "Handmatige bon")
+        tk.Label(header, text="Documentnaam:").grid(row=5, column=0, sticky="w", pady=(6, 0))
+        self.context_label_var = tk.StringVar(
+            value=self.project_name_var.get().strip() or self.DEFAULT_CONTEXT_LABEL
+        )
         context_entry = tk.Entry(header, textvariable=self.context_label_var)
-        context_entry.grid(row=4, column=1, columnspan=3, sticky="ew", pady=(6, 0))
+        context_entry.grid(row=5, column=1, columnspan=3, sticky="ew", padx=(6, 0), pady=(6, 0))
 
         def _mark_context_modified(*_args):
             self._context_user_modified = True
@@ -147,25 +247,32 @@ class ManualOrderTab(tk.Frame):
         def _sync_project_name(*_args):
             if not self._context_user_modified:
                 self.context_label_var.set(
-                    self.project_name_var.get().strip() or "Handmatige bon"
+                    self.project_name_var.get().strip() or self.DEFAULT_CONTEXT_LABEL
                 )
 
         self.project_name_var.trace_add("write", _sync_project_name)
 
-        tk.Label(header, text="Opmerkingen:").grid(row=5, column=0, sticky="nw", pady=(8, 0))
+        tk.Label(header, text="Opmerkingen:").grid(row=6, column=0, sticky="nw", pady=(8, 0))
         self.remark_text = tk.Text(header, height=4, wrap="word")
-        self.remark_text.grid(row=5, column=1, columnspan=3, sticky="nsew", pady=(8, 0))
-        header.rowconfigure(5, weight=1)
+        self.remark_text.grid(
+            row=6,
+            column=1,
+            columnspan=3,
+            sticky="nsew",
+            padx=(6, 0),
+            pady=(8, 0),
+        )
+        header.rowconfigure(6, weight=1)
 
         ttk.Separator(self, orient="horizontal").grid(row=1, column=0, sticky="ew", pady=12)
 
         table_container = tk.Frame(self)
-        table_container.grid(row=2, column=0, sticky="nsew")
+        table_container.grid(row=2, column=0, sticky="nsew", padx=4)
         table_container.columnconfigure(0, weight=1)
         table_container.rowconfigure(1, weight=1)
 
         header_row = tk.Frame(table_container)
-        header_row.grid(row=0, column=0, sticky="ew")
+        header_row.grid(row=0, column=0, sticky="ew", padx=4, pady=(0, 6))
         header_row.columnconfigure(len(self.COLUMNS), weight=0)
         for idx, column in enumerate(self.COLUMNS):
             tk.Label(
@@ -173,11 +280,11 @@ class ManualOrderTab(tk.Frame):
                 text=column["label"],
                 anchor="w" if column["justify"] != "right" else "e",
                 font=("TkDefaultFont", 10, "bold"),
-            ).grid(row=0, column=idx, sticky="ew", padx=(4 if idx else 0, 4))
+            ).grid(row=0, column=idx, sticky="ew", padx=(6 if idx else 0, 6))
             header_row.columnconfigure(idx, weight=1 if column["key"] == "Description" else 0)
 
         self.table_canvas = tk.Canvas(table_container, highlightthickness=0)
-        self.table_canvas.grid(row=1, column=0, sticky="nsew")
+        self.table_canvas.grid(row=1, column=0, sticky="nsew", padx=(4, 0))
         table_scroll = ttk.Scrollbar(
             table_container, orient="vertical", command=self.table_canvas.yview
         )
@@ -204,7 +311,7 @@ class ManualOrderTab(tk.Frame):
         self.table_canvas.bind("<Configure>", _resize_canvas)
 
         controls = tk.Frame(table_container)
-        controls.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        controls.grid(row=2, column=0, columnspan=2, sticky="ew", padx=4, pady=(8, 0))
         controls.columnconfigure(0, weight=1)
 
         tk.Button(
@@ -219,7 +326,7 @@ class ManualOrderTab(tk.Frame):
         )
 
         footer = tk.Frame(self)
-        footer.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        footer.grid(row=3, column=0, sticky="ew", padx=4, pady=(12, 0))
         footer.columnconfigure(0, weight=1)
         tk.Button(footer, text="Bestelbon opslaan", command=self._handle_export).grid(
             row=0, column=1, sticky="e"
@@ -238,7 +345,10 @@ class ManualOrderTab(tk.Frame):
             for s in self.suppliers_db.suppliers_sorted()
         ]
         current_supplier = self.supplier_var.get()
-        self.supplier_combo["values"] = supplier_opts
+        try:
+            self.supplier_combo.set_choices(supplier_opts)
+        except Exception:
+            self.supplier_combo.configure(values=supplier_opts)
         if current_supplier not in supplier_opts:
             self.supplier_var.set("Geen")
 
@@ -247,17 +357,21 @@ class ManualOrderTab(tk.Frame):
             for a in self.delivery_db.addresses_sorted()
         ]
         current_delivery = self.delivery_var.get()
-        self.delivery_combo["values"] = delivery_opts
+        try:
+            self.delivery_combo.set_choices(delivery_opts)
+        except Exception:
+            self.delivery_combo.configure(values=delivery_opts)
         if current_delivery not in delivery_opts:
             self.delivery_var.set(self.DELIVERY_PRESETS[0])
 
     def set_doc_number(self, value: str) -> None:
         self.doc_number_var.set(value)
+        self._doc_number_prefix = _prefix_for_doc_type(self.doc_type_var.get())
 
     # Row management -------------------------------------------------
     def add_row(self) -> None:
         widgets = _ManualRowWidgets(frame=tk.Frame(self.rows_frame), vars={}, entries={}, remove_btn=None)  # type: ignore[arg-type]
-        widgets.frame.pack(fill="x", pady=2)
+        widgets.frame.pack(fill="x", padx=6, pady=4)
         widgets.frame.columnconfigure(len(self.COLUMNS), weight=0)
 
         for idx, column in enumerate(self.COLUMNS):
@@ -268,7 +382,7 @@ class ManualOrderTab(tk.Frame):
                 width=column.get("width", 12),
                 justify=column.get("justify", "left"),
             )
-            entry.grid(row=0, column=idx, sticky="ew", padx=(4 if idx else 0, 4))
+            entry.grid(row=0, column=idx, sticky="ew", padx=(6 if idx else 0, 6))
             if column["key"] == "Description":
                 widgets.frame.columnconfigure(idx, weight=1)
             var.trace_add("write", lambda *_args: self._update_totals())
@@ -352,7 +466,8 @@ class ManualOrderTab(tk.Frame):
             "doc_number": self.doc_number_var.get().strip(),
             "supplier": self.supplier_var.get().strip(),
             "delivery": self.delivery_var.get().strip(),
-            "context_label": self.context_label_var.get().strip() or "Handmatige bon",
+            "context_label": self.context_label_var.get().strip()
+            or self.DEFAULT_CONTEXT_LABEL,
             "context_kind": "document",
             "remark": remark,
             "items": items,
