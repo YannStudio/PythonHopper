@@ -152,7 +152,6 @@ class ManualOrderTab(tk.Frame):
         header.grid(row=0, column=0, sticky="nsew")
         header.columnconfigure(1, weight=1)
         header.columnconfigure(2, weight=0)
-        header.columnconfigure(3, weight=0)
 
         self.doc_type_var = tk.StringVar(value=self.DOC_TYPE_OPTIONS[0])
         tk.Label(header, text="Documenttype:").grid(row=0, column=0, sticky="w")
@@ -165,10 +164,12 @@ class ManualOrderTab(tk.Frame):
         )
         self.doc_type_combo.grid(row=0, column=1, sticky="w", padx=(6, 0))
 
-        tk.Label(header, text="Documentnummer:").grid(row=0, column=2, sticky="w", padx=(12, 0))
+        tk.Label(header, text="Documentnummer:").grid(
+            row=1, column=0, sticky="w", pady=(6, 0)
+        )
         self.doc_number_var = tk.StringVar()
         self.doc_number_entry = tk.Entry(header, textvariable=self.doc_number_var, width=18)
-        self.doc_number_entry.grid(row=0, column=3, sticky="w", padx=(6, 0))
+        self.doc_number_entry.grid(row=1, column=1, sticky="w", padx=(6, 0), pady=(6, 0))
 
         self._doc_number_prefix = _prefix_for_doc_type(self.doc_type_var.get())
         if self._doc_number_prefix:
@@ -193,64 +194,64 @@ class ManualOrderTab(tk.Frame):
 
         self.doc_type_var.trace_add("write", _handle_doc_type_change)
 
-        tk.Label(header, text="Opdrachtgever:").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        tk.Label(header, text="Opdrachtgever:").grid(row=2, column=0, sticky="w", pady=(8, 0))
         self.client_combo = SearchableCombobox(
             header,
             textvariable=self.client_var,
-            width=40,
+            width=35,
         )
-        self.client_combo.grid(row=1, column=1, sticky="ew", padx=(6, 0), pady=(8, 0))
+        self.client_combo.grid(row=2, column=1, sticky="w", padx=(6, 0), pady=(8, 0))
         if on_manage_clients:
             tk.Button(
                 header,
                 text="Beheer",
                 command=on_manage_clients,
                 width=10,
-            ).grid(row=1, column=2, sticky="w", padx=(6, 0), pady=(8, 0))
+            ).grid(row=2, column=2, sticky="w", padx=(6, 0), pady=(8, 0))
 
-        tk.Label(header, text="Leverancier:").grid(row=2, column=0, sticky="w", pady=(8, 0))
+        tk.Label(header, text="Leverancier:").grid(row=3, column=0, sticky="w", pady=(8, 0))
         self.supplier_var = tk.StringVar()
         self.supplier_combo = SearchableCombobox(
-            header, textvariable=self.supplier_var, width=40
+            header, textvariable=self.supplier_var, width=35
         )
-        self.supplier_combo.grid(row=2, column=1, sticky="ew", padx=(6, 0), pady=(8, 0))
+        self.supplier_combo.grid(row=3, column=1, sticky="w", padx=(6, 0), pady=(8, 0))
         if on_manage_suppliers:
             tk.Button(
                 header,
                 text="Beheer",
                 command=on_manage_suppliers,
                 width=10,
-            ).grid(row=2, column=2, sticky="w", padx=(6, 0), pady=(8, 0))
+            ).grid(row=3, column=2, sticky="w", padx=(6, 0), pady=(8, 0))
 
-        tk.Label(header, text="Leveradres:").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        tk.Label(header, text="Leveradres:").grid(row=4, column=0, sticky="w", pady=(6, 0))
         self.delivery_var = tk.StringVar()
         self.delivery_combo = SearchableCombobox(
-            header, textvariable=self.delivery_var, width=40
+            header, textvariable=self.delivery_var, width=35
         )
-        self.delivery_combo.grid(row=3, column=1, sticky="ew", padx=(6, 0), pady=(6, 0))
+        self.delivery_combo.grid(row=4, column=1, sticky="w", padx=(6, 0), pady=(6, 0))
         if on_manage_deliveries:
             tk.Button(
                 header,
                 text="Beheer",
                 command=on_manage_deliveries,
                 width=10,
-            ).grid(row=3, column=2, sticky="w", padx=(6, 0), pady=(6, 0))
+            ).grid(row=4, column=2, sticky="w", padx=(6, 0), pady=(6, 0))
 
-        tk.Label(header, text="Projectnummer:").grid(row=4, column=0, sticky="w", pady=(6, 0))
+        tk.Label(header, text="Projectnummer:").grid(row=5, column=0, sticky="w", pady=(6, 0))
         tk.Label(header, textvariable=self.project_number_var, anchor="w").grid(
-            row=4, column=1, sticky="w", pady=(6, 0)
+            row=5, column=1, sticky="w", pady=(6, 0)
         )
-        tk.Label(header, text="Projectnaam:").grid(row=4, column=2, sticky="w", padx=(12, 0), pady=(6, 0))
+        tk.Label(header, text="Projectnaam:").grid(row=6, column=0, sticky="w", pady=(6, 0))
         tk.Label(header, textvariable=self.project_name_var, anchor="w").grid(
-            row=4, column=3, sticky="w", pady=(6, 0)
+            row=6, column=1, columnspan=2, sticky="w", pady=(6, 0)
         )
 
-        tk.Label(header, text="Documentnaam:").grid(row=5, column=0, sticky="w", pady=(6, 0))
+        tk.Label(header, text="Documentnaam:").grid(row=7, column=0, sticky="w", pady=(6, 0))
         self.context_label_var = tk.StringVar(
             value=self.project_name_var.get().strip() or self.DEFAULT_CONTEXT_LABEL
         )
         context_entry = tk.Entry(header, textvariable=self.context_label_var)
-        context_entry.grid(row=5, column=1, columnspan=3, sticky="ew", padx=(6, 0), pady=(6, 0))
+        context_entry.grid(row=7, column=1, columnspan=2, sticky="ew", padx=(6, 0), pady=(6, 0))
 
         def _mark_context_modified(*_args):
             self._context_user_modified = True
@@ -265,17 +266,17 @@ class ManualOrderTab(tk.Frame):
 
         self.project_name_var.trace_add("write", _sync_project_name)
 
-        tk.Label(header, text="Opmerkingen:").grid(row=6, column=0, sticky="nw", pady=(8, 0))
+        tk.Label(header, text="Opmerkingen:").grid(row=8, column=0, sticky="nw", pady=(8, 0))
         self.remark_text = tk.Text(header, height=4, wrap="word")
         self.remark_text.grid(
-            row=6,
+            row=8,
             column=1,
-            columnspan=3,
+            columnspan=2,
             sticky="nsew",
             padx=(6, 0),
             pady=(8, 0),
         )
-        header.rowconfigure(6, weight=1)
+        header.rowconfigure(8, weight=1)
 
         ttk.Separator(self, orient="horizontal").grid(row=1, column=0, sticky="ew", pady=12)
 
