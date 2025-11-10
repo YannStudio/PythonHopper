@@ -1294,6 +1294,7 @@ def start_gui():
             self._en1090_enabled = bool(en1090_enabled)
             self._preview_supplier: Optional[Supplier] = None
             self._active_key: Optional[str] = None  # laatst gefocuste rij
+            self._type_filter_by_key: Dict[str, str] = {}
             self.sel_vars: Dict[str, tk.StringVar] = {}
             self.doc_vars: Dict[str, tk.StringVar] = {}
             self.doc_num_vars: Dict[str, tk.StringVar] = {}
@@ -2029,6 +2030,7 @@ def start_gui():
 
         def _on_focus_key(self, sel_key: str):
             self._active_key = sel_key
+            self._type_filter_by_key.pop(sel_key, None)
 
         def _display_list(self) -> List[str]:
             sups = self.db.suppliers_sorted()
@@ -2110,6 +2112,7 @@ def start_gui():
 
         def _on_combo_change(self, _evt=None):
             for sel_key, combo in self.rows:
+                self._type_filter_by_key.pop(sel_key, None)
                 doc_var = self.doc_vars.get(sel_key)
                 if not doc_var:
                     continue
@@ -2135,35 +2138,99 @@ def start_gui():
 
         def _on_combo_type(self, evt, sel_key: str, combo):
             self._active_key = sel_key
-            text = _norm(combo.get().strip())
-            if not hasattr(self, "_base_options"):
+            base_options = getattr(self, "_base_options", None)
+            if not base_options:
                 return
-            if evt.keysym in ("Up", "Down", "Escape"):
+
+            keysym = getattr(evt, "keysym", "")
+            if keysym in ("Up", "Down", "Prior", "Next", "Tab"):
                 return
-            if not text:
-                combo["values"] = self._base_options
-                for ch in self.cards_frame.winfo_children():
-                    ch.destroy()
+
+            type_map = self._type_filter_by_key
+            text_so_far = type_map.get(sel_key, "")
+
+            if keysym == "Escape":
+                type_map[sel_key] = ""
+                combo["values"] = base_options
+                self._populate_cards([], sel_key)
                 self._update_preview_for_text("")
                 return
+
+            if keysym == "BackSpace":
+                text_so_far = text_so_far[:-1]
+            elif keysym == "Delete":
+                text_so_far = ""
+            elif keysym in ("Return", "KP_Enter"):
+                pass
+            else:
+                char = getattr(evt, "char", "")
+                state = getattr(evt, "state", 0)
+                if not char:
+                    return
+                if state & 0x4 or state & 0x8:
+                    return
+                try:
+                    if hasattr(combo, "selection_present") and combo.selection_present():
+                        text_so_far = ""
+                except tk.TclError:
+                    pass
+                text_so_far += char
+
+            type_map[sel_key] = text_so_far
+
+            if keysym not in ("Return", "KP_Enter"):
+                try:
+                    combo.delete(0, tk.END)
+                    combo.insert(0, text_so_far)
+                    if hasattr(combo, "selection_clear"):
+                        combo.selection_clear()
+                    combo.icursor(tk.END)
+                except tk.TclError:
+                    pass
+
+            norm_text = _norm(text_so_far.strip())
+            if not norm_text:
+                combo["values"] = base_options
+                self._populate_cards([], sel_key)
+                self._update_preview_for_text("")
+                return
+
+            disp_to_name = getattr(self, "_disp_to_name", {})
+
+            def _option_norm(opt: str) -> str:
+                name = disp_to_name.get(opt, opt)
+                cleaned = name if name else opt
+                if cleaned.startswith("★ "):
+                    cleaned = cleaned[2:]
+                cleaned = cleaned.replace("(", "").replace(")", "")
+                return _norm(cleaned)
+
             filtered = [
-                opt for opt in self._base_options if _norm(opt).startswith(text)
+                opt for opt in base_options if _option_norm(opt).startswith(norm_text)
             ]
+            if not filtered:
+                filtered = [
+                    opt for opt in base_options if norm_text in _option_norm(opt)
+                ]
+
             filtered = sort_supplier_options(
-                filtered, self.db.suppliers, getattr(self, "_disp_to_name", {})
+                filtered, self.db.suppliers, disp_to_name
             )
             combo["values"] = filtered
             self._populate_cards(filtered, sel_key)
-            if evt.keysym == "Return" and len(filtered) == 1:
+
+            if keysym in ("Return", "KP_Enter") and len(filtered) == 1:
                 set_combo_value = getattr(
                     type(self),
                     "_set_combo_value",
                     SupplierSelectionFrame._set_combo_value,
                 )
                 set_combo_value(combo, filtered[0])
+                type_map.pop(sel_key, None)
                 self._update_preview_for_text(filtered[0])
             else:
-                self._update_preview_for_text(combo.get())
+                preview_text = filtered[0] if filtered else text_so_far
+                self._update_preview_for_text(preview_text)
 
         def _resolve_text_to_supplier(self, text: str) -> Optional[Supplier]:
             if not text:
