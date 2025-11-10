@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, TYPE_CHECKING
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import font, messagebox, ttk
 
 from orders import _prefix_for_doc_type
 
@@ -150,8 +150,15 @@ class ManualOrderTab(tk.Frame):
         header = tk.LabelFrame(self, text="Documentgegevens", labelanchor="n")
         header.configure(padx=12, pady=12)
         header.grid(row=0, column=0, sticky="nsew")
-        header.columnconfigure(1, weight=1)
-        header.columnconfigure(2, weight=0)
+
+        field_width_px = int(self.winfo_fpixels("12c"))
+        manage_spacing_px = int(self.winfo_fpixels("5m"))
+        base_font = font.nametofont("TkDefaultFont")
+        char_width = max(1, base_font.measure("0"))
+        field_char_width = max(1, round(field_width_px / char_width))
+
+        header.columnconfigure(1, weight=0, minsize=field_width_px)
+        header.columnconfigure(2, weight=1)
 
         self.doc_type_var = tk.StringVar(value=self.DOC_TYPE_OPTIONS[0])
         tk.Label(header, text="Documenttype:").grid(row=0, column=0, sticky="w")
@@ -198,44 +205,62 @@ class ManualOrderTab(tk.Frame):
         self.client_combo = SearchableCombobox(
             header,
             textvariable=self.client_var,
-            width=35,
+            width=field_char_width,
         )
-        self.client_combo.grid(row=2, column=1, sticky="w", padx=(6, 0), pady=(8, 0))
+        self.client_combo.grid(row=2, column=1, sticky="ew", padx=(6, 0), pady=(8, 0))
         if on_manage_clients:
             tk.Button(
                 header,
                 text="Beheer",
                 command=on_manage_clients,
                 width=10,
-            ).grid(row=2, column=2, sticky="w", padx=(6, 0), pady=(8, 0))
+            ).grid(
+                row=2,
+                column=2,
+                sticky="w",
+                padx=(manage_spacing_px, 0),
+                pady=(8, 0),
+            )
 
         tk.Label(header, text="Leverancier:").grid(row=3, column=0, sticky="w", pady=(8, 0))
         self.supplier_var = tk.StringVar()
         self.supplier_combo = SearchableCombobox(
-            header, textvariable=self.supplier_var, width=35
+            header, textvariable=self.supplier_var, width=field_char_width
         )
-        self.supplier_combo.grid(row=3, column=1, sticky="w", padx=(6, 0), pady=(8, 0))
+        self.supplier_combo.grid(row=3, column=1, sticky="ew", padx=(6, 0), pady=(8, 0))
         if on_manage_suppliers:
             tk.Button(
                 header,
                 text="Beheer",
                 command=on_manage_suppliers,
                 width=10,
-            ).grid(row=3, column=2, sticky="w", padx=(6, 0), pady=(8, 0))
+            ).grid(
+                row=3,
+                column=2,
+                sticky="w",
+                padx=(manage_spacing_px, 0),
+                pady=(8, 0),
+            )
 
         tk.Label(header, text="Leveradres:").grid(row=4, column=0, sticky="w", pady=(6, 0))
         self.delivery_var = tk.StringVar()
         self.delivery_combo = SearchableCombobox(
-            header, textvariable=self.delivery_var, width=35
+            header, textvariable=self.delivery_var, width=field_char_width
         )
-        self.delivery_combo.grid(row=4, column=1, sticky="w", padx=(6, 0), pady=(6, 0))
+        self.delivery_combo.grid(row=4, column=1, sticky="ew", padx=(6, 0), pady=(6, 0))
         if on_manage_deliveries:
             tk.Button(
                 header,
                 text="Beheer",
                 command=on_manage_deliveries,
                 width=10,
-            ).grid(row=4, column=2, sticky="w", padx=(6, 0), pady=(6, 0))
+            ).grid(
+                row=4,
+                column=2,
+                sticky="w",
+                padx=(manage_spacing_px, 0),
+                pady=(6, 0),
+            )
 
         tk.Label(header, text="Projectnummer:").grid(row=5, column=0, sticky="w", pady=(6, 0))
         tk.Label(header, textvariable=self.project_number_var, anchor="w").grid(
@@ -250,8 +275,16 @@ class ManualOrderTab(tk.Frame):
         self.context_label_var = tk.StringVar(
             value=self.project_name_var.get().strip() or self.DEFAULT_CONTEXT_LABEL
         )
-        context_entry = tk.Entry(header, textvariable=self.context_label_var)
-        context_entry.grid(row=7, column=1, columnspan=2, sticky="ew", padx=(6, 0), pady=(6, 0))
+        context_entry = tk.Entry(
+            header, textvariable=self.context_label_var, width=field_char_width
+        )
+        context_entry.grid(
+            row=7,
+            column=1,
+            sticky="ew",
+            padx=(6, 0),
+            pady=(6, 0),
+        )
 
         def _mark_context_modified(*_args):
             self._context_user_modified = True
