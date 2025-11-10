@@ -151,7 +151,8 @@ class ManualOrderTab(tk.Frame):
         header.configure(padx=12, pady=12)
         header.grid(row=0, column=0, sticky="nsew")
         header.columnconfigure(1, weight=1)
-        header.columnconfigure(3, weight=1)
+        header.columnconfigure(2, weight=0)
+        header.columnconfigure(3, weight=0)
 
         self.doc_type_var = tk.StringVar(value=self.DOC_TYPE_OPTIONS[0])
         tk.Label(header, text="Documenttype:").grid(row=0, column=0, sticky="w")
@@ -205,7 +206,7 @@ class ManualOrderTab(tk.Frame):
                 text="Beheer",
                 command=on_manage_clients,
                 width=10,
-            ).grid(row=1, column=2, columnspan=2, sticky="e", pady=(8, 0))
+            ).grid(row=1, column=2, sticky="w", padx=(6, 0), pady=(8, 0))
 
         tk.Label(header, text="Leverancier:").grid(row=2, column=0, sticky="w", pady=(8, 0))
         self.supplier_var = tk.StringVar()
@@ -219,7 +220,7 @@ class ManualOrderTab(tk.Frame):
                 text="Beheer",
                 command=on_manage_suppliers,
                 width=10,
-            ).grid(row=2, column=2, columnspan=2, sticky="e", pady=(8, 0))
+            ).grid(row=2, column=2, sticky="w", padx=(6, 0), pady=(8, 0))
 
         tk.Label(header, text="Leveradres:").grid(row=3, column=0, sticky="w", pady=(6, 0))
         self.delivery_var = tk.StringVar()
@@ -233,7 +234,7 @@ class ManualOrderTab(tk.Frame):
                 text="Beheer",
                 command=on_manage_deliveries,
                 width=10,
-            ).grid(row=3, column=2, columnspan=2, sticky="e", pady=(6, 0))
+            ).grid(row=3, column=2, sticky="w", padx=(6, 0), pady=(6, 0))
 
         tk.Label(header, text="Projectnummer:").grid(row=4, column=0, sticky="w", pady=(6, 0))
         tk.Label(header, textvariable=self.project_number_var, anchor="w").grid(
