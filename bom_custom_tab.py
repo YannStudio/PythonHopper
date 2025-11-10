@@ -716,6 +716,10 @@ class BOMCustomTab(ttk.Frame):
         bar = ttk.Frame(self)
         bar.pack(fill="x", padx=8, pady=6)
 
+        controls = ttk.Frame(bar)
+        controls.pack(fill="x")
+        controls.columnconfigure(1, weight=1)
+
         button_style = dict(
             bg="#FADFA8",
             activebackground="#F4C46C",
@@ -724,47 +728,51 @@ class BOMCustomTab(ttk.Frame):
             highlightthickness=0,
         )
 
+        left_controls = ttk.Frame(controls)
+        left_controls.grid(row=0, column=0, sticky="w")
+
         update_btn = tk.Button(
-            bar, text="Update Main BOM", command=self._push_to_main, **button_style
+            left_controls,
+            text="Update Main BOM",
+            command=self._push_to_main,
+            **button_style,
         )
-        update_btn.pack(side="left", padx=(0, 6))
+        update_btn.pack(side="left", padx=(0, 4))
         self._update_main_btn = update_btn
 
         clear_btn = tk.Button(
-            bar, text="Clear BOM", command=self._confirm_clear, **button_style
+            left_controls,
+            text="Clear BOM",
+            command=self._confirm_clear,
+            **button_style,
         )
-        clear_btn.pack(side="left", padx=(0, 6))
+        clear_btn.pack(side="left", padx=(0, 4))
 
-        export_container = ttk.Frame(bar)
-        export_container.pack(side="right", padx=(6, 0))
-
-        export_btn = ttk.Button(
-            export_container, text="Exporteren", command=self._export_temp
+        undo_btn = ttk.Button(
+            left_controls, text="Undo", command=self._handle_toolbar_undo
         )
-        export_btn.pack(side="left")
+        undo_btn.pack(side="left", padx=(0, 4))
 
-        template_btn = ttk.Button(
-            export_container, text="Download template", command=self._download_template
+        redo_btn = ttk.Button(
+            left_controls, text="Redo", command=self._handle_toolbar_redo
         )
-        template_btn.pack(side="left", padx=(6, 0))
-
-        undo_btn = ttk.Button(bar, text="Undo", command=self._handle_toolbar_undo)
-        undo_btn.pack(side="left", padx=(0, 6))
-
-        redo_btn = ttk.Button(bar, text="Redo", command=self._handle_toolbar_redo)
-        redo_btn.pack(side="left", padx=(0, 6))
+        redo_btn.pack(side="left", padx=(0, 4))
 
         reset_btn = ttk.Button(
-            bar, text="Reset naar origineel", command=self._reset_to_baseline
+            left_controls,
+            text="Reset naar origineel",
+            command=self._reset_to_baseline,
         )
-        reset_btn.pack(side="left", padx=(0, 6))
+        reset_btn.pack(side="left", padx=(0, 4))
 
-        ttk.Label(bar, textvariable=self.status_var, anchor="w").pack(
-            side="left", fill="x", expand=True
-        )
+        status_label = ttk.Label(controls, textvariable=self.status_var, anchor="w")
+        status_label.grid(row=0, column=1, sticky="ew", padx=(4, 4))
 
-        multiplier_container = ttk.Frame(bar)
-        multiplier_container.pack(side="right")
+        multiplier_container = ttk.Frame(controls)
+        multiplier_container.grid(row=0, column=2, sticky="e", padx=(4, 0))
+
+        export_container = ttk.Frame(controls)
+        export_container.grid(row=0, column=3, sticky="e", padx=(4, 0))
 
         ttk.Label(multiplier_container, text="Totaal aantal:").pack(side="left", padx=(0, 4))
         multiplier_entry = ttk.Entry(
@@ -782,6 +790,18 @@ class BOMCustomTab(ttk.Frame):
             command=self._apply_qty_multiplier,
         )
         apply_btn.pack(side="left")
+
+        export_btn = ttk.Button(
+            export_container, text="Exporteren", command=self._export_temp
+        )
+        export_btn.pack(side="left")
+
+        template_btn = ttk.Button(
+            export_container,
+            text="Download template",
+            command=self._download_template,
+        )
+        template_btn.pack(side="left", padx=(4, 0))
 
     def _build_sheet(self) -> None:
         container = ttk.Frame(self)
