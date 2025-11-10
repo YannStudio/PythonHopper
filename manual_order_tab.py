@@ -53,6 +53,7 @@ class SearchableCombobox(ttk.Combobox):
         self.bind("<KeyRelease>", self._on_key_release, add="+")
         self.bind("<<ComboboxSelected>>", self._on_selection, add="+")
         self.bind("<FocusIn>", self._restore_values, add="+")
+        self.bind("<FocusIn>", self._on_focus_in, add="+")
 
     # Public helpers -------------------------------------------------
     def set_choices(self, values: List[str]) -> None:
@@ -95,19 +96,185 @@ class SearchableCombobox(ttk.Combobox):
         self.configure(values=self._all_values)
         self._last_query = ""
 
+    def _on_focus_in(self, _event: tk.Event) -> None:
+        def _select_all() -> None:
+            try:
+                self.selection_range(0, tk.END)
+            except Exception:
+                pass
+            try:
+                self.icursor(tk.END)
+            except Exception:
+                pass
+
+        self.after_idle(_select_all)
+
 
 class ManualOrderTab(tk.Frame):
     """Tab om handmatige orderregels in te geven."""
 
     DEFAULT_CONTEXT_LABEL = DEFAULT_MANUAL_CONTEXT
-    COLUMNS: List[Dict[str, object]] = [
-        {"key": "PartNumber", "label": "Artikel nr.", "width": 16, "justify": "left"},
-        {"key": "Description", "label": "Omschrijving", "width": 32, "justify": "left"},
-        {"key": "Materiaal", "label": "Materiaal", "width": 18, "justify": "left"},
-        {"key": "Aantal", "label": "Aantal", "width": 8, "justify": "right"},
-        {"key": "Oppervlakte", "label": "Oppervlakte", "width": 10, "justify": "right"},
-        {"key": "Gewicht", "label": "Gewicht (kg)", "width": 10, "justify": "right"},
-    ]
+    DEFAULT_TEMPLATE = "Standaard"
+    COLUMN_TEMPLATES: Dict[str, List[Dict[str, object]]] = {
+        "Standaard": [
+            {
+                "key": "PartNumber",
+                "label": "Artikel nr.",
+                "width": 16,
+                "justify": "left",
+                "stretch": False,
+                "wrap": False,
+                "weight": 1.6,
+            },
+            {
+                "key": "Description",
+                "label": "Omschrijving",
+                "width": 32,
+                "justify": "left",
+                "stretch": True,
+                "wrap": True,
+                "weight": 2.6,
+            },
+            {
+                "key": "Materiaal",
+                "label": "Materiaal",
+                "width": 18,
+                "justify": "left",
+                "stretch": False,
+                "wrap": False,
+                "weight": 1.6,
+            },
+            {
+                "key": "Aantal",
+                "label": "Aantal",
+                "width": 8,
+                "justify": "right",
+                "numeric": True,
+                "stretch": False,
+                "wrap": False,
+                "weight": 0.8,
+            },
+            {
+                "key": "Oppervlakte",
+                "label": "Oppervlakte",
+                "width": 10,
+                "justify": "right",
+                "numeric": True,
+                "stretch": False,
+                "wrap": False,
+                "weight": 1.0,
+            },
+            {
+                "key": "Gewicht",
+                "label": "Gewicht (kg)",
+                "width": 10,
+                "justify": "right",
+                "numeric": True,
+                "stretch": False,
+                "wrap": False,
+                "weight": 1.0,
+                "total_weight": True,
+            },
+        ],
+        "Spare parts": [
+            {
+                "key": "Supplier",
+                "label": "Supplier",
+                "width": 20,
+                "justify": "left",
+                "stretch": True,
+                "wrap": True,
+                "weight": 2.0,
+            },
+            {
+                "key": "SupplierCode",
+                "label": "Supplier code",
+                "width": 16,
+                "justify": "left",
+                "stretch": False,
+                "wrap": False,
+                "weight": 1.4,
+            },
+            {
+                "key": "Manufacturer",
+                "label": "Manufacturer",
+                "width": 20,
+                "justify": "left",
+                "stretch": True,
+                "wrap": True,
+                "weight": 2.0,
+            },
+            {
+                "key": "ManufacturerCode",
+                "label": "Manufacturer code",
+                "width": 16,
+                "justify": "left",
+                "stretch": False,
+                "wrap": False,
+                "weight": 1.4,
+            },
+            {
+                "key": "Aantal",
+                "label": "Aantal",
+                "width": 8,
+                "justify": "right",
+                "numeric": True,
+                "stretch": False,
+                "wrap": False,
+                "weight": 0.8,
+            },
+            {
+                "key": "PrijsPerStuk",
+                "label": "Prijs/st",
+                "width": 10,
+                "justify": "right",
+                "numeric": True,
+                "stretch": False,
+                "wrap": False,
+                "weight": 1.0,
+            },
+        ],
+        "Profielen": [
+            {
+                "key": "ProfielType",
+                "label": "Profiel type",
+                "width": 18,
+                "justify": "left",
+                "stretch": True,
+                "wrap": True,
+                "weight": 2.0,
+            },
+            {
+                "key": "Materiaal",
+                "label": "Materiaal",
+                "width": 18,
+                "justify": "left",
+                "stretch": True,
+                "wrap": False,
+                "weight": 1.8,
+            },
+            {
+                "key": "ProfielLengte",
+                "label": "Profiel lengte",
+                "width": 14,
+                "justify": "right",
+                "numeric": True,
+                "stretch": False,
+                "wrap": False,
+                "weight": 1.2,
+            },
+            {
+                "key": "Aantal",
+                "label": "Aantal",
+                "width": 8,
+                "justify": "right",
+                "numeric": True,
+                "stretch": False,
+                "wrap": False,
+                "weight": 1.0,
+            },
+        ],
+    }
 
     DOC_TYPE_OPTIONS: tuple[str, ...] = ("Bestelbon", "Standaard bon", "Offerteaanvraag")
     DELIVERY_PRESETS: tuple[str, ...] = (
@@ -353,26 +520,32 @@ class ManualOrderTab(tk.Frame):
         table_container = tk.Frame(self)
         table_container.grid(row=2, column=0, sticky="nsew", padx=4)
         table_container.columnconfigure(0, weight=1)
-        table_container.rowconfigure(1, weight=1)
+        table_container.rowconfigure(2, weight=1)
 
-        header_row = tk.Frame(table_container)
-        header_row.grid(row=0, column=0, sticky="ew", padx=4, pady=(0, 6))
-        header_row.columnconfigure(len(self.COLUMNS), weight=0)
-        for idx, column in enumerate(self.COLUMNS):
-            tk.Label(
-                header_row,
-                text=column["label"],
-                anchor="w" if column["justify"] != "right" else "e",
-                font=("TkDefaultFont", 10, "bold"),
-            ).grid(row=0, column=idx, sticky="ew", padx=(6 if idx else 0, 6))
-            header_row.columnconfigure(idx, weight=1 if column["key"] == "Description" else 0)
+        template_row = tk.Frame(table_container)
+        template_row.grid(row=0, column=0, columnspan=2, sticky="ew", padx=4, pady=(0, 6))
+        tk.Label(template_row, text="Sjabloon:").pack(side="left")
+        self.template_var = tk.StringVar(value=self.DEFAULT_TEMPLATE)
+        self.template_combo = ttk.Combobox(
+            template_row,
+            textvariable=self.template_var,
+            values=tuple(self.COLUMN_TEMPLATES.keys()),
+            state="readonly",
+            width=max(14, field_char_width // 2),
+            takefocus=False,
+        )
+        self.template_combo.pack(side="left", padx=(6, 0))
+
+        self.header_row = tk.Frame(table_container)
+        self.header_row.grid(row=1, column=0, sticky="ew", padx=4, pady=(0, 6))
+        self.header_row.columnconfigure(0, weight=1)
 
         self.table_canvas = tk.Canvas(table_container, highlightthickness=0)
-        self.table_canvas.grid(row=1, column=0, sticky="nsew", padx=(4, 0))
+        self.table_canvas.grid(row=2, column=0, sticky="nsew", padx=(4, 0))
         table_scroll = ttk.Scrollbar(
             table_container, orient="vertical", command=self.table_canvas.yview
         )
-        table_scroll.grid(row=1, column=1, sticky="ns")
+        table_scroll.grid(row=2, column=1, sticky="ns")
         self.table_canvas.configure(yscrollcommand=table_scroll.set)
 
         self.rows_frame = tk.Frame(self.table_canvas)
@@ -395,18 +568,26 @@ class ManualOrderTab(tk.Frame):
         self.table_canvas.bind("<Configure>", _resize_canvas)
 
         controls = tk.Frame(table_container)
-        controls.grid(row=2, column=0, columnspan=2, sticky="ew", padx=4, pady=(8, 0))
-        controls.columnconfigure(0, weight=1)
+        controls.grid(row=3, column=0, columnspan=2, sticky="ew", padx=4, pady=(8, 0))
+        controls.columnconfigure(3, weight=1)
+
+        tk.Label(controls, text="Nieuwe regels:").grid(row=0, column=0, sticky="w")
+        self.add_count_var = tk.StringVar(value="1")
+        add_count_entry = tk.Entry(
+            controls, textvariable=self.add_count_var, width=6, justify="right"
+        )
+        add_count_entry.grid(row=0, column=1, sticky="w", padx=(4, 10))
+        add_count_entry.bind("<Return>", lambda _e: self.add_rows_from_input())
 
         tk.Button(
             controls,
-            text="Regel toevoegen",
-            command=self.add_row,
-        ).grid(row=0, column=0, sticky="w")
+            text="Regels toevoegen",
+            command=self.add_rows_from_input,
+        ).grid(row=0, column=2, sticky="w")
 
-        self.total_weight_var = tk.StringVar(value="Totaal gewicht: 0.00 kg")
+        self.total_weight_var = tk.StringVar(value="Totaal gewicht: —")
         tk.Label(controls, textvariable=self.total_weight_var, anchor="e").grid(
-            row=0, column=1, sticky="e"
+            row=0, column=3, sticky="e"
         )
 
         footer = tk.Frame(self)
@@ -417,7 +598,16 @@ class ManualOrderTab(tk.Frame):
         )
 
         self.rows: List[_ManualRowWidgets] = []
-        self.add_row()
+        self.current_template_name: str = ""
+        self.current_columns: List[Dict[str, object]] = []
+        self._template_rows_cache: Dict[str, List[Dict[str, str]]] = {}
+
+        def _handle_template_change(*_args) -> None:
+            self._apply_template(self.template_var.get())
+
+        self.template_var.trace_add("write", _handle_template_change)
+
+        self._apply_template(self.template_var.get(), store_previous=False)
         self.refresh_data()
 
     # Public helpers -------------------------------------------------
@@ -471,13 +661,21 @@ class ManualOrderTab(tk.Frame):
         self._doc_number_prefix = _prefix_for_doc_type(self.doc_type_var.get())
 
     # Row management -------------------------------------------------
-    def add_row(self) -> None:
-        widgets = _ManualRowWidgets(frame=tk.Frame(self.rows_frame), vars={}, entries={}, remove_btn=None)  # type: ignore[arg-type]
+    def add_row(self, values: Optional[Dict[str, object]] = None) -> None:
+        widgets = _ManualRowWidgets(
+            frame=tk.Frame(self.rows_frame),
+            vars={},
+            entries={},
+            remove_btn=None,
+        )
         widgets.frame.pack(fill="x", padx=6, pady=4)
-        widgets.frame.columnconfigure(len(self.COLUMNS), weight=0)
+        widgets.frame.columnconfigure(len(self.current_columns), weight=0)
 
-        for idx, column in enumerate(self.COLUMNS):
+        for idx, column in enumerate(self.current_columns):
             var = tk.StringVar()
+            if values is not None and column["key"] in values:
+                value = values[column["key"]]
+                var.set("" if value is None else str(value))
             entry = tk.Entry(
                 widgets.frame,
                 textvariable=var,
@@ -485,7 +683,7 @@ class ManualOrderTab(tk.Frame):
                 justify=column.get("justify", "left"),
             )
             entry.grid(row=0, column=idx, sticky="ew", padx=(6 if idx else 0, 6))
-            if column["key"] == "Description":
+            if column.get("stretch"):
                 widgets.frame.columnconfigure(idx, weight=1)
             var.trace_add("write", lambda *_args: self._update_totals())
             widgets.vars[column["key"]] = var
@@ -497,10 +695,12 @@ class ManualOrderTab(tk.Frame):
             width=3,
             command=lambda row=widgets: self.remove_row(row),
         )
-        remove_btn.grid(row=0, column=len(self.COLUMNS), padx=(0, 4))
+        remove_btn.grid(row=0, column=len(self.current_columns), padx=(0, 4))
         widgets.remove_btn = remove_btn
         self.rows.append(widgets)
-        self.after_idle(lambda: widgets.entries[self.COLUMNS[0]["key"]].focus_set())
+        if self.current_columns:
+            first_key = self.current_columns[0]["key"]
+            self.after_idle(lambda: widgets.entries[first_key].focus_set())
         self._update_totals()
 
     def remove_row(self, row: _ManualRowWidgets) -> None:
@@ -516,26 +716,46 @@ class ManualOrderTab(tk.Frame):
         else:
             self._update_totals()
 
+    def add_rows_from_input(self) -> None:
+        text = self.add_count_var.get().strip()
+        try:
+            desired = int(text)
+        except Exception:
+            desired = 1
+        desired = max(1, min(desired, 500))
+        current = len(self.rows)
+        to_add = max(0, desired - current)
+        if to_add == 0:
+            return
+        for _ in range(to_add):
+            self.add_row()
+
     # Data collection ------------------------------------------------
     def _collect_items(self) -> Dict[str, object]:
         items: List[Dict[str, object]] = []
         total_weight = 0.0
         weight_found = False
+        numeric_keys = {col["key"] for col in self.current_columns if col.get("numeric")}
+        weight_columns = [col["key"] for col in self.current_columns if col.get("total_weight")]
 
         for widgets in self.rows:
             raw = {key: var.get().strip() for key, var in widgets.vars.items()}
             if not any(raw.values()):
                 continue
             record: Dict[str, object] = {}
-            for column in self.COLUMNS:
+            for column in self.current_columns:
                 key = column["key"]
                 value = raw.get(key, "")
-                if key in {"Aantal", "Oppervlakte", "Gewicht"}:
+                if key in numeric_keys:
                     normalized = _normalize_numeric(value)
                 else:
                     normalized = value
                 record[key] = normalized
-            weight_raw = raw.get("Gewicht", "")
+            if weight_columns:
+                weight_key = weight_columns[0]
+                weight_raw = raw.get(weight_key, "")
+            else:
+                weight_raw = ""
             if weight_raw:
                 try:
                     weight_total = float(weight_raw.replace(",", "."))
@@ -574,6 +794,8 @@ class ManualOrderTab(tk.Frame):
             "remark": remark,
             "items": items,
             "total_weight": payload["total_weight"],
+            "template": self.current_template_name,
+            "column_layout": [dict(col) for col in self.current_columns],
         }
         self._on_export(export_payload)
 
@@ -586,4 +808,63 @@ class ManualOrderTab(tk.Frame):
         else:
             text = f"Totaal gewicht: {total_weight:.2f} kg"
         self.total_weight_var.set(text)
+
+    def _clone_columns(self, template: str) -> List[Dict[str, object]]:
+        columns = self.COLUMN_TEMPLATES.get(template, [])
+        return [dict(col) for col in columns]
+
+    def _capture_rows(self) -> List[Dict[str, str]]:
+        captured: List[Dict[str, str]] = []
+        for widgets in self.rows:
+            captured.append({key: var.get() for key, var in widgets.vars.items()})
+        return captured
+
+    def _clear_rows(self) -> None:
+        for widgets in self.rows:
+            try:
+                widgets.frame.destroy()
+            except Exception:
+                pass
+        self.rows.clear()
+
+    def _render_header(self) -> None:
+        for child in self.header_row.winfo_children():
+            try:
+                child.destroy()
+            except Exception:
+                pass
+        for idx, column in enumerate(self.current_columns):
+            anchor = "w" if column.get("justify") != "right" else "e"
+            lbl = tk.Label(
+                self.header_row,
+                text=column.get("label", column.get("key", "")),
+                anchor=anchor,
+                font=("TkDefaultFont", 10, "bold"),
+            )
+            lbl.grid(row=0, column=idx, sticky="ew", padx=(6 if idx else 0, 6))
+            if column.get("stretch"):
+                self.header_row.columnconfigure(idx, weight=1)
+            else:
+                self.header_row.columnconfigure(idx, weight=0)
+
+    def _apply_template(self, template: str, *, store_previous: bool = True) -> None:
+        if store_previous and self.current_template_name:
+            self._template_rows_cache[self.current_template_name] = self._capture_rows()
+
+        self.current_template_name = template
+        self.current_columns = self._clone_columns(template)
+        if not self.current_columns:
+            self.current_columns = self._clone_columns(self.DEFAULT_TEMPLATE)
+            self.current_template_name = self.DEFAULT_TEMPLATE
+
+        self._render_header()
+        self._clear_rows()
+
+        cached_rows = self._template_rows_cache.get(self.current_template_name, [])
+        if cached_rows:
+            for row_values in cached_rows:
+                self.add_row(row_values)
+        else:
+            self.add_row()
+        self._update_totals()
 

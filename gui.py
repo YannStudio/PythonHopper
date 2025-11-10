@@ -3983,6 +3983,37 @@ def start_gui():
                     if delivery is None:
                         delivery = DeliveryAddress(name=delivery_name_clean)
 
+            column_layout_raw = payload.get("column_layout")
+            column_layout: List[Dict[str, object]] = []
+            if isinstance(column_layout_raw, list):
+                for column in column_layout_raw:
+                    if not isinstance(column, dict):
+                        continue
+                    key = _to_str(column.get("key")).strip()
+                    if not key:
+                        continue
+                    label = _to_str(column.get("label")).strip() or key
+                    justify = _to_str(column.get("justify")).strip().lower() or "left"
+                    wrap = bool(column.get("wrap"))
+                    numeric = bool(column.get("numeric"))
+                    weight_raw = column.get("weight")
+                    try:
+                        weight = float(weight_raw)
+                    except Exception:
+                        weight = None
+                    entry: Dict[str, object] = {
+                        "key": key,
+                        "label": label,
+                        "justify": justify,
+                        "wrap": wrap,
+                        "numeric": numeric,
+                    }
+                    if weight is not None and math.isfinite(weight) and weight > 0:
+                        entry["weight"] = weight
+                    if column.get("total_weight"):
+                        entry["total_weight"] = True
+                    column_layout.append(entry)
+
             items = list(payload.get("items") or [])
             if not items:
                 messagebox.showwarning(
@@ -4080,6 +4111,7 @@ def start_gui():
                     total_weight_kg=total_weight if isinstance(total_weight, (int, float)) else None,
                     en1090_required=False,
                     en1090_note=None,
+                    column_layout=column_layout or None,
                 )
                 generate_pdf_order_platypus(
                     pdf_path,
@@ -4098,6 +4130,7 @@ def start_gui():
                     total_weight_kg=total_weight if isinstance(total_weight, (int, float)) else None,
                     en1090_required=False,
                     en1090_note=None,
+                    column_layout=column_layout or None,
                 )
             except Exception as exc:
                 messagebox.showerror(
