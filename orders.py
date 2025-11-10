@@ -871,6 +871,7 @@ def generate_pdf_order_platypus(
     total_weight_kg: float | None = None,
     en1090_required: bool = False,
     en1090_note: Optional[str] = None,
+    column_layout: Optional[List[Dict[str, object]]] = None,
 ) -> None:
     """Generate a PDF order using ReportLab if available.
 
@@ -879,6 +880,9 @@ def generate_pdf_order_platypus(
     """
     if not REPORTLAB_OK:
         return
+
+    column_layout = [dict(col) for col in column_layout] if column_layout else []
+    custom_layout = bool(column_layout)
 
     margin = 18 * mm
     doc = SimpleDocTemplate(
@@ -1064,7 +1068,15 @@ def generate_pdf_order_platypus(
     story.append(Spacer(0, 10))
 
     # Headers and data
-    if is_raw_material_order:
+    if custom_layout:
+        head = []
+        for column in column_layout:
+            header = _to_str(column.get("label") or column.get("key") or "").strip()
+            if not header:
+                header = column.get("key", "")
+            column["label"] = header
+            head.append(header)
+    elif is_raw_material_order:
         head = ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
     else:
         head = ["PartNumber", "Omschrijving", "Materiaal", "St.", "m²", "kg"]
@@ -1083,7 +1095,47 @@ def generate_pdf_order_platypus(
 
     data = [head]
     total_row_index: int | None = None
-    if is_raw_material_order:
+    if custom_layout:
+        weight_idx: int | None = None
+        for idx, column in enumerate(column_layout):
+            if column.get("total_weight"):
+                weight_idx = idx
+                break
+        for it in items:
+            row_cells: List[Paragraph] = []
+            for idx, column in enumerate(column_layout):
+                key = column.get("key")
+                value = it.get(key, "") if key else ""
+                if column.get("numeric"):
+                    value = _num_to_2dec(value)
+                    small = True
+                else:
+                    value = _to_str(value)
+                    small = False
+                align = _to_str(column.get("justify") or "left").strip().upper() or "LEFT"
+                if align not in {"LEFT", "RIGHT", "CENTER"}:
+                    align = "LEFT"
+                row_cells.append(wrap_cell_html(value, small=small, align=align))
+            data.append(row_cells)
+
+        if weight_idx is not None and total_weight_kg is not None:
+            total_row: List[Paragraph] = []
+            for idx, column in enumerate(column_layout):
+                align = _to_str(column.get("justify") or "left").strip().upper() or "LEFT"
+                if align not in {"LEFT", "RIGHT", "CENTER"}:
+                    align = "LEFT"
+                if idx == weight_idx:
+                    weight_text = _num_to_2dec(total_weight_kg)
+                    total_row.append(wrap_cell_html(weight_text, small=True, align=align))
+                elif idx == 0:
+                    total_row.append(wrap_cell_html("Totaal", small=False, align="LEFT"))
+                else:
+                    total_row.append(
+                        wrap_cell_html("", small=bool(column.get("numeric")), align=align)
+                    )
+            data.append(total_row)
+            total_row_index = len(data) - 1
+    elif is_raw_material_order:
         for it in items:
             prof = _to_str(it.get("Profiel", ""))
             mat = _to_str(it.get("Materiaal", ""))
@@ -1133,7 +1185,17 @@ def generate_pdf_order_platypus(
             )
 
     usable_w = width - 2 * margin
-    if is_raw_material_order:
+    if custom_layout and column_layout:
+        weights: List[float] = []
+        for column in column_layout:
+            try:
+                weight_val = float(column.get("weight", 0))
+            except Exception:
+                weight_val = 0.0
+            weights.append(weight_val if weight_val > 0 else 1.0)
+        total_weight_units = sum(weights) or len(weights) or 1
+        col_widths = [usable_w * (w / total_weight_units) for w in weights]
+    elif is_raw_material_order:
         col_fracs = [0.32, 0.24, 0.16, 0.12, 0.16]
         col_widths = [usable_w * frac for frac in col_fracs]
     else:
@@ -1188,7 +1250,13 @@ def generate_pdf_order_platypus(
         ("TOPPADDING", (0, 0), (-1, -1), 2),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
     ]
-    if is_raw_material_order:
+    if custom_layout and column_layout:
+        for idx, column in enumerate(column_layout):
+            align = _to_str(column.get("justify") or "left").strip().upper() or "LEFT"
+            if align not in {"LEFT", "RIGHT", "CENTER"}:
+                align = "LEFT"
+            style_cmds.append(("ALIGN", (idx, 0), (idx, -1), align))
+    elif is_raw_material_order:
         style_cmds.append(("ALIGN", (2, 0), (4, -1), "RIGHT"))
     else:
         style_cmds.extend(
@@ -1317,24 +1385,55 @@ def write_order_excel(
     total_weight_kg: float | None = None,
     en1090_required: bool = False,
     en1090_note: Optional[str] = None,
+    column_layout: Optional[List[Dict[str, object]]] = None,
 ) -> None:
     """Write order information to an Excel file with header info."""
     context_kind_clean = (_to_str(context_kind) or "productie").strip() or "productie"
     is_raw_material_order = context_kind_clean.lower().startswith("brutemateriaal")
-    if is_raw_material_order:
-        df_columns = ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
+    column_layout = [dict(col) for col in column_layout] if column_layout else []
+    custom_layout = bool(column_layout)
+    if custom_layout:
+        headers: List[str] = []
+        for column in column_layout:
+            header = _to_str(column.get("label") or column.get("key") or "").strip()
+            if not header:
+                header = column.get("key", "")
+            column["label"] = header
+            headers.append(header)
+        rows: List[Dict[str, object]] = []
+        for item in items:
+            row: Dict[str, object] = {}
+            for column, header in zip(column_layout, headers):
+                key = column.get("key")
+                row[header] = item.get(key, "") if key else ""
+            rows.append(row)
+        df = pd.DataFrame(rows, columns=headers)
+        weight_header: str | None = None
+        for column in column_layout:
+            if column.get("total_weight"):
+                weight_header = column["label"]
+                break
+        if weight_header and total_weight_kg is not None:
+            total_row = {header: "" for header in headers}
+            if headers:
+                total_row[headers[0]] = "Totaal"
+            total_row[weight_header] = _format_weight_kg(total_weight_kg)
+            df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
     else:
-        df_columns = ["PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht"]
-    df = pd.DataFrame(items, columns=df_columns)
-    if is_raw_material_order and total_weight_kg is not None:
-        total_row = {
-            "Profiel": "Totaal",
-            "Materiaal": "",
-            "Lengte": "",
-            "St.": "",
-            "kg": _format_weight_kg(total_weight_kg),
-        }
-        df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
+        if is_raw_material_order:
+            df_columns = ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
+        else:
+            df_columns = ["PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht"]
+        df = pd.DataFrame(items, columns=df_columns)
+        if is_raw_material_order and total_weight_kg is not None:
+            total_row = {
+                "Profiel": "Totaal",
+                "Materiaal": "",
+                "Lengte": "",
+                "St.": "",
+                "kg": _format_weight_kg(total_weight_kg),
+            }
+            df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
 
     note_text = EN1090_NOTE_TEXT if en1090_note is None else _to_str(en1090_note)
 
@@ -1449,19 +1548,34 @@ def write_order_excel(
                 ws.cell(row=r, column=1, value=label)
                 ws.cell(row=r, column=2, value=value)
 
-            if is_raw_material_order:
-                left_cols = {"Profiel", "Materiaal"}
-                wrap_cols = {"Profiel", "Materiaal"}
+            if custom_layout:
+                left_cols = {
+                    _to_str(column.get("label") or column.get("key") or "").strip()
+                    or column.get("key", "")
+                    for column in column_layout
+                    if _to_str(column.get("justify") or "left").strip().lower() != "right"
+                }
+                wrap_cols = {
+                    _to_str(column.get("label") or column.get("key") or "").strip()
+                    or column.get("key", "")
+                    for column in column_layout
+                    if bool(column.get("wrap"))
+                }
             else:
-                left_cols = {"PartNumber", "Description"}
-                wrap_cols = {"PartNumber", "Description"}
+                if is_raw_material_order:
+                    left_cols = {"Profiel", "Materiaal"}
+                    wrap_cols = {"Profiel", "Materiaal"}
+                else:
+                    left_cols = {"PartNumber", "Description"}
+                    wrap_cols = {"PartNumber", "Description"}
             for col_idx, col_name in enumerate(df.columns, start=1):
                 align = Alignment(
                     horizontal="left" if col_name in left_cols else "right",
                     wrap_text=col_name in wrap_cols,
                 )
                 if (
-                    col_name in {"PartNumber", "Profiel"}
+                    not custom_layout
+                    and col_name in {"PartNumber", "Profiel"}
                     and get_column_letter is not None
                 ):
                     column_letter = get_column_letter(col_idx)
