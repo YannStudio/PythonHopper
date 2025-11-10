@@ -23,6 +23,7 @@ from clients_db import ClientsDB, CLIENTS_DB_FILE
 from delivery_addresses_db import DeliveryAddressesDB, DELIVERY_DB_FILE
 from bom import read_csv_flex, load_bom
 from bom_custom_tab import BOMCustomTab
+from manual_order_tab import ManualOrderTab
 from bom_sync import prepare_custom_bom_for_main
 from orders import (
     copy_per_production_and_orders,
@@ -42,6 +43,10 @@ from orders import (
     compute_opticutter_order_details,
     parse_selection_key,
     _WINDOWS_MAX_PATH,
+    _fit_filename_within_path,
+    _sanitize_component,
+    write_order_excel,
+    generate_pdf_order_platypus,
 )
 from en1090 import EN1090_NOTE_TEXT, default_en1090_enabled, normalize_en1090_key
 from opticutter import (
@@ -3316,6 +3321,17 @@ def start_gui():
             main.configure(padx=12, pady=12)
             self.nb.add(main, text="Main")
             self.nb.add(self.custom_bom_tab, text="Custom BOM")
+            self.manual_order_tab = ManualOrderTab(
+                self.nb,
+                suppliers_db=self.db,
+                delivery_db=self.delivery_db,
+                project_number_var=self.project_number_var,
+                project_name_var=self.project_name_var,
+                on_export=self._export_manual_order,
+                on_manage_suppliers=lambda: self.nb.select(self.suppliers_frame),
+                on_manage_deliveries=lambda: self.nb.select(self.delivery_frame),
+            )
+            self.nb.add(self.manual_order_tab, text="Handmatige bon")
             self.opticutter_frame = tk.Frame(self.nb)
             self.opticutter_frame.configure(padx=12, pady=12)
             self.nb.add(self.opticutter_frame, text="Opticutter")
@@ -3928,6 +3944,171 @@ def start_gui():
             tk.Label(main, textvariable=self.status_var, anchor="w").pack(fill="x", padx=8, pady=(0,8))
             self._save_settings()
 
+        def _export_manual_order(self, payload: Dict[str, object]) -> None:
+            from tkinter import messagebox, filedialog
+
+            manual_tab = getattr(self, "manual_order_tab", None)
+            if not payload:
+                return
+
+            doc_type = _to_str(payload.get("doc_type")).strip() or "Bestelbon"
+            doc_number_raw = payload.get("doc_number", "")
+            doc_number = _normalize_doc_number(doc_number_raw, doc_type)
+            if manual_tab is not None:
+                try:
+                    manual_tab.set_doc_number(doc_number)
+                except Exception:
+                    pass
+
+            supplier_display = _to_str(payload.get("supplier")).strip()
+            supplier_name_clean = supplier_display.replace("★ ", "", 1).strip()
+            supplier: Optional[Supplier] = None
+            if supplier_name_clean and supplier_name_clean.lower() not in {"geen", "(geen)"}:
+                for sup in getattr(self.db, "suppliers", []):
+                    if _to_str(sup.supplier).strip().lower() == supplier_name_clean.lower():
+                        supplier = sup
+                        break
+
+            delivery_display = _to_str(payload.get("delivery")).strip()
+            delivery_name_clean = delivery_display.replace("★ ", "", 1).strip()
+            delivery: Optional[DeliveryAddress] = None
+            if delivery_name_clean and delivery_name_clean not in {"", "Geen"}:
+                if delivery_name_clean in ManualOrderTab.DELIVERY_PRESETS[1:]:
+                    delivery = DeliveryAddress(name=delivery_name_clean)
+                else:
+                    delivery = self.delivery_db.get(delivery_name_clean)
+                    if delivery is None:
+                        delivery = DeliveryAddress(name=delivery_name_clean)
+
+            items = list(payload.get("items") or [])
+            if not items:
+                messagebox.showwarning(
+                    "Geen gegevens",
+                    "Voeg minstens één regel toe voordat je exporteert.",
+                    parent=manual_tab or self,
+                )
+                return
+
+            remark_text = _to_str(payload.get("remark")).strip()
+            context_label = _to_str(payload.get("context_label")).strip() or "Handmatige bon"
+            context_kind = _to_str(payload.get("context_kind")).strip() or "document"
+
+            dest = self.dest_folder_var.get().strip()
+            if not dest:
+                dest = filedialog.askdirectory(
+                    parent=manual_tab or self,
+                    title="Kies exportmap voor handmatige bestelbon",
+                )
+                if not dest:
+                    return
+                self.dest_folder_var.set(dest)
+                self.dest_folder = dest
+
+            try:
+                os.makedirs(dest, exist_ok=True)
+            except Exception as exc:
+                messagebox.showerror(
+                    "Fout",
+                    f"Kon exportmap niet maken:\n{exc}",
+                    parent=manual_tab or self,
+                )
+                return
+
+            project_number = self.project_number_var.get().strip()
+            project_name = self.project_name_var.get().strip()
+            today_date = datetime.date.today()
+            today = today_date.strftime("%Y-%m-%d")
+            doc_token = _sanitize_component(doc_number) if doc_number else ""
+            num_part = f"_{doc_token}" if doc_token else ""
+            context_token = _sanitize_component(context_label) or "Handmatige-bon"
+            if project_number:
+                pn_token = _sanitize_component(project_number)
+                if pn_token:
+                    context_token = f"{pn_token}-{context_token}" if context_token else pn_token
+            excel_requested = f"{doc_type}{num_part}_{context_token}_{today}.xlsx"
+            pdf_requested = f"{doc_type}{num_part}_{context_token}_{today}.pdf"
+            excel_filename = _fit_filename_within_path(dest, excel_requested)
+            pdf_filename = _fit_filename_within_path(dest, pdf_requested)
+            excel_path = os.path.join(dest, excel_filename)
+            pdf_path = os.path.join(dest, pdf_filename)
+
+            client = None
+            if hasattr(self, "client_var"):
+                client_name = self.client_var.get().replace("★ ", "", 1).strip()
+                if client_name:
+                    client = self.client_db.get(client_name)
+            company_info = {
+                "name": client.name if client else "",
+                "address": client.address if client else "",
+                "vat": client.vat if client else "",
+                "email": client.email if client else "",
+                "logo_path": client.logo_path if client else "",
+                "logo_crop": client.logo_crop if client else None,
+            }
+
+            footer_note_text = self.footer_note_var.get().strip() or DEFAULT_FOOTER_NOTE
+            total_weight = payload.get("total_weight")
+            if not isinstance(total_weight, (int, float)):
+                try:
+                    total_weight = float(total_weight)
+                except Exception:
+                    total_weight = None
+
+            try:
+                write_order_excel(
+                    excel_path,
+                    items,
+                    company_info,
+                    supplier,
+                    delivery,
+                    doc_type,
+                    doc_number or None,
+                    project_number=project_number or None,
+                    project_name=project_name or None,
+                    context_label=context_label,
+                    context_kind=context_kind,
+                    order_remark=remark_text or None,
+                    total_weight_kg=total_weight if isinstance(total_weight, (int, float)) else None,
+                    en1090_required=False,
+                    en1090_note=None,
+                )
+                generate_pdf_order_platypus(
+                    pdf_path,
+                    company_info,
+                    supplier,
+                    context_label,
+                    items,
+                    doc_type=doc_type,
+                    doc_number=doc_number or None,
+                    footer_note=footer_note_text,
+                    delivery=delivery,
+                    project_number=project_number or None,
+                    project_name=project_name or None,
+                    label_kind=context_kind,
+                    order_remark=remark_text or None,
+                    total_weight_kg=total_weight if isinstance(total_weight, (int, float)) else None,
+                    en1090_required=False,
+                    en1090_note=None,
+                )
+            except Exception as exc:
+                messagebox.showerror(
+                    "Fout",
+                    f"Kon handmatige {doc_type.lower()} niet opslaan:\n{exc}",
+                    parent=manual_tab or self,
+                )
+                return
+
+            self.status_var.set(
+                f"Handmatige {doc_type.lower()} opgeslagen in {dest}"
+            )
+            messagebox.showinfo(
+                "Klaar",
+                "Bestanden opgeslagen:\n"
+                f"- {excel_filename}\n"
+                f"- {pdf_filename}",
+                parent=manual_tab or self,
+            )
+
         def _on_db_change(self):
             self._refresh_clients_combo()
             sel = getattr(self, "sel_frame", None)
@@ -3939,6 +4120,12 @@ def start_gui():
                         self.sel_frame = None
                 except Exception:
                     self.sel_frame = None
+            manual_tab = getattr(self, "manual_order_tab", None)
+            if manual_tab is not None:
+                try:
+                    manual_tab.refresh_data()
+                except Exception:
+                    pass
 
         def _refresh_clients_combo(self):
             cur = self.client_combo.get()
