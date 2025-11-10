@@ -169,11 +169,11 @@ class ManualOrderTab(tk.Frame):
             textvariable=self.doc_type_var,
             values=self.DOC_TYPE_OPTIONS,
             state="readonly",
-            width=20,
+            width=field_char_width,
         )
         self.doc_type_combo.grid(row=0, column=1, sticky="w", padx=(6, 0))
 
-        info_spacing_px = int(self.winfo_fpixels("10m"))
+        info_spacing_px = int(self.winfo_fpixels("1c"))
         header.columnconfigure(2, minsize=info_spacing_px)
         tk.Label(header, text="Projectnummer:").grid(
             row=0, column=3, sticky="w"
@@ -221,7 +221,7 @@ class ManualOrderTab(tk.Frame):
 
         def _reset_doc_type_focus() -> None:
             try:
-                self.doc_type_combo.selection_clear()
+                self.doc_type_combo.selection_clear(0, tk.END)
             except Exception:
                 pass
             try:
