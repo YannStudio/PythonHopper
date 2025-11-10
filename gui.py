@@ -3325,10 +3325,12 @@ def start_gui():
                 self.nb,
                 suppliers_db=self.db,
                 delivery_db=self.delivery_db,
+                clients_db=self.client_db,
                 project_number_var=self.project_number_var,
                 project_name_var=self.project_name_var,
                 client_var=getattr(self, "client_var", None),
                 on_export=self._export_manual_order,
+                on_manage_clients=lambda: self.nb.select(self.clients_frame),
                 on_manage_suppliers=lambda: self.nb.select(self.suppliers_frame),
                 on_manage_deliveries=lambda: self.nb.select(self.delivery_frame),
             )
