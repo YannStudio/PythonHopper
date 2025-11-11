@@ -355,6 +355,11 @@ class ManualOrderTab(tk.Frame):
         field_width_px = int(self.winfo_fpixels("6c"))
         manage_spacing_px = int(self.winfo_fpixels("3m"))
         base_font = font.nametofont("TkDefaultFont")
+        self._header_font = base_font.copy()
+        try:
+            self._header_font.configure(weight="bold")
+        except Exception:
+            pass
         char_width = max(1, base_font.measure("0"))
         field_char_width = max(1, round(field_width_px / char_width))
         self._entry_char_pixels = char_width
@@ -885,7 +890,14 @@ class ManualOrderTab(tk.Frame):
         label_text = str(column.get("label") or column.get("key") or "")
         display_chars = max(base_width, len(label_text))
         column["_display_chars"] = display_chars
-        min_width_px = max(1, int(round(display_chars * getattr(self, "_entry_char_pixels", 1))))
+        entry_char_px = getattr(self, "_entry_char_pixels", 1)
+        min_width_px = max(1, int(round(display_chars * entry_char_px)))
+        header_font = getattr(self, "_header_font", None)
+        if header_font is not None:
+            try:
+                min_width_px = max(min_width_px, header_font.measure(label_text))
+            except Exception:
+                pass
         column["_min_width_px"] = min_width_px
 
     def _column_display_metrics(self, column: Dict[str, object]) -> tuple[int, int]:
@@ -921,8 +933,7 @@ class ManualOrderTab(tk.Frame):
                 self.header_row,
                 text=column.get("label", column.get("key", "")),
                 anchor="w",
-                font=("TkDefaultFont", 10, "bold"),
-                width=display_chars,
+                font=getattr(self, "_header_font", None) or ("TkDefaultFont", 10, "bold"),
             )
             lbl.grid(row=0, column=idx, sticky="ew", padx=(6 if idx else 0, 6))
             if column.get("stretch"):
