@@ -567,6 +567,25 @@ class ManualOrderTab(tk.Frame):
         template_row.grid(row=0, column=0, columnspan=2, sticky="ew", padx=4, pady=(0, 6))
         tk.Label(template_row, text="Sjabloon:").pack(side="left")
         self.template_var = tk.StringVar(value=self.DEFAULT_TEMPLATE)
+
+        template_style = "Manual.Template.TCombobox"
+        style = ttk.Style(template_row)
+        base_foreground = style.lookup("TCombobox", "foreground") or "black"
+        base_background = self.cget("background")
+        style.configure(
+            template_style,
+            foreground=base_foreground,
+            fieldbackground=base_background,
+            background=base_background,
+        )
+        style.map(
+            template_style,
+            fieldbackground=[("readonly", base_background)],
+            background=[("readonly", base_background)],
+            selectbackground=[("readonly", base_background)],
+            selectforeground=[("readonly", base_foreground)],
+        )
+
         self.template_combo = ttk.Combobox(
             template_row,
             textvariable=self.template_var,
@@ -574,6 +593,8 @@ class ManualOrderTab(tk.Frame):
             state="readonly",
             width=max(14, field_char_width // 2),
             takefocus=False,
+            exportselection=False,
+            style=template_style,
         )
         self.template_combo.pack(side="left", padx=(6, 0))
 
@@ -589,6 +610,7 @@ class ManualOrderTab(tk.Frame):
 
         self.template_combo.bind("<FocusIn>", _reset_template_focus, add="+")
         self.template_combo.bind("<<ComboboxSelected>>", _reset_template_focus, add="+")
+        self.template_combo.bind("<ButtonRelease-1>", _reset_template_focus, add="+")
 
         self.header_row = tk.Frame(table_container)
         self.header_row.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 6))
@@ -737,7 +759,7 @@ class ManualOrderTab(tk.Frame):
                 width=display_chars,
                 justify=column.get("justify", "left"),
             )
-            entry.grid(row=0, column=idx, sticky="ew", padx=(6 if idx else 0, 6))
+            entry.grid(row=0, column=idx, sticky="ew", padx=self._column_padx(idx))
             if column.get("stretch"):
                 widgets.frame.columnconfigure(idx, weight=1, minsize=min_width_px)
             else:
@@ -935,11 +957,16 @@ class ManualOrderTab(tk.Frame):
                 anchor="w",
                 font=getattr(self, "_header_font", None) or ("TkDefaultFont", 10, "bold"),
             )
-            lbl.grid(row=0, column=idx, sticky="ew", padx=(6 if idx else 0, 6))
+            lbl.grid(row=0, column=idx, sticky="w", padx=self._column_padx(idx))
             if column.get("stretch"):
                 self.header_row.columnconfigure(idx, weight=1, minsize=min_width_px)
             else:
                 self.header_row.columnconfigure(idx, weight=0, minsize=min_width_px)
+
+    def _column_padx(self, idx: int) -> tuple[int, int]:
+        """Return consistent horizontal padding for column cells."""
+
+        return (6 if idx else 0, 6)
 
     def _apply_template(self, template: str, *, store_previous: bool = True) -> None:
         if store_previous and self.current_template_name:
