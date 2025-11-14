@@ -54,6 +54,7 @@ class SearchableCombobox(ttk.Combobox):
         self.bind("<<ComboboxSelected>>", self._on_selection, add="+")
         self.bind("<FocusIn>", self._restore_values, add="+")
         self.bind("<FocusIn>", self._on_focus_in, add="+")
+        self.bind("<FocusOut>", self._on_focus_out, add="+")
 
     # Public helpers -------------------------------------------------
     def set_choices(self, values: List[str]) -> None:
@@ -107,6 +108,8 @@ class SearchableCombobox(ttk.Combobox):
 
     def _on_selection(self, _event: tk.Event) -> None:
         self._restore_values()
+        self._clear_text_selection()
+        self._unpost_dropdown()
 
     def _restore_values(self, _event: tk.Event | None = None) -> None:
         self.configure(values=self._all_values)
@@ -125,12 +128,36 @@ class SearchableCombobox(ttk.Combobox):
 
         self.after_idle(_select_all)
 
+    def _on_focus_out(self, _event: tk.Event) -> None:
+        self._unpost_dropdown()
+
+    def _clear_text_selection(self) -> None:
+        try:
+            self.selection_clear()
+        except Exception:
+            pass
+        try:
+            self.icursor(tk.END)
+        except Exception:
+            pass
+
+    def _unpost_dropdown(self) -> None:
+        try:
+            self.tk.call("ttk::combobox::Unpost", self._w)
+        except Exception:
+            try:
+                self.event_generate("<Escape>")
+            except Exception:
+                pass
+
 
 class ManualOrderTab(tk.Frame):
     """Tab om handmatige orderregels in te geven."""
 
     DEFAULT_CONTEXT_LABEL = DEFAULT_MANUAL_CONTEXT
     DEFAULT_TEMPLATE = "Standaard"
+    COLUMN_MIN_CHARS = 6
+    COLUMN_MAX_CHARS = 72
     COLUMN_TEMPLATES: Dict[str, List[Dict[str, object]]] = {
         "Standaard": [
             {
@@ -612,9 +639,13 @@ class ManualOrderTab(tk.Frame):
         self.template_combo.bind("<<ComboboxSelected>>", _reset_template_focus, add="+")
         self.template_combo.bind("<ButtonRelease-1>", _reset_template_focus, add="+")
 
-        self.header_row = tk.Frame(table_container)
-        self.header_row.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 6))
-        self.header_row.columnconfigure(0, weight=1)
+        self.header_container = tk.Frame(table_container)
+        self.header_container.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 6))
+        self.header_container.columnconfigure(0, weight=1)
+        self.header_row = tk.Frame(self.header_container)
+        self.header_row.grid(row=0, column=0, sticky="ew")
+        self.column_slider_row = tk.Frame(self.header_container)
+        self.column_slider_row.grid(row=1, column=0, sticky="ew", pady=(4, 0))
 
         self.table_canvas = tk.Canvas(table_container, highlightthickness=0)
         self.table_canvas.grid(row=2, column=0, sticky="nsew", padx=(0, 0))
@@ -677,6 +708,9 @@ class ManualOrderTab(tk.Frame):
         self.current_template_name: str = ""
         self.current_columns: List[Dict[str, object]] = []
         self._template_rows_cache: Dict[str, List[Dict[str, str]]] = {}
+        self._template_layout_cache: Dict[str, List[Dict[str, object]]] = {}
+        self._column_slider_vars: List[tk.DoubleVar] = []
+        self._column_slider_value_vars: List[tk.StringVar] = []
 
         def _handle_template_change(*_args) -> None:
             self._apply_template(self.template_var.get())
@@ -949,6 +983,13 @@ class ManualOrderTab(tk.Frame):
                 child.destroy()
             except Exception:
                 pass
+        for child in self.column_slider_row.winfo_children():
+            try:
+                child.destroy()
+            except Exception:
+                pass
+        self._column_slider_vars.clear()
+        self._column_slider_value_vars.clear()
         for idx, column in enumerate(self.current_columns):
             display_chars, min_width_px = self._column_display_metrics(column)
             lbl = tk.Label(
@@ -959,21 +1000,62 @@ class ManualOrderTab(tk.Frame):
             )
             lbl.grid(row=0, column=idx, sticky="w", padx=self._column_padx(idx))
             if column.get("stretch"):
-                self.header_row.columnconfigure(idx, weight=1, minsize=min_width_px)
+                weight = 1
             else:
-                self.header_row.columnconfigure(idx, weight=0, minsize=min_width_px)
+                weight = 0
+            self.header_row.columnconfigure(idx, weight=weight, minsize=min_width_px)
+            self.column_slider_row.columnconfigure(idx, weight=weight, minsize=min_width_px)
+
+            slider_frame = tk.Frame(self.column_slider_row)
+            slider_frame.grid(row=0, column=idx, sticky="ew", padx=self._column_padx(idx))
+            slider_frame.columnconfigure(0, weight=1)
+            slider_var = tk.DoubleVar(value=display_chars)
+            self._column_slider_vars.append(slider_var)
+            slider = tk.Scale(
+                slider_frame,
+                variable=slider_var,
+                orient="horizontal",
+                from_=self.COLUMN_MIN_CHARS,
+                to=self.COLUMN_MAX_CHARS,
+                resolution=1,
+                showvalue=False,
+                command=lambda value, column_index=idx: self._handle_column_slider(
+                    column_index, value
+                ),
+            )
+            slider.pack(fill="x")
+            value_var = tk.StringVar(value=self._format_slider_value(display_chars))
+            self._column_slider_value_vars.append(value_var)
+            tk.Label(
+                slider_frame,
+                textvariable=value_var,
+                anchor="e",
+                font=("TkDefaultFont", 8),
+            ).pack(fill="x", pady=(2, 0))
 
     def _column_padx(self, idx: int) -> tuple[int, int]:
         """Return consistent horizontal padding for column cells."""
 
         return (6 if idx else 0, 6)
 
+    def _format_slider_value(self, chars: int) -> str:
+        return f"{int(chars)} ch"
+
     def _apply_template(self, template: str, *, store_previous: bool = True) -> None:
         if store_previous and self.current_template_name:
             self._template_rows_cache[self.current_template_name] = self._capture_rows()
+            self._template_layout_cache[self.current_template_name] = [
+                dict(col) for col in self.current_columns
+            ]
 
         self.current_template_name = template
-        self.current_columns = self._clone_columns(template)
+        if template in self._template_layout_cache:
+            cached_layout = [dict(col) for col in self._template_layout_cache[template]]
+            for column in cached_layout:
+                self._ensure_column_metrics(column)
+            self.current_columns = cached_layout
+        else:
+            self.current_columns = self._clone_columns(template)
         if not self.current_columns:
             self.current_columns = self._clone_columns(self.DEFAULT_TEMPLATE)
             self.current_template_name = self.DEFAULT_TEMPLATE
@@ -988,4 +1070,48 @@ class ManualOrderTab(tk.Frame):
         else:
             self.add_row()
         self._update_totals()
+
+    def _handle_column_slider(self, column_index: int, raw_value: object) -> None:
+        if not (0 <= column_index < len(self.current_columns)):
+            return
+        try:
+            value = float(raw_value)
+        except Exception:
+            return
+        desired = int(round(value))
+        desired = max(self.COLUMN_MIN_CHARS, min(self.COLUMN_MAX_CHARS, desired))
+        column = self.current_columns[column_index]
+        column["width"] = desired
+        column.pop("_display_chars", None)
+        column.pop("_min_width_px", None)
+        self._ensure_column_metrics(column)
+        self._apply_column_width(column_index)
+
+    def _apply_column_width(self, column_index: int) -> None:
+        column = self.current_columns[column_index]
+        display_chars, min_width_px = self._column_display_metrics(column)
+        weight = 1 if column.get("stretch") else 0
+        self.header_row.columnconfigure(column_index, weight=weight, minsize=min_width_px)
+        self.column_slider_row.columnconfigure(column_index, weight=weight, minsize=min_width_px)
+        key = column.get("key")
+        for widgets in self.rows:
+            entry = widgets.entries.get(key)
+            if entry is None:
+                continue
+            try:
+                entry.configure(width=display_chars)
+            except Exception:
+                pass
+            try:
+                widgets.frame.columnconfigure(column_index, weight=weight, minsize=min_width_px)
+            except Exception:
+                pass
+        if 0 <= column_index < len(self._column_slider_value_vars):
+            self._column_slider_value_vars[column_index].set(
+                self._format_slider_value(display_chars)
+            )
+        if 0 <= column_index < len(self._column_slider_vars):
+            current_value = self._column_slider_vars[column_index].get()
+            if int(round(current_value)) != display_chars:
+                self._column_slider_vars[column_index].set(display_chars)
 
