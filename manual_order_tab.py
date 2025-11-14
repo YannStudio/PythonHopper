@@ -179,7 +179,7 @@ class ManualOrderTab(tk.Frame):
 
     DEFAULT_CONTEXT_LABEL = DEFAULT_MANUAL_CONTEXT
     DEFAULT_TEMPLATE = "Standaard"
-    COLUMN_MIN_CHARS = 6
+    COLUMN_MIN_CHARS = 2  # Allow very small columns for compact layouts
     COLUMN_MAX_CHARS = 72
     COLUMN_SEPARATOR_COLOR = "#B9BEC7"
     COLUMN_SEPARATOR_ACTIVE_COLOR = "#6E7681"
@@ -1095,17 +1095,17 @@ class ManualOrderTab(tk.Frame):
                 base_width = int(float(width_value))
             except Exception:
                 base_width = 12
-        label_text = str(column.get("label") or column.get("key") or "")
-        display_chars = max(base_width, len(label_text))
+        
+        # display_chars is ONLY based on the width setting
+        # This allows columns to be resized independently of header text length
+        display_chars = base_width
         column["_display_chars"] = display_chars
+        
         entry_char_px = getattr(self, "_entry_char_pixels", 1)
         min_width_px = max(1, int(round(display_chars * entry_char_px)))
-        header_font = getattr(self, "_header_font", None)
-        if header_font is not None:
-            try:
-                min_width_px = max(min_width_px, header_font.measure(label_text))
-            except Exception:
-                pass
+        
+        # Don't enforce header width as minimum - let columns be smaller than their headers
+        # The header text will just wrap or be cut off if needed
         column["_min_width_px"] = min_width_px
 
     def _column_display_metrics(self, column: Dict[str, object]) -> tuple[int, int]:
@@ -1292,7 +1292,9 @@ class ManualOrderTab(tk.Frame):
         state = self._column_resize_state
         if not state:
             return
-        handle = self._get_resizer_handle(state.get("index"))
+        # Use left_index (de nieuwe key) niet index
+        left_index = state.get("left_index")
+        handle = self._get_resizer_handle(left_index)
         if handle is not None:
             try:
                 handle.configure(background=self.COLUMN_SEPARATOR_COLOR)
@@ -1395,13 +1397,9 @@ class ManualOrderTab(tk.Frame):
         
         column = self.current_columns[column_index]
         
-        # Minimum width is BOTH the global minimum AND the header label length
-        header_label = column.get("label", column.get("key", ""))
-        header_length = len(header_label)
-        min_chars = max(self.COLUMN_MIN_CHARS, header_length)
-        
-        # Clamp desired width between min and max
-        desired = max(min_chars, min(self.COLUMN_MAX_CHARS, desired_chars))
+        # Clamp desired width between global min/max
+        # Allow columns to be smaller than their header text
+        desired = max(self.COLUMN_MIN_CHARS, min(self.COLUMN_MAX_CHARS, desired_chars))
         
         column["width"] = desired
         column.pop("_display_chars", None)
