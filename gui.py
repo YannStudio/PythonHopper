@@ -21,6 +21,7 @@ from models import Supplier, Client, DeliveryAddress
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from clients_db import ClientsDB, CLIENTS_DB_FILE
 from delivery_addresses_db import DeliveryAddressesDB, DELIVERY_DB_FILE
+from app_paths import ensure_runtime_files
 from bom import read_csv_flex, load_bom
 from bom_custom_tab import BOMCustomTab
 from manual_order_tab import ManualOrderTab
@@ -66,6 +67,12 @@ if TYPE_CHECKING:
 CLIENT_LOGO_DIR = Path("client_logos")
 # A softer brand accent for manufacturing-focused actions.
 MANUFACT_BRAND_COLOR = "#FADFA8"
+RUNTIME_DATA_FILES = [
+    "clients_db.json",
+    "suppliers_db.json",
+    "delivery_addresses_db.json",
+    "app_settings.json",
+]
 
 
 def _norm(text: str) -> str:
@@ -101,6 +108,7 @@ def sort_supplier_options(
     return sorted(options, key=sort_key)
 
 def start_gui():
+    ensure_runtime_files(RUNTIME_DATA_FILES)
     import tkinter as tk
     import tkinter.font as tkfont
     from tkinter import ttk, filedialog, messagebox, simpledialog
