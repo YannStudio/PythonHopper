@@ -667,7 +667,7 @@ class ManualOrderTab(tk.Frame):
         self.template_combo.bind("<ButtonRelease-1>", _reset_template_focus, add="+")
 
         self.header_container = tk.Frame(table_container)
-        self.header_container.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 6))
+        self.header_container.grid(row=1, column=0, columnspan=2, sticky="ew", padx=(6, 0), pady=(0, 0))
         self.header_container.columnconfigure(0, weight=1)
         self.header_row = tk.Frame(self.header_container)
         self.header_row.grid(row=0, column=0, sticky="ew")
@@ -676,13 +676,21 @@ class ManualOrderTab(tk.Frame):
             "<Configure>", lambda _e: self._schedule_resizer_position_update()
         )
 
+        # Verticale en horizontale scrollbars
         self.table_canvas = tk.Canvas(table_container, highlightthickness=0)
         self.table_canvas.grid(row=2, column=0, sticky="nsew", padx=(0, 0))
-        table_scroll = ttk.Scrollbar(
+        
+        v_scroll = ttk.Scrollbar(
             table_container, orient="vertical", command=self.table_canvas.yview
         )
-        table_scroll.grid(row=2, column=1, sticky="ns")
-        self.table_canvas.configure(yscrollcommand=table_scroll.set)
+        v_scroll.grid(row=2, column=1, sticky="ns")
+        
+        h_scroll = ttk.Scrollbar(
+            table_container, orient="horizontal", command=self.table_canvas.xview
+        )
+        h_scroll.grid(row=3, column=0, sticky="ew")
+        
+        self.table_canvas.configure(yscrollcommand=v_scroll.set, xscrollcommand=h_scroll.set)
 
         self.rows_frame = tk.Frame(self.table_canvas)
         self.rows_window = self.table_canvas.create_window(
@@ -702,9 +710,31 @@ class ManualOrderTab(tk.Frame):
                 pass
 
         self.table_canvas.bind("<Configure>", _resize_canvas)
+        
+        # Bind mouse wheel events for horizontal scrolling with Shift
+        def _on_mousewheel(event):
+            if event.state & 0x1:  # Shift key pressed
+                delta = -1 if event.delta > 0 else 1
+                self.table_canvas.xview_scroll(delta, "units")
+                return "break"
+        
+        self.table_canvas.bind("<MouseWheel>", _on_mousewheel)
+        self.table_canvas.bind("<Shift-MouseWheel>", _on_mousewheel)
+        
+        # Also bind to arrow keys for horizontal scroll when canvas has focus
+        def _on_arrow_key(event):
+            if event.keysym == "Left":
+                self.table_canvas.xview_scroll(-3, "units")
+                return "break"
+            elif event.keysym == "Right":
+                self.table_canvas.xview_scroll(3, "units")
+                return "break"
+        
+        self.table_canvas.bind("<Left>", _on_arrow_key)
+        self.table_canvas.bind("<Right>", _on_arrow_key)
 
         controls = tk.Frame(table_container)
-        controls.grid(row=3, column=0, columnspan=2, sticky="ew", padx=4, pady=(8, 0))
+        controls.grid(row=4, column=0, columnspan=2, sticky="ew", padx=4, pady=(8, 0))
         controls.columnconfigure(3, weight=1)
 
         tk.Label(controls, text="Nieuwe regels:").grid(row=0, column=0, sticky="w")
@@ -810,14 +840,28 @@ class ManualOrderTab(tk.Frame):
 
     # Row management -------------------------------------------------
     def add_row(self, values: Optional[Dict[str, object]] = None) -> None:
+        # Outer frame: delete-knop (links) + data-frame (rechts)
+        row_container = tk.Frame(self.rows_frame)
+        row_container.pack(fill="x", padx=6, pady=4)
+        row_container.columnconfigure(1, weight=1)
+        
+        # Delete-knop links
+        remove_btn = tk.Button(
+            row_container,
+            text="✕",
+            width=2,
+            command=lambda: self.remove_row(widgets),
+        )
+        remove_btn.grid(row=0, column=0, sticky="w", padx=(0, 4))
+        
+        # Data-frame rechts (met alle kolommen)
         widgets = _ManualRowWidgets(
-            frame=tk.Frame(self.rows_frame),
+            frame=tk.Frame(row_container),
             vars={},
             entries={},
-            remove_btn=None,
+            remove_btn=remove_btn,
         )
-        widgets.frame.pack(fill="x", padx=6, pady=4)
-        widgets.frame.columnconfigure(len(self.current_columns), weight=0)
+        widgets.frame.grid(row=0, column=1, sticky="ew")
 
         for idx, column in enumerate(self.current_columns):
             var = tk.StringVar()
@@ -840,14 +884,6 @@ class ManualOrderTab(tk.Frame):
             widgets.vars[column["key"]] = var
             widgets.entries[column["key"]] = entry
 
-        remove_btn = tk.Button(
-            widgets.frame,
-            text="✕",
-            width=3,
-            command=lambda row=widgets: self.remove_row(row),
-        )
-        remove_btn.grid(row=0, column=len(self.current_columns), padx=(0, 4))
-        widgets.remove_btn = remove_btn
         self.rows.append(widgets)
         if self.current_columns:
             first_key = self.current_columns[0]["key"]
@@ -1027,6 +1063,17 @@ class ManualOrderTab(tk.Frame):
             except Exception:
                 pass
         self._column_resizer_handles.clear()
+        
+        # Voeg eerst een lege label toe links (voor delete-knop plaats)
+        empty_left = tk.Label(
+            self.header_row,
+            text="",
+            anchor="w",
+            font=getattr(self, "_header_font", None) or ("TkDefaultFont", 10, "bold"),
+        )
+        empty_left.grid(row=0, column=0, sticky="w", padx=(0, 4))
+        self.header_row.columnconfigure(0, weight=0, minsize=0)
+        
         for idx, column in enumerate(self.current_columns):
             display_chars, min_width_px = self._column_display_metrics(column)
             lbl = tk.Label(
@@ -1035,12 +1082,12 @@ class ManualOrderTab(tk.Frame):
                 anchor="w",
                 font=getattr(self, "_header_font", None) or ("TkDefaultFont", 10, "bold"),
             )
-            lbl.grid(row=0, column=idx, sticky="w", padx=self._column_padx(idx))
+            lbl.grid(row=0, column=idx + 1, sticky="w", padx=self._column_padx(idx))
             if column.get("stretch"):
                 weight = 1
             else:
                 weight = 0
-            self.header_row.columnconfigure(idx, weight=weight, minsize=min_width_px)
+            self.header_row.columnconfigure(idx + 1, weight=weight, minsize=min_width_px)
             if idx < len(self.current_columns) - 1:
                 handle = tk.Frame(
                     self.header_container,
