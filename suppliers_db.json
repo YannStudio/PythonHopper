@@ -1501,6 +1501,10 @@
       "favorite": false
     }
   ],
-  "defaults_by_production": {},
+  "defaults_by_production": {
+    "Assembly": "Productora",
+    "Glass": "Productora",
+    "Cutting": "Productora"
+  },
   "defaults_by_finish": {}
 }

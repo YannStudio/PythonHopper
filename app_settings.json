@@ -1,8 +1,8 @@
 {
-  "source_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2023/Maatwerk overkappingen/Speelplaatsoverkappingen/20230171 - Smeermaas/CAD/v2",
-  "dest_folder": "C:/Users/jeroe/Desktop",
-  "project_number": "",
-  "project_name": "",
+  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/De Lijn/53. De Lijn - Infopunten/cad",
+  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/De Lijn/53. De Lijn - Infopunten/export/03. Glas",
+  "project_number": "53",
+  "project_name": "De Lijn-ClampFrame",
   "file_extensions": [
     {
       "key": "pdf",
@@ -57,7 +57,7 @@
   "en1090_enabled": true,
   "en1090_note": "Bestelling conform EN 1090-2:2018+A1:2024.\nLevering met materiaalcertificaat type 2.2 of 3.1 volgens EN 10204.\nProfielen in constructiestaal S235JR/S355J2 conform EN 10025-2 met toleranties volgens EN 10034.",
   "en1090_preferences": {
-    "cutting": true,
+    "cutting": false,
     "dummy part": false,
     "lasercutting": true,
     "sheetmetal": true,
@@ -65,6 +65,9 @@
     "spare part": false,
     "tube laser": true,
     "tube laser l": false,
-    "onbekend": false
+    "onbekend": false,
+    "assembly": false,
+    "glass": false,
+    "print": false
   }
 }
