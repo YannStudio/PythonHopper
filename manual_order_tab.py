@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import math
+import unicodedata
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, TYPE_CHECKING
+from typing import Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 import tkinter as tk
 from tkinter import font, messagebox, ttk
@@ -47,9 +48,11 @@ class SearchableCombobox(ttk.Combobox):
     """``ttk.Combobox`` variant met eenvoudige zoek/filter-functionaliteit."""
 
     def __init__(self, master: tk.Misc, *, values=(), **kwargs) -> None:
-        self._all_values: List[str] = list(values or ())
+        self._all_values: List[str] = []
+        self._normalized_values: List[Tuple[str, str]] = []
         self._last_query: str = ""
         super().__init__(master, values=values, **kwargs)
+        self._store_all_values(list(values or ()))
         self.bind("<KeyRelease>", self._on_key_release, add="+")
         self.bind("<<ComboboxSelected>>", self._on_selection, add="+")
         self.bind("<FocusIn>", self._restore_values, add="+")
@@ -60,25 +63,23 @@ class SearchableCombobox(ttk.Combobox):
     def set_choices(self, values: List[str]) -> None:
         """Update beschikbare opties en hergebruik de huidige filter."""
 
-        self._all_values = list(values)
+        self._store_all_values(values)
         # Houd de huidige invoer ongemoeid wanneer opties opnieuw geladen
         # worden, zodat reeds ingevulde waarden zichtbaar blijven.
         self._apply_filter(self._last_query, update_entry=False)
 
     # Internal -------------------------------------------------------
+    def _store_all_values(self, values: List[str]) -> None:
+        self._all_values = list(values)
+        self._normalized_values = [
+            (option, self._normalize_text(option)) for option in self._all_values
+        ]
+
     def _apply_filter(self, query: str, *, update_entry: bool = True) -> None:
         display_text = query
-        normalized = display_text.casefold().strip()
-        if not normalized:
-            filtered = self._all_values
-        else:
-            filtered = [
-                option
-                for option in self._all_values
-                if normalized in option.casefold()
-            ]
+        filtered = self._filter_values(query)
         self.configure(values=filtered)
-        self._last_query = normalized
+        self._last_query = query
         if not update_entry:
             return
         if filtered:
@@ -153,6 +154,24 @@ class SearchableCombobox(ttk.Combobox):
                 self.event_generate("<Escape>")
             except Exception:
                 pass
+
+    @staticmethod
+    def _normalize_text(value: object) -> str:
+        text = str(value or "")
+        normalized = unicodedata.normalize("NFKD", text)
+        normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+        normalized = normalized.casefold()
+        return " ".join(normalized.split())
+
+    def _filter_values(self, query: str) -> List[str]:
+        tokens = self._normalize_text(query).split()
+        if not tokens:
+            return self._all_values
+        matches: List[str] = []
+        for option, normalized in self._normalized_values:
+            if all(token in normalized for token in tokens):
+                matches.append(option)
+        return matches
 
 
 class ManualOrderTab(tk.Frame):
@@ -419,9 +438,11 @@ class ManualOrderTab(tk.Frame):
         tk.Label(header, text="Projectnummer:").grid(
             row=0, column=3, sticky="w"
         )
-        tk.Label(header, textvariable=self.project_number_var, anchor="w").grid(
-            row=0, column=4, sticky="w", padx=(6, 0)
-        )
+        tk.Entry(
+            header,
+            textvariable=self.project_number_var,
+            width=field_char_width,
+        ).grid(row=0, column=4, sticky="w", padx=(6, 0))
 
         tk.Label(header, text="Documentnummer:").grid(
             row=1, column=0, sticky="w", pady=(6, 0)
@@ -437,9 +458,11 @@ class ManualOrderTab(tk.Frame):
         tk.Label(header, text="Projectnaam:").grid(
             row=1, column=3, sticky="w", pady=(6, 0)
         )
-        tk.Label(header, textvariable=self.project_name_var, anchor="w").grid(
-            row=1, column=4, sticky="w", padx=(6, 0), pady=(6, 0)
-        )
+        tk.Entry(
+            header,
+            textvariable=self.project_name_var,
+            width=field_char_width,
+        ).grid(row=1, column=4, sticky="w", padx=(6, 0), pady=(6, 0))
 
         self._doc_number_prefix = _prefix_for_doc_type(self.doc_type_var.get())
         if self._doc_number_prefix:
@@ -587,10 +610,8 @@ class ManualOrderTab(tk.Frame):
         )
         header.rowconfigure(6, weight=1)
 
-        ttk.Separator(self, orient="horizontal").grid(row=1, column=0, sticky="ew", pady=12)
-
         table_container = tk.Frame(self)
-        table_container.grid(row=2, column=0, sticky="nsew", padx=4, pady=(12, 0))
+        table_container.grid(row=1, column=0, sticky="nsew", padx=4, pady=(8, 0))
         table_container.columnconfigure(0, weight=1)
         table_container.rowconfigure(2, weight=1)
 
@@ -702,7 +723,7 @@ class ManualOrderTab(tk.Frame):
         )
 
         footer = tk.Frame(self)
-        footer.grid(row=3, column=0, sticky="ew", padx=4, pady=(12, 0))
+        footer.grid(row=2, column=0, sticky="ew", padx=4, pady=(12, 0))
         footer.columnconfigure(0, weight=1)
         tk.Button(footer, text="Bestelbon opslaan", command=self._handle_export).grid(
             row=0, column=1, sticky="e"
@@ -713,9 +734,9 @@ class ManualOrderTab(tk.Frame):
         self.current_columns: List[Dict[str, object]] = []
         self._template_rows_cache: Dict[str, List[Dict[str, str]]] = {}
         self._template_layout_cache: Dict[str, List[Dict[str, object]]] = {}
-        self._column_slider_vars: List[tk.StringVar] = []
         self._column_slider_value_vars: List[tk.StringVar] = []
-        self._column_width_updating = False
+        self._column_resizer_handles: List[tk.Widget] = []
+        self._column_resize_state: Optional[Dict[str, object]] = None
 
         def _handle_template_change(*_args) -> None:
             self._apply_template(self.template_var.get())
@@ -997,8 +1018,8 @@ class ManualOrderTab(tk.Frame):
                 child.destroy()
             except Exception:
                 pass
-        self._column_slider_vars.clear()
         self._column_slider_value_vars.clear()
+        self._column_resizer_handles.clear()
         for idx, column in enumerate(self.current_columns):
             display_chars, min_width_px = self._column_display_metrics(column)
             lbl = tk.Label(
@@ -1015,44 +1036,84 @@ class ManualOrderTab(tk.Frame):
             self.header_row.columnconfigure(idx, weight=weight, minsize=min_width_px)
             self.column_slider_row.columnconfigure(idx, weight=weight, minsize=min_width_px)
 
-            slider_frame = tk.Frame(self.column_slider_row)
-            slider_frame.grid(row=0, column=idx, sticky="ew", padx=self._column_padx(idx))
-            slider_frame.columnconfigure(0, weight=1)
-            slider_var = tk.StringVar(value=str(display_chars))
-            self._column_slider_vars.append(slider_var)
-            spinbox = tk.Spinbox(
-                slider_frame,
-                from_=self.COLUMN_MIN_CHARS,
-                to=self.COLUMN_MAX_CHARS,
-                increment=1,
-                textvariable=slider_var,
-                width=6,
-                justify="right",
-            )
-            spinbox.pack(fill="x")
-
-            def _commit_spinbox_change(_event=None, column_index=idx, var=slider_var):
-                try:
-                    value = var.get()
-                except tk.TclError:
-                    value = ""
-                self._handle_column_slider(column_index, value)
-
-            spinbox.configure(
-                command=lambda column_index=idx, var=slider_var: self._handle_column_slider(
-                    column_index, var.get()
-                )
-            )
-            spinbox.bind("<FocusOut>", _commit_spinbox_change, add="+")
-            spinbox.bind("<Return>", _commit_spinbox_change, add="+")
+            resizer_frame = tk.Frame(self.column_slider_row)
+            resizer_frame.grid(row=0, column=idx, sticky="ew", padx=self._column_padx(idx))
+            resizer_frame.columnconfigure(0, weight=1)
             value_var = tk.StringVar(value=self._format_slider_value(display_chars))
             self._column_slider_value_vars.append(value_var)
             tk.Label(
-                slider_frame,
+                resizer_frame,
                 textvariable=value_var,
-                anchor="e",
+                anchor="w",
                 font=("TkDefaultFont", 8),
-            ).pack(fill="x", pady=(2, 0))
+            ).grid(row=0, column=0, sticky="w")
+            handle = tk.Label(
+                resizer_frame,
+                text="⇔",
+                cursor="sb_h_double_arrow",
+                borderwidth=0,
+                relief="flat",
+                width=3,
+            )
+            handle.grid(row=0, column=1, sticky="e", padx=(6, 0))
+            self._column_resizer_handles.append(handle)
+            self._bind_resizer_events(handle, idx)
+
+    def _bind_resizer_events(self, widget: tk.Widget, column_index: int) -> None:
+        widget.bind(
+            "<ButtonPress-1>",
+            lambda event, idx=column_index: self._start_column_resize(idx, event),
+            add="+",
+        )
+        widget.bind(
+            "<B1-Motion>",
+            lambda event, idx=column_index: self._drag_column_resize(idx, event),
+            add="+",
+        )
+        widget.bind("<ButtonRelease-1>", lambda _e: self._end_column_resize(), add="+")
+
+    def _start_column_resize(self, column_index: int, event: tk.Event) -> None:
+        if not (0 <= column_index < len(self.current_columns)):
+            return
+        column = self.current_columns[column_index]
+        display_chars, _ = self._column_display_metrics(column)
+        self._column_resize_state = {
+            "index": column_index,
+            "start_x": event.x_root,
+            "start_chars": display_chars,
+            "handle": event.widget,
+        }
+        try:
+            event.widget.configure(relief="sunken")
+        except Exception:
+            pass
+
+    def _drag_column_resize(self, column_index: int, event: tk.Event) -> None:
+        state = self._column_resize_state
+        if not state or state.get("index") != column_index:
+            return
+        try:
+            start_x = state["start_x"]
+            start_chars = state["start_chars"]
+        except KeyError:
+            return
+        delta_px = event.x_root - start_x
+        char_width = max(1, int(getattr(self, "_entry_char_pixels", 1)))
+        delta_chars = delta_px / char_width
+        desired = int(round(start_chars + delta_chars))
+        self._set_column_width(column_index, desired)
+
+    def _end_column_resize(self) -> None:
+        state = self._column_resize_state
+        if not state:
+            return
+        handle = state.get("handle")
+        if handle is not None:
+            try:
+                handle.configure(relief="flat")
+            except Exception:
+                pass
+        self._column_resize_state = None
 
     def _column_padx(self, idx: int) -> tuple[int, int]:
         """Return consistent horizontal padding for column cells."""
@@ -1092,38 +1153,15 @@ class ManualOrderTab(tk.Frame):
             self.add_row()
         self._update_totals()
 
-    def _handle_column_slider(self, column_index: int, raw_value: object) -> None:
-        if self._column_width_updating:
-            return
+    def _set_column_width(self, column_index: int, desired_chars: int) -> None:
         if not (0 <= column_index < len(self.current_columns)):
             return
-        try:
-            value = float(raw_value)
-        except Exception:
-            column = self.current_columns[column_index]
-            slider_var = self._column_slider_vars[column_index]
-            try:
-                slider_var.set(str(int(column.get("width", self.COLUMN_MIN_CHARS))))
-            except Exception:
-                slider_var.set(str(self.COLUMN_MIN_CHARS))
-            return
-        desired = int(round(value))
-        desired = max(self.COLUMN_MIN_CHARS, min(self.COLUMN_MAX_CHARS, desired))
+        desired = max(self.COLUMN_MIN_CHARS, min(self.COLUMN_MAX_CHARS, desired_chars))
         column = self.current_columns[column_index]
         column["width"] = desired
         column.pop("_display_chars", None)
         column.pop("_min_width_px", None)
         self._ensure_column_metrics(column)
-        slider_var = self._column_slider_vars[column_index]
-        new_text = str(desired)
-        if slider_var.get() != new_text:
-            self._column_width_updating = True
-            try:
-                slider_var.set(new_text)
-            finally:
-                self._column_width_updating = False
-        value_var = self._column_slider_value_vars[column_index]
-        value_var.set(self._format_slider_value(desired))
         self._apply_column_width(column_index)
 
     def _apply_column_width(self, column_index: int) -> None:
@@ -1149,16 +1187,4 @@ class ManualOrderTab(tk.Frame):
             self._column_slider_value_vars[column_index].set(
                 self._format_slider_value(display_chars)
             )
-        if 0 <= column_index < len(self._column_slider_vars):
-            slider_var = self._column_slider_vars[column_index]
-            try:
-                current_value = float(slider_var.get())
-            except Exception:
-                current_value = display_chars
-            if int(round(current_value)) != display_chars:
-                self._column_width_updating = True
-                try:
-                    slider_var.set(str(display_chars))
-                finally:
-                    self._column_width_updating = False
 
