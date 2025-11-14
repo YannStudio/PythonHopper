@@ -181,6 +181,8 @@ class ManualOrderTab(tk.Frame):
     DEFAULT_TEMPLATE = "Standaard"
     COLUMN_MIN_CHARS = 6
     COLUMN_MAX_CHARS = 72
+    COLUMN_SEPARATOR_COLOR = "#B9BEC7"
+    COLUMN_SEPARATOR_ACTIVE_COLOR = "#6E7681"
     COLUMN_TEMPLATES: Dict[str, List[Dict[str, object]]] = {
         "Standaard": [
             {
@@ -669,8 +671,10 @@ class ManualOrderTab(tk.Frame):
         self.header_container.columnconfigure(0, weight=1)
         self.header_row = tk.Frame(self.header_container)
         self.header_row.grid(row=0, column=0, sticky="ew")
-        self.column_slider_row = tk.Frame(self.header_container)
-        self.column_slider_row.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        self.header_row.bind("<Configure>", lambda _e: self._schedule_resizer_position_update())
+        self.header_container.bind(
+            "<Configure>", lambda _e: self._schedule_resizer_position_update()
+        )
 
         self.table_canvas = tk.Canvas(table_container, highlightthickness=0)
         self.table_canvas.grid(row=2, column=0, sticky="nsew", padx=(0, 0))
@@ -734,9 +738,9 @@ class ManualOrderTab(tk.Frame):
         self.current_columns: List[Dict[str, object]] = []
         self._template_rows_cache: Dict[str, List[Dict[str, str]]] = {}
         self._template_layout_cache: Dict[str, List[Dict[str, object]]] = {}
-        self._column_slider_value_vars: List[tk.StringVar] = []
         self._column_resizer_handles: List[tk.Widget] = []
         self._column_resize_state: Optional[Dict[str, object]] = None
+        self._resizer_update_job: Optional[str] = None
 
         def _handle_template_change(*_args) -> None:
             self._apply_template(self.template_var.get())
@@ -772,10 +776,12 @@ class ManualOrderTab(tk.Frame):
             else:
                 self.client_var.set("")
 
-        supplier_opts = ["Geen"] + [
-            self.suppliers_db.display_name(s)
-            for s in self.suppliers_db.suppliers_sorted()
-        ]
+        supplier_opts = ["Geen"]
+        if self.suppliers_db is not None:
+            supplier_opts.extend(
+                self.suppliers_db.display_name(s)
+                for s in self.suppliers_db.suppliers_sorted()
+            )
         current_supplier = self.supplier_var.get()
         try:
             self.supplier_combo.set_choices(supplier_opts)
@@ -784,10 +790,12 @@ class ManualOrderTab(tk.Frame):
         if current_supplier not in supplier_opts:
             self.supplier_var.set("Geen")
 
-        delivery_opts = list(self.DELIVERY_PRESETS) + [
-            self.delivery_db.display_name(a)
-            for a in self.delivery_db.addresses_sorted()
-        ]
+        delivery_opts = list(self.DELIVERY_PRESETS)
+        if self.delivery_db is not None:
+            delivery_opts.extend(
+                self.delivery_db.display_name(a)
+                for a in self.delivery_db.addresses_sorted()
+            )
         current_delivery = self.delivery_var.get()
         try:
             self.delivery_combo.set_choices(delivery_opts)
@@ -1013,12 +1021,11 @@ class ManualOrderTab(tk.Frame):
                 child.destroy()
             except Exception:
                 pass
-        for child in self.column_slider_row.winfo_children():
+        for handle in self._column_resizer_handles:
             try:
-                child.destroy()
+                handle.destroy()
             except Exception:
                 pass
-        self._column_slider_value_vars.clear()
         self._column_resizer_handles.clear()
         for idx, column in enumerate(self.current_columns):
             display_chars, min_width_px = self._column_display_metrics(column)
@@ -1034,30 +1041,16 @@ class ManualOrderTab(tk.Frame):
             else:
                 weight = 0
             self.header_row.columnconfigure(idx, weight=weight, minsize=min_width_px)
-            self.column_slider_row.columnconfigure(idx, weight=weight, minsize=min_width_px)
-
-            resizer_frame = tk.Frame(self.column_slider_row)
-            resizer_frame.grid(row=0, column=idx, sticky="ew", padx=self._column_padx(idx))
-            resizer_frame.columnconfigure(0, weight=1)
-            value_var = tk.StringVar(value=self._format_slider_value(display_chars))
-            self._column_slider_value_vars.append(value_var)
-            tk.Label(
-                resizer_frame,
-                textvariable=value_var,
-                anchor="w",
-                font=("TkDefaultFont", 8),
-            ).grid(row=0, column=0, sticky="w")
-            handle = tk.Label(
-                resizer_frame,
-                text="⇔",
-                cursor="sb_h_double_arrow",
-                borderwidth=0,
-                relief="flat",
-                width=3,
-            )
-            handle.grid(row=0, column=1, sticky="e", padx=(6, 0))
-            self._column_resizer_handles.append(handle)
-            self._bind_resizer_events(handle, idx)
+            if idx < len(self.current_columns) - 1:
+                handle = tk.Frame(
+                    self.header_container,
+                    width=2,
+                    background=self.COLUMN_SEPARATOR_COLOR,
+                    cursor="sb_h_double_arrow",
+                )
+                self._column_resizer_handles.append(handle)
+                self._bind_resizer_events(handle, idx)
+        self._schedule_resizer_position_update()
 
     def _bind_resizer_events(self, widget: tk.Widget, column_index: int) -> None:
         widget.bind(
@@ -1083,10 +1076,12 @@ class ManualOrderTab(tk.Frame):
             "start_chars": display_chars,
             "handle": event.widget,
         }
-        try:
-            event.widget.configure(relief="sunken")
-        except Exception:
-            pass
+        handle = self._get_resizer_handle(column_index)
+        if handle is not None:
+            try:
+                handle.configure(background=self.COLUMN_SEPARATOR_ACTIVE_COLOR)
+            except Exception:
+                pass
 
     def _drag_column_resize(self, column_index: int, event: tk.Event) -> None:
         state = self._column_resize_state
@@ -1102,15 +1097,16 @@ class ManualOrderTab(tk.Frame):
         delta_chars = delta_px / char_width
         desired = int(round(start_chars + delta_chars))
         self._set_column_width(column_index, desired)
+        self._schedule_resizer_position_update()
 
     def _end_column_resize(self) -> None:
         state = self._column_resize_state
         if not state:
             return
-        handle = state.get("handle")
+        handle = self._get_resizer_handle(state.get("index"))
         if handle is not None:
             try:
-                handle.configure(relief="flat")
+                handle.configure(background=self.COLUMN_SEPARATOR_COLOR)
             except Exception:
                 pass
         self._column_resize_state = None
@@ -1120,8 +1116,59 @@ class ManualOrderTab(tk.Frame):
 
         return (6 if idx else 0, 6)
 
-    def _format_slider_value(self, chars: int) -> str:
-        return f"{int(chars)} ch"
+    def _get_resizer_handle(self, column_index: Optional[int]) -> Optional[tk.Widget]:
+        if column_index is None:
+            return None
+        if not (0 <= column_index < len(self._column_resizer_handles)):
+            return None
+        handle = self._column_resizer_handles[column_index]
+        if handle is None or not handle.winfo_exists():
+            return None
+        return handle
+
+    def _schedule_resizer_position_update(self) -> None:
+        if self._resizer_update_job is not None:
+            try:
+                self.after_cancel(self._resizer_update_job)
+            except Exception:
+                pass
+        self._resizer_update_job = self.after_idle(self._update_resizer_positions)
+
+    def _update_resizer_positions(self) -> None:
+        self._resizer_update_job = None
+        if not self._column_resizer_handles:
+            return
+        try:
+            self.header_row.update_idletasks()
+            self.header_container.update_idletasks()
+        except Exception:
+            pass
+        container_height = max(1, self.header_container.winfo_height())
+        for idx, handle in enumerate(self._column_resizer_handles):
+            if handle is None or not handle.winfo_exists():
+                continue
+            try:
+                bbox = self.header_row.grid_bbox(idx, 0)
+            except Exception:
+                bbox = None
+            if not bbox:
+                try:
+                    handle.place_forget()
+                except Exception:
+                    pass
+                continue
+            x = bbox[0] + bbox[2]
+            try:
+                handle.place(
+                    in_=self.header_container,
+                    x=x - 1,
+                    y=0,
+                    width=2,
+                    height=container_height,
+                )
+                handle.lift()
+            except Exception:
+                pass
 
     def _apply_template(self, template: str, *, store_previous: bool = True) -> None:
         if store_previous and self.current_template_name:
@@ -1169,7 +1216,6 @@ class ManualOrderTab(tk.Frame):
         display_chars, min_width_px = self._column_display_metrics(column)
         weight = 1 if column.get("stretch") else 0
         self.header_row.columnconfigure(column_index, weight=weight, minsize=min_width_px)
-        self.column_slider_row.columnconfigure(column_index, weight=weight, minsize=min_width_px)
         key = column.get("key")
         for widgets in self.rows:
             entry = widgets.entries.get(key)
@@ -1183,8 +1229,5 @@ class ManualOrderTab(tk.Frame):
                 widgets.frame.columnconfigure(column_index, weight=weight, minsize=min_width_px)
             except Exception:
                 pass
-        if 0 <= column_index < len(self._column_slider_value_vars):
-            self._column_slider_value_vars[column_index].set(
-                self._format_slider_value(display_chars)
-            )
+        self._schedule_resizer_position_update()
 
