@@ -2030,7 +2030,15 @@ def start_gui():
 
         def _on_focus_key(self, sel_key: str):
             self._active_key = sel_key
-            self._type_filter_by_key.pop(sel_key, None)
+            SupplierSelectionFrame._get_type_filter_map(self).pop(sel_key, None)
+
+        @staticmethod
+        def _get_type_filter_map(instance) -> Dict[str, str]:
+            type_map = getattr(instance, "_type_filter_by_key", None)
+            if type_map is None:
+                type_map = {}
+                setattr(instance, "_type_filter_by_key", type_map)
+            return type_map
 
         def _display_list(self) -> List[str]:
             sups = self.db.suppliers_sorted()
@@ -2112,7 +2120,7 @@ def start_gui():
 
         def _on_combo_change(self, _evt=None):
             for sel_key, combo in self.rows:
-                self._type_filter_by_key.pop(sel_key, None)
+                SupplierSelectionFrame._get_type_filter_map(self).pop(sel_key, None)
                 doc_var = self.doc_vars.get(sel_key)
                 if not doc_var:
                     continue
@@ -2146,7 +2154,7 @@ def start_gui():
             if keysym in ("Up", "Down", "Prior", "Next", "Tab"):
                 return
 
-            type_map = self._type_filter_by_key
+            type_map = SupplierSelectionFrame._get_type_filter_map(self)
             text_so_far = type_map.get(sel_key, "")
 
             if keysym == "Escape":
