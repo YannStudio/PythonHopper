@@ -1152,11 +1152,20 @@ class ManualOrderTab(tk.Frame):
     def _clear_rows(self) -> None:
         # Destroy all data row widgets
         for widgets in self.rows:
+            # Destroy button frame (which contains all buttons)
             try:
                 if widgets.frame is not None:
-                    widgets.frame.destroy()  # This destroys all buttons inside
+                    widgets.frame.destroy()
             except Exception:
                 pass
+            
+            # Also destroy all entry widgets directly
+            for entry in widgets.entries.values():
+                try:
+                    entry.destroy()
+                except Exception:
+                    pass
+        
         self.rows.clear()
         self._row_grid_indices.clear()
         self._next_data_row = 1  # Reset naar rij 1 (header is rij 0)
@@ -1386,20 +1395,6 @@ class ManualOrderTab(tk.Frame):
                 pass
 
     def _apply_template(self, template: str, *, store_previous: bool = True) -> None:
-        # Only cache rows if there's actual data in them
-        if store_previous and self.current_template_name:
-            captured = self._capture_rows()
-            # Only cache if there's meaningful data (at least one non-empty field in any row)
-            has_data = any(
-                any(str(value).strip() for value in row.values()) 
-                for row in captured
-            )
-            if has_data:
-                self._template_rows_cache[self.current_template_name] = captured
-            self._template_layout_cache[self.current_template_name] = [
-                dict(col) for col in self.current_columns
-            ]
-
         self.current_template_name = template
         if template in self._template_layout_cache:
             cached_layout = [dict(col) for col in self._template_layout_cache[template]]
@@ -1415,17 +1410,9 @@ class ManualOrderTab(tk.Frame):
         # Clear rows BEFORE rendering header (so grid columns are reset)
         self._clear_rows()
         
-        # Now render header and add rows
+        # Now render header and add one empty row
         self._render_header()
-
-        # Only restore rows if we saved data for this template before
-        cached_rows = self._template_rows_cache.get(self.current_template_name, [])
-        if cached_rows:
-            for row_values in cached_rows:
-                self.add_row(row_values)
-        else:
-            # Start with 1 empty row
-            self.add_row()
+        self.add_row()
         self._update_totals()
 
     def _set_column_width(self, column_index: int, desired_chars: int) -> None:
