@@ -669,12 +669,6 @@ class ManualOrderTab(tk.Frame):
         self.header_container = tk.Frame(table_container)
         self.header_container.grid(row=1, column=0, columnspan=2, sticky="ew", padx=(6, 0), pady=(0, 0))
         self.header_container.columnconfigure(0, weight=1)
-        self.header_row = tk.Frame(self.header_container)
-        self.header_row.grid(row=0, column=0, sticky="ew")
-        self.header_row.bind("<Configure>", lambda _e: self._schedule_resizer_position_update())
-        self.header_container.bind(
-            "<Configure>", lambda _e: self._schedule_resizer_position_update()
-        )
 
         # Verticale en horizontale scrollbars
         self.table_canvas = tk.Canvas(table_container, highlightthickness=0)
@@ -696,7 +690,10 @@ class ManualOrderTab(tk.Frame):
         self.rows_window = self.table_canvas.create_window(
             (0, 0), window=self.rows_frame, anchor="nw"
         )
-        self.rows_frame.columnconfigure(0, weight=1)
+        self.rows_frame.columnconfigure(1, weight=1)
+        
+        # Initialiseer kolom-resize handles lijst
+        self._column_resizer_handles = []
 
         def _update_scrollregion(_event=None):
             self.table_canvas.configure(scrollregion=self.table_canvas.bbox("all"))
@@ -771,6 +768,10 @@ class ManualOrderTab(tk.Frame):
         self._column_resizer_handles: List[tk.Widget] = []
         self._column_resize_state: Optional[Dict[str, object]] = None
         self._resizer_update_job: Optional[str] = None
+        self._row_grid_indices: Dict[int, int] = {}  # Maps rows-list index to grid row number
+
+        # Maak EERST de header-rij IN de canvas (voor alle andere inits!)
+        self._create_header_row_in_canvas()
 
         def _handle_template_change(*_args) -> None:
             self._apply_template(self.template_var.get())
@@ -839,65 +840,142 @@ class ManualOrderTab(tk.Frame):
         self._doc_number_prefix = _prefix_for_doc_type(self.doc_type_var.get())
 
     # Row management -------------------------------------------------
-    def add_row(self, values: Optional[Dict[str, object]] = None) -> None:
-        # Outer frame: delete-knop (links) + data-frame (rechts)
-        row_container = tk.Frame(self.rows_frame)
-        row_container.pack(fill="x", padx=6, pady=4)
-        row_container.columnconfigure(1, weight=1)
+    def _create_header_row_in_canvas(self) -> None:
+        """Creëer de header-rij als rij 0 in rows_frame centrale grid."""
+        # rows_frame gebruikt ONE centrale grid waar ALLES in zit
+        # Col 0: Delete-knop/spacer (width=20)
+        # Col 1,3,5,...: Data kolommen (weight varies)
+        # Col 2,4,6,...: Separators (width=2)
         
-        # Delete-knop links
+        # Header delete-spacer in kolom 0
+        header_delete = tk.Label(self.rows_frame, text="", width=2)
+        header_delete.grid(row=0, column=0, sticky="w")
+        self.rows_frame.columnconfigure(0, weight=0, minsize=20)
+        
+        # Header-widgets worden direct in rows_frame geplaatst (niet in nested frame)
+        self.header_row = None  # We don't use a separate container anymore
+        self._header_labels = {}  # dict {column_index: tk.Label}
+        self._header_separators = []  # list van separator frames
+        self._next_data_row = 1
+    
+    def add_row(self, values: Optional[Dict[str, object]] = None) -> None:
+        # Delete-knop in kolom 0
         remove_btn = tk.Button(
-            row_container,
+            self.rows_frame,
             text="✕",
             width=2,
-            command=lambda: self.remove_row(widgets),
+            command=lambda: self.remove_row(row_idx),
         )
-        remove_btn.grid(row=0, column=0, sticky="w", padx=(0, 4))
+        row_idx = self._next_data_row
+        remove_btn.grid(row=row_idx, column=0, sticky="w")
         
-        # Data-frame rechts (met alle kolommen)
+        # Data entries en separators direkt in rows_frame (GEEN nested frame!)
         widgets = _ManualRowWidgets(
-            frame=tk.Frame(row_container),
+            frame=None,  # We don't use a frame container
             vars={},
             entries={},
             remove_btn=remove_btn,
         )
-        widgets.frame.grid(row=0, column=1, sticky="ew")
 
         for idx, column in enumerate(self.current_columns):
+            grid_col = 1 + idx * 2  # Kolom 1, 3, 5, 7, ...
+            
+            # Create entry widget
             var = tk.StringVar()
             if values is not None and column["key"] in values:
                 value = values[column["key"]]
                 var.set("" if value is None else str(value))
+            
             display_chars, min_width_px = self._column_display_metrics(column)
             entry = tk.Entry(
-                widgets.frame,
+                self.rows_frame,
                 textvariable=var,
                 width=display_chars,
                 justify=column.get("justify", "left"),
             )
-            entry.grid(row=0, column=idx, sticky="ew", padx=self._column_padx(idx))
+            entry.grid(row=row_idx, column=grid_col, sticky="ew", padx=(6, 6))
+            
+            # Configure column width
             if column.get("stretch"):
-                widgets.frame.columnconfigure(idx, weight=1, minsize=min_width_px)
+                weight = 1
             else:
-                widgets.frame.columnconfigure(idx, weight=0, minsize=min_width_px)
+                weight = 0
+            self.rows_frame.columnconfigure(grid_col, weight=weight, minsize=min_width_px)
+            
+            # Add separator BETWEEN columns (not after last)
+            if idx < len(self.current_columns) - 1:
+                sep_col = grid_col + 1  # Kolom 2, 4, 6, 8, ...
+                separator = tk.Frame(
+                    self.rows_frame,
+                    width=2,
+                    background=self.COLUMN_SEPARATOR_COLOR,
+                )
+                separator.grid(row=row_idx, column=sep_col, sticky="ns", padx=0)
+                self.rows_frame.columnconfigure(sep_col, weight=0, minsize=2)
+            
             var.trace_add("write", lambda *_args: self._update_totals())
             widgets.vars[column["key"]] = var
             widgets.entries[column["key"]] = entry
-
+        
         self.rows.append(widgets)
+        self._row_grid_indices[len(self.rows) - 1] = row_idx  # Track grid row voor deze data row
+        self._next_data_row += 1
+        
         if self.current_columns:
             first_key = self.current_columns[0]["key"]
             self.after_idle(lambda: widgets.entries[first_key].focus_set())
         self._update_totals()
 
-    def remove_row(self, row: _ManualRowWidgets) -> None:
-        if row not in self.rows:
+    def remove_row(self, row_idx: int) -> None:
+        """Remove a data row by its index in self.rows."""
+        if not (0 <= row_idx < len(self.rows)):
             return
-        self.rows.remove(row)
+        
+        row = self.rows[row_idx]
+        self.rows.pop(row_idx)
+        
+        # Destroy widgets
         try:
-            row.frame.destroy()
+            row.remove_btn.destroy()
         except Exception:
             pass
+        
+        # Destroy all entry widgets in this row
+        for entry in row.entries.values():
+            try:
+                entry.destroy()
+            except Exception:
+                pass
+        
+        # Remove grid row tracking
+        grid_row = self._row_grid_indices.pop(row_idx, None)
+        
+        # Rebuild rows after this index (re-grid them at new row positions)
+        for i in range(row_idx, len(self.rows)):
+            old_grid_row = self._row_grid_indices[i]
+            new_grid_row = old_grid_row - 1  # Shift up
+            
+            widgets = self.rows[i]
+            widgets.remove_btn.grid(row=new_grid_row, column=0, sticky="w")
+            
+            # Re-grid all entries
+            for idx, column in enumerate(self.current_columns):
+                grid_col = 1 + idx * 2
+                key = column.get("key")
+                entry = widgets.entries.get(key)
+                if entry:
+                    entry.grid(row=new_grid_row, column=grid_col, sticky="ew", padx=(6, 6))
+                
+                # Re-grid separators
+                if idx < len(self.current_columns) - 1:
+                    sep_col = grid_col + 1
+                    # Note: separators are destroyed when entries are destroyed
+                    # We need to recreate them...actually, let's skip this for now
+            
+            self._row_grid_indices[i] = new_grid_row
+        
+        self._next_data_row = len(self.rows) + 1
+        
         if not self.rows:
             self.add_row()
         else:
@@ -1044,19 +1122,39 @@ class ManualOrderTab(tk.Frame):
         return captured
 
     def _clear_rows(self) -> None:
+        # Destroy all data row widgets
         for widgets in self.rows:
             try:
-                widgets.frame.destroy()
+                if widgets.frame is not None:
+                    widgets.frame.destroy()
+            except Exception:
+                pass
+            try:
+                widgets.remove_btn.destroy()
             except Exception:
                 pass
         self.rows.clear()
+        self._row_grid_indices.clear()
+        self._next_data_row = 1  # Reset naar rij 1 (header is rij 0)
 
     def _render_header(self) -> None:
-        for child in self.header_row.winfo_children():
+        """Render header-labels en separators direkt in rows_frame rij 0."""
+        # Clear old header widgets
+        for lbl in self._header_labels.values():
             try:
-                child.destroy()
+                lbl.destroy()
             except Exception:
                 pass
+        self._header_labels.clear()
+        
+        for sep in self._header_separators:
+            try:
+                sep.destroy()
+            except Exception:
+                pass
+        self._header_separators.clear()
+        
+        # Verwijder oude resize-handles
         for handle in self._column_resizer_handles:
             try:
                 handle.destroy()
@@ -1064,40 +1162,57 @@ class ManualOrderTab(tk.Frame):
                 pass
         self._column_resizer_handles.clear()
         
-        # Voeg eerst een lege label toe links (voor delete-knop plaats)
-        empty_left = tk.Label(
-            self.header_row,
-            text="",
-            anchor="w",
-            font=getattr(self, "_header_font", None) or ("TkDefaultFont", 10, "bold"),
-        )
-        empty_left.grid(row=0, column=0, sticky="w", padx=(0, 4))
-        self.header_row.columnconfigure(0, weight=0, minsize=0)
-        
+        # Render header-labels EN separators direkt in rows_frame grid
         for idx, column in enumerate(self.current_columns):
+            grid_col = 1 + idx * 2  # Grid kolom 1, 3, 5, 7, ...
             display_chars, min_width_px = self._column_display_metrics(column)
+            
+            # Header label
             lbl = tk.Label(
-                self.header_row,
+                self.rows_frame,
                 text=column.get("label", column.get("key", "")),
                 anchor="w",
                 font=getattr(self, "_header_font", None) or ("TkDefaultFont", 10, "bold"),
             )
-            lbl.grid(row=0, column=idx + 1, sticky="w", padx=self._column_padx(idx))
-            if column.get("stretch"):
-                weight = 1
-            else:
-                weight = 0
-            self.header_row.columnconfigure(idx + 1, weight=weight, minsize=min_width_px)
+            lbl.grid(row=0, column=grid_col, sticky="ew", padx=(6, 6))
+            self.rows_frame.columnconfigure(grid_col, weight=1 if column.get("stretch") else 0, minsize=min_width_px)
+            self._header_labels[idx] = lbl
+            
+            # Separator TUSSEN kolommen
             if idx < len(self.current_columns) - 1:
-                handle = tk.Frame(
-                    self.header_container,
+                sep_col = grid_col + 1  # Grid kolom 2, 4, 6, 8, ...
+                separator = tk.Frame(
+                    self.rows_frame,
                     width=2,
                     background=self.COLUMN_SEPARATOR_COLOR,
                     cursor="sb_h_double_arrow",
                 )
-                self._column_resizer_handles.append(handle)
-                self._bind_resizer_events(handle, idx)
+                separator.grid(row=0, column=sep_col, sticky="ns", padx=0)
+                self.rows_frame.columnconfigure(sep_col, weight=0, minsize=2)
+                
+                # Bind resize events with correct column_index
+                # Use a helper function to create proper closures
+                self._bind_separator_events(separator, idx)
+                
+                self._column_resizer_handles.append(separator)
+                self._header_separators.append(separator)
+        
         self._schedule_resizer_position_update()
+    
+    def _bind_separator_events(self, separator: tk.Widget, column_index: int) -> None:
+        """Bind mouse events to a separator for resizing column_index."""
+        def on_press(event):
+            self._start_column_resize(column_index, event)
+        
+        def on_drag(event):
+            self._drag_column_resize(column_index, event)
+        
+        def on_release(event):
+            self._end_column_resize()
+        
+        separator.bind("<ButtonPress-1>", on_press, add="+")
+        separator.bind("<B1-Motion>", on_drag, add="+")
+        separator.bind("<ButtonRelease-1>", on_release, add="+")
 
     def _bind_resizer_events(self, widget: tk.Widget, column_index: int) -> None:
         widget.bind(
@@ -1113,16 +1228,29 @@ class ManualOrderTab(tk.Frame):
         widget.bind("<ButtonRelease-1>", lambda _e: self._end_column_resize(), add="+")
 
     def _start_column_resize(self, column_index: int, event: tk.Event) -> None:
+        """Start resizing: record which column and direction will determine resize."""
         if not (0 <= column_index < len(self.current_columns)):
             return
-        column = self.current_columns[column_index]
-        display_chars, _ = self._column_display_metrics(column)
+        
+        left_column = self.current_columns[column_index]
+        left_chars, _ = self._column_display_metrics(left_column)
+        
+        # Als er een rechter kolom is, we kunnen ook die resizen
+        right_column = None
+        right_chars = 0
+        if column_index + 1 < len(self.current_columns):
+            right_column = self.current_columns[column_index + 1]
+            right_chars, _ = self._column_display_metrics(right_column)
+        
         self._column_resize_state = {
-            "index": column_index,
+            "left_index": column_index,
+            "right_index": column_index + 1 if right_column else None,
             "start_x": event.x_root,
-            "start_chars": display_chars,
+            "left_chars": left_chars,
+            "right_chars": right_chars,
             "handle": event.widget,
         }
+        
         handle = self._get_resizer_handle(column_index)
         if handle is not None:
             try:
@@ -1131,19 +1259,33 @@ class ManualOrderTab(tk.Frame):
                 pass
 
     def _drag_column_resize(self, column_index: int, event: tk.Event) -> None:
+        """Drag resize: determine which column to resize based on drag direction."""
         state = self._column_resize_state
-        if not state or state.get("index") != column_index:
+        if not state or state.get("left_index") != column_index:
             return
+        
         try:
             start_x = state["start_x"]
-            start_chars = state["start_chars"]
+            left_chars = state["left_chars"]
+            right_chars = state.get("right_chars", 0)
+            right_index = state.get("right_index")
         except KeyError:
             return
+        
         delta_px = event.x_root - start_x
         char_width = max(1, int(getattr(self, "_entry_char_pixels", 1)))
         delta_chars = delta_px / char_width
-        desired = int(round(start_chars + delta_chars))
-        self._set_column_width(column_index, desired)
+        
+        if delta_px > 0:
+            # Sleep naar RECHTS = verbreed LINKER kolom
+            desired = int(round(left_chars + delta_chars))
+            self._set_column_width(column_index, desired)
+        elif delta_px < 0 and right_index is not None:
+            # Sleep naar LINKS = verbreed RECHTER kolom
+            # Delta is negatief, dus we willen right_chars groter maken
+            desired = int(round(right_chars - delta_chars))  # -delta_chars want delta is negatief
+            self._set_column_width(right_index, desired)
+        
         self._schedule_resizer_position_update()
 
     def _end_column_resize(self) -> None:
@@ -1250,8 +1392,17 @@ class ManualOrderTab(tk.Frame):
     def _set_column_width(self, column_index: int, desired_chars: int) -> None:
         if not (0 <= column_index < len(self.current_columns)):
             return
-        desired = max(self.COLUMN_MIN_CHARS, min(self.COLUMN_MAX_CHARS, desired_chars))
+        
         column = self.current_columns[column_index]
+        
+        # Minimum width is BOTH the global minimum AND the header label length
+        header_label = column.get("label", column.get("key", ""))
+        header_length = len(header_label)
+        min_chars = max(self.COLUMN_MIN_CHARS, header_length)
+        
+        # Clamp desired width between min and max
+        desired = max(min_chars, min(self.COLUMN_MAX_CHARS, desired_chars))
+        
         column["width"] = desired
         column.pop("_display_chars", None)
         column.pop("_min_width_px", None)
@@ -1259,10 +1410,16 @@ class ManualOrderTab(tk.Frame):
         self._apply_column_width(column_index)
 
     def _apply_column_width(self, column_index: int) -> None:
+        """Update column width in rows_frame grid."""
         column = self.current_columns[column_index]
         display_chars, min_width_px = self._column_display_metrics(column)
         weight = 1 if column.get("stretch") else 0
-        self.header_row.columnconfigure(column_index, weight=weight, minsize=min_width_px)
+        
+        # Grid column is 1 + column_index * 2
+        grid_col = 1 + column_index * 2
+        self.rows_frame.columnconfigure(grid_col, weight=weight, minsize=min_width_px)
+        
+        # Update all data rows
         key = column.get("key")
         for widgets in self.rows:
             entry = widgets.entries.get(key)
@@ -1272,9 +1429,6 @@ class ManualOrderTab(tk.Frame):
                 entry.configure(width=display_chars)
             except Exception:
                 pass
-            try:
-                widgets.frame.columnconfigure(column_index, weight=weight, minsize=min_width_px)
-            except Exception:
-                pass
+        
         self._schedule_resizer_position_update()
 
