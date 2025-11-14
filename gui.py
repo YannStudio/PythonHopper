@@ -3227,6 +3227,7 @@ def start_gui():
             _configure_tab_like_button_style()
             self.title("Filehopper")
             self.minsize(1024, 720)
+            self._schedule_window_maximize()
 
             self.db = SuppliersDB.load(SUPPLIERS_DB_FILE)
             self.client_db = ClientsDB.load(CLIENTS_DB_FILE)
@@ -3385,17 +3386,25 @@ def start_gui():
 
             self.nb = ttk.Notebook(tabs_container)
             self.nb.pack(fill="both", expand=True)
-            self.custom_bom_tab = BOMCustomTab(
-                self.nb,
-                app_name="Filehopper",
-                on_custom_bom_ready=self._on_custom_bom_ready,
-                on_push_to_main=self._apply_custom_bom_to_main,
-                event_target=self,
+            self.nb.bind("<<NotebookTabChanged>>", self._handle_tab_changed, add="+")
+            self.custom_bom_tab: Optional[BOMCustomTab] = None
+            self._custom_bom_placeholder = tk.Frame(
+                self.nb, background=tabs_background
             )
+            tk.Label(
+                self._custom_bom_placeholder,
+                text=(
+                    "De Custom BOM-tab wordt geladen zodra u deze opent. Dit maakt"
+                    " het opstarten sneller."
+                ),
+                wraplength=360,
+                justify="left",
+                background=tabs_background,
+            ).pack(padx=24, pady=24, anchor="w")
             main = tk.Frame(self.nb)
             main.configure(padx=12, pady=12)
             self.nb.add(main, text="Main")
-            self.nb.add(self.custom_bom_tab, text="Custom BOM")
+            self.nb.add(self._custom_bom_placeholder, text="Custom BOM")
             self.manual_order_tab = ManualOrderTab(
                 self.nb,
                 suppliers_db=self.db,
@@ -3934,7 +3943,7 @@ def start_gui():
             tk.Button(
                 bf,
                 text="Custom BOM",
-                command=lambda: self.nb.select(self.custom_bom_tab),
+                command=self._select_custom_bom_tab,
             ).pack(side="left", padx=6)
             tk.Button(bf, text="Controleer Bestanden", command=self._check_files).pack(side="left", padx=6)
             tk.Button(bf, text="Clear BOM", command=self._clear_bom).pack(side="left", padx=6)
@@ -4506,6 +4515,80 @@ def start_gui():
                     selected.extend(ext.patterns)
             return selected or None
 
+        def _schedule_window_maximize(self) -> None:
+            def _maximize() -> None:
+                try:
+                    self.state("zoomed")
+                    return
+                except tk.TclError:
+                    pass
+                try:
+                    self.attributes("-zoomed", True)
+                    return
+                except tk.TclError:
+                    pass
+                try:
+                    self.update_idletasks()
+                    screen_w = self.winfo_screenwidth()
+                    screen_h = self.winfo_screenheight()
+                    self.geometry(f"{screen_w}x{screen_h}+0+0")
+                except tk.TclError:
+                    pass
+
+            try:
+                self.after_idle(_maximize)
+            except tk.TclError:
+                _maximize()
+
+        def _handle_tab_changed(self, event: "tk.Event") -> None:
+            placeholder = getattr(self, "_custom_bom_placeholder", None)
+            if not placeholder:
+                return
+            if event.widget is not self.nb:
+                return
+            selected = event.widget.select()
+            if selected and str(selected) == str(placeholder):
+                tab = self._ensure_custom_bom_tab()
+                self.nb.select(tab)
+
+        def _ensure_custom_bom_tab(self) -> "BOMCustomTab":
+            tab = getattr(self, "custom_bom_tab", None)
+            if tab is not None:
+                return tab
+            tab = BOMCustomTab(
+                self.nb,
+                app_name="Filehopper",
+                on_custom_bom_ready=self._on_custom_bom_ready,
+                on_push_to_main=self._apply_custom_bom_to_main,
+                event_target=self,
+            )
+            placeholder = getattr(self, "_custom_bom_placeholder", None)
+            insert_index = None
+            if placeholder is not None:
+                try:
+                    insert_index = self.nb.index(placeholder)
+                except tk.TclError:
+                    insert_index = None
+                try:
+                    self.nb.forget(placeholder)
+                except tk.TclError:
+                    pass
+                try:
+                    placeholder.destroy()
+                except Exception:
+                    pass
+                self._custom_bom_placeholder = None
+            if insert_index is None:
+                self.nb.add(tab, text="Custom BOM")
+            else:
+                self.nb.insert(insert_index, tab, text="Custom BOM")
+            self.custom_bom_tab = tab
+            return tab
+
+        def _select_custom_bom_tab(self) -> None:
+            tab = self._ensure_custom_bom_tab()
+            self.nb.select(tab)
+
         def _store_custom_row_flags(
             self, df: "pd.DataFrame", flags: List[bool]
         ) -> None:
@@ -4543,19 +4626,20 @@ def start_gui():
         def _sync_custom_bom_from_main(self) -> None:
             """Update the Custom BOM tab so it mirrors the main BOM."""
 
-            if not getattr(self, "custom_bom_tab", None):
+            tab = getattr(self, "custom_bom_tab", None)
+            if tab is None:
                 return
             if not self._autofill_custom_bom_enabled():
                 return
 
             df = self.bom_df
             if df is None:
-                empty = pd.DataFrame(columns=self.custom_bom_tab.MAIN_COLUMN_ORDER)
+                empty = pd.DataFrame(columns=BOMCustomTab.MAIN_COLUMN_ORDER)
             else:
                 empty = df
 
             try:
-                self.custom_bom_tab.load_from_main_dataframe(empty)
+                tab.load_from_main_dataframe(empty)
             except Exception as exc:
                 print(
                     f"Kon custom BOM niet vullen vanuit hoofd-BOM: {exc}",
@@ -4615,18 +4699,19 @@ def start_gui():
             from tkinter import messagebox
 
 
+            parent_widget = self.custom_bom_tab if self.custom_bom_tab is not None else self
             if custom_df is None or custom_df.empty:
                 messagebox.showwarning(
                     "Geen gegevens",
                     "Er zijn geen rijen met gegevens om naar de Main-tab te sturen.",
-                    parent=self.custom_bom_tab,
+                    parent=parent_widget,
                 )
                 return
 
             try:
                 normalized = prepare_custom_bom_for_main(custom_df, self.bom_df)
             except ValueError as exc:
-                messagebox.showerror("Fout", str(exc), parent=self.custom_bom_tab)
+                messagebox.showerror("Fout", str(exc), parent=parent_widget)
                 return
 
             self._store_custom_row_flags(normalized, [True] * len(normalized.index))
