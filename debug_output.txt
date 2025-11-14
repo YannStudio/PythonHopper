@@ -1,0 +1,11 @@
+DEBUG: set_choices called with 5 values
+ERROR in client_combo.set_choices: 'charmap' codec can't encode character '\u2605' in position 23: character maps to <undefined>
+DEBUG: supplier_opts loaded: 101 items
+DEBUG: set_choices called with 101 values
+DEBUG: _all_values = ['Geen', 'AB-Matic (Hi-Motion)', 'Abriso-Jiffy']...
+DEBUG: After _apply_filter, self.cget('values') = ('Geen', 'AB-Matic (Hi-Motion)', 'Abriso-Jiffy', 'AC Metalec', 'Allround hekwerk', 'AMR', 'Antwerp Gas Depot', 'Atoz beletteringen bvba', 'Bacovo', 'Betafence', 'Borgh', 'Brightlight', 'Brouwers Algemene Buigwerken', 'Byttebier-hout', 'C-B-S', 'Cebeo', 'CloudPoint', 'Datech', 'Dejond', 'Dirk Maris nv', 'Duracoat', 'E&M Metalworks', 'Elcee Belux', 'Emergo', 'Epsilon nv', 'Fabory', 'Haesevoets', 'Heli', 'Hess', 'HG Glas', 'HMG', 'Holvoet', 'Hout Vandenheurck', 'HWT Transport', 'Imatex', 'Inno-plast nv', 'J.L. Hertsens', 'Joriside', 'Kersten Europe', 'Kloeckner nv', 'Kolo nv', 'Lastek', 'Lauryssens', 'Ledlab', 'Lima-Lier', 'LM Hekwerk', 'Locinox', 'Mapeco', 'Martens Hout nv', 'MCB', 'Meeuwsen bv', 'Metalas', 'Mireille', 'nan', 'Narviflex nv', 'O-Metall', 'Overbroekse verfcentrale', 'Packo Surface Treatment', 'Perfox', 'Pieterman-glastechniek', 'Piscaer', 'Plastiservice', 'Polytec Group', 'Productora', 'Pyrasied', 'Raynaud', 'Rexel', 'Rodeca', 'Saey', 'Skylux', 'Solver solutions', 'SPCM', 'Sprangers nv', 'Sprimo Glass', 'Sprimo Install', 'Stabilos', 'Starconstruct', 'Stubbe', 'Tecno Spa', 'TESTAS', 'ThyssenKrupp', 'Tilborghs', 'Uydens Paul Metaalbewerking bv', 'v3s-glass-systems', 'Vamatec', 'Van Eycken', 'Van Gils Coating - Beringen/Maasmechelen', 'Van Gils Coating - Wuustwezel', 'Van Leeuwen', 'Van Wauwe', 'Verloy metaalwerken', 'Verpas', 'Vico Parts', 'Vink', 'Vytech', 'WB&E', 'Wecoat', 'Weld-toorts', 'Welda', 'Wim Verhuur', 'Zinq (Antwerpen)')
+DEBUG: supplier_combo.set_choices succeeded
+DEBUG: delivery_opts loaded: 8 items
+DEBUG: set_choices called with 8 values
+DEBUG: _all_values = ['Geen', 'Bestelling wordt opgehaald', 'Leveradres wordt nog meegedeeld']...
+ERROR in delivery_combo.set_choices: 'charmap' codec can't encode character '\u2605' in position 125: character maps to <undefined>

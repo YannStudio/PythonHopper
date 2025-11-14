@@ -512,10 +512,11 @@ class ManualOrderTab(tk.Frame):
             padx=(6, 0),
             pady=(8, 0),
         )
-        self.client_combo = SearchableCombobox(
+        self.client_combo = ttk.Combobox(
             client_field,
             textvariable=self.client_var,
             width=field_char_width,
+            state="readonly",
         )
         self.client_combo.pack(side="left")
         if on_manage_clients:
@@ -537,8 +538,11 @@ class ManualOrderTab(tk.Frame):
             padx=(6, 0),
             pady=(8, 0),
         )
-        self.supplier_combo = SearchableCombobox(
-            supplier_field, textvariable=self.supplier_var, width=field_char_width
+        self.supplier_combo = ttk.Combobox(
+            supplier_field,
+            textvariable=self.supplier_var,
+            width=field_char_width,
+            state="readonly",
         )
         self.supplier_combo.pack(side="left")
         if on_manage_suppliers:
@@ -560,8 +564,11 @@ class ManualOrderTab(tk.Frame):
             padx=(6, 0),
             pady=(6, 0),
         )
-        self.delivery_combo = SearchableCombobox(
-            delivery_field, textvariable=self.delivery_var, width=field_char_width
+        self.delivery_combo = ttk.Combobox(
+            delivery_field,
+            textvariable=self.delivery_var,
+            width=field_char_width,
+            state="readonly",
         )
         self.delivery_combo.pack(side="left")
         if on_manage_deliveries:
@@ -797,10 +804,7 @@ class ManualOrderTab(tk.Frame):
         else:
             client_opts = []
         current_client = self.client_var.get()
-        try:
-            self.client_combo.set_choices(client_opts)
-        except Exception:
-            self.client_combo.configure(values=client_opts)
+        self.client_combo.configure(values=client_opts)
         if current_client not in client_opts:
             if client_opts:
                 self.client_var.set(client_opts[0])
@@ -814,10 +818,7 @@ class ManualOrderTab(tk.Frame):
                 for s in self.suppliers_db.suppliers_sorted()
             )
         current_supplier = self.supplier_var.get()
-        try:
-            self.supplier_combo.set_choices(supplier_opts)
-        except Exception:
-            self.supplier_combo.configure(values=supplier_opts)
+        self.supplier_combo.configure(values=supplier_opts)
         if current_supplier not in supplier_opts:
             self.supplier_var.set("Geen")
 
@@ -828,10 +829,7 @@ class ManualOrderTab(tk.Frame):
                 for a in self.delivery_db.addresses_sorted()
             )
         current_delivery = self.delivery_var.get()
-        try:
-            self.delivery_combo.set_choices(delivery_opts)
-        except Exception:
-            self.delivery_combo.configure(values=delivery_opts)
+        self.delivery_combo.configure(values=delivery_opts)
         if current_delivery not in delivery_opts:
             self.delivery_var.set(self.DELIVERY_PRESETS[0])
 
@@ -859,19 +857,50 @@ class ManualOrderTab(tk.Frame):
         self._next_data_row = 1
     
     def add_row(self, values: Optional[Dict[str, object]] = None) -> None:
-        # Delete-knop in kolom 0
+        # Maak een button-frame voor delete/copy/add knoppen
+        buttons_frame = tk.Frame(self.rows_frame)
+        row_idx = self._next_data_row
+        buttons_frame.grid(row=row_idx, column=0, sticky="w")
+        
+        # Bepaal de rij-index in self.rows (dit is de lengte voordat we toevoegen)
+        row_list_idx = len(self.rows)
+        
+        # Delete-knop met correct index
         remove_btn = tk.Button(
-            self.rows_frame,
+            buttons_frame,
             text="✕",
             width=2,
-            command=lambda: self.remove_row(row_idx),
+            bg="#ff6b6b",
+            fg="white",
+            command=lambda idx=row_list_idx: self._safe_delete_row(idx),
         )
-        row_idx = self._next_data_row
-        remove_btn.grid(row=row_idx, column=0, sticky="w")
+        remove_btn.pack(side="left", padx=(0, 2))
+        
+        # Copy-knop met correct index
+        copy_btn = tk.Button(
+            buttons_frame,
+            text="⧉",
+            width=2,
+            bg="#4ecdc4",
+            fg="white",
+            command=lambda idx=row_list_idx: self._copy_row(idx),
+        )
+        copy_btn.pack(side="left", padx=(0, 2))
+        
+        # Add-knop (nieuwe rij toevoegen)
+        add_btn = tk.Button(
+            buttons_frame,
+            text="+",
+            width=2,
+            bg="#51cf66",
+            fg="white",
+            command=lambda: self.add_row(),
+        )
+        add_btn.pack(side="left", padx=(0, 0))
         
         # Data entries en separators direkt in rows_frame (GEEN nested frame!)
         widgets = _ManualRowWidgets(
-            frame=None,  # We don't use a frame container
+            frame=buttons_frame,  # Store the button frame
             vars={},
             entries={},
             remove_btn=remove_btn,
@@ -918,7 +947,7 @@ class ManualOrderTab(tk.Frame):
             widgets.entries[column["key"]] = entry
         
         self.rows.append(widgets)
-        self._row_grid_indices[len(self.rows) - 1] = row_idx  # Track grid row voor deze data row
+        self._row_grid_indices[row_list_idx] = row_idx  # Track grid row voor deze data row
         self._next_data_row += 1
         
         if self.current_columns:
@@ -934,9 +963,10 @@ class ManualOrderTab(tk.Frame):
         row = self.rows[row_idx]
         self.rows.pop(row_idx)
         
-        # Destroy widgets
+        # Destroy button frame
         try:
-            row.remove_btn.destroy()
+            if row.frame is not None:
+                row.frame.destroy()
         except Exception:
             pass
         
@@ -950,36 +980,34 @@ class ManualOrderTab(tk.Frame):
         # Remove grid row tracking
         grid_row = self._row_grid_indices.pop(row_idx, None)
         
-        # Rebuild rows after this index (re-grid them at new row positions)
-        for i in range(row_idx, len(self.rows)):
-            old_grid_row = self._row_grid_indices[i]
-            new_grid_row = old_grid_row - 1  # Shift up
-            
-            widgets = self.rows[i]
-            widgets.remove_btn.grid(row=new_grid_row, column=0, sticky="w")
-            
-            # Re-grid all entries
-            for idx, column in enumerate(self.current_columns):
-                grid_col = 1 + idx * 2
-                key = column.get("key")
-                entry = widgets.entries.get(key)
-                if entry:
-                    entry.grid(row=new_grid_row, column=grid_col, sticky="ew", padx=(6, 6))
-                
-                # Re-grid separators
-                if idx < len(self.current_columns) - 1:
-                    sep_col = grid_col + 1
-                    # Note: separators are destroyed when entries are destroyed
-                    # We need to recreate them...actually, let's skip this for now
-            
-            self._row_grid_indices[i] = new_grid_row
-        
-        self._next_data_row = len(self.rows) + 1
-        
-        if not self.rows:
+        # Ensure at least one empty row exists
+        if len(self.rows) == 0:
             self.add_row()
-        else:
-            self._update_totals()
+        
+        self._update_totals()
+    
+    def _safe_delete_row(self, row_idx: int) -> None:
+        """Delete row with confirmation."""
+        if not (0 <= row_idx < len(self.rows)):
+            return
+        
+        if messagebox.askyesno("Rij verwijderen", f"Weet je zeker dat je rij {row_idx + 1} wilt verwijderen?"):
+            self.remove_row(row_idx)
+    
+    def _copy_row(self, row_idx: int) -> None:
+        """Duplicate a row."""
+        if not (0 <= row_idx < len(self.rows)):
+            return
+        
+        # Get values from source row
+        source_row = self.rows[row_idx]
+        source_values = {}
+        for key, var in source_row.vars.items():
+            source_values[key] = var.get()
+        
+        # Add new row with same values
+        self.add_row(values=source_values)
+        self._update_totals()
 
     def add_rows_from_input(self) -> None:
         text = self.add_count_var.get().strip()
@@ -1126,11 +1154,7 @@ class ManualOrderTab(tk.Frame):
         for widgets in self.rows:
             try:
                 if widgets.frame is not None:
-                    widgets.frame.destroy()
-            except Exception:
-                pass
-            try:
-                widgets.remove_btn.destroy()
+                    widgets.frame.destroy()  # This destroys all buttons inside
             except Exception:
                 pass
         self.rows.clear()
@@ -1362,8 +1386,16 @@ class ManualOrderTab(tk.Frame):
                 pass
 
     def _apply_template(self, template: str, *, store_previous: bool = True) -> None:
+        # Only cache rows if there's actual data in them
         if store_previous and self.current_template_name:
-            self._template_rows_cache[self.current_template_name] = self._capture_rows()
+            captured = self._capture_rows()
+            # Only cache if there's meaningful data (at least one non-empty field in any row)
+            has_data = any(
+                any(str(value).strip() for value in row.values()) 
+                for row in captured
+            )
+            if has_data:
+                self._template_rows_cache[self.current_template_name] = captured
             self._template_layout_cache[self.current_template_name] = [
                 dict(col) for col in self.current_columns
             ]
@@ -1380,14 +1412,19 @@ class ManualOrderTab(tk.Frame):
             self.current_columns = self._clone_columns(self.DEFAULT_TEMPLATE)
             self.current_template_name = self.DEFAULT_TEMPLATE
 
-        self._render_header()
+        # Clear rows BEFORE rendering header (so grid columns are reset)
         self._clear_rows()
+        
+        # Now render header and add rows
+        self._render_header()
 
+        # Only restore rows if we saved data for this template before
         cached_rows = self._template_rows_cache.get(self.current_template_name, [])
         if cached_rows:
             for row_values in cached_rows:
                 self.add_row(row_values)
         else:
+            # Start with 1 empty row
             self.add_row()
         self._update_totals()
 
