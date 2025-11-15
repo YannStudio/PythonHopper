@@ -379,6 +379,7 @@ class ManualOrderTab(tk.Frame):
         project_number_var: tk.StringVar,
         project_name_var: tk.StringVar,
         client_var: Optional[tk.StringVar] = None,
+        dest_folder_var: Optional[tk.StringVar] = None,
         on_export: Callable[[Dict[str, object]], None],
         on_manage_clients: Optional[Callable[[], None]] = None,
         on_manage_suppliers: Optional[Callable[[], None]] = None,
@@ -391,6 +392,7 @@ class ManualOrderTab(tk.Frame):
         self.project_number_var = project_number_var
         self.project_name_var = project_name_var
         self.client_var = client_var or tk.StringVar()
+        self.dest_folder_var = dest_folder_var or tk.StringVar()
         self._on_export = on_export
         self._on_manage_suppliers = on_manage_suppliers
         self._on_manage_deliveries = on_manage_deliveries
@@ -527,11 +529,34 @@ class ManualOrderTab(tk.Frame):
                 width=10,
             ).pack(side="left", padx=(manage_spacing_px, 0))
 
-        tk.Label(header, text="Leverancier:").grid(row=3, column=0, sticky="w", pady=(8, 0))
+        tk.Label(header, text="Bestemmingsmap:").grid(row=3, column=0, sticky="w", pady=(8, 0))
+        dest_field = tk.Frame(header)
+        dest_field.grid(
+            row=3,
+            column=1,
+            columnspan=4,
+            sticky="w",
+            padx=(6, 0),
+            pady=(8, 0),
+        )
+        self.dest_entry = tk.Entry(
+            dest_field,
+            textvariable=self.dest_folder_var,
+            width=field_char_width,
+        )
+        self.dest_entry.pack(side="left")
+        tk.Button(
+            dest_field,
+            text="Bladeren",
+            command=self._pick_dest_folder,
+            width=10,
+        ).pack(side="left", padx=(manage_spacing_px, 0))
+
+        tk.Label(header, text="Leverancier:").grid(row=4, column=0, sticky="w", pady=(8, 0))
         self.supplier_var = tk.StringVar()
         supplier_field = tk.Frame(header)
         supplier_field.grid(
-            row=3,
+            row=4,
             column=1,
             columnspan=4,
             sticky="w",
@@ -553,11 +578,11 @@ class ManualOrderTab(tk.Frame):
                 width=10,
             ).pack(side="left", padx=(manage_spacing_px, 0))
 
-        tk.Label(header, text="Leveradres:").grid(row=4, column=0, sticky="w", pady=(6, 0))
+        tk.Label(header, text="Leveradres:").grid(row=5, column=0, sticky="w", pady=(6, 0))
         self.delivery_var = tk.StringVar()
         delivery_field = tk.Frame(header)
         delivery_field.grid(
-            row=4,
+            row=5,
             column=1,
             columnspan=4,
             sticky="w",
@@ -579,7 +604,7 @@ class ManualOrderTab(tk.Frame):
                 width=10,
             ).pack(side="left", padx=(manage_spacing_px, 0))
 
-        tk.Label(header, text="Documentnaam:").grid(row=5, column=0, sticky="w", pady=(6, 0))
+        tk.Label(header, text="Documentnaam:").grid(row=6, column=0, sticky="w", pady=(6, 0))
         self.context_label_var = tk.StringVar(
             value=self.project_name_var.get().strip() or self.DEFAULT_CONTEXT_LABEL
         )
@@ -587,7 +612,7 @@ class ManualOrderTab(tk.Frame):
             header, textvariable=self.context_label_var, width=field_char_width
         )
         context_entry.grid(
-            row=5,
+            row=6,
             column=1,
             sticky="w",
             padx=(6, 0),
@@ -607,17 +632,17 @@ class ManualOrderTab(tk.Frame):
 
         self.project_name_var.trace_add("write", _sync_project_name)
 
-        tk.Label(header, text="Opmerkingen:").grid(row=6, column=0, sticky="nw", pady=(8, 0))
+        tk.Label(header, text="Opmerkingen:").grid(row=7, column=0, sticky="nw", pady=(8, 0))
         self.remark_text = tk.Text(header, height=4, wrap="word")
         self.remark_text.grid(
-            row=6,
+            row=7,
             column=1,
             columnspan=4,
             sticky="nsew",
             padx=(6, 0),
             pady=(8, 0),
         )
-        header.rowconfigure(6, weight=1)
+        header.rowconfigure(7, weight=1)
 
         table_container = tk.Frame(self)
         table_container.grid(row=1, column=0, sticky="nsew", padx=4, pady=(8, 0))
@@ -1061,6 +1086,15 @@ class ManualOrderTab(tk.Frame):
         }
 
     # Export ---------------------------------------------------------
+    def _pick_dest_folder(self) -> None:
+        """Open a folder picker to select the destination folder."""
+        from tkinter import filedialog
+        p = filedialog.askdirectory(
+            title="Kies bestemmingsmap voor handmatige bestelbon"
+        )
+        if p:
+            self.dest_folder_var.set(p)
+
     def _handle_export(self) -> None:
         payload = self._collect_items()
         items: List[Dict[str, object]] = payload["items"]
@@ -1194,6 +1228,21 @@ class ManualOrderTab(tk.Frame):
             except Exception:
                 pass
         self._column_resizer_handles.clear()
+        
+        # IMPORTANT: Clear ALL grid column configurations from rows_frame
+        # This prevents old columns from showing up when switching templates
+        for col in list(self.rows_frame.grid_slaves()):
+            try:
+                col.grid_remove()
+            except Exception:
+                pass
+        
+        # Reset all grid column weights and sizes
+        for col_idx in range(100):  # Clear up to column 100
+            try:
+                self.rows_frame.columnconfigure(col_idx, weight=0, minsize=0)
+            except Exception:
+                pass
         
         # Render header-labels EN separators direkt in rows_frame grid
         for idx, column in enumerate(self.current_columns):

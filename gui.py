@@ -3421,6 +3421,7 @@ def start_gui():
                 project_number_var=self.project_number_var,
                 project_name_var=self.project_name_var,
                 client_var=getattr(self, "client_var", None),
+                dest_folder_var=self.dest_folder_var,
                 on_export=self._export_manual_order,
                 on_manage_clients=lambda: self.nb.select(self.clients_frame),
                 on_manage_suppliers=lambda: self.nb.select(self.suppliers_frame),
@@ -4242,6 +4243,11 @@ def start_gui():
                 f"- {pdf_filename}",
                 parent=manual_tab or self,
             )
+            # Open the destination folder
+            try:
+                os.startfile(dest)
+            except Exception:
+                pass
 
         def _on_db_change(self):
             self._refresh_clients_combo()
