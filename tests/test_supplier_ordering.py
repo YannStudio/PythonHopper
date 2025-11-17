@@ -1,5 +1,6 @@
 from models import Supplier
 from gui import sort_supplier_options
+from helpers import favorite_prefix
 
 
 def test_sort_supplier_options_favorites_first():
@@ -8,10 +9,15 @@ def test_sort_supplier_options_favorites_first():
         Supplier.from_any({"supplier": "Norm", "favorite": False}),
         Supplier.from_any({"supplier": "Fav2", "favorite": True}),
     ]
-    disp_to_name = {"★ Fav1": "Fav1", "Norm": "Norm", "★ Fav2": "Fav2"}
-    options = ["Norm", "★ Fav2", "★ Fav1"]
+    fav_prefix = favorite_prefix()
+    disp_to_name = {
+        f"{fav_prefix}Fav1": "Fav1",
+        "Norm": "Norm",
+        f"{fav_prefix}Fav2": "Fav2",
+    }
+    options = ["Norm", f"{fav_prefix}Fav2", f"{fav_prefix}Fav1"]
     sorted_opts = sort_supplier_options(options, sups, disp_to_name)
-    assert sorted_opts == ["★ Fav1", "★ Fav2", "Norm"]
+    assert sorted_opts == [f"{fav_prefix}Fav1", f"{fav_prefix}Fav2", "Norm"]
 
 
 def test_sort_supplier_options_uses_db_not_display_prefix():

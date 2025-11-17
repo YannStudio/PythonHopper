@@ -16,7 +16,15 @@ from typing import Callable, Dict, Iterable, List, Optional, Tuple, TYPE_CHECKIN
 import pandas as pd
 
 from app_settings import AppSettings, FileExtensionSetting, FILE_EXTENSION_PRESETS
-from helpers import _to_str, _build_file_index, create_export_bundle, ExportBundleResult
+from helpers import (
+    _to_str,
+    _build_file_index,
+    create_export_bundle,
+    ExportBundleResult,
+    favorite_marker,
+    favorite_prefix,
+    strip_favorite_marker,
+)
 from models import Supplier, Client, DeliveryAddress
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from clients_db import ClientsDB, CLIENTS_DB_FILE
@@ -431,7 +439,8 @@ def start_gui():
             tk.Button(btns, text="Toevoegen", command=self.add_client).pack(side="left", padx=4)
             tk.Button(btns, text="Bewerken", command=self.edit_sel).pack(side="left", padx=4)
             tk.Button(btns, text="Verwijderen", command=self.remove_sel).pack(side="left", padx=4)
-            tk.Button(btns, text="Favoriet ★", command=self.toggle_fav_sel).pack(side="left", padx=4)
+            fav_label = f"Favoriet {favorite_marker()}"
+            tk.Button(btns, text=fav_label, command=self.toggle_fav_sel).pack(side="left", padx=4)
             tk.Button(btns, text="Importeer CSV", command=self.import_csv).pack(side="left", padx=4)
             self.refresh()
 
@@ -451,7 +460,7 @@ def start_gui():
             if not sel:
                 return None
             vals = self.tree.item(sel[0], "values")
-            return vals[0].replace("★ ", "", 1)
+            return strip_favorite_marker(vals[0])
 
         def _open_edit_dialog(self, client: Optional[Client] = None):
             win = tk.Toplevel(self)
@@ -927,7 +936,8 @@ def start_gui():
             tk.Button(btns, text="Toevoegen", command=self.add_address).pack(side="left", padx=4)
             tk.Button(btns, text="Bewerken", command=self.edit_sel).pack(side="left", padx=4)
             tk.Button(btns, text="Verwijderen", command=self.remove_sel).pack(side="left", padx=4)
-            tk.Button(btns, text="Favoriet ★", command=self.toggle_fav_sel).pack(side="left", padx=4)
+            fav_label = f"Favoriet {favorite_marker()}"
+            tk.Button(btns, text=fav_label, command=self.toggle_fav_sel).pack(side="left", padx=4)
             self.refresh()
 
         def refresh(self):
@@ -946,7 +956,7 @@ def start_gui():
             if not sel:
                 return None
             vals = self.tree.item(sel[0], "values")
-            return vals[0].replace("★ ", "", 1)
+            return strip_favorite_marker(vals[0])
 
         def _open_edit_dialog(self, addr: Optional[DeliveryAddress] = None):
             win = tk.Toplevel(self)
@@ -1049,7 +1059,8 @@ def start_gui():
             tk.Button(btns, text="Bewerken", command=self.edit_sel).pack(side="left", padx=4)
             tk.Button(btns, text="Verwijderen", command=self.remove_sel).pack(side="left", padx=4)
             tk.Button(btns, text="Update uit CSV (merge)", command=self.merge_csv).pack(side="left", padx=4)
-            tk.Button(btns, text="Favoriet ★", command=self.toggle_fav_sel).pack(side="left", padx=4)
+            fav_label = f"Favoriet {favorite_marker()}"
+            tk.Button(btns, text=fav_label, command=self.toggle_fav_sel).pack(side="left", padx=4)
             self.refresh()
 
         def suspend_search_filter(self) -> str:
@@ -1071,9 +1082,10 @@ def start_gui():
                 self.tree.delete(r)
             q = self.search_var.get()
             sups = self.db.find(q)
+            fav_prefix = favorite_prefix()
             for i, s in enumerate(sups):
                 vals = (
-                    ("★ " if s.favorite else "") + (s.supplier or ""),
+                    (fav_prefix if s.favorite else "") + (s.supplier or ""),
                     s.btw or "",
                     s.sales_email or "",
                     s.phone or "",
@@ -1090,7 +1102,7 @@ def start_gui():
             if not sel:
                 return None
             name = self.tree.item(sel[0], "values")[0]
-            return name.replace("★ ", "", 1)
+            return strip_favorite_marker(name)
 
         def _sel_supplier(self) -> Optional[Supplier]:
             n = self._sel_name()
@@ -2278,9 +2290,7 @@ def start_gui():
 
             def _option_norm(opt: str) -> str:
                 name = disp_to_name.get(opt, opt)
-                cleaned = name if name else opt
-                if cleaned.startswith("★ "):
-                    cleaned = cleaned[2:]
+                cleaned = strip_favorite_marker(name if name else opt)
                 cleaned = cleaned.replace("(", "").replace(")", "")
                 return _norm(cleaned)
 
@@ -4139,7 +4149,7 @@ def start_gui():
                     pass
 
             supplier_display = _to_str(payload.get("supplier")).strip()
-            supplier_name_clean = supplier_display.replace("★ ", "", 1).strip()
+            supplier_name_clean = strip_favorite_marker(supplier_display).strip()
             supplier: Optional[Supplier] = None
             if supplier_name_clean and supplier_name_clean.lower() not in {"geen", "(geen)"}:
                 for sup in getattr(self.db, "suppliers", []):
@@ -4148,7 +4158,7 @@ def start_gui():
                         break
 
             delivery_display = _to_str(payload.get("delivery")).strip()
-            delivery_name_clean = delivery_display.replace("★ ", "", 1).strip()
+            delivery_name_clean = strip_favorite_marker(delivery_display).strip()
             delivery: Optional[DeliveryAddress] = None
             if delivery_name_clean and delivery_name_clean not in {"", "Geen"}:
                 if delivery_name_clean in ManualOrderTab.DELIVERY_PRESETS[1:]:
@@ -4249,7 +4259,7 @@ def start_gui():
 
             client = None
             if hasattr(self, "client_var"):
-                client_name = self.client_var.get().replace("★ ", "", 1).strip()
+                client_name = strip_favorite_marker(self.client_var.get()).strip()
                 if client_name:
                     client = self.client_db.get(client_name)
             company_info = {
@@ -6236,7 +6246,7 @@ def start_gui():
                 finish_delivery_map: Dict[str, DeliveryAddress | None] = {}
                 opticutter_delivery_map: Dict[str, DeliveryAddress | None] = {}
                 for key, name in delivery_map_raw.items():
-                    clean = name.replace("★ ", "", 1)
+                    clean = strip_favorite_marker(name)
                     if clean == "Geen":
                         resolved = None
                     elif clean in (
@@ -6373,7 +6383,7 @@ def start_gui():
 
                     update_status("Kopiëren & bestelbonnen maken...")
                     client = self.client_db.get(
-                        self.client_var.get().replace("★ ", "", 1)
+                        strip_favorite_marker(self.client_var.get())
                     )
                     path_limit_messages: List[str] = []
                     try:
