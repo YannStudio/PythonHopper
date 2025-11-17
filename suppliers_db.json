@@ -1501,6 +1501,8 @@
       "favorite": false
     }
   ],
-  "defaults_by_production": {},
+  "defaults_by_production": {
+    "Glass": "Starconstruct"
+  },
   "defaults_by_finish": {}
 }

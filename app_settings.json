@@ -1,8 +1,8 @@
 {
-  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/De Lijn/53. De Lijn - Infopunten/cad",
-  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/De Lijn/53. De Lijn - Infopunten/export/01. Locaties",
-  "project_number": "53",
-  "project_name": "De Lijn-Locatie-B",
+  "source_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2025/Standaard modellen/Tecno G/20250144 - Fietsenstalling Dadizele/CAD/3D Soldiworks Files/V4 - productie/MOD 2",
+  "dest_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2025/Standaard modellen/Tecno G/20250144 - Fietsenstalling Dadizele/CAD/Bestellingen/MOD2",
+  "project_number": "20250144",
+  "project_name": "Mod2-Glass",
   "file_extensions": [
     {
       "key": "pdf",
@@ -69,6 +69,8 @@
     "assembly": false,
     "glass": false,
     "print": false,
-    "milling": false
+    "milling": false,
+    "spcm": false,
+    "weld assembly": false
   }
 }
