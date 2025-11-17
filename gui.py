@@ -1218,6 +1218,7 @@ def start_gui():
         doc_numbers: Dict[str, str]
         remarks: Dict[str, str]
         deliveries: Dict[str, str]
+        exports: Dict[str, bool] = field(default_factory=dict)
         en1090: Dict[str, bool] = field(default_factory=dict)
         remember: bool = True
 
@@ -1311,6 +1312,7 @@ def start_gui():
             self.delivery_combos: Dict[str, ttk.Combobox] = {}
             self.row_meta: Dict[str, Dict[str, str]] = {}
             self.en1090_vars: Dict[str, tk.IntVar] = {}
+            self.export_vars: Dict[str, tk.IntVar] = {}
             self._en1090_getter = en1090_getter
             self._en1090_setter = en1090_setter
             self.finish_entries = finishes
@@ -1457,6 +1459,24 @@ def start_gui():
 
             ttk.Separator(left, orient="horizontal").pack(fill="x", pady=(0, 6))
 
+            export_toggle_row = tk.Frame(left)
+            export_toggle_row.pack(fill="x", pady=(0, 2))
+            tk.Label(
+                export_toggle_row,
+                text="Export selectie:",
+                anchor="w",
+            ).pack(side="left")
+            tk.Button(
+                export_toggle_row,
+                text="Alles selecteren",
+                command=lambda: self._set_all_exports(True),
+            ).pack(side="left", padx=(6, 0))
+            tk.Button(
+                export_toggle_row,
+                text="Alles deselecteren",
+                command=lambda: self._set_all_exports(False),
+            ).pack(side="left", padx=(6, 0))
+
             delivery_opts = [
                 "Geen",
                 "Bestelling wordt opgehaald",
@@ -1488,6 +1508,7 @@ def start_gui():
             self._en1090_column_width_px = self._compute_initial_en1090_width()
 
             self._column_specs: List[Tuple[str, str, int, Optional[Tuple[str, int, str]]]] = [
+                ("export_check", "Export", 8, header_font),
                 ("label", "Producttype", self.LABEL_COLUMN_WIDTH, header_font),
                 ("supplier_combo", "Leverancier", 50, None),
                 ("doc_combo", "Documenttype", 18, None),
@@ -1543,6 +1564,13 @@ def start_gui():
             def add_row(display_text: str, sel_key: str, metadata: Dict[str, str]):
                 row = tk.Frame(left)
                 row.pack(fill="x", pady=3)
+                export_var = tk.IntVar(value=1)
+                self.export_vars[sel_key] = export_var
+                export_check = tk.Checkbutton(
+                    row,
+                    variable=export_var,
+                    takefocus=False,
+                )
                 row_label = tk.Label(
                     row,
                     text=display_text,
@@ -1641,6 +1669,7 @@ def start_gui():
                 self.row_meta[sel_key] = dict(metadata)
 
                 row_widgets = {
+                    "export_check": export_check,
                     "label": row_label,
                     "supplier_combo": combo,
                     "doc_combo": doc_combo,
@@ -1781,6 +1810,7 @@ def start_gui():
                 except tk.TclError:
                     continue
 
+            exports = {key: bool(var.get()) for key, var in self.export_vars.items()}
             doc_types = {key: var.get() for key, var in self.doc_vars.items()}
             doc_numbers = {
                 key: var.get() for key, var in self.doc_num_vars.items()
@@ -1795,6 +1825,7 @@ def start_gui():
 
             return SupplierSelectionState(
                 selections=selections,
+                exports=exports,
                 doc_types=doc_types,
                 doc_numbers=doc_numbers,
                 remarks=remarks,
@@ -1810,6 +1841,14 @@ def start_gui():
             for sel_key, combo in self.rows:
                 if sel_key in state.selections:
                     set_combo_value(combo, state.selections[sel_key])
+
+            for sel_key, enabled in state.exports.items():
+                var = self.export_vars.get(sel_key)
+                if var is not None:
+                    try:
+                        var.set(1 if enabled else 0)
+                    except tk.TclError:
+                        pass
 
             for sel_key, value in state.doc_types.items():
                 if sel_key in self.doc_vars:
@@ -2039,6 +2078,14 @@ def start_gui():
         def _on_focus_key(self, sel_key: str):
             self._active_key = sel_key
             SupplierSelectionFrame._get_type_filter_map(self).pop(sel_key, None)
+
+        def _set_all_exports(self, enabled: bool) -> None:
+            value = 1 if enabled else 0
+            for var in self.export_vars.values():
+                try:
+                    var.set(value)
+                except tk.TclError:
+                    continue
 
         @staticmethod
         def _get_type_filter_map(instance) -> Dict[str, str]:
@@ -2397,6 +2444,7 @@ def start_gui():
             import inspect
 
             sel_map: Dict[str, str] = {}
+            export_map: Dict[str, bool] = {}
             doc_map: Dict[str, str] = {}
             for sel_key, combo in self.rows:
                 typed = combo.get().strip()
@@ -2406,6 +2454,8 @@ def start_gui():
                     s = self._resolve_text_to_supplier(typed)
                     if s:
                         sel_map[sel_key] = s.supplier
+                export_var = self.export_vars.get(sel_key)
+                export_map[sel_key] = bool(export_var.get()) if export_var else True
                 doc_var = self.doc_vars.get(sel_key)
                 doc_map[sel_key] = doc_var.get() if doc_var else "Bestelbon"
 
@@ -2437,6 +2487,7 @@ def start_gui():
             remember_flag = bool(self.remember_var.get())
             callback = self.callback
             use_new_signature = False
+            supports_exports = False
             sig_params = None
             try:
                 sig = inspect.signature(callback)
@@ -2455,32 +2506,46 @@ def start_gui():
                     for p in params
                 ):
                     use_new_signature = True
+                    supports_exports = True
+                elif len(params) >= 10:
+                    use_new_signature = True
+                    supports_exports = True
                 elif len(params) >= 9:
                     use_new_signature = True
 
             if use_new_signature:
-                try:
-                    callback(
-                        sel_map,
-                        doc_map,
-                        doc_num_map,
-                        delivery_map,
-                        remarks_map,
-                        en1090_map,
-                        project_number,
-                        project_name,
-                        remember_flag,
-                    )
-                    return
-                except TypeError as exc:
-                    msg = str(exc)
-                    if not (
-                        "positional" in msg
-                        or "keyword" in msg
-                        or (sig_params is not None and len(sig_params) >= 8)
-                    ):
-                        raise
-                    use_new_signature = False
+                base_args = [
+                    sel_map,
+                    doc_map,
+                    doc_num_map,
+                    delivery_map,
+                    remarks_map,
+                    en1090_map,
+                    project_number,
+                    project_name,
+                    remember_flag,
+                ]
+                attempt_exports = supports_exports
+                while True:
+                    try:
+                        if attempt_exports:
+                            callback(*base_args, export_map)
+                        else:
+                            callback(*base_args)
+                        return
+                    except TypeError as exc:
+                        msg = str(exc)
+                        if attempt_exports:
+                            attempt_exports = False
+                            continue
+                        if not (
+                            "positional" in msg
+                            or "keyword" in msg
+                            or (sig_params is not None and len(sig_params) >= 8)
+                        ):
+                            raise
+                        use_new_signature = False
+                        break
 
             if not use_new_signature:
                 callback(
@@ -6083,6 +6148,7 @@ def start_gui():
                 project_number: str,
                 project_name: str,
                 remember: bool,
+                export_flags: Dict[str, bool] | None = None,
             ):
                 if not self._ensure_bom_loaded():
                     return
@@ -6102,6 +6168,10 @@ def start_gui():
                 prod_override_map: Dict[str, str] = {}
                 finish_override_map: Dict[str, str] = {}
                 opticutter_override_map: Dict[str, str] = {}
+                export_flags = export_flags or {}
+                prod_export_filter: Dict[str, bool] = {}
+                finish_export_filter: Dict[str, bool] = {}
+                opticutter_export_filter: Dict[str, bool] = {}
                 for key, value in sel_map.items():
                     kind, identifier = parse_selection_key(key)
                     if kind == "finish":
@@ -6110,6 +6180,16 @@ def start_gui():
                         opticutter_override_map[identifier] = value
                     else:
                         prod_override_map[identifier] = value
+                for key, enabled in export_flags.items():
+                    kind, identifier = parse_selection_key(key)
+                    target: Dict[str, bool] | None
+                    if kind == "finish":
+                        target = finish_export_filter
+                    elif kind == "opticutter":
+                        target = opticutter_export_filter
+                    else:
+                        target = prod_export_filter
+                    target[identifier] = bool(enabled)
 
                 doc_type_map: Dict[str, str] = {}
                 finish_doc_type_map: Dict[str, str] = {}
@@ -6327,6 +6407,17 @@ def start_gui():
                             opticutter_doc_num_map=opticutter_doc_num_map,
                             opticutter_delivery_map=opticutter_delivery_map,
                             opticutter_remarks_map=opticutter_remarks_map,
+                            production_export_filter=(
+                                prod_export_filter if prod_export_filter else None
+                            ),
+                            finish_export_filter=(
+                                finish_export_filter if finish_export_filter else None
+                            ),
+                            opticutter_export_filter=(
+                                opticutter_export_filter
+                                if opticutter_export_filter
+                                else None
+                            ),
                             en1090_overrides=en1090_override_map or None,
                             en1090_enabled=bool(self.en1090_enabled_var.get()),
                             en1090_note=self.en1090_note_var.get(),
