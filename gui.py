@@ -4642,7 +4642,7 @@ def start_gui():
 
             tab = getattr(self, "custom_bom_tab", None)
             if tab is None:
-                return
+                tab = self._ensure_custom_bom_tab()
             if not self._autofill_custom_bom_enabled():
                 return
 
