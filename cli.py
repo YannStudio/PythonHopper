@@ -15,6 +15,7 @@ from helpers import (
     _to_str,
     _build_file_index,
     _unique_path,
+    favorite_prefix,
     validate_vat,
     create_export_bundle,
 )
@@ -90,8 +91,10 @@ def cli_suppliers(args):
         if not rows:
             print("(geen leveranciers)")
             return 0
+        fav_prefix = favorite_prefix()
+        blank_prefix = " " * max(1, len(fav_prefix))
         for s in rows:
-            star = "★" if s.favorite else " "
+            star = fav_prefix if s.favorite else blank_prefix
             if s.adres_1 or s.adres_2:
                 addr = ", ".join([x for x in [s.adres_1, s.adres_2] if x])
             else:
@@ -110,7 +113,7 @@ def cli_suppliers(args):
                     ]
                 )
             print(
-                f"{star} {s.supplier}  | Desc: {s.description or '-'} | BTW: {s.btw or '-'} | {addr or '-'} | Mail: {s.sales_email or '-'} | Tel: {s.phone or '-'}"
+                f"{star}{s.supplier}  | Desc: {s.description or '-'} | BTW: {s.btw or '-'} | {addr or '-'} | Mail: {s.sales_email or '-'} | Tel: {s.phone or '-'}"
             )
         return 0
     if args.action == "add":
@@ -203,10 +206,12 @@ def cli_clients(args):
         if not rows:
             print("(geen opdrachtgevers)")
             return 0
+        fav_prefix = favorite_prefix()
+        blank_prefix = " " * max(1, len(fav_prefix))
         for c in rows:
-            star = "★" if c.favorite else " "
+            star = fav_prefix if c.favorite else blank_prefix
             print(
-                f"{star} {c.name} | {c.address or '-'} | BTW: {c.vat or '-'} | Mail: {c.email or '-'}"
+                f"{star}{c.name} | {c.address or '-'} | BTW: {c.vat or '-'} | Mail: {c.email or '-'}"
             )
         return 0
     if args.action == "add":

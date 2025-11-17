@@ -6,8 +6,10 @@ from typing import List, Optional
 from models import DeliveryAddress
 from clients_db import ClientsDB, CLIENTS_DB_FILE
 from app_paths import data_file
+from helpers import favorite_prefix
 
 DELIVERY_DB_FILE = data_file("delivery_addresses_db.json")
+_FAVORITE_PREFIX = favorite_prefix()
 
 
 class DeliveryAddressesDB:
@@ -75,7 +77,8 @@ class DeliveryAddressesDB:
         return res
 
     def display_name(self, a: DeliveryAddress) -> str:
-        return f"{'★ ' if a.favorite else ''}{a.name}"
+        prefix = _FAVORITE_PREFIX if a.favorite else ""
+        return f"{prefix}{a.name}"
 
     def _idx_by_name(self, name: str) -> int:
         for i, a in enumerate(self.addresses):

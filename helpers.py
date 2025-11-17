@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import datetime
+import locale
 import os
 import re
 from collections import defaultdict
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -13,6 +15,51 @@ from export_bundle import create_export_bundle as _create_export_bundle
 
 def _to_str(x: Any) -> str:
     return "" if x is None else str(x)
+
+
+@lru_cache()
+def favorite_marker() -> str:
+    """Return the preferred marker for favorites (★ when supported)."""
+
+    return "★" if _supports_unicode_star() else "*"
+
+
+@lru_cache()
+def favorite_prefix() -> str:
+    """Return the marker followed by a trailing space for display lists."""
+
+    marker = favorite_marker()
+    return f"{marker} " if marker else ""
+
+
+def strip_favorite_marker(text: str) -> str:
+    """Remove a leading favorite marker (★/*) from ``text`` if present."""
+
+    value = _to_str(text)
+    for marker in ("★ ", "* "):
+        if marker and marker in value:
+            return value.replace(marker, "", 1)
+    return value
+
+
+def _supports_unicode_star() -> bool:
+    """Detect whether the runtime can encode the ★ character safely."""
+
+    candidate = "★"
+    encodings = []
+    pref = locale.getpreferredencoding(False)
+    if pref:
+        encodings.append(pref)
+    if os.name == "nt":
+        encodings.append("mbcs")
+    for enc in encodings:
+        try:
+            candidate.encode(enc)
+        except (UnicodeEncodeError, LookupError):
+            continue
+        else:
+            return True
+    return False
 
 
 _VAT_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{2,12}$")

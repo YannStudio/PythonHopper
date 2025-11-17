@@ -5,8 +5,10 @@ from typing import List, Dict, Optional
 
 from models import Supplier
 from app_paths import data_file
+from helpers import favorite_prefix
 
 SUPPLIERS_DB_FILE = data_file("suppliers_db.json")
+_FAVORITE_PREFIX = favorite_prefix()
 
 
 class SuppliersDB:
@@ -81,7 +83,8 @@ class SuppliersDB:
         return L
 
     def display_name(self, s: Supplier) -> str:
-        return f"{'★ ' if s.favorite else ''}{s.supplier}"
+        prefix = _FAVORITE_PREFIX if s.favorite else ""
+        return f"{prefix}{s.supplier}"
 
     def _idx_by_name(self, name: str) -> int:
         for i, s in enumerate(self.suppliers):
