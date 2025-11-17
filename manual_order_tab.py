@@ -48,11 +48,16 @@ class SearchableCombobox(ttk.Combobox):
     """``ttk.Combobox`` variant met eenvoudige zoek/filter-functionaliteit."""
 
     def __init__(self, master: tk.Misc, *, values=(), **kwargs) -> None:
+        state = kwargs.pop("state", "normal")
+        self._readonly_mode = state == "readonly"
         self._all_values: List[str] = []
         self._normalized_values: List[Tuple[str, str]] = []
         self._last_query: str = ""
-        super().__init__(master, values=values, **kwargs)
+        self._last_valid_value: str = ""
+        actual_state = "normal" if self._readonly_mode else state
+        super().__init__(master, values=values, state=actual_state, **kwargs)
         self._store_all_values(list(values or ()))
+        self._sync_last_valid_value()
         self.bind("<KeyRelease>", self._on_key_release, add="+")
         self.bind("<<ComboboxSelected>>", self._on_selection, add="+")
         self.bind("<FocusIn>", self._restore_values, add="+")
@@ -67,6 +72,7 @@ class SearchableCombobox(ttk.Combobox):
         # Houd de huidige invoer ongemoeid wanneer opties opnieuw geladen
         # worden, zodat reeds ingevulde waarden zichtbaar blijven.
         self._apply_filter(self._last_query, update_entry=False)
+        self._sync_last_valid_value()
 
     # Internal -------------------------------------------------------
     def _store_all_values(self, values: List[str]) -> None:
@@ -115,6 +121,7 @@ class SearchableCombobox(ttk.Combobox):
         self._restore_values()
         self._clear_text_selection()
         self._unpost_dropdown()
+        self._remember_selection()
 
     def _restore_values(self, _event: tk.Event | None = None) -> None:
         self.configure(values=self._all_values)
@@ -135,6 +142,7 @@ class SearchableCombobox(ttk.Combobox):
 
     def _on_focus_out(self, _event: tk.Event) -> None:
         self._unpost_dropdown()
+        self._ensure_valid_value()
 
     def _clear_text_selection(self) -> None:
         try:
@@ -172,6 +180,37 @@ class SearchableCombobox(ttk.Combobox):
             if all(token in normalized for token in tokens):
                 matches.append(option)
         return matches
+
+    def _sync_last_valid_value(self) -> None:
+        current = self.get()
+        if current in self._all_values:
+            self._last_valid_value = current
+        elif self._all_values:
+            fallback = self._all_values[0]
+            self.set(fallback)
+            self._last_valid_value = fallback
+        else:
+            self._last_valid_value = ""
+
+    def _remember_selection(self) -> None:
+        if not self._readonly_mode:
+            return
+        current = self.get()
+        if current in self._all_values:
+            self._last_valid_value = current
+
+    def _ensure_valid_value(self) -> None:
+        if not self._readonly_mode:
+            return
+        current = self.get()
+        if current in self._all_values:
+            self._last_valid_value = current
+            return
+        fallback = self._last_valid_value
+        if not fallback or fallback not in self._all_values:
+            fallback = self._all_values[0] if self._all_values else ""
+        self.set(fallback)
+        self._last_valid_value = fallback
 
 
 class ManualOrderTab(tk.Frame):
@@ -764,7 +803,8 @@ class ManualOrderTab(tk.Frame):
 
         controls = tk.Frame(table_container)
         controls.grid(row=4, column=0, columnspan=2, sticky="ew", padx=4, pady=(8, 0))
-        controls.columnconfigure(3, weight=1)
+        controls.columnconfigure(3, weight=0)
+        controls.columnconfigure(4, weight=1)
 
         tk.Label(controls, text="Nieuwe regels:").grid(row=0, column=0, sticky="w")
         self.add_count_var = tk.StringVar(value="1")
@@ -780,9 +820,15 @@ class ManualOrderTab(tk.Frame):
             command=self.add_rows_from_input,
         ).grid(row=0, column=2, sticky="w")
 
+        tk.Button(
+            controls,
+            text="Alle regels verwijderen",
+            command=self._confirm_clear_rows,
+        ).grid(row=0, column=3, sticky="w", padx=(12, 0))
+
         self.total_weight_var = tk.StringVar(value="Totaal gewicht: —")
         tk.Label(controls, textvariable=self.total_weight_var, anchor="e").grid(
-            row=0, column=3, sticky="e"
+            row=0, column=4, sticky="e"
         )
 
         footer = tk.Frame(self)
@@ -1015,10 +1061,25 @@ class ManualOrderTab(tk.Frame):
         """Delete row with confirmation."""
         if not (0 <= row_idx < len(self.rows)):
             return
-        
+
         if messagebox.askyesno("Rij verwijderen", f"Weet je zeker dat je rij {row_idx + 1} wilt verwijderen?"):
             self.remove_row(row_idx)
-    
+
+    def _confirm_clear_rows(self) -> None:
+        """Verwijder alle rijen na bevestiging en voeg een lege rij toe."""
+        if not self.rows:
+            self.add_row()
+            return
+        if not messagebox.askyesno(
+            "Regels verwijderen",
+            "Weet je zeker dat je alle regels wilt verwijderen?",
+            parent=self,
+        ):
+            return
+        self._clear_rows()
+        self.add_row()
+        self._update_totals()
+
     def _copy_row(self, row_idx: int) -> None:
         """Duplicate a row."""
         if not (0 <= row_idx < len(self.rows)):
@@ -1051,6 +1112,11 @@ class ManualOrderTab(tk.Frame):
         weight_found = False
         numeric_keys = {col["key"] for col in self.current_columns if col.get("numeric")}
         weight_columns = [col["key"] for col in self.current_columns if col.get("total_weight")]
+        column_usage = {
+            col.get("key"): False
+            for col in self.current_columns
+            if col.get("key")
+        }
 
         for widgets in self.rows:
             raw = {key: var.get().strip() for key, var in widgets.vars.items()}
@@ -1060,6 +1126,8 @@ class ManualOrderTab(tk.Frame):
             for column in self.current_columns:
                 key = column["key"]
                 value = raw.get(key, "")
+                if key in column_usage and value:
+                    column_usage[key] = True
                 if key in numeric_keys:
                     normalized = _normalize_numeric(value)
                 else:
@@ -1083,6 +1151,7 @@ class ManualOrderTab(tk.Frame):
         return {
             "items": items,
             "total_weight": total_weight if weight_found else None,
+            "used_columns": {key for key, used in column_usage.items() if used},
         }
 
     # Export ---------------------------------------------------------
@@ -1105,6 +1174,21 @@ class ManualOrderTab(tk.Frame):
                 parent=self,
             )
             return
+        used_keys = set(payload.get("used_columns") or set())
+        column_layout: List[Dict[str, object]] = []
+        for column in self.current_columns:
+            key = column.get("key")
+            if used_keys and key and key not in used_keys:
+                continue
+            column_layout.append(dict(column))
+        if not column_layout:
+            column_layout = [dict(col) for col in self.current_columns]
+        if used_keys:
+            trimmed_items: List[Dict[str, object]] = []
+            keep_keys = {col.get("key") for col in column_layout if col.get("key")}
+            for record in items:
+                trimmed_items.append({k: v for k, v in record.items() if k in keep_keys})
+            items = trimmed_items
         remark = self.remark_text.get("1.0", "end").strip()
         export_payload = {
             "doc_type": self.doc_type_var.get().strip() or self.DOC_TYPE_OPTIONS[0],
@@ -1118,7 +1202,7 @@ class ManualOrderTab(tk.Frame):
             "items": items,
             "total_weight": payload["total_weight"],
             "template": self.current_template_name,
-            "column_layout": [dict(col) for col in self.current_columns],
+            "column_layout": column_layout,
         }
         self._on_export(export_payload)
 
@@ -1248,7 +1332,7 @@ class ManualOrderTab(tk.Frame):
         for idx, column in enumerate(self.current_columns):
             grid_col = 1 + idx * 2  # Grid kolom 1, 3, 5, 7, ...
             display_chars, min_width_px = self._column_display_metrics(column)
-            
+
             # Header label
             lbl = tk.Label(
                 self.rows_frame,
@@ -1259,6 +1343,7 @@ class ManualOrderTab(tk.Frame):
             lbl.grid(row=0, column=grid_col, sticky="ew", padx=(6, 6))
             self.rows_frame.columnconfigure(grid_col, weight=1 if column.get("stretch") else 0, minsize=min_width_px)
             self._header_labels[idx] = lbl
+            self._configure_header_label(lbl, display_chars, min_width_px)
             
             # Separator TUSSEN kolommen
             if idx < len(self.current_columns) - 1:
@@ -1485,11 +1570,15 @@ class ManualOrderTab(tk.Frame):
         column = self.current_columns[column_index]
         display_chars, min_width_px = self._column_display_metrics(column)
         weight = 1 if column.get("stretch") else 0
-        
+
         # Grid column is 1 + column_index * 2
         grid_col = 1 + column_index * 2
         self.rows_frame.columnconfigure(grid_col, weight=weight, minsize=min_width_px)
-        
+
+        header_lbl = self._header_labels.get(column_index)
+        if header_lbl is not None and header_lbl.winfo_exists():
+            self._configure_header_label(header_lbl, display_chars, min_width_px)
+
         # Update all data rows
         key = column.get("key")
         for widgets in self.rows:
@@ -1500,6 +1589,15 @@ class ManualOrderTab(tk.Frame):
                 entry.configure(width=display_chars)
             except Exception:
                 pass
-        
+
         self._schedule_resizer_position_update()
+
+    def _configure_header_label(
+        self, label: tk.Widget, display_chars: int, min_width_px: int
+    ) -> None:
+        wrap_px = max(24, min_width_px)
+        try:
+            label.configure(width=display_chars, wraplength=wrap_px, justify="left")
+        except Exception:
+            pass
 
