@@ -1,8 +1,8 @@
 {
   "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/De Lijn/53. De Lijn - Infopunten/cad",
-  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/De Lijn/53. De Lijn - Infopunten/export/03. Glas",
+  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/De Lijn/53. De Lijn - Infopunten/export/01. Locaties",
   "project_number": "53",
-  "project_name": "De Lijn-ClampFrame",
+  "project_name": "De Lijn-Locatie-B",
   "file_extensions": [
     {
       "key": "pdf",
@@ -27,7 +27,7 @@
       "patterns": [
         ".dxf"
       ],
-      "enabled": false
+      "enabled": true
     },
     {
       "key": "dwg",
@@ -60,7 +60,7 @@
     "cutting": false,
     "dummy part": false,
     "lasercutting": true,
-    "sheetmetal": true,
+    "sheetmetal": false,
     "sheetmetal 4m": false,
     "spare part": false,
     "tube laser": true,
@@ -68,6 +68,7 @@
     "onbekend": false,
     "assembly": false,
     "glass": false,
-    "print": false
+    "print": false,
+    "milling": false
   }
 }
