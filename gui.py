@@ -2227,17 +2227,33 @@ def start_gui():
                 pass
             else:
                 char = getattr(evt, "char", "")
-                state = getattr(evt, "state", 0)
                 if not char:
-                    return
-                if state & 0x4 or state & 0x8:
-                    return
-                try:
-                    if hasattr(combo, "selection_present") and combo.selection_present():
+                    # ``event.char`` is sometimes empty on newer Tk versions. Fall back
+                    # to the keysym so that plain letter keys still count as typed
+                    # characters, e.g. when Tk returns ``keysym="A"`` and
+                    # ``char=""``.
+                    if len(keysym) == 1:
+                        char = keysym
+                    elif keysym == "space":
+                        char = " "
+
+                state = getattr(evt, "state", 0)
+
+                if not char or state & 0x4 or state & 0x8:
+                    # If we don't have a reliable character (e.g. Control+key or when
+                    # Tk skips ``event.char`` altogether) we fall back to whatever text
+                    # Tk already placed in the widget so the search keeps working.
+                    try:
+                        text_so_far = combo.get()
+                    except tk.TclError:
                         text_so_far = ""
-                except tk.TclError:
-                    pass
-                text_so_far += char
+                else:
+                    try:
+                        if hasattr(combo, "selection_present") and combo.selection_present():
+                            text_so_far = ""
+                    except tk.TclError:
+                        pass
+                    text_so_far += char
 
             type_map[sel_key] = text_so_far
 
@@ -2446,6 +2462,7 @@ def start_gui():
             sel_map: Dict[str, str] = {}
             export_map: Dict[str, bool] = {}
             doc_map: Dict[str, str] = {}
+            export_vars = getattr(self, "export_vars", {}) or {}
             for sel_key, combo in self.rows:
                 typed = combo.get().strip()
                 if not typed or typed.lower() in ("(geen)", "geen"):
@@ -2454,7 +2471,7 @@ def start_gui():
                     s = self._resolve_text_to_supplier(typed)
                     if s:
                         sel_map[sel_key] = s.supplier
-                export_var = self.export_vars.get(sel_key)
+                export_var = export_vars.get(sel_key)
                 export_map[sel_key] = bool(export_var.get()) if export_var else True
                 doc_var = self.doc_vars.get(sel_key)
                 doc_map[sel_key] = doc_var.get() if doc_var else "Bestelbon"
