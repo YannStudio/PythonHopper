@@ -1715,6 +1715,9 @@ def copy_per_production_and_orders(
     opticutter_doc_num_map: Dict[str, str] | None = None,
     opticutter_delivery_map: Dict[str, DeliveryAddress | None] | None = None,
     opticutter_remarks_map: Dict[str, str] | None = None,
+    production_export_filter: Mapping[str, bool] | None = None,
+    finish_export_filter: Mapping[str, bool] | None = None,
+    opticutter_export_filter: Mapping[str, bool] | None = None,
     en1090_enabled: bool = True,
     en1090_overrides: Mapping[str, bool] | None = None,
     en1090_note: Optional[str] = None,
@@ -1743,6 +1746,12 @@ def copy_per_production_and_orders(
     ``opticutter_override_map``, ``opticutter_doc_type_map``,
     ``opticutter_doc_num_map``, ``opticutter_delivery_map`` en
     ``opticutter_remarks_map``.
+
+    Gebruik ``production_export_filter``, ``finish_export_filter`` of
+    ``opticutter_export_filter`` om respectievelijk producties,
+    afwerkingen of Opticutter-selecties over te slaan zonder ze uit de BOM
+    te verwijderen. Wanneer een filtermap ``False`` bevat voor een bepaalde
+    sleutel wordt er niets gekopieerd of aangemaakt voor die selectie.
 
     If ``zip_parts`` is ``True``, all export files for a production are
     collected into a single ``<production>.zip`` archive instead of individual
@@ -1825,6 +1834,19 @@ def copy_per_production_and_orders(
         if text:
             finish_remarks_clean[key] = text
     finish_remarks_map = finish_remarks_clean
+
+    def _clean_export_filter(values: Mapping[str, bool] | None) -> Dict[str, bool]:
+        cleaned: Dict[str, bool] = {}
+        for key, flag in (values or {}).items():
+            identifier = _to_str(key).strip()
+            if not identifier:
+                continue
+            cleaned[identifier] = bool(flag)
+        return cleaned
+
+    production_export_filter = _clean_export_filter(production_export_filter)
+    finish_export_filter = _clean_export_filter(finish_export_filter)
+    opticutter_export_filter = _clean_export_filter(opticutter_export_filter)
 
     opticutter_context: OpticutterExportContext | None = None
     if opticutter_analysis is not None and opticutter_analysis.profiles:
@@ -1944,6 +1966,8 @@ def copy_per_production_and_orders(
     )
 
     for prod, rows in prod_to_rows.items():
+        if production_export_filter and not production_export_filter.get(prod, True):
+            continue
         prod_folder = os.path.join(dest, prod)
         os.makedirs(prod_folder, exist_ok=True)
 
@@ -2125,7 +2149,15 @@ def copy_per_production_and_orders(
 
         opticutter_order_items: List[Dict[str, object]] = []
         opticutter_total_weight: float | None = None
-        if opticutter_prod is not None and opticutter_prod.selections:
+        opticutter_has_selection = bool(
+            opticutter_prod is not None and opticutter_prod.selections
+        )
+        opticutter_allowed = (
+            opticutter_export_filter.get(prod, True)
+            if opticutter_export_filter
+            else True
+        )
+        if opticutter_has_selection and opticutter_allowed:
             comp = opticutter_comp
             if comp is None:
                 stats_map = opticutter_stats_map or {}
@@ -2195,7 +2227,7 @@ def copy_per_production_and_orders(
             opticutter_order_items = list(comp.raw_items)
             opticutter_total_weight = comp.total_weight_kg
 
-        if opticutter_prod is not None and opticutter_prod.selections:
+        if opticutter_has_selection and opticutter_allowed:
             opticutter_sel_key = make_opticutter_selection_key(prod)
             opticutter_supplier = pick_supplier_for_opticutter(
                 prod, db, opticutter_override_map, suppliers_sorted=suppliers_sorted
@@ -2380,6 +2412,8 @@ def copy_per_production_and_orders(
     if copy_finish_exports and finish_groups:
         finish_seen: Dict[str, set[tuple[str, str]]] = defaultdict(set)
         for finish_key, info in finish_groups.items():
+            if finish_export_filter and not finish_export_filter.get(finish_key, True):
+                continue
             part_numbers = info.get("part_numbers") or set()
             if not part_numbers:
                 continue
@@ -2439,6 +2473,8 @@ def copy_per_production_and_orders(
         for finish_key, info in sorted(
             finish_groups.items(), key=lambda item: _to_str(item[1].get("label", "")).lower()
         ):
+            if finish_export_filter and not finish_export_filter.get(finish_key, True):
+                continue
             rows = list(info.get("rows", []))
             if not rows:
                 continue
