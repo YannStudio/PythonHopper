@@ -1,8 +1,8 @@
 {
-  "source_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2025/Standaard modellen/Tecno G/20250144 - Fietsenstalling Dadizele/CAD/3D Soldiworks Files/V4 - productie/MOD 1",
-  "dest_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2025/Standaard modellen/Tecno G/20250144 - Fietsenstalling Dadizele/CAD/Bestellingen/MOD1",
-  "project_number": "20240237",
-  "project_name": "Lauweplaats - Luifel M4",
+  "source_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2023/Maatwerk overkappingen/Speelplaatsoverkappingen/20230171 - Smeermaas/CAD/v2",
+  "dest_folder": "C:/Users/jeroe/Desktop",
+  "project_number": "",
+  "project_name": "Stock glasklemmen",
   "file_extensions": [
     {
       "key": "pdf",
@@ -27,7 +27,7 @@
       "patterns": [
         ".dxf"
       ],
-      "enabled": true
+      "enabled": false
     },
     {
       "key": "dwg",
@@ -44,7 +44,7 @@
   "zip_finish_exports": true,
   "export_processed_bom": true,
   "export_related_bom_files": true,
-  "export_date_prefix": false,
+  "export_date_prefix": true,
   "export_date_suffix": false,
   "custom_prefix_enabled": false,
   "custom_prefix_text": "",

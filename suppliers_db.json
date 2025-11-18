@@ -1504,7 +1504,10 @@
   "defaults_by_production": {
     "Glass": "Starconstruct",
     "Sheetmetal": "Productora",
-    "Tube laser": "Van Eycken"
+    "Tube laser": "Van Eycken",
+    "Sheetmetal +4m": "SPCM",
+    "Cutting": "MCB",
+    "Cutting::Opticutter": "MCB"
   },
   "defaults_by_finish": {}
 }
