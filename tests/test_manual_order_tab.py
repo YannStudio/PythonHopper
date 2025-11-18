@@ -43,3 +43,15 @@ def test_ensure_integer_quantity_invalid_values():
 )
 def test_is_quantity_key_detection(key, expected):
     assert ManualOrderTab._is_quantity_key(key) is expected
+
+
+def test_ensure_column_metrics_marks_integer_column():
+    tab = ManualOrderTab.__new__(ManualOrderTab)
+    tab._entry_char_pixels = 8
+    qty_column = {"key": "Aantal", "numeric": True, "width": 10}
+    ManualOrderTab._ensure_column_metrics(tab, qty_column)
+    assert qty_column.get("integer") is True
+
+    length_column = {"key": "Lengte", "numeric": True, "width": 10}
+    ManualOrderTab._ensure_column_metrics(tab, length_column)
+    assert "integer" not in length_column
