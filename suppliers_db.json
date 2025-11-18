@@ -1502,7 +1502,8 @@
     }
   ],
   "defaults_by_production": {
-    "Glass": "Starconstruct"
+    "Glass": "Starconstruct",
+    "Sheetmetal": "Productora"
   },
   "defaults_by_finish": {}
 }
