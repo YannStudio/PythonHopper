@@ -1,6 +1,6 @@
 {
-  "source_folder": "C:\\Cloudstation\\SynologyDrive\\Documenten\\Projects\\2024\\Maatwerk overkappingen\\Diverse\\20240237 - Luifels Lauweplaats\\CAD\\3D Soldiworks Files\\V2 - Detaillering\\M4 - Luifel",
-  "dest_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2024/Maatwerk overkappingen/Diverse/20240237 - Luifels Lauweplaats/CAD/Bestellingen/M4 - Luifel",
+  "source_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2025/Standaard modellen/Tecno G/20250144 - Fietsenstalling Dadizele/CAD/3D Soldiworks Files/V4 - productie/MOD 1",
+  "dest_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2025/Standaard modellen/Tecno G/20250144 - Fietsenstalling Dadizele/CAD/Bestellingen/MOD1",
   "project_number": "20240237",
   "project_name": "Lauweplaats - Luifel M4",
   "file_extensions": [
@@ -27,7 +27,7 @@
       "patterns": [
         ".dxf"
       ],
-      "enabled": false
+      "enabled": true
     },
     {
       "key": "dwg",
