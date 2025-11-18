@@ -45,6 +45,102 @@ class _ManualRowWidgets:
 DEFAULT_MANUAL_CONTEXT = "Bestelbon-editor"
 
 
+def _entry_overflows(entry: tk.Entry, text: str) -> bool:
+    """Return True if ``text`` is wider than ``entry`` can display."""
+
+    if not text:
+        return False
+    try:
+        entry.update_idletasks()
+    except Exception:
+        pass
+    width = entry.winfo_width()
+    if width <= 1:
+        width = entry.winfo_reqwidth()
+    try:
+        entry_font = font.nametofont(entry.cget("font"))
+    except Exception:
+        entry_font = font.nametofont("TkDefaultFont")
+    padding = 4
+    for opt in ("highlightthickness", "bd"):
+        try:
+            padding += float(entry.cget(opt)) * 2
+        except Exception:
+            pass
+    usable_width = max(1, int(round(width - padding)))
+    return entry_font.measure(text) > usable_width
+
+
+class _OverflowTooltip:
+    """Show a tooltip when the entry text overflows."""
+
+    def __init__(self, widget: tk.Entry, text_provider: Callable[[], str]):
+        self.widget = widget
+        self._text_provider = text_provider
+        self._tipwindow: Optional[tk.Toplevel] = None
+        self._after_id: Optional[str] = None
+        widget.bind("<Enter>", self._schedule_show, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+        widget.bind("<Destroy>", self._hide, add="+")
+
+    def _schedule_show(self, _event=None) -> None:
+        self._cancel_scheduled()
+        if not self.widget.winfo_viewable():
+            return
+        self._after_id = self.widget.after(200, self._maybe_show)
+
+    def _maybe_show(self) -> None:
+        self._after_id = None
+        if not self.widget.winfo_exists():
+            return
+        text = self._text_provider()
+        if not text:
+            return
+        if not _entry_overflows(self.widget, text):
+            return
+        if self._tipwindow is not None:
+            return
+        tip = tk.Toplevel(self.widget)
+        tip.wm_overrideredirect(True)
+        try:
+            tip.wm_attributes("-topmost", True)
+        except Exception:
+            pass
+        label = tk.Label(
+            tip,
+            text=text,
+            background="#ffffe0",
+            foreground="#444444",
+            relief="solid",
+            borderwidth=1,
+            justify="left",
+            padx=4,
+            pady=2,
+        )
+        label.pack()
+        x = self.widget.winfo_rootx()
+        y = self.widget.winfo_rooty() + self.widget.winfo_height()
+        tip.wm_geometry(f"+{x}+{y}")
+        self._tipwindow = tip
+
+    def _cancel_scheduled(self) -> None:
+        if self._after_id is not None:
+            try:
+                self.widget.after_cancel(self._after_id)
+            except Exception:
+                pass
+            self._after_id = None
+
+    def _hide(self, _event=None) -> None:
+        self._cancel_scheduled()
+        if self._tipwindow is not None:
+            try:
+                self._tipwindow.destroy()
+            except Exception:
+                pass
+            self._tipwindow = None
+
+
 class SearchableCombobox(ttk.Combobox):
     """``ttk.Combobox`` variant met eenvoudige zoek/filter-functionaliteit."""
 
@@ -584,6 +680,7 @@ class ManualOrderTab(tk.Frame):
             width=field_char_width,
         )
         self.dest_entry.pack(side="left")
+        _OverflowTooltip(self.dest_entry, lambda: self.dest_folder_var.get().strip())
         tk.Button(
             dest_field,
             text="Bladeren",
