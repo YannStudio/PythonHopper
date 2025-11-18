@@ -4238,20 +4238,13 @@ def start_gui():
 
             project_number = self.project_number_var.get().strip()
             project_name = self.project_name_var.get().strip()
-            today_date = datetime.date.today()
-            today = today_date.strftime("%Y-%m-%d")
-            doc_token = _sanitize_component(doc_number) if doc_number else ""
-            num_part = f"_{doc_token}" if doc_token else ""
-            default_context_token = _sanitize_component(
-                ManualOrderTab.DEFAULT_CONTEXT_LABEL
+            filename_base = ManualOrderTab.build_document_basename(
+                doc_number,
+                project_name,
+                context_label or ManualOrderTab.DEFAULT_CONTEXT_LABEL,
             )
-            context_token = _sanitize_component(context_label) or default_context_token
-            if project_number:
-                pn_token = _sanitize_component(project_number)
-                if pn_token:
-                    context_token = f"{pn_token}-{context_token}" if context_token else pn_token
-            excel_requested = f"{doc_type}{num_part}_{context_token}_{today}.xlsx"
-            pdf_requested = f"{doc_type}{num_part}_{context_token}_{today}.pdf"
+            excel_requested = f"{filename_base}.xlsx"
+            pdf_requested = f"{filename_base}.pdf"
             excel_filename = _fit_filename_within_path(dest, excel_requested)
             pdf_filename = _fit_filename_within_path(dest, pdf_requested)
             excel_path = os.path.join(dest, excel_filename)

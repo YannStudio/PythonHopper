@@ -10,7 +10,8 @@ from typing import Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 import tkinter as tk
 from tkinter import font, messagebox, ttk
 
-from orders import _prefix_for_doc_type
+from helpers import _to_str
+from orders import _prefix_for_doc_type, _sanitize_component
 
 if TYPE_CHECKING:
     from clients_db import ClientsDB
@@ -408,6 +409,30 @@ class ManualOrderTab(tk.Frame):
         "Leveradres wordt nog meegedeeld",
     )
 
+    @staticmethod
+    def build_document_basename(
+        doc_number: str | None,
+        project_name: str | None,
+        fallback_label: str | None = None,
+    ) -> str:
+        """Return a sanitized base filename for manual document exports."""
+
+        doc_clean = _to_str(doc_number).strip()
+        project_clean = _to_str(project_name).strip()
+        fallback = _to_str(fallback_label).strip() or ManualOrderTab.DEFAULT_CONTEXT_LABEL
+        if doc_clean and project_clean:
+            base = f"{doc_clean}-{project_clean}"
+        elif doc_clean:
+            base = doc_clean
+        elif project_clean:
+            base = project_clean
+        else:
+            base = fallback
+        sanitized = _sanitize_component(base)
+        if sanitized:
+            return sanitized
+        return _sanitize_component(fallback) or "document"
+
     def __init__(
         self,
         master: tk.Misc,
@@ -435,7 +460,6 @@ class ManualOrderTab(tk.Frame):
         self._on_export = on_export
         self._on_manage_suppliers = on_manage_suppliers
         self._on_manage_deliveries = on_manage_deliveries
-        self._context_user_modified = False
 
         self.configure(padx=12, pady=12)
         self.columnconfigure(0, weight=1)
@@ -527,6 +551,7 @@ class ManualOrderTab(tk.Frame):
             elif current == old_prefix and new_prefix:
                 self.doc_number_var.set(new_prefix)
             self._doc_number_prefix = new_prefix
+            self._update_doc_name_preview()
 
         self.doc_type_var.trace_add("write", _handle_doc_type_change)
 
@@ -543,10 +568,33 @@ class ManualOrderTab(tk.Frame):
         self.after_idle(self.doc_number_entry.focus_set)
         self.after_idle(_reset_doc_type_focus)
 
-        tk.Label(header, text="Opdrachtgever:").grid(row=2, column=0, sticky="w", pady=(8, 0))
+        tk.Label(header, text="Bestemmingsmap:").grid(row=2, column=0, sticky="w", pady=(8, 0))
+        dest_field = tk.Frame(header)
+        dest_field.grid(
+            row=2,
+            column=1,
+            columnspan=4,
+            sticky="w",
+            padx=(6, 0),
+            pady=(8, 0),
+        )
+        self.dest_entry = tk.Entry(
+            dest_field,
+            textvariable=self.dest_folder_var,
+            width=field_char_width,
+        )
+        self.dest_entry.pack(side="left")
+        tk.Button(
+            dest_field,
+            text="Bladeren",
+            command=self._pick_dest_folder,
+            width=10,
+        ).pack(side="left", padx=(manage_spacing_px, 0))
+
+        tk.Label(header, text="Opdrachtgever:").grid(row=3, column=0, sticky="w", pady=(8, 0))
         client_field = tk.Frame(header)
         client_field.grid(
-            row=2,
+            row=3,
             column=1,
             columnspan=4,
             sticky="w",
@@ -567,29 +615,6 @@ class ManualOrderTab(tk.Frame):
                 command=on_manage_clients,
                 width=10,
             ).pack(side="left", padx=(manage_spacing_px, 0))
-
-        tk.Label(header, text="Bestemmingsmap:").grid(row=3, column=0, sticky="w", pady=(8, 0))
-        dest_field = tk.Frame(header)
-        dest_field.grid(
-            row=3,
-            column=1,
-            columnspan=4,
-            sticky="w",
-            padx=(6, 0),
-            pady=(8, 0),
-        )
-        self.dest_entry = tk.Entry(
-            dest_field,
-            textvariable=self.dest_folder_var,
-            width=field_char_width,
-        )
-        self.dest_entry.pack(side="left")
-        tk.Button(
-            dest_field,
-            text="Bladeren",
-            command=self._pick_dest_folder,
-            width=10,
-        ).pack(side="left", padx=(manage_spacing_px, 0))
 
         tk.Label(header, text="Leverancier:").grid(row=4, column=0, sticky="w", pady=(8, 0))
         self.supplier_var = tk.StringVar()
@@ -647,8 +672,12 @@ class ManualOrderTab(tk.Frame):
         self.context_label_var = tk.StringVar(
             value=self.project_name_var.get().strip() or self.DEFAULT_CONTEXT_LABEL
         )
+        self.doc_name_preview_var = tk.StringVar()
         context_entry = tk.Entry(
-            header, textvariable=self.context_label_var, width=field_char_width
+            header,
+            textvariable=self.doc_name_preview_var,
+            width=field_char_width,
+            state="readonly",
         )
         context_entry.grid(
             row=6,
@@ -658,18 +687,15 @@ class ManualOrderTab(tk.Frame):
             pady=(6, 0),
         )
 
-        def _mark_context_modified(*_args):
-            self._context_user_modified = True
-
-        self.context_label_var.trace_add("write", _mark_context_modified)
-
         def _sync_project_name(*_args):
-            if not self._context_user_modified:
-                self.context_label_var.set(
-                    self.project_name_var.get().strip() or self.DEFAULT_CONTEXT_LABEL
-                )
+            self.context_label_var.set(
+                self.project_name_var.get().strip() or self.DEFAULT_CONTEXT_LABEL
+            )
+            self._update_doc_name_preview()
 
         self.project_name_var.trace_add("write", _sync_project_name)
+        self.doc_number_var.trace_add("write", lambda *_: self._update_doc_name_preview())
+        self._update_doc_name_preview()
 
         tk.Label(header, text="Opmerkingen:").grid(row=7, column=0, sticky="nw", pady=(8, 0))
         self.remark_text = tk.Text(header, height=4, wrap="word")
@@ -907,6 +933,15 @@ class ManualOrderTab(tk.Frame):
     def set_doc_number(self, value: str) -> None:
         self.doc_number_var.set(value)
         self._doc_number_prefix = _prefix_for_doc_type(self.doc_type_var.get())
+        self._update_doc_name_preview()
+
+    def _update_doc_name_preview(self) -> None:
+        basename = self.build_document_basename(
+            self.doc_number_var.get(),
+            self.project_name_var.get(),
+            self.context_label_var.get() or self.DEFAULT_CONTEXT_LABEL,
+        )
+        self.doc_name_preview_var.set(f"{basename}.pdf")
 
     # Row management -------------------------------------------------
     def _create_header_row_in_canvas(self) -> None:
@@ -1595,9 +1630,8 @@ class ManualOrderTab(tk.Frame):
     def _configure_header_label(
         self, label: tk.Widget, display_chars: int, min_width_px: int
     ) -> None:
-        wrap_px = max(24, min_width_px)
         try:
-            label.configure(width=display_chars, wraplength=wrap_px, justify="left")
+            label.configure(width=display_chars, wraplength=0, anchor="w")
         except Exception:
             pass
 
