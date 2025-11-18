@@ -1503,7 +1503,8 @@
   ],
   "defaults_by_production": {
     "Glass": "Starconstruct",
-    "Sheetmetal": "Productora"
+    "Sheetmetal": "Productora",
+    "Tube laser": "Van Eycken"
   },
   "defaults_by_finish": {}
 }
