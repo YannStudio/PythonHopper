@@ -34,6 +34,29 @@ def _normalize_numeric(value: str) -> object:
     return value.strip()
 
 
+def _ensure_integer_quantity(value: object) -> object:
+    """Force quantity-like values to integers without decimal places."""
+
+    if value in ("", None):
+        return ""
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if math.isfinite(value):
+            return int(round(value))
+        return value
+    text = _to_str(value).strip().replace(",", ".")
+    if not text:
+        return ""
+    try:
+        number = float(text)
+    except Exception:
+        return value
+    if math.isfinite(number):
+        return int(round(number))
+    return value
+
+
 @dataclass
 class _ManualRowWidgets:
     frame: tk.Frame
@@ -497,6 +520,8 @@ class ManualOrderTab(tk.Frame):
             },
         ],
     }
+
+    QUANTITY_KEY_HINTS = {"aantal", "st", "st.", "qty", "quantity", "stuks"}
 
     DOC_TYPE_OPTIONS: tuple[str, ...] = ("Bestelbon", "Standaard bon", "Offerteaanvraag")
     DELIVERY_PRESETS: tuple[str, ...] = (
@@ -1262,6 +1287,8 @@ class ManualOrderTab(tk.Frame):
                     column_usage[key] = True
                 if key in numeric_keys:
                     normalized = _normalize_numeric(value)
+                    if self._is_quantity_key(key):
+                        normalized = _ensure_integer_quantity(normalized)
                 else:
                     normalized = value
                 record[key] = normalized
@@ -1285,6 +1312,11 @@ class ManualOrderTab(tk.Frame):
             "total_weight": total_weight if weight_found else None,
             "used_columns": {key for key, used in column_usage.items() if used},
         }
+
+    @classmethod
+    def _is_quantity_key(cls, key: str) -> bool:
+        normalized = _to_str(key).strip().lower()
+        return normalized in cls.QUANTITY_KEY_HINTS
 
     # Export ---------------------------------------------------------
     def _pick_dest_folder(self) -> None:
