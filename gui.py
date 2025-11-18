@@ -4181,6 +4181,7 @@ def start_gui():
                     justify = _to_str(column.get("justify")).strip().lower() or "left"
                     wrap = bool(column.get("wrap"))
                     numeric = bool(column.get("numeric"))
+                    integer_flag = bool(column.get("integer"))
                     weight_raw = column.get("weight")
                     try:
                         weight = float(weight_raw)
@@ -4193,6 +4194,8 @@ def start_gui():
                         "wrap": wrap,
                         "numeric": numeric,
                     }
+                    if integer_flag:
+                        entry["integer"] = True
                     if weight is not None and math.isfinite(weight) and weight > 0:
                         entry["weight"] = weight
                     if column.get("total_weight"):

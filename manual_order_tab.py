@@ -1397,6 +1397,15 @@ class ManualOrderTab(tk.Frame):
     def _ensure_column_metrics(self, column: Dict[str, object]) -> None:
         """Ensure helper sizing metadata is present on a column definition."""
 
+        key_name = _to_str(column.get("key")).strip()
+        if (
+            column.get("numeric")
+            and key_name
+            and self._is_quantity_key(key_name)
+            and "integer" not in column
+        ):
+            column["integer"] = True
+
         width_value = column.get("width", 12)
         try:
             base_width = int(width_value)

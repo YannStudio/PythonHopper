@@ -14,6 +14,7 @@ import zipfile
 import io
 import tempfile
 import hashlib
+import math
 from collections import defaultdict
 from pathlib import Path
 from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -425,6 +426,39 @@ def _parse_qty(val: object) -> int:
     except Exception:
         q = 1
     return max(1, min(999, q))
+
+
+def _coerce_integer_like(value: object) -> object:
+    """Return ``value`` as an int when it represents a whole number."""
+
+    if value in ("", None):
+        return ""
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(round(value)) if math.isfinite(value) else value
+    text = _to_str(value).strip()
+    if not text:
+        return ""
+    text = text.replace(",", ".")
+    try:
+        number = float(text)
+    except Exception:
+        return value
+    if not math.isfinite(number):
+        return value
+    return int(round(number))
+
+
+def _format_integer_like(value: object) -> str:
+    """Format integer-like values without decimal places."""
+
+    coerced = _coerce_integer_like(value)
+    if coerced in ("", None):
+        return ""
+    if isinstance(coerced, int):
+        return str(coerced)
+    return _to_str(coerced)
 
 
 def _prefix_for_doc_type(doc_type: str) -> str:
@@ -1107,7 +1141,10 @@ def generate_pdf_order_platypus(
                 key = column.get("key")
                 value = it.get(key, "") if key else ""
                 if column.get("numeric"):
-                    value = _num_to_2dec(value)
+                    if column.get("integer"):
+                        value = _format_integer_like(value)
+                    else:
+                        value = _num_to_2dec(value)
                     small = True
                 else:
                     value = _to_str(value)
@@ -1405,7 +1442,10 @@ def write_order_excel(
             row: Dict[str, object] = {}
             for column, header in zip(column_layout, headers):
                 key = column.get("key")
-                row[header] = item.get(key, "") if key else ""
+                value = item.get(key, "") if key else ""
+                if column.get("integer"):
+                    value = _coerce_integer_like(value)
+                row[header] = value
             rows.append(row)
         df = pd.DataFrame(rows, columns=headers)
         weight_header: str | None = None
