@@ -1516,17 +1516,6 @@
       "favorite": false
     }
   ],
-  "defaults_by_production": {
-    "Glass": "Starconstruct",
-    "Sheetmetal": "Productora",
-    "Tube laser": "Van Eycken",
-    "Sheetmetal +4m": "SPCM",
-    "Cutting": "MCB",
-    "Cutting::Opticutter": "MCB",
-    "Lasercutting": "Productora"
-  },
-  "defaults_by_finish": {
-    "Finish-Paint": "Van Gils Coating - Beringen/Maasmechelen",
-    "Finish-Paint-RAL7016": "Van Gils Coating - Wuustwezel"
-  }
+  "defaults_by_production": {},
+  "defaults_by_finish": {}
 }
