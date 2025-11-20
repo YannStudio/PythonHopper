@@ -1,8 +1,8 @@
 {
   "source_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2023/Maatwerk overkappingen/Speelplaatsoverkappingen/20230171 - Smeermaas/CAD/v2",
   "dest_folder": "C:/Users/jeroe/Desktop",
-  "project_number": "",
-  "project_name": "Stock glasklemmen",
+  "project_number": "01",
+  "project_name": "ZbookAankoop",
   "file_extensions": [
     {
       "key": "pdf",
@@ -44,7 +44,7 @@
   "zip_finish_exports": true,
   "export_processed_bom": true,
   "export_related_bom_files": true,
-  "export_date_prefix": true,
+  "export_date_prefix": false,
   "export_date_suffix": false,
   "custom_prefix_enabled": false,
   "custom_prefix_text": "",
@@ -57,7 +57,7 @@
   "en1090_enabled": true,
   "en1090_note": "Bestelling conform EN 1090-2:2018+A1:2024.\nLevering met materiaalcertificaat type 2.2 of 3.1 volgens EN 10204.\nProfielen in constructiestaal S235JR/S355J2 conform EN 10025-2 met toleranties volgens EN 10034.",
   "en1090_preferences": {
-    "cutting": false,
+    "cutting": true,
     "dummy part": false,
     "lasercutting": true,
     "sheetmetal": false,

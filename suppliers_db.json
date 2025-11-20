@@ -1499,6 +1499,21 @@
       "sales_email": "nan",
       "phone": "nan",
       "favorite": false
+    },
+    {
+      "supplier": "SoftCell",
+      "description": "Computer winkel",
+      "supplier_id": null,
+      "adres_1": "Rue Auguste Latour 105",
+      "adres_2": "Braine-le-Château",
+      "postcode": "B-1440",
+      "gemeente": "Braine-le-Château",
+      "land": "Belgium",
+      "btw": "BE-0676.659.924",
+      "contact_sales": "Benoit Logé",
+      "sales_email": "benoit.loge@softcell.be",
+      "phone": "+32 475 73 99 22",
+      "favorite": false
     }
   ],
   "defaults_by_production": {
@@ -1507,7 +1522,11 @@
     "Tube laser": "Van Eycken",
     "Sheetmetal +4m": "SPCM",
     "Cutting": "MCB",
-    "Cutting::Opticutter": "MCB"
+    "Cutting::Opticutter": "MCB",
+    "Lasercutting": "Productora"
   },
-  "defaults_by_finish": {}
+  "defaults_by_finish": {
+    "Finish-Paint": "Van Gils Coating - Beringen/Maasmechelen",
+    "Finish-Paint-RAL7016": "Van Gils Coating - Wuustwezel"
+  }
 }
