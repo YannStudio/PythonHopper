@@ -133,6 +133,18 @@ class SuppliersDB:
                 descs.add(s.product_description.strip())
         return sorted(list(descs))
 
+    def get_product_descriptions_for_type(self, product_type: str) -> List[str]:
+        """Get unique product descriptions filtered by product type, sorted."""
+        if not product_type or not product_type.strip():
+            return self.get_unique_product_descriptions()
+        
+        descs = set()
+        for s in self.suppliers:
+            if s.product_type and s.product_type.strip().lower() == product_type.strip().lower():
+                if s.product_description and s.product_description.strip():
+                    descs.add(s.product_description.strip())
+        return sorted(list(descs))
+
     def _idx_by_name(self, name: str) -> int:
         for i, s in enumerate(self.suppliers):
             if s.supplier.strip().lower() == str(name).strip().lower():
