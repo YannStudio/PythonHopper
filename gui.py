@@ -1053,6 +1053,8 @@ def start_gui():
                 self.tree.heading(c, text=c)
                 self.tree.column(c, anchor="w")
             self.tree.pack(fill="both", expand=True, padx=8, pady=8)
+            # Bind double-click to edit
+            self.tree.bind("<Double-Button-1>", lambda e: self.edit_sel())
             btns = tk.Frame(self)
             btns.pack(fill="x")
             tk.Button(btns, text="Toevoegen", command=self.add_supplier).pack(side="left", padx=4)

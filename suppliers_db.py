@@ -63,22 +63,28 @@ class SuppliersDB:
             return self.suppliers_sorted()
         L = []
         for s in self.suppliers:
-            hay = " ".join([
-                s.supplier or "",
-                s.description or "",
-                s.supplier_id or "",
-                s.adres_1 or "",
-                s.adres_2 or "",
-                s.postcode or "",
-                s.gemeente or "",
-                s.land or "",
-                s.btw or "",
-                s.contact_sales or "",
-                s.sales_email or "",
-                s.phone or "",
-            ]).lower()
-            if q in hay:
+            # Check if supplier name starts with query (prefix match on name)
+            # or if query is found in any other field (substring match)
+            supplier_name = (s.supplier or "").lower()
+            if supplier_name.startswith(q):
                 L.append(s)
+            else:
+                # Also search in other fields as substring
+                hay = " ".join([
+                    s.description or "",
+                    s.supplier_id or "",
+                    s.adres_1 or "",
+                    s.adres_2 or "",
+                    s.postcode or "",
+                    s.gemeente or "",
+                    s.land or "",
+                    s.btw or "",
+                    s.contact_sales or "",
+                    s.sales_email or "",
+                    s.phone or "",
+                ]).lower()
+                if q in hay:
+                    L.append(s)
         L.sort(key=lambda s: (not s.favorite, s.supplier.lower()))
         return L
 
