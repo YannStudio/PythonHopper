@@ -1,8 +1,8 @@
 {
-  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/De Lijn/53. De Lijn - Infopunten/cad",
-  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/De Lijn/53. De Lijn - Infopunten/export/03. Glas",
-  "project_number": "53",
-  "project_name": "DeLijn-ClampframeLarge",
+  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/01. CAD service/01. CAD - Tubelaser/CS-TL-0000",
+  "dest_folder": "C:/Users/jeroe/Desktop",
+  "project_number": "XX",
+  "project_name": "ALC-Mintjes",
   "file_extensions": [
     {
       "key": "pdf",
@@ -27,7 +27,7 @@
       "patterns": [
         ".dxf"
       ],
-      "enabled": true
+      "enabled": false
     },
     {
       "key": "dwg",
@@ -59,7 +59,7 @@
   "en1090_preferences": {
     "cutting": false,
     "dummy part": false,
-    "lasercutting": true,
+    "lasercutting": false,
     "sheetmetal": false,
     "sheetmetal 4m": false,
     "spare part": false,

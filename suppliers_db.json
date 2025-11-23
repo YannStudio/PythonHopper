@@ -1516,6 +1516,9 @@
       "favorite": false
     }
   ],
-  "defaults_by_production": {},
+  "defaults_by_production": {
+    "Tube Laser": "Productora",
+    "Tube Laser::Opticutter": "TESTAS"
+  },
   "defaults_by_finish": {}
 }
