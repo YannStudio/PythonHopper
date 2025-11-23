@@ -2814,6 +2814,7 @@ def start_gui():
                 en1090_note_container,
                 height=5,
                 wrap="word",
+                font=("TkDefaultFont", 10),
             )
             self.en1090_note_text.grid(row=0, column=0, sticky="nsew")
 
@@ -2872,6 +2873,7 @@ def start_gui():
                 footer_text_container,
                 height=5,
                 wrap="word",
+                font=("TkDefaultFont", 10),
             )
             self.footer_note_text.grid(row=0, column=0, sticky="nsew")
 
@@ -3326,6 +3328,19 @@ def start_gui():
 
             _configure_tab_like_button_style()
             self.title("Filehopper")
+            
+            # Set window icon
+            try:
+                import os
+                icon_path = os.path.join(os.path.dirname(__file__), "app_icon.png")
+                if os.path.isfile(icon_path) and ImageTk is not None:
+                    icon_img = Image.open(icon_path)
+                    icon_photo = ImageTk.PhotoImage(icon_img)
+                    self.iconphoto(False, icon_photo)
+                    self._icon_photo = icon_photo  # Keep a reference
+            except Exception:
+                pass
+            
             self.minsize(1024, 720)
             self._schedule_window_maximize()
 
