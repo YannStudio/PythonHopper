@@ -3329,20 +3329,11 @@ def start_gui():
             _configure_tab_like_button_style()
             self.title("Filehopper")
             
-            # Set window icon
-            try:
-                import os
-                icon_path = os.path.join(os.path.dirname(__file__), "app_icon.png")
-                if os.path.isfile(icon_path) and ImageTk is not None:
-                    icon_img = Image.open(icon_path)
-                    icon_photo = ImageTk.PhotoImage(icon_img)
-                    self.iconphoto(False, icon_photo)
-                    self._icon_photo = icon_photo  # Keep a reference
-            except Exception:
-                pass
-            
             self.minsize(1024, 720)
             self._schedule_window_maximize()
+            
+            # Schedule icon loading after window is displayed (to avoid startup lag)
+            self.after_idle(self._load_window_icon)
 
             self.db = SuppliersDB.load(SUPPLIERS_DB_FILE)
             self.client_db = ClientsDB.load(CLIENTS_DB_FILE)
@@ -4656,6 +4647,22 @@ def start_gui():
                 self.after_idle(_maximize)
             except tk.TclError:
                 _maximize()
+
+        def _load_window_icon(self) -> None:
+            """Load window icon asynchronously to avoid startup lag."""
+            try:
+                import os
+                if Image is None or ImageTk is None:
+                    return
+                icon_path = os.path.join(os.path.dirname(__file__), "app_icon.png")
+                if not os.path.isfile(icon_path):
+                    return
+                icon_img = Image.open(icon_path)
+                icon_photo = ImageTk.PhotoImage(icon_img)
+                self.iconphoto(False, icon_photo)
+                self._icon_photo = icon_photo  # Keep reference
+            except Exception:
+                pass
 
         def _handle_tab_changed(self, event: "tk.Event") -> None:
             placeholder = getattr(self, "_custom_bom_placeholder", None)
