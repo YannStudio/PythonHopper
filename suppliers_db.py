@@ -63,23 +63,23 @@ class SuppliersDB:
         
         Args:
             query: Text to search in supplier name and other fields
-            product_type_filter: Optional product type filter
-            product_desc_filter: Optional product description filter
+            product_type_filter: Optional product type filter (exact match)
+            product_desc_filter: Optional product description filter (exact match)
         """
         q = (query or "").strip().lower()
         L = []
         
         for s in self.suppliers:
-            # Apply product type filter if provided
+            # Apply product type filter if provided (exact match)
             if product_type_filter and product_type_filter.strip():
-                supplier_product_type = (s.product_type or "").lower()
-                if product_type_filter.lower() not in supplier_product_type:
+                supplier_product_type = (s.product_type or "").strip()
+                if supplier_product_type.lower() != product_type_filter.strip().lower():
                     continue
             
-            # Apply product description filter if provided
+            # Apply product description filter if provided (exact match)
             if product_desc_filter and product_desc_filter.strip():
-                supplier_product_desc = (s.product_description or "").lower()
-                if product_desc_filter.lower() not in supplier_product_desc:
+                supplier_product_desc = (s.product_description or "").strip()
+                if supplier_product_desc.lower() != product_desc_filter.strip().lower():
                     continue
             
             # If no query, include this supplier (all filters passed)
