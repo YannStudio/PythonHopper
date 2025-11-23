@@ -1059,13 +1059,15 @@ def start_gui():
             self.product_type_var = tk.StringVar()
             self.product_type_combo = ttk.Combobox(filter_frame, textvariable=self.product_type_var, width=20, state="readonly")
             self.product_type_combo.pack(side="left", padx=(0, 12))
-            self.product_type_var.trace_add("write", lambda *_: self.refresh())
+            # When product type changes, update description dropdown and refresh
+            self.product_type_var.trace_add("write", lambda *_: self._on_product_type_changed())
             
             # Product description filter
             tk.Label(filter_frame, text="Beschrijving:").pack(side="left", padx=(0, 4))
             self.product_desc_var = tk.StringVar()
             self.product_desc_combo = ttk.Combobox(filter_frame, textvariable=self.product_desc_var, width=30, state="readonly")
             self.product_desc_combo.pack(side="left", padx=(0, 12))
+            # When description changes, just refresh the results
             self.product_desc_var.trace_add("write", lambda *_: self.refresh())
             
             # Clear filters button
@@ -1109,24 +1111,44 @@ def start_gui():
             """Clear all filter selections."""
             self.product_type_var.set("")
             self.product_desc_var.set("")
+            self._update_filter_options()
+
+        def _on_product_type_changed(self):
+            """Called when product type selection changes.
+            Updates the description dropdown to show only descriptions for this type."""
+            # Clear the description filter when product type changes
+            self.product_desc_var.set("")
+            # Update the description dropdown options
+            product_type = self.product_type_var.get()
+            product_descs = self.db.get_product_descriptions_for_type(product_type)
+            self.product_desc_combo['values'] = [""] + product_descs
+            # Refresh the results
+            self.refresh()
 
         def _update_filter_options(self):
             """Update filter dropdown options based on current data."""
             product_types = self.db.get_unique_product_types()
-            product_descs = self.db.get_unique_product_descriptions()
             
-            # Keep current selections if still valid
+            # Keep current selection if still valid
             current_type = self.product_type_var.get()
-            current_desc = self.product_desc_var.get()
             
             self.product_type_combo['values'] = [""] + product_types
-            self.product_desc_combo['values'] = [""] + product_descs
             
-            # Restore selections if still valid
+            # Restore selection if still valid
             if current_type in ([""] + product_types):
                 self.product_type_var.set(current_type)
+            
+            # Also update the description dropdown for the current product type
+            product_type = self.product_type_var.get()
+            product_descs = self.db.get_product_descriptions_for_type(product_type)
+            current_desc = self.product_desc_var.get()
+            self.product_desc_combo['values'] = [""] + product_descs
+            
+            # Restore description selection if still valid
             if current_desc in ([""] + product_descs):
                 self.product_desc_var.set(current_desc)
+            else:
+                self.product_desc_var.set("")
 
         def refresh(self):
             self._update_filter_options()
