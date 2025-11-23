@@ -57,40 +57,81 @@ class SuppliersDB:
     def suppliers_sorted(self) -> List[Supplier]:
         return sorted(self.suppliers, key=lambda s: (not s.favorite, s.supplier.lower()))
 
-    def find(self, query: str) -> List[Supplier]:
+    def find(self, query: str, product_type_filter: Optional[str] = None, product_desc_filter: Optional[str] = None) -> List[Supplier]:
+        """
+        Find suppliers by query and optional product filters.
+        
+        Args:
+            query: Text to search in supplier name and other fields
+            product_type_filter: Optional product type filter
+            product_desc_filter: Optional product description filter
+        """
         q = (query or "").strip().lower()
-        if not q:
-            return self.suppliers_sorted()
         L = []
+        
         for s in self.suppliers:
-            # Check if supplier name starts with query (prefix match on name)
-            # or if query is found in any other field (substring match)
-            supplier_name = (s.supplier or "").lower()
-            if supplier_name.startswith(q):
+            # Apply product type filter if provided
+            if product_type_filter and product_type_filter.strip():
+                supplier_product_type = (s.product_type or "").lower()
+                if product_type_filter.lower() not in supplier_product_type:
+                    continue
+            
+            # Apply product description filter if provided
+            if product_desc_filter and product_desc_filter.strip():
+                supplier_product_desc = (s.product_description or "").lower()
+                if product_desc_filter.lower() not in supplier_product_desc:
+                    continue
+            
+            # If no query, include this supplier (all filters passed)
+            if not q:
                 L.append(s)
             else:
-                # Also search in other fields as substring
-                hay = " ".join([
-                    s.description or "",
-                    s.supplier_id or "",
-                    s.adres_1 or "",
-                    s.adres_2 or "",
-                    s.postcode or "",
-                    s.gemeente or "",
-                    s.land or "",
-                    s.btw or "",
-                    s.contact_sales or "",
-                    s.sales_email or "",
-                    s.phone or "",
-                ]).lower()
-                if q in hay:
+                # Check if supplier name starts with query (prefix match on name)
+                supplier_name = (s.supplier or "").lower()
+                if supplier_name.startswith(q):
                     L.append(s)
+                else:
+                    # Also search in other fields as substring
+                    hay = " ".join([
+                        s.description or "",
+                        s.supplier_id or "",
+                        s.adres_1 or "",
+                        s.adres_2 or "",
+                        s.postcode or "",
+                        s.gemeente or "",
+                        s.land or "",
+                        s.btw or "",
+                        s.contact_sales or "",
+                        s.sales_email or "",
+                        s.phone or "",
+                        s.product_type or "",
+                        s.product_description or "",
+                    ]).lower()
+                    if q in hay:
+                        L.append(s)
+        
         L.sort(key=lambda s: (not s.favorite, s.supplier.lower()))
         return L
 
     def display_name(self, s: Supplier) -> str:
         prefix = _FAVORITE_PREFIX if s.favorite else ""
         return f"{prefix}{s.supplier}"
+
+    def get_unique_product_types(self) -> List[str]:
+        """Get list of unique product types from all suppliers, sorted."""
+        types = set()
+        for s in self.suppliers:
+            if s.product_type and s.product_type.strip():
+                types.add(s.product_type.strip())
+        return sorted(list(types))
+
+    def get_unique_product_descriptions(self) -> List[str]:
+        """Get list of unique product descriptions from all suppliers, sorted."""
+        descs = set()
+        for s in self.suppliers:
+            if s.product_description and s.product_description.strip():
+                descs.add(s.product_description.strip())
+        return sorted(list(descs))
 
     def _idx_by_name(self, name: str) -> int:
         for i, s in enumerate(self.suppliers):

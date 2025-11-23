@@ -1040,6 +1040,8 @@ def start_gui():
             self.configure(padx=12, pady=12)
             self.db = db
             self.on_change = on_change
+            
+            # Search bar
             search = tk.Frame(self)
             search.pack(fill="x", padx=8, pady=(8, 0))
             tk.Label(search, text="Zoek:").pack(side="left")
@@ -1047,7 +1049,30 @@ def start_gui():
             entry = tk.Entry(search, textvariable=self.search_var)
             entry.pack(side="left", fill="x", expand=True)
             self.search_var.trace_add("write", lambda *_: self.refresh())
-            cols = ("Supplier", "BTW", "E-mail", "Tel", "Adres 1", "Adres 2")
+            
+            # Filter frame
+            filter_frame = tk.Frame(self)
+            filter_frame.pack(fill="x", padx=8, pady=(4, 0))
+            
+            # Product type filter
+            tk.Label(filter_frame, text="Product type:").pack(side="left", padx=(0, 4))
+            self.product_type_var = tk.StringVar()
+            self.product_type_combo = ttk.Combobox(filter_frame, textvariable=self.product_type_var, width=20, state="readonly")
+            self.product_type_combo.pack(side="left", padx=(0, 12))
+            self.product_type_var.trace_add("write", lambda *_: self.refresh())
+            
+            # Product description filter
+            tk.Label(filter_frame, text="Beschrijving:").pack(side="left", padx=(0, 4))
+            self.product_desc_var = tk.StringVar()
+            self.product_desc_combo = ttk.Combobox(filter_frame, textvariable=self.product_desc_var, width=30, state="readonly")
+            self.product_desc_combo.pack(side="left", padx=(0, 12))
+            self.product_desc_var.trace_add("write", lambda *_: self.refresh())
+            
+            # Clear filters button
+            tk.Button(filter_frame, text="Wis filters", command=self._clear_filters).pack(side="left")
+            
+            # Treeview with new columns
+            cols = ("Supplier", "Product type", "Beschrijving", "BTW", "E-mail", "Tel", "Adres 1", "Adres 2")
             self.tree = ttk.Treeview(self, columns=cols, show="headings")
             for c in cols:
                 self.tree.heading(c, text=c)
@@ -1055,6 +1080,7 @@ def start_gui():
             self.tree.pack(fill="both", expand=True, padx=8, pady=8)
             # Bind double-click to edit
             self.tree.bind("<Double-Button-1>", lambda e: self.edit_sel())
+            
             btns = tk.Frame(self)
             btns.pack(fill="x")
             tk.Button(btns, text="Toevoegen", command=self.add_supplier).pack(side="left", padx=4)
@@ -1079,15 +1105,43 @@ def start_gui():
             if value:
                 self.search_var.set(value)
 
+        def _clear_filters(self):
+            """Clear all filter selections."""
+            self.product_type_var.set("")
+            self.product_desc_var.set("")
+
+        def _update_filter_options(self):
+            """Update filter dropdown options based on current data."""
+            product_types = self.db.get_unique_product_types()
+            product_descs = self.db.get_unique_product_descriptions()
+            
+            # Keep current selections if still valid
+            current_type = self.product_type_var.get()
+            current_desc = self.product_desc_var.get()
+            
+            self.product_type_combo['values'] = [""] + product_types
+            self.product_desc_combo['values'] = [""] + product_descs
+            
+            # Restore selections if still valid
+            if current_type in ([""] + product_types):
+                self.product_type_var.set(current_type)
+            if current_desc in ([""] + product_descs):
+                self.product_desc_var.set(current_desc)
+
         def refresh(self):
+            self._update_filter_options()
             for r in self.tree.get_children():
                 self.tree.delete(r)
             q = self.search_var.get()
-            sups = self.db.find(q)
+            product_type_filter = self.product_type_var.get()
+            product_desc_filter = self.product_desc_var.get()
+            sups = self.db.find(q, product_type_filter, product_desc_filter)
             fav_prefix = favorite_prefix()
             for i, s in enumerate(sups):
                 vals = (
                     (fav_prefix if s.favorite else "") + (s.supplier or ""),
+                    s.product_type or "",
+                    s.product_description or "",
                     s.btw or "",
                     s.sales_email or "",
                     s.phone or "",
@@ -1178,6 +1232,8 @@ def start_gui():
                 fields = [
                     ("supplier", "Naam"),
                     ("description", "Beschrijving"),
+                    ("product_type", "Product type"),
+                    ("product_description", "Product beschrijving"),
                     ("supplier_id", "ID"),
                     ("adres_1", "Adres 1"),
                     ("adres_2", "Adres 2"),

@@ -18,6 +18,8 @@ class Supplier:
     contact_sales: Optional[str] = None
     sales_email: Optional[str] = None
     phone: Optional[str] = None
+    product_type: Optional[str] = None
+    product_description: Optional[str] = None
     favorite: bool = False
 
     @staticmethod
@@ -113,6 +115,14 @@ class Supplier:
             "tel": "phone",
             "tel. sales": "phone",
             "tel sales": "phone",
+            # product type en description
+            "product / product type": "product_type",
+            "product/product type": "product_type",
+            "product type": "product_type",
+            "producttype": "product_type",
+            "product_type": "product_type",
+            "category": "product_type",
+            "categorie": "product_type",
             # favorite
             "favorite": "favorite",
             "favoriet": "favorite",
@@ -150,6 +160,8 @@ class Supplier:
             contact_sales=_to_str(norm.get("contact_sales")).strip() or None if ("contact_sales" in norm) else None,
             sales_email=_to_str(norm.get("sales_email")).strip() or None if ("sales_email" in norm) else None,
             phone=_to_str(norm.get("phone")).strip() or None if ("phone" in norm) else None,
+            product_type=_to_str(norm.get("product_type")).strip() or None if ("product_type" in norm) else None,
+            product_description=_to_str(norm.get("description")).strip() or None if ("description" in norm) else None,
             favorite=bool(fav),
         )
 

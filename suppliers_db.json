@@ -13,6 +13,8 @@
       "contact_sales": "Marco Kaczmarowski",
       "sales_email": "marco.kaczmarowski@ab-matic.be",
       "phone": "+32 472 11 47 24",
+      "product_type": "Door accessories",
+      "product_description": "Door accessories - Locks, hinges & other",
       "favorite": false
     },
     {
@@ -28,6 +30,8 @@
       "contact_sales": "nan",
       "sales_email": "s.vandeputte@abriso.com",
       "phone": "+32 56 69 49 29",
+      "product_type": "Packaging",
+      "product_description": "Packaging",
       "favorite": false
     },
     {
@@ -43,6 +47,8 @@
       "contact_sales": "Davis",
       "sales_email": "info@allroundhekwerk.nl",
       "phone": "+31 06 52 53 98 51",
+      "product_type": "Steel",
+      "product_description": "Steel - other",
       "favorite": false
     },
     {
@@ -58,6 +64,8 @@
       "contact_sales": "nan",
       "sales_email": "info@antwerpgasdepot.be",
       "phone": "+32 3 324 33 76",
+      "product_type": "Welding",
+      "product_description": "Welding - Gas bottles",
       "favorite": false
     },
     {
@@ -73,6 +81,8 @@
       "contact_sales": "Kurt Thomaes",
       "sales_email": "kurt.thomaes@atoz.be",
       "phone": "+32 3 293 40 20",
+      "product_type": "Stickers",
+      "product_description": "stickers, 2D designs",
       "favorite": false
     },
     {
@@ -88,6 +98,8 @@
       "contact_sales": "Paul Voorspoels",
       "sales_email": "paul@bacovo.be",
       "phone": "+32 475 26 59 51",
+      "product_type": "Metal processing",
+      "product_description": "Metal processing - 2D / 3D laser & bending",
       "favorite": false
     },
     {
@@ -103,6 +115,8 @@
       "contact_sales": "nan",
       "sales_email": "nan",
       "phone": "nan",
+      "product_type": "Steel",
+      "product_description": "Steel - other",
       "favorite": false
     },
     {
@@ -118,6 +132,8 @@
       "contact_sales": "Stijn Mertens",
       "sales_email": "s.mertens@borgh.net",
       "phone": "+32 494 41 88 83",
+      "product_type": "Fasteners",
+      "product_description": "Fasteners - Steel",
       "favorite": false
     },
     {
@@ -133,6 +149,8 @@
       "contact_sales": "Stefan Camerlynck",
       "sales_email": "Stefan@brightlight.be",
       "phone": "+32 3 889 44 55",
+      "product_type": "Polycarbonate",
+      "product_description": "Polycarbonate - curved",
       "favorite": false
     },
     {
@@ -148,6 +166,8 @@
       "contact_sales": "Edsko Brouwers",
       "sales_email": "brouwers@buigwerken.be",
       "phone": "+32 498 57 49 99",
+      "product_type": "Metal processing",
+      "product_description": "Metal processing - Bending Tubes & pipes",
       "favorite": false
     },
     {
@@ -163,6 +183,8 @@
       "contact_sales": "Zeno Byttebier",
       "sales_email": "verkoop@byttebier-hout.be",
       "phone": "+32 3 488 00 16",
+      "product_type": "Wood",
+      "product_description": "Wood - planks & beams",
       "favorite": false
     },
     {
@@ -178,6 +200,8 @@
       "contact_sales": "Wim Vander Veken",
       "sales_email": "info@c-b-s.be",
       "phone": "+32 496 60 69 10",
+      "product_type": "Surface treatment",
+      "product_description": "Surface treatment - other",
       "favorite": false
     },
     {
@@ -193,6 +217,8 @@
       "contact_sales": "nan",
       "sales_email": "kalmthout@cebeo.be",
       "phone": "+32 3 328 04 60",
+      "product_type": "Electronics",
+      "product_description": "Electronics - Base materials",
       "favorite": false
     },
     {
@@ -208,6 +234,8 @@
       "contact_sales": "Jos Damen",
       "sales_email": "nan",
       "phone": "+31 765 20 47 40",
+      "product_type": "Tools",
+      "product_description": "Tools - Drilling",
       "favorite": false
     },
     {
@@ -223,6 +251,8 @@
       "contact_sales": "Bruno Gielis",
       "sales_email": "Bruno.gielis@dejond.com",
       "phone": "+32 3 820 35 39",
+      "product_type": "Alu",
+      "product_description": "Alu - Profiles",
       "favorite": false
     },
     {
@@ -238,6 +268,8 @@
       "contact_sales": "Nele Maris",
       "sales_email": "info@graszodenservice.be",
       "phone": "+32 14 67 73 56",
+      "product_type": "Greenroof",
+      "product_description": "Greenroof - Cassettes",
       "favorite": false
     },
     {
@@ -253,6 +285,8 @@
       "contact_sales": "Raf Van Os",
       "sales_email": "info@duracoat.be",
       "phone": "+32 3 870 40 20",
+      "product_type": "Surface treatment",
+      "product_description": "Surface treatment - Coating",
       "favorite": false
     },
     {
@@ -268,6 +302,8 @@
       "contact_sales": "Tom Tutenel",
       "sales_email": "tom.tutenel@emmetalworks.be",
       "phone": "+32 472 95 26 34",
+      "product_type": "Metal processing",
+      "product_description": "Metal processing - 2D / 3D laser & bending",
       "favorite": false
     },
     {
@@ -283,6 +319,8 @@
       "contact_sales": "Birgit Bauwens",
       "sales_email": "bbauwens@elcee.be",
       "phone": "+32 14 44 37 82",
+      "product_type": "Fasteners",
+      "product_description": "Fasteners - Steel",
       "favorite": false
     },
     {
@@ -298,6 +336,8 @@
       "contact_sales": "nan",
       "sales_email": "nan",
       "phone": "nan",
+      "product_type": "Fasteners",
+      "product_description": "Fasteners - Plastic",
       "favorite": false
     },
     {
@@ -313,6 +353,8 @@
       "contact_sales": "nan",
       "sales_email": "servicebe@fabory.com",
       "phone": "+32 3 545 90 80",
+      "product_type": "Fasteners",
+      "product_description": "Fasteners - Steel",
       "favorite": false
     },
     {
@@ -328,6 +370,8 @@
       "contact_sales": "Philippe Deborre",
       "sales_email": "sales@haesevoets.com",
       "phone": "+32 13 55 24 53",
+      "product_type": "Metal processing",
+      "product_description": "Metal processing - Bending Tubes & pipes",
       "favorite": false
     },
     {
@@ -343,6 +387,8 @@
       "contact_sales": "Marcel Seijkens",
       "sales_email": "marcel.seijkens@heli.be",
       "phone": "+32 471 73 45 15",
+      "product_type": "Transport",
+      "product_description": "Transport - other",
       "favorite": false
     },
     {
@@ -358,6 +404,8 @@
       "contact_sales": "Manuela Weisser",
       "sales_email": "manuela.weisser@hess.eu",
       "phone": "+49 772 19 201 75",
+      "product_type": "Furniture",
+      "product_description": "Furniture - other",
       "favorite": false
     },
     {
@@ -373,6 +421,8 @@
       "contact_sales": "Bruno Philips",
       "sales_email": "sales@hg-glas.be",
       "phone": "+32 479 25 77 80",
+      "product_type": "Glass",
+      "product_description": "Glass - Panels & other",
       "favorite": false
     },
     {
@@ -388,6 +438,8 @@
       "contact_sales": "nan",
       "sales_email": "nan",
       "phone": "+32 3 605 18 28",
+      "product_type": "Steeldeck",
+      "product_description": "Steeldeck",
       "favorite": false
     },
     {
@@ -403,6 +455,8 @@
       "contact_sales": "Braam Delrue",
       "sales_email": "braam.delarue@holvoet.be",
       "phone": "+32 56 36 28 32",
+      "product_type": "Metal processing",
+      "product_description": "Metal processing - Bending Sheetmetal",
       "favorite": false
     },
     {
@@ -418,6 +472,8 @@
       "contact_sales": "Els",
       "sales_email": "nan",
       "phone": "nan",
+      "product_type": "Wood",
+      "product_description": "Wood - planks & beams",
       "favorite": false
     },
     {
@@ -433,6 +489,8 @@
       "contact_sales": "Aad Nagelkerken",
       "sales_email": "planning@hwttransport.be",
       "phone": "+31 6 53 27 43 66",
+      "product_type": "Transport",
+      "product_description": "Transport - Material",
       "favorite": false
     },
     {
@@ -448,6 +506,8 @@
       "contact_sales": "Vincent Bogaert",
       "sales_email": "v.bogaert@imatex.be",
       "phone": "+32 3 658 39 44",
+      "product_type": "Plastic processing",
+      "product_description": "Plastic processing - CNC turning & milling",
       "favorite": false
     },
     {
@@ -463,6 +523,8 @@
       "contact_sales": "nan",
       "sales_email": "info@innoplast.be",
       "phone": "+32 52 47 76 24",
+      "product_type": "Plastic processing",
+      "product_description": "Plastic processing - CNC turning & milling",
       "favorite": false
     },
     {
@@ -478,6 +540,8 @@
       "contact_sales": "Nathan Demeyer",
       "sales_email": "Nathan.Demeyer@joriside.be",
       "phone": "+32 473 91 13 52",
+      "product_type": "Steeldeck",
+      "product_description": "Steeldeck",
       "favorite": false
     },
     {
@@ -493,6 +557,8 @@
       "contact_sales": "Theo Theunissen",
       "sales_email": "ththeunissen@kersteneurope.com",
       "phone": "+31 478  53 71 11",
+      "product_type": "Metal processing",
+      "product_description": "Metal processing - Bending Tubes & pipes",
       "favorite": false
     },
     {
@@ -508,6 +574,8 @@
       "contact_sales": "Marie-Reine Raepsaet",
       "sales_email": "marie-reine.raepsaet@kloeckner.com",
       "phone": "+32 56 26 80 50",
+      "product_type": "Steel",
+      "product_description": "Steel - Blank steel",
       "favorite": false
     },
     {
@@ -523,6 +591,8 @@
       "contact_sales": "Jef Van Geel",
       "sales_email": "Kolo@kolo.be",
       "phone": "+32 3 666 14 15",
+      "product_type": "Surface treatment",
+      "product_description": "Surface treatment - Coating",
       "favorite": false
     },
     {
@@ -538,6 +608,8 @@
       "contact_sales": "Jamie Schots",
       "sales_email": "Jamie.Schots@lastek.be",
       "phone": "+32 485 63 10 95",
+      "product_type": "Welding",
+      "product_description": "Welding - Welding machines",
       "favorite": false
     },
     {
@@ -553,6 +625,8 @@
       "contact_sales": "nan",
       "sales_email": "nan",
       "phone": "+32 14 25 77 80",
+      "product_type": "Glass",
+      "product_description": "Glass - Panels & other",
       "favorite": false
     },
     {
@@ -568,6 +642,8 @@
       "contact_sales": "Tijs Ryngaert",
       "sales_email": "Tijs@ledlab.be",
       "phone": "+32 475 90 03 46",
+      "product_type": "Lighting",
+      "product_description": "Lighting - Led lines",
       "favorite": false
     },
     {
@@ -583,6 +659,8 @@
       "contact_sales": "Kris Peeters",
       "sales_email": "nan",
       "phone": "+32 3 491 00 00",
+      "product_type": "Plastic processing",
+      "product_description": "Plastic processing - CNC turning & milling",
       "favorite": false
     },
     {
@@ -598,6 +676,8 @@
       "contact_sales": "nan",
       "sales_email": "nan",
       "phone": "+32 11 55 44 99",
+      "product_type": "Steel",
+      "product_description": "Steel - other",
       "favorite": false
     },
     {
@@ -613,6 +693,8 @@
       "contact_sales": "Bianca De Witte",
       "sales_email": "Bianca@locinox.be",
       "phone": "+32 56 28 04 80",
+      "product_type": "Door accessories",
+      "product_description": "Door accessories - Rollers & other",
       "favorite": false
     },
     {
@@ -628,6 +710,8 @@
       "contact_sales": "Kevin",
       "sales_email": "kevin@mapeco.be",
       "phone": "+32 476 96 45 53",
+      "product_type": "Fasteners",
+      "product_description": "Fasteners - All",
       "favorite": false
     },
     {
@@ -643,6 +727,8 @@
       "contact_sales": "Farid aarab",
       "sales_email": "Farid@martenshout.be",
       "phone": "+32 3 658 14 84",
+      "product_type": "Wood",
+      "product_description": "Wood - planks & beams",
       "favorite": false
     },
     {
@@ -658,6 +744,8 @@
       "contact_sales": "Boy Simons",
       "sales_email": "laser@metalservices.nl",
       "phone": "+31 1 13 57 38 78",
+      "product_type": "Metal processing",
+      "product_description": "Metal processing - Bending Sheetmetal",
       "favorite": false
     },
     {
@@ -673,6 +761,8 @@
       "contact_sales": "Peter Vandevelde",
       "sales_email": "peter@metalas.be",
       "phone": "+32 3 235 77 17",
+      "product_type": "Welding",
+      "product_description": "Welding - Welding machines",
       "favorite": false
     },
     {
@@ -688,6 +778,8 @@
       "contact_sales": "nan",
       "sales_email": "Sales@mireille.be",
       "phone": "+32 11 57 11 22",
+      "product_type": "Clothing",
+      "product_description": "Clothing - Work-clothes",
       "favorite": false
     },
     {
@@ -703,6 +795,8 @@
       "contact_sales": "Kathleen Bruyninx",
       "sales_email": "kathleen.bruyninx@narviflex.be",
       "phone": "+32 14 59 11 31",
+      "product_type": "Plastic processing",
+      "product_description": "Plastic processing - CNC turning & milling & Waterjet",
       "favorite": false
     },
     {
@@ -718,6 +812,8 @@
       "contact_sales": "Isabelle Paquay",
       "sales_email": "paquay@o-metall.com",
       "phone": "+35 2 99 3 23 21",
+      "product_type": "Steeldeck",
+      "product_description": "Steeldeck",
       "favorite": false
     },
     {
@@ -733,6 +829,8 @@
       "contact_sales": "Kris Van Looveren",
       "sales_email": "info@overbroekseverfcentrale.be",
       "phone": "+32 3 663 22 00",
+      "product_type": "Surface treatment",
+      "product_description": "Surface treatment - other",
       "favorite": false
     },
     {
@@ -748,6 +846,8 @@
       "contact_sales": "nan",
       "sales_email": "nan",
       "phone": "+32 51 51 92 84",
+      "product_type": "Surface treatment",
+      "product_description": "Surface treatment - other",
       "favorite": false
     },
     {
@@ -763,6 +863,8 @@
       "contact_sales": "Dave Van Vliet",
       "sales_email": "d.vanvliet@perfox.com",
       "phone": "+31 598 66 66 40",
+      "product_type": "Steel",
+      "product_description": "Steel - Semi-finished products",
       "favorite": false
     },
     {
@@ -778,6 +880,8 @@
       "contact_sales": "Jacqueline Dalemans",
       "sales_email": "j.dalemans@pgv-be.com",
       "phone": "+32 11 42 17 75",
+      "product_type": "Glass",
+      "product_description": "Glass - Mounting material",
       "favorite": false
     },
     {
@@ -793,6 +897,8 @@
       "contact_sales": "Elien Pasteels",
       "sales_email": "elien.pasteels@piscaer.be",
       "phone": "+32 15 29 45 61",
+      "product_type": "Lighting",
+      "product_description": "Lighting - Led fixtures",
       "favorite": false
     },
     {
@@ -808,6 +914,8 @@
       "contact_sales": "nan",
       "sales_email": "nan",
       "phone": "+32 89 81 07 77",
+      "product_type": "Plastic processing",
+      "product_description": "Plastic processing - CNC turning & milling",
       "favorite": false
     },
     {
@@ -823,6 +931,8 @@
       "contact_sales": "Nathalie Peeters",
       "sales_email": "nathalie.peeters@polytec-group.com",
       "phone": "+32 3 680 18 24",
+      "product_type": "Metal processing",
+      "product_description": "Metal processing - Bending Tubes & pipes",
       "favorite": false
     },
     {
@@ -838,6 +948,8 @@
       "contact_sales": "Michel Friso",
       "sales_email": "michel@pyrasied.nl",
       "phone": "+31 5 87 67 61 01",
+      "product_type": "Plastic processing",
+      "product_description": "Plastic processing - other",
       "favorite": false
     },
     {
@@ -853,6 +965,8 @@
       "contact_sales": "Jo Dubois",
       "sales_email": "nan",
       "phone": "+32 3 827 38 17",
+      "product_type": "Steel",
+      "product_description": "Steel - Semi-finished products",
       "favorite": false
     },
     {
@@ -868,6 +982,8 @@
       "contact_sales": "Alain Kockelkoren",
       "sales_email": "alain@rodeca.be",
       "phone": "nan",
+      "product_type": "Polycarbonate",
+      "product_description": "Polycarbonate - straight",
       "favorite": false
     },
     {
@@ -883,6 +999,8 @@
       "contact_sales": "Nancy Vermote",
       "sales_email": "nancy.Vermote@saey.com",
       "phone": "+32 56 36 14 65",
+      "product_type": "Metal processing",
+      "product_description": "Metal processing - Tube laser",
       "favorite": false
     },
     {
@@ -898,6 +1016,8 @@
       "contact_sales": "nan",
       "sales_email": "nan",
       "phone": "nan",
+      "product_type": "Polycarbonate",
+      "product_description": "Polycarbonate - straight",
       "favorite": false
     },
     {
@@ -913,6 +1033,8 @@
       "contact_sales": "Verantwoordelijke verkoop",
       "sales_email": "purchase@solver-solutions.com",
       "phone": "+32 2 808 77 65",
+      "product_type": "Glass",
+      "product_description": "Glass - Panels & other",
       "favorite": false
     },
     {
@@ -928,6 +1050,8 @@
       "contact_sales": "Andy De ruyter",
       "sales_email": "Aderuyter@spcm.be",
       "phone": "+32 3 340 26 58",
+      "product_type": "Metal processing",
+      "product_description": "Metal processing - Bending Sheetmetal",
       "favorite": false
     },
     {
@@ -943,6 +1067,8 @@
       "contact_sales": "Luc Van De Walle",
       "sales_email": "Luc.vandewalle@sprangers.be",
       "phone": "+32 476 85 95 94",
+      "product_type": "Alu",
+      "product_description": "Alu - Semi-finished products",
       "favorite": false
     },
     {
@@ -958,6 +1084,8 @@
       "contact_sales": "Sam van der donckt",
       "sales_email": "sam.vanderdonckt@sprimoglass.com",
       "phone": "+32 499 14 64 41",
+      "product_type": "Glass",
+      "product_description": "Glass - Panels & other",
       "favorite": false
     },
     {
@@ -973,6 +1101,8 @@
       "contact_sales": "Johan Vandeweyer",
       "sales_email": "Johan.Vandeweyer@sprimoinstall.com",
       "phone": "+32 478 50 43 34",
+      "product_type": "Glass",
+      "product_description": "Glass - other",
       "favorite": false
     },
     {
@@ -988,6 +1118,8 @@
       "contact_sales": "nan",
       "sales_email": "nan",
       "phone": "nan",
+      "product_type": "Engineering",
+      "product_description": "Engineering - stability study",
       "favorite": false
     },
     {
@@ -1003,6 +1135,8 @@
       "contact_sales": "Joris De Bock",
       "sales_email": "joris.debock@starconstruct.be",
       "phone": "+32 478 83 18 09",
+      "product_type": "Glass",
+      "product_description": "Glass - Panels & other",
       "favorite": false
     },
     {
@@ -1018,6 +1152,8 @@
       "contact_sales": "Gabriella Cattaneo",
       "sales_email": "gabriella.cattaneo@tecnospa.com",
       "phone": "+39 03 17 53 81",
+      "product_type": "Furniture",
+      "product_description": "Furniture - Seating",
       "favorite": false
     },
     {
@@ -1033,6 +1169,8 @@
       "contact_sales": "Katrien Merckx",
       "sales_email": "Katrien.Merckx@testas.be",
       "phone": "+32 3 355 20 60",
+      "product_type": "Metal processing",
+      "product_description": "Metal processing - Bending Sheetmetal",
       "favorite": false
     },
     {
@@ -1048,6 +1186,8 @@
       "contact_sales": "Christopphe Cobbaut",
       "sales_email": "christophe.cobbaut@thyssenkrupp-materials.com",
       "phone": "+32 9 349 36 35",
+      "product_type": "Steel",
+      "product_description": "Steel - Inox",
       "favorite": false
     },
     {
@@ -1063,6 +1203,8 @@
       "contact_sales": "Jan Geysen",
       "sales_email": "Jan@tilborghshout.be",
       "phone": "+32 3 620 16 03",
+      "product_type": "Wood",
+      "product_description": "Wood - planks & beams",
       "favorite": false
     },
     {
@@ -1078,6 +1220,8 @@
       "contact_sales": "Paul Uydens",
       "sales_email": "info@uydens-paul.be",
       "phone": "+32 3 313 63 64",
+      "product_type": "Metal processing",
+      "product_description": "Metal processing - Turning & Milling",
       "favorite": false
     },
     {
@@ -1093,6 +1237,8 @@
       "contact_sales": "nan",
       "sales_email": "nan",
       "phone": "+32 53 80 87 77",
+      "product_type": "Glass",
+      "product_description": "Glass - Mounting material",
       "favorite": false
     },
     {
@@ -1108,6 +1254,8 @@
       "contact_sales": "Claude Van Maele",
       "sales_email": "claude@vamatec.be",
       "phone": "+32 496 26 05 35",
+      "product_type": "Tools",
+      "product_description": "Tools - Drilling",
       "favorite": false
     },
     {
@@ -1123,6 +1271,8 @@
       "contact_sales": "Jocelyne Vangeneugden",
       "sales_email": "Beringen@vangilscoating.be",
       "phone": "+32 11 45 37 90",
+      "product_type": "Surface treatment",
+      "product_description": "Surface treatment - Galvanisation & coating",
       "favorite": false
     },
     {
@@ -1138,6 +1288,8 @@
       "contact_sales": "Bart Van Gils",
       "sales_email": "wuustwezel@vangilscoating.be",
       "phone": "+32 3 669 74 03",
+      "product_type": "Surface treatment",
+      "product_description": "Surface treatment - Metallisation & coating",
       "favorite": false
     },
     {
@@ -1153,6 +1305,8 @@
       "contact_sales": "Johan",
       "sales_email": "Johan.VandeMaele@vanleeuwen.be",
       "phone": "+32 2 255 41 11",
+      "product_type": "Steel",
+      "product_description": "Steel - Blank steel",
       "favorite": false
     },
     {
@@ -1168,6 +1322,8 @@
       "contact_sales": "Tony Hofkens",
       "sales_email": "verkoop@vanwauwe.com",
       "phone": "+32 3 326 75 70",
+      "product_type": "Polycarbonate",
+      "product_description": "Polycarbonate - straight",
       "favorite": false
     },
     {
@@ -1183,6 +1339,8 @@
       "contact_sales": "Marco Schuurmans",
       "sales_email": "verkoop@verpas.nl",
       "phone": "+31 493 32 20 68",
+      "product_type": "End caps",
+      "product_description": "End caps - Caps, buses, other",
       "favorite": false
     },
     {
@@ -1198,6 +1356,8 @@
       "contact_sales": "Hannelore Foré",
       "sales_email": "nan",
       "phone": "+32 477 93 45 45",
+      "product_type": "Fasteners",
+      "product_description": "Fasteners - Plastic",
       "favorite": false
     },
     {
@@ -1213,6 +1373,8 @@
       "contact_sales": "Jo Ceulemans",
       "sales_email": "Jo.ceulemans@vink.Be",
       "phone": "+32 15 25 97 04",
+      "product_type": "Polycarbonate",
+      "product_description": "Polycarbonate - All",
       "favorite": false
     },
     {
@@ -1228,6 +1390,8 @@
       "contact_sales": "Didier Bogaerts",
       "sales_email": "aanvragenlaser@vytech.be",
       "phone": "+32 3 488 56 01",
+      "product_type": "Metal processing",
+      "product_description": "Metal processing - Bending Sheetmetal",
       "favorite": false
     },
     {
@@ -1243,6 +1407,8 @@
       "contact_sales": "Philip Willems",
       "sales_email": "Philip@willems-engineering.be",
       "phone": "+32 468 15 18 41",
+      "product_type": "Engineering",
+      "product_description": "Engineering - stability study",
       "favorite": false
     },
     {
@@ -1258,6 +1424,8 @@
       "contact_sales": "Frank Meyers",
       "sales_email": "Frank.Meyers@wecoat.net",
       "phone": "+32 478 80 88 40",
+      "product_type": "Surface treatment",
+      "product_description": "Surface treatment - Galvanisation",
       "favorite": false
     },
     {
@@ -1273,6 +1441,8 @@
       "contact_sales": "Dirk Antonis",
       "sales_email": "dirk.antonis@welda.be",
       "phone": "+32 497 47 74 14",
+      "product_type": "Welding",
+      "product_description": "Welding - Tables & other",
       "favorite": false
     },
     {
@@ -1288,6 +1458,8 @@
       "contact_sales": "Geert Vercammen",
       "sales_email": "geert.vercammen@weld-toorts.be",
       "phone": "+32 3 491 90 90",
+      "product_type": "Welding",
+      "product_description": "Welding - Gas bottles",
       "favorite": false
     },
     {
@@ -1303,6 +1475,8 @@
       "contact_sales": "Annemie Meert",
       "sales_email": "info@wimverhuur.be",
       "phone": "+32  15 63 63 63",
+      "product_type": "Transport",
+      "product_description": "Transport - other",
       "favorite": false
     },
     {
@@ -1318,6 +1492,8 @@
       "contact_sales": "Simon Driessen",
       "sales_email": "SimonD@productora.eu",
       "phone": "+32 3 485 57 11",
+      "product_type": "Metal processing",
+      "product_description": "Metal processing - 2D / 3D laser & bending",
       "favorite": false
     },
     {
@@ -1333,6 +1509,8 @@
       "contact_sales": "Shauny Taels",
       "sales_email": "Shauny.Taels@zinq.be",
       "phone": "+32 476 67 99 90",
+      "product_type": "Surface treatment",
+      "product_description": "Surface treatment - Galvanisation",
       "favorite": false
     },
     {
@@ -1348,6 +1526,8 @@
       "contact_sales": "Kevin Rutten",
       "sales_email": "kevin.rutten@epsiloncities.com",
       "phone": "+32 89 71 07 70",
+      "product_type": "Other",
+      "product_description": "Other",
       "favorite": false
     },
     {
@@ -1363,6 +1543,8 @@
       "contact_sales": "Tom van Besauw",
       "sales_email": "tom@stubbemetaalbewerking.be",
       "phone": "+32 14 88 34 75",
+      "product_type": "Metal processing",
+      "product_description": "Metal processing - Turning & Milling",
       "favorite": false
     },
     {
@@ -1378,6 +1560,8 @@
       "contact_sales": "nan",
       "sales_email": "nan",
       "phone": "nan",
+      "product_type": "Metal processing",
+      "product_description": "Metal processing - 2D / 3D laser & bending",
       "favorite": false
     },
     {
@@ -1393,6 +1577,8 @@
       "contact_sales": "Alexandra Ludewig",
       "sales_email": "info@vaneycken.be",
       "phone": "+32 (0)16 499 700",
+      "product_type": "Metal processing",
+      "product_description": "Metal processing - 2D / 3D laser & bending",
       "favorite": false
     },
     {
@@ -1408,6 +1594,8 @@
       "contact_sales": "Marc Thibos",
       "sales_email": "Marc.Thibos@rexel.be",
       "phone": "nan",
+      "product_type": "Lighting",
+      "product_description": "Lighting - other",
       "favorite": false
     },
     {
@@ -1423,6 +1611,8 @@
       "contact_sales": "nan",
       "sales_email": "planning@jlhertsens.be",
       "phone": "nan",
+      "product_type": "Transport",
+      "product_description": "Transport - Material",
       "favorite": false
     },
     {
@@ -1438,6 +1628,8 @@
       "contact_sales": "Mike Schuurmans",
       "sales_email": "mike.schuurmans@cloudpoint.be",
       "phone": "0478 60 23 58",
+      "product_type": "IT",
+      "product_description": "IT",
       "favorite": false
     },
     {
@@ -1453,6 +1645,8 @@
       "contact_sales": "Georges Rigo",
       "sales_email": "georges.rigo@mcb.be",
       "phone": "04 239 66 15",
+      "product_type": "Steel",
+      "product_description": "Steel - Blank steel",
       "favorite": false
     },
     {
@@ -1468,6 +1662,8 @@
       "contact_sales": "Chris Delaet",
       "sales_email": "info@acmetalec.be",
       "phone": "nan",
+      "product_type": "Metal processing",
+      "product_description": "Metal processing - Turning & Milling",
       "favorite": false
     },
     {
@@ -1483,6 +1679,8 @@
       "contact_sales": "Michael Oosterlynck",
       "sales_email": "michael.oosterlynck@amrservice.be",
       "phone": "03 320 99 10",
+      "product_type": "Metal processing",
+      "product_description": "Metal processing - Turning & Milling",
       "favorite": false
     },
     {
@@ -1498,6 +1696,8 @@
       "contact_sales": "nan",
       "sales_email": "nan",
       "phone": "nan",
+      "product_type": "nan",
+      "product_description": "nan",
       "favorite": false
     },
     {
@@ -1513,6 +1713,8 @@
       "contact_sales": "Benoit Logé",
       "sales_email": "benoit.loge@softcell.be",
       "phone": "+32 475 73 99 22",
+      "product_type": null,
+      "product_description": "Computer winkel",
       "favorite": false
     }
   ],
