@@ -57,6 +57,35 @@ def _ensure_integer_quantity(value: object) -> object:
     return value
 
 
+def _format_currency(value: str) -> str:
+    """Format input as currency with max 2 decimal places.
+    
+    Replaces commas with dots, limits to 2 decimals.
+    """
+    if not value:
+        return value
+    
+    # Replace comma with dot for European input
+    text = value.replace(",", ".")
+    
+    # If it doesn't contain a dot, return as-is (integer part)
+    if "." not in text:
+        return text
+    
+    # Split on dot
+    parts = text.split(".")
+    if len(parts) != 2:
+        return text
+    
+    # Limit decimals to 2
+    integer_part = parts[0]
+    decimal_part = parts[1][:2]
+    
+    if decimal_part:
+        return f"{integer_part}.{decimal_part}"
+    return integer_part
+
+
 @dataclass
 class _ManualRowWidgets:
     frame: tk.Frame
@@ -402,6 +431,26 @@ class ManualOrderTab(tk.Frame):
                 "weight": 1.0,
                 "total_weight": True,
             },
+            {
+                "key": "Eenheidsprijs",
+                "label": "Eenheidsprijs (€)",
+                "width": 14,
+                "justify": "right",
+                "numeric": True,
+                "stretch": False,
+                "wrap": False,
+                "weight": 1.3,
+            },
+            {
+                "key": "Totaalprijs",
+                "label": "Totaalprijs (€)",
+                "width": 14,
+                "justify": "right",
+                "numeric": True,
+                "stretch": False,
+                "wrap": False,
+                "weight": 1.3,
+            },
         ],
         "Spare parts": [
             {
@@ -460,14 +509,24 @@ class ManualOrderTab(tk.Frame):
                 "weight": 0.8,
             },
             {
-                "key": "PrijsPerStuk",
-                "label": "Prijs/st",
-                "width": 10,
+                "key": "Eenheidsprijs",
+                "label": "Eenheidsprijs (€)",
+                "width": 14,
                 "justify": "right",
                 "numeric": True,
                 "stretch": False,
                 "wrap": False,
-                "weight": 1.0,
+                "weight": 1.3,
+            },
+            {
+                "key": "Totaalprijs",
+                "label": "Totaalprijs (€)",
+                "width": 14,
+                "justify": "right",
+                "numeric": True,
+                "stretch": False,
+                "wrap": False,
+                "weight": 1.3,
             },
         ],
         "Profielen": [
@@ -500,7 +559,7 @@ class ManualOrderTab(tk.Frame):
             },
             {
                 "key": "ProfielLengte",
-                "label": "Profiel lengte",
+                "label": "Profiel lengte (mm)",
                 "width": 14,
                 "justify": "right",
                 "numeric": True,
@@ -517,6 +576,26 @@ class ManualOrderTab(tk.Frame):
                 "stretch": False,
                 "wrap": False,
                 "weight": 1.0,
+            },
+            {
+                "key": "Eenheidsprijs",
+                "label": "Eenheidsprijs (€)",
+                "width": 14,
+                "justify": "right",
+                "numeric": True,
+                "stretch": False,
+                "wrap": False,
+                "weight": 1.3,
+            },
+            {
+                "key": "Totaalprijs",
+                "label": "Totaalprijs (€)",
+                "width": 14,
+                "justify": "right",
+                "numeric": True,
+                "stretch": False,
+                "wrap": False,
+                "weight": 1.3,
             },
         ],
     }
@@ -1170,7 +1249,19 @@ class ManualOrderTab(tk.Frame):
                 separator.grid(row=row_idx, column=sep_col, sticky="ns", padx=0)
                 self.rows_frame.columnconfigure(sep_col, weight=0, minsize=2)
             
-            var.trace_add("write", lambda *_args: self._update_totals())
+            # Add tracing for currency formatting on price fields
+            is_price_field = column["key"] in {"Eenheidsprijs", "Totaalprijs"}
+            
+            def _on_var_change(*_args, key=column["key"], is_price=is_price_field, v=var):
+                # Apply currency formatting for price fields
+                if is_price:
+                    current = v.get()
+                    formatted = _format_currency(current)
+                    if formatted != current:
+                        v.set(formatted)
+                self._update_totals()
+            
+            var.trace_add("write", _on_var_change)
             widgets.vars[column["key"]] = var
             widgets.entries[column["key"]] = entry
         
@@ -1415,9 +1506,21 @@ class ManualOrderTab(tk.Frame):
             except Exception:
                 base_width = 12
         
-        # display_chars is ONLY based on the width setting
-        # This allows columns to be resized independently of header text length
+        # display_chars is based on the width setting, but we also measure the header
         display_chars = base_width
+        
+        # Measure the header text width using the bold font
+        label_text = _to_str(column.get("label", "")).strip()
+        if label_text and hasattr(self, "_header_font"):
+            try:
+                header_width_px = self._header_font.measure(label_text)
+                entry_char_px = getattr(self, "_entry_char_pixels", 1)
+                header_chars = max(1, int(round(header_width_px / entry_char_px)))
+                # Ensure display_chars is at least as wide as the header
+                display_chars = max(display_chars, header_chars)
+            except Exception:
+                pass
+        
         column["_display_chars"] = display_chars
         
         entry_char_px = getattr(self, "_entry_char_pixels", 1)
