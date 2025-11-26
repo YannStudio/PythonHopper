@@ -205,13 +205,18 @@ def test_combine_from_source_includes_related_bom_pdf(tmp_path):
     combined_path = out_dir / "prod1_2023-01-01_combined.pdf"
     reader = PdfReader(str(combined_path))
 
+    # When combining per production, the related BOM PDF should be copied
+    # separately to the output directory, not included in the combined PDF
     assert result.count == 1
-    assert len(reader.pages) == 3
-    assert float(reader.pages[0].mediabox.width) == 150
-    assert {float(reader.pages[1].mediabox.width), float(reader.pages[2].mediabox.width)} == {
+    assert len(reader.pages) == 2
+    assert {float(reader.pages[0].mediabox.width), float(reader.pages[1].mediabox.width)} == {
         80,
         90,
     }
+    
+    # The related PDF should be copied to the output directory
+    related_pdf = out_dir / "Project123.pdf"
+    assert related_pdf.exists()
 
 
 def test_combine_all_pdfs_places_related_first(tmp_path):

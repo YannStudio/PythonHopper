@@ -1,8 +1,8 @@
 {
-  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/01. CAD service/01. CAD - Tubelaser/CS-TL-0000",
-  "dest_folder": "C:/Users/jeroe/Desktop",
-  "project_number": "XX",
-  "project_name": "ALC-Mintjes",
+  "source_folder": "C:\\Cloudstation\\SynologyDrive\\Documenten\\Projects\\2024\\Maatwerk overkappingen\\Diverse\\20240237 - Luifels Lauweplaats\\CAD\\3D Soldiworks Files\\V2 - Detaillering\\M4 - Luifel",
+  "dest_folder": "C:\\Cloudstation\\SynologyDrive\\Documenten\\Projects\\2024\\Maatwerk overkappingen\\Diverse\\20240237 - Luifels Lauweplaats\\CAD\\Bestellingen\\M4 - Luifel",
+  "project_number": "",
+  "project_name": "",
   "file_extensions": [
     {
       "key": "pdf",
@@ -19,7 +19,7 @@
         ".step",
         ".stp"
       ],
-      "enabled": true
+      "enabled": false
     },
     {
       "key": "dxf",
@@ -39,7 +39,7 @@
     }
   ],
   "zip_per_production": true,
-  "combine_pdf_per_production": false,
+  "combine_pdf_per_production": true,
   "copy_finish_exports": true,
   "zip_finish_exports": true,
   "export_processed_bom": true,

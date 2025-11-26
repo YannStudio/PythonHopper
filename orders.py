@@ -2713,17 +2713,20 @@ def combine_pdfs_from_source(
     count = 0
 
     if combine_per_production:
+        # When combining per production, copy related PDFs to output dir separately
+        # instead of including them in each combined PDF
+        for path in related_bom_pdfs:
+            try:
+                shutil.copy2(path, out_dir)
+            except Exception:
+                pass
+        
         for prod, files in prod_to_files.items():
             candidates = list(files)
-            if not candidates and not related_bom_pdfs:
+            if not candidates:
                 continue
             merger = PdfMerger()
             appended: set[str] = set()
-            for path in related_bom_pdfs:
-                if path in appended:
-                    continue
-                merger.append(path)
-                appended.add(path)
             for path in sorted(candidates, key=lambda x: os.path.basename(x).lower()):
                 if path in appended:
                     continue
