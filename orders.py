@@ -66,6 +66,8 @@ from opticutter import (
     prepare_opticutter_export,
 )
 
+import step_previews
+
 MIAMI_PINK = "#FF77FF"
 DEFAULT_FOOTER_NOTE = (
     "Gelieve afwijkingen schriftelijk te bevestigen. "
