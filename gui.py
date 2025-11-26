@@ -1067,8 +1067,8 @@ def start_gui():
             self.product_desc_var = tk.StringVar()
             self.product_desc_combo = ttk.Combobox(filter_frame, textvariable=self.product_desc_var, width=30, state="readonly")
             self.product_desc_combo.pack(side="left", padx=(0, 12))
-            # When description changes, just refresh the results
-            self.product_desc_var.trace_add("write", lambda *_: self.refresh())
+            # When description changes, only refresh the table (not filter options)
+            self.product_desc_var.trace_add("write", lambda *_: self._refresh_table_only())
             
             # Clear filters button
             tk.Button(filter_frame, text="Wis filters", command=self._clear_filters).pack(side="left")
@@ -1116,14 +1116,18 @@ def start_gui():
         def _on_product_type_changed(self):
             """Called when product type selection changes.
             Updates the description dropdown to show only descriptions for this type."""
+            # Get the newly selected product type
+            product_type = self.product_type_var.get()
+            
             # Clear the description filter when product type changes
             self.product_desc_var.set("")
-            # Update the description dropdown options
-            product_type = self.product_type_var.get()
+            
+            # Update the description dropdown options for this product type
             product_descs = self.db.get_product_descriptions_for_type(product_type)
             self.product_desc_combo['values'] = [""] + product_descs
-            # Refresh the results
-            self.refresh()
+            
+            # Refresh only the table results (not the dropdown options)
+            self._refresh_table_only()
 
         def _update_filter_options(self):
             """Update filter dropdown options based on current data."""
@@ -1150,8 +1154,8 @@ def start_gui():
             else:
                 self.product_desc_var.set("")
 
-        def refresh(self):
-            self._update_filter_options()
+        def _refresh_table_only(self):
+            """Refresh only the table results without updating dropdown options."""
             for r in self.tree.get_children():
                 self.tree.delete(r)
             q = self.search_var.get()
@@ -1174,6 +1178,10 @@ def start_gui():
                 self.tree.insert("", "end", iid=s.supplier, values=vals, tags=(tag,))
             self.tree.tag_configure("odd", background=TREE_ODD_BG)
             self.tree.tag_configure("even", background=TREE_EVEN_BG)
+
+        def refresh(self):
+            self._update_filter_options()
+            self._refresh_table_only()
 
         def _sel_name(self):
             sel = self.tree.selection()
