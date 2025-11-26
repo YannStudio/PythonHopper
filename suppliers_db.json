@@ -1,6 +1,23 @@
 {
   "suppliers": [
     {
+      "supplier": "ACME",
+      "description": "Snijwerk",
+      "supplier_id": null,
+      "adres_1": "Teststraat 1 bus 2",
+      "adres_2": "BE-2000 Antwerpen",
+      "postcode": null,
+      "gemeente": null,
+      "land": "BE",
+      "btw": "BE123",
+      "contact_sales": null,
+      "sales_email": "x@y.z",
+      "phone": "+32 123",
+      "product_type": null,
+      "product_description": "Snijwerk",
+      "favorite": true
+    },
+    {
       "supplier": "AB-Matic (Hi-Motion)",
       "description": "Door accessories - Locks, hinges & other",
       "supplier_id": "SUPP_001",
@@ -1699,29 +1716,10 @@
       "product_type": "nan",
       "product_description": "nan",
       "favorite": false
-    },
-    {
-      "supplier": "SoftCell",
-      "description": "Computer winkel",
-      "supplier_id": null,
-      "adres_1": "Rue Auguste Latour 105",
-      "adres_2": "Braine-le-Château",
-      "postcode": "B-1440",
-      "gemeente": "Braine-le-Château",
-      "land": "Belgium",
-      "btw": "BE-0676.659.924",
-      "contact_sales": "Benoit Logé",
-      "sales_email": "benoit.loge@softcell.be",
-      "phone": "+32 475 73 99 22",
-      "product_type": null,
-      "product_description": "Computer winkel",
-      "favorite": false
     }
   ],
   "defaults_by_production": {
-    "Tube Laser": "Productora",
-    "Tube Laser::Opticutter": "TESTAS",
-    "Lasercutting": "Productora"
+    "Laser": "ACME"
   },
   "defaults_by_finish": {}
 }

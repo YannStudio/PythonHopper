@@ -60,26 +60,32 @@ class SuppliersDB:
     def find(self, query: str, product_type_filter: Optional[str] = None, product_desc_filter: Optional[str] = None) -> List[Supplier]:
         """
         Find suppliers by query and optional product filters.
+        Uses AND logic: all filters must match.
         
         Args:
             query: Text to search in supplier name and other fields
             product_type_filter: Optional product type filter (exact match)
-            product_desc_filter: Optional product description filter (exact match)
+            product_desc_filter: Optional product description filter (exact match, requires product_type_filter to be set)
         """
         q = (query or "").strip().lower()
         L = []
         
+        # Normalize filter values
+        pt_filter = (product_type_filter or "").strip().lower()
+        pd_filter = (product_desc_filter or "").strip().lower()
+        
         for s in self.suppliers:
             # Apply product type filter if provided (exact match)
-            if product_type_filter and product_type_filter.strip():
-                supplier_product_type = (s.product_type or "").strip()
-                if supplier_product_type.lower() != product_type_filter.strip().lower():
+            if pt_filter:
+                supplier_product_type = (s.product_type or "").strip().lower()
+                if supplier_product_type != pt_filter:
                     continue
             
             # Apply product description filter if provided (exact match)
-            if product_desc_filter and product_desc_filter.strip():
-                supplier_product_desc = (s.product_description or "").strip()
-                if supplier_product_desc.lower() != product_desc_filter.strip().lower():
+            # AND logic: this is only checked if the product type already matched
+            if pd_filter:
+                supplier_product_desc = (s.product_description or "").strip().lower()
+                if supplier_product_desc != pd_filter:
                     continue
             
             # If no query, include this supplier (all filters passed)
