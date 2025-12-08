@@ -699,6 +699,7 @@ class BOMCustomTab(ttk.Frame):
         on_custom_bom_ready: Optional[Callable[[Path, int], None]] = None,
         on_push_to_main: Optional[Callable[[pd.DataFrame], None]] = None,
         event_target: Optional[tk.Misc] = None,
+        on_dirty_change: Optional[Callable[[bool], None]] = None,
         max_undo: int = 50,
     ) -> None:
         _ensure_pandastable_available()
@@ -709,6 +710,7 @@ class BOMCustomTab(ttk.Frame):
         self.on_custom_bom_ready = on_custom_bom_ready
         self.on_push_to_main = on_push_to_main
         self.event_target = event_target
+        self.on_dirty_change = on_dirty_change
         self.max_undo = max_undo
         self.undo_stack: List[UndoEntry] = []
         self.redo_stack: List[UndoEntry] = []
@@ -719,6 +721,7 @@ class BOMCustomTab(ttk.Frame):
         self._baseline_dataframe: pd.DataFrame = pd.DataFrame()
         self._baseline_qty_reference: pd.Series = pd.Series(dtype=object)
         self._baseline_multiplier: Decimal = Decimal(1)
+        self._dirty: bool = False
 
         self.status_var = tk.StringVar(value="")
         self.qty_multiplier_var = tk.StringVar(value="")
@@ -726,6 +729,7 @@ class BOMCustomTab(ttk.Frame):
         self._build_toolbar()
         self._build_sheet()
         self._update_status("Gereed.")
+        self._update_dirty_state()
 
     # ------------------------------------------------------------------
     # UI-opbouw
@@ -922,6 +926,34 @@ class BOMCustomTab(ttk.Frame):
         self._baseline_qty_reference = self._capture_qty_reference_snapshot()
         self._baseline_multiplier = self._current_qty_multiplier
 
+    def _is_at_baseline(self) -> bool:
+        baseline_df = getattr(self, "_baseline_dataframe", None)
+        baseline_reference = getattr(self, "_baseline_qty_reference", None)
+        baseline_multiplier = getattr(self, "_baseline_multiplier", Decimal(1))
+
+        same_df = isinstance(baseline_df, pd.DataFrame) and self.table_model.df.equals(
+            baseline_df
+        )
+        current_reference = self._capture_qty_reference_snapshot()
+        if isinstance(baseline_reference, pd.Series):
+            same_reference = current_reference.equals(baseline_reference)
+        else:
+            same_reference = False
+        same_multiplier = self._current_qty_multiplier == baseline_multiplier
+
+        return same_df and same_reference and same_multiplier
+
+    def _update_dirty_state(self) -> None:
+        dirty = not self._is_at_baseline()
+        if dirty == self._dirty:
+            return
+        self._dirty = dirty
+        if self.on_dirty_change is not None:
+            try:
+                self.on_dirty_change(dirty)
+            except Exception:
+                pass
+
     def _capture_qty_reference_snapshot(self) -> pd.Series:
         return self._align_qty_reference().copy(deep=True)
 
@@ -977,6 +1009,7 @@ class BOMCustomTab(ttk.Frame):
             self._qty_multiplier_reference = self._make_qty_series(self.table_model.df)
         self._align_qty_reference()
         self._set_current_multiplier(entry.qty_multiplier)
+        self._update_dirty_state()
 
     def _normalize_cell_value(self, value: Any) -> str:
         return "" if pd.isna(value) else str(value).strip()
@@ -1026,6 +1059,7 @@ class BOMCustomTab(ttk.Frame):
             self._reset_qty_multiplier_reference(update_entry=update_multiplier_entry)
         else:
             self._align_qty_reference()
+        self._update_dirty_state()
 
     def _refresh_table(self) -> None:
         self.table.updateModel(self.table_model)
@@ -1131,6 +1165,7 @@ class BOMCustomTab(ttk.Frame):
             self._sync_qty_reference_for_cells(changed)
             self._ensure_minimum_rows(self.DEFAULT_EMPTY_ROWS)
             self._update_status(success_status.format(count=len(changed)))
+            self._update_dirty_state()
             return len(changed)
 
         self._update_status(no_change_status)
@@ -1212,6 +1247,8 @@ class BOMCustomTab(ttk.Frame):
             else:
                 self._update_status("Geen QTY.-waarden gewijzigd.")
 
+        self._update_dirty_state()
+
         return "break" if event is not None else None
 
     def _collect_selection(self) -> Tuple[List[int], List[int]]:
@@ -1266,6 +1303,7 @@ class BOMCustomTab(ttk.Frame):
             value = after.iat[row, col]
             self._update_qty_reference_for_row(row, value)
         self._update_status(f"Cel ({row + 1}, {col + 1}) bijgewerkt.")
+        self._update_dirty_state()
 
     def _clear_selection(self, event=None):
         if not self.table._commit_active_edit():
@@ -1314,6 +1352,7 @@ class BOMCustomTab(ttk.Frame):
         count = len(unique_rows)
         label = "rij" if count == 1 else "rijen"
         self._update_status(f"{count} {label} verwijderd.")
+        self._update_dirty_state()
         return count
 
     def _parse_clipboard_text(self, text: str) -> List[List[str]]:
@@ -1408,6 +1447,7 @@ class BOMCustomTab(ttk.Frame):
             max_row = max(row for row, _ in changed)
             self._ensure_minimum_rows(max(self.DEFAULT_EMPTY_ROWS, max_row + 2))
             self._update_status(f"{len(changed)} cellen geplakt.")
+            self._update_dirty_state()
         else:
             self._update_status("Geen nieuwe waarden geplakt.")
         return "break"
@@ -1503,6 +1543,7 @@ class BOMCustomTab(ttk.Frame):
         self._restore_history_entry(entry)
         self._ensure_minimum_rows(self.DEFAULT_EMPTY_ROWS)
         self._update_status("Custom BOM teruggezet naar oorspronkelijke waarden.")
+        self._update_dirty_state()
 
     # ------------------------------------------------------------------
     # Undo
@@ -1699,6 +1740,7 @@ class BOMCustomTab(ttk.Frame):
         self._store_baseline_state()
         self.clear_history()
         self._update_status("Custom BOM gevuld vanuit hoofd-BOM.")
+        self._update_dirty_state()
 
     def build_main_dataframe(self) -> pd.DataFrame:
         """Zet de huidige Custom BOM om naar het hoofd-BOM formaat."""
