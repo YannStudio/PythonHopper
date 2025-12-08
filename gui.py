@@ -3573,6 +3573,8 @@ def start_gui():
             self.nb = ttk.Notebook(tabs_container)
             self.nb.pack(fill="both", expand=True)
             self.nb.bind("<<NotebookTabChanged>>", self._handle_tab_changed, add="+")
+            self.custom_bom_dirty = False
+            self._last_selected_tab: Optional[str] = None
             self.custom_bom_tab: Optional[BOMCustomTab] = None
             self._custom_bom_placeholder = tk.Frame(
                 self.nb, background=tabs_background
@@ -3977,6 +3979,7 @@ def start_gui():
             self.settings_frame = SettingsFrame(self.nb, self)
             self.settings_frame.configure(padx=12, pady=12)
             self.nb.add(self.settings_frame, text="⚙ Settings")
+            self._last_selected_tab = self.nb.select()
 
             # Top folders
             top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
@@ -4744,16 +4747,64 @@ def start_gui():
             except Exception:
                 pass
 
+        def _on_custom_bom_dirty_change(self, dirty: bool) -> None:
+            self.custom_bom_dirty = bool(dirty)
+
         def _handle_tab_changed(self, event: "tk.Event") -> None:
-            placeholder = getattr(self, "_custom_bom_placeholder", None)
-            if not placeholder:
-                return
             if event.widget is not self.nb:
                 return
+
+            if getattr(self, "_suppress_tab_prompt", False):
+                self._last_selected_tab = self.nb.select()
+                return
+
+            placeholder = getattr(self, "_custom_bom_placeholder", None)
             selected = event.widget.select()
-            if selected and str(selected) == str(placeholder):
+            if placeholder and selected and str(selected) == str(placeholder):
                 tab = self._ensure_custom_bom_tab()
-                self.nb.select(tab)
+                self._suppress_tab_prompt = True
+                try:
+                    self.nb.select(tab)
+                finally:
+                    self._suppress_tab_prompt = False
+                self._last_selected_tab = self.nb.select()
+                return
+
+            previous = getattr(self, "_last_selected_tab", None)
+            custom_tab = getattr(self, "custom_bom_tab", None)
+            if (
+                custom_tab is not None
+                and previous is not None
+                and str(previous) == str(custom_tab)
+                and str(selected) != str(custom_tab)
+                and getattr(self, "custom_bom_dirty", False)
+            ):
+                from tkinter import messagebox
+
+                response = messagebox.askyesno(
+                    "Wijzigingen niet toegepast",
+                    (
+                        "Er zijn wijzigingen in de Custom BOM aangebracht."
+                        " Klik eerst op 'Update Main BOM' om de hoofd-BOM bij te werken.\n\n"
+                        "Wil je de wijzigingen nu toepassen?"
+                    ),
+                    parent=custom_tab,
+                )
+                if response:
+                    try:
+                        custom_tab._push_to_main()
+                    except Exception:
+                        pass
+                else:
+                    self._suppress_tab_prompt = True
+                    try:
+                        self.nb.select(custom_tab)
+                    finally:
+                        self._suppress_tab_prompt = False
+                    self._last_selected_tab = self.nb.select()
+                    return
+
+            self._last_selected_tab = selected
 
         def _ensure_custom_bom_tab(self) -> "BOMCustomTab":
             tab = getattr(self, "custom_bom_tab", None)
@@ -4764,6 +4815,7 @@ def start_gui():
                 app_name="Filehopper",
                 on_custom_bom_ready=self._on_custom_bom_ready,
                 on_push_to_main=self._apply_custom_bom_to_main,
+                on_dirty_change=self._on_custom_bom_dirty_change,
                 event_target=self,
             )
             placeholder = getattr(self, "_custom_bom_placeholder", None)
