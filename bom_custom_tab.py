@@ -323,6 +323,23 @@ class _UndoAwareTable(Table):
     def undo(self, event=None):  # type: ignore[override]
         return self._owner._on_undo(event)
 
+    def drawText(self, row, col, celltxt, align=None, single_line=True):  # type: ignore[override]
+        """Kleur aangepaste QTY-cellen blauw."""
+
+        if hasattr(self._owner, "get_cell_text_color"):
+            color = self._owner.get_cell_text_color(row, col)
+        else:
+            color = None
+
+        if color:
+            original_color = self.textcolor
+            self.textcolor = color
+        try:
+            return super().drawText(row, col, celltxt, align=align, single_line=single_line)
+        finally:
+            if color:
+                self.textcolor = original_color
+
     def drawCellEntry(self, row, col, text=None):  # type: ignore[override]
         result = super().drawCellEntry(row, col, text=text)
         entry = getattr(self, "cellentry", None)
@@ -960,6 +977,31 @@ class BOMCustomTab(ttk.Frame):
             self._qty_multiplier_reference = self._make_qty_series(self.table_model.df)
         self._align_qty_reference()
         self._set_current_multiplier(entry.qty_multiplier)
+
+    def _normalize_cell_value(self, value: Any) -> str:
+        return "" if pd.isna(value) else str(value).strip()
+
+    def _qty_differs_from_baseline(self, row_index: int) -> bool:
+        if not isinstance(self._baseline_dataframe, pd.DataFrame):
+            return False
+
+        current_value = self.table_model.df.iat[row_index, self.QTY_COLUMN_INDEX]
+        baseline_value: Any
+        if row_index < len(self._baseline_dataframe.index):
+            baseline_value = self._baseline_dataframe.iat[row_index, self.QTY_COLUMN_INDEX]
+        else:
+            baseline_value = ""
+
+        normalized_current = self._normalize_cell_value(current_value)
+        normalized_baseline = self._normalize_cell_value(baseline_value)
+        return normalized_current != normalized_baseline
+
+    def get_cell_text_color(self, row_index: int, col_index: int) -> Optional[str]:
+        if col_index != self.QTY_COLUMN_INDEX:
+            return None
+        if self._qty_differs_from_baseline(row_index):
+            return "#0057B7"
+        return None
 
     def _create_empty_dataframe(self, rows: int) -> pd.DataFrame:
         data = {header: [""] * rows for header in self.HEADERS}
