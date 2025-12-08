@@ -918,7 +918,9 @@ class ManualOrderTab(tk.Frame):
 
         template_row = tk.Frame(table_container)
         template_row.grid(row=0, column=0, columnspan=2, sticky="ew", padx=4, pady=(0, 6))
-        tk.Label(template_row, text="Sjabloon:").pack(side="left")
+        template_row.columnconfigure(3, weight=1)
+
+        tk.Label(template_row, text="Sjabloon:").grid(row=0, column=0, sticky="w")
         self.template_var = tk.StringVar(value=self.DEFAULT_TEMPLATE)
 
         template_style = "Manual.Template.TCombobox"
@@ -949,7 +951,35 @@ class ManualOrderTab(tk.Frame):
             exportselection=False,
             style=template_style,
         )
-        self.template_combo.pack(side="left", padx=(6, 0))
+        self.template_combo.grid(row=0, column=1, sticky="w", padx=(6, 0))
+
+        row_controls = tk.Frame(template_row)
+        row_controls.grid(row=0, column=2, sticky="w", padx=(12, 0))
+
+        tk.Label(row_controls, text="Nieuwe regels:").grid(row=0, column=0, sticky="w")
+        self.add_count_var = tk.StringVar(value="1")
+        add_count_entry = tk.Entry(
+            row_controls, textvariable=self.add_count_var, width=6, justify="right"
+        )
+        add_count_entry.grid(row=0, column=1, sticky="w", padx=(4, 10))
+        add_count_entry.bind("<Return>", lambda _e: self.add_rows_from_input())
+
+        tk.Button(
+            row_controls,
+            text="Regels toevoegen",
+            command=self.add_rows_from_input,
+        ).grid(row=0, column=2, sticky="w")
+
+        tk.Button(
+            row_controls,
+            text="Alle regels verwijderen",
+            command=self._confirm_clear_rows,
+        ).grid(row=0, column=3, sticky="w", padx=(12, 0))
+
+        self.total_weight_var = tk.StringVar(value="Totaal gewicht: —")
+        tk.Label(template_row, textvariable=self.total_weight_var, anchor="e").grid(
+            row=0, column=3, sticky="e"
+        )
 
         def _reset_template_focus(_event: tk.Event | None = None) -> None:
             try:
@@ -1029,51 +1059,15 @@ class ManualOrderTab(tk.Frame):
         self.table_canvas.bind("<Left>", _on_arrow_key)
         self.table_canvas.bind("<Right>", _on_arrow_key)
 
-        controls = tk.Frame(table_container)
-        controls.grid(row=4, column=0, columnspan=2, sticky="ew", padx=4, pady=(8, 0))
-        controls.columnconfigure(3, weight=0)
-        controls.columnconfigure(4, weight=1)
-
-        tk.Label(controls, text="Nieuwe regels:").grid(row=0, column=0, sticky="w")
-        self.add_count_var = tk.StringVar(value="1")
-        add_count_entry = tk.Entry(
-            controls, textvariable=self.add_count_var, width=6, justify="right"
-        )
-        add_count_entry.grid(row=0, column=1, sticky="w", padx=(4, 10))
-        add_count_entry.bind("<Return>", lambda _e: self.add_rows_from_input())
-
-        tk.Button(
-            controls,
-            text="Regels toevoegen",
-            command=self.add_rows_from_input,
-        ).grid(row=0, column=2, sticky="w")
-
-        tk.Button(
-            controls,
-            text="Alle regels verwijderen",
-            command=self._confirm_clear_rows,
-        ).grid(row=0, column=3, sticky="w", padx=(12, 0))
-
-        self.total_weight_var = tk.StringVar(value="Totaal gewicht: —")
-        tk.Label(controls, textvariable=self.total_weight_var, anchor="e").grid(
-            row=0, column=4, sticky="e"
-        )
-
         footer = tk.Frame(self)
         footer.grid(row=2, column=0, sticky="ew", padx=4, pady=(12, 0))
         footer.columnconfigure(0, weight=1)
         footer.columnconfigure(1, weight=0)
-        footer.columnconfigure(2, weight=0)
         tk.Button(
             footer, text="Import bestaande bon", command=self._handle_import
         ).grid(row=0, column=0, sticky="w")
-        tk.Button(
-            footer,
-            text="Exporteer bonbestand",
-            command=self._handle_export_json,
-        ).grid(row=0, column=1, sticky="e", padx=(8, 8))
         tk.Button(footer, text="Bestelbon opslaan", command=self._handle_export).grid(
-            row=0, column=2, sticky="e"
+            row=0, column=1, sticky="e"
         )
 
         self.rows: List[_ManualRowWidgets] = []
@@ -1435,11 +1429,15 @@ class ManualOrderTab(tk.Frame):
         if not export_payload:
             return
         self._on_export(export_payload)
+        self._save_export_json(export_payload)
 
     def _handle_export_json(self) -> None:
         export_payload = self._build_export_payload()
         if not export_payload:
             return
+        self._save_export_json(export_payload)
+
+    def _save_export_json(self, export_payload: Dict[str, object]) -> None:
         from tkinter import filedialog
 
         filename_base = self.build_document_basename(
