@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import unicodedata
 from dataclasses import dataclass
@@ -1061,8 +1062,18 @@ class ManualOrderTab(tk.Frame):
         footer = tk.Frame(self)
         footer.grid(row=2, column=0, sticky="ew", padx=4, pady=(12, 0))
         footer.columnconfigure(0, weight=1)
+        footer.columnconfigure(1, weight=0)
+        footer.columnconfigure(2, weight=0)
+        tk.Button(
+            footer, text="Import bestaande bon", command=self._handle_import
+        ).grid(row=0, column=0, sticky="w")
+        tk.Button(
+            footer,
+            text="Exporteer bonbestand",
+            command=self._handle_export_json,
+        ).grid(row=0, column=1, sticky="e", padx=(8, 8))
         tk.Button(footer, text="Bestelbon opslaan", command=self._handle_export).grid(
-            row=0, column=1, sticky="e"
+            row=0, column=2, sticky="e"
         )
 
         self.rows: List[_ManualRowWidgets] = []
@@ -1420,6 +1431,69 @@ class ManualOrderTab(tk.Frame):
             self.dest_folder_var.set(p)
 
     def _handle_export(self) -> None:
+        export_payload = self._build_export_payload()
+        if not export_payload:
+            return
+        self._on_export(export_payload)
+
+    def _handle_export_json(self) -> None:
+        export_payload = self._build_export_payload()
+        if not export_payload:
+            return
+        from tkinter import filedialog
+
+        filename_base = self.build_document_basename(
+            export_payload.get("doc_number"),
+            self.project_name_var.get(),
+            export_payload.get("context_label"),
+        )
+        default_name = f"{filename_base}.json"
+        dest = filedialog.asksaveasfilename(
+            title="Exporteer bonbestand voor hergebruik",
+            defaultextension=".json",
+            initialfile=default_name,
+            filetypes=(
+                ("JSON-bestanden", "*.json"),
+                ("Alle bestanden", "*.*"),
+            ),
+        )
+        if not dest:
+            return
+        try:
+            with open(dest, "w", encoding="utf-8") as f:
+                json.dump(export_payload, f, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            messagebox.showerror(
+                "Fout bij export", f"Kon bonbestand niet opslaan:\n{exc}", parent=self
+            )
+
+    def _handle_import(self) -> None:
+        from tkinter import filedialog
+
+        path = filedialog.askopenfilename(
+            title="Importeer bestaande bon",
+            filetypes=(("JSON-bestanden", "*.json"), ("Alle bestanden", "*.*")),
+        )
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+        except Exception as exc:
+            messagebox.showerror(
+                "Fout bij import", f"Kon bonbestand niet lezen:\n{exc}", parent=self
+            )
+            return
+        if not isinstance(payload, dict):
+            messagebox.showerror(
+                "Ongeldig bestand",
+                "Het gekozen bestand bevat geen geldige bongegevens.",
+                parent=self,
+            )
+            return
+        self._load_from_payload(payload)
+
+    def _build_export_payload(self) -> Optional[Dict[str, object]]:
         payload = self._collect_items()
         items: List[Dict[str, object]] = payload["items"]
         if not items:
@@ -1459,7 +1533,80 @@ class ManualOrderTab(tk.Frame):
             "template": self.current_template_name,
             "column_layout": column_layout,
         }
-        self._on_export(export_payload)
+        return export_payload
+
+    def _load_from_payload(self, payload: Dict[str, object]) -> None:
+        self.refresh_data()
+
+        template_name = _to_str(payload.get("template")).strip()
+        if template_name not in self.COLUMN_TEMPLATES:
+            template_name = self.DEFAULT_TEMPLATE
+
+        column_layout_raw = payload.get("column_layout")
+        if isinstance(column_layout_raw, list):
+            sanitized_layout: List[Dict[str, object]] = []
+            for column in column_layout_raw:
+                if not isinstance(column, dict):
+                    continue
+                key = _to_str(column.get("key")).strip()
+                if not key:
+                    continue
+                sanitized = {
+                    "key": key,
+                    "label": _to_str(column.get("label") or key).strip() or key,
+                    "justify": _to_str(column.get("justify")).strip() or "left",
+                    "wrap": bool(column.get("wrap")),
+                    "numeric": bool(column.get("numeric")),
+                }
+                if column.get("integer"):
+                    sanitized["integer"] = True
+                if column.get("total_weight"):
+                    sanitized["total_weight"] = True
+                width_raw = column.get("width")
+                try:
+                    width_val = int(width_raw)
+                except Exception:
+                    width_val = None
+                if width_val:
+                    sanitized["width"] = width_val
+                weight_raw = column.get("weight")
+                try:
+                    weight_val = float(weight_raw)
+                except Exception:
+                    weight_val = None
+                if weight_val and math.isfinite(weight_val) and weight_val > 0:
+                    sanitized["weight"] = weight_val
+                sanitized_layout.append(sanitized)
+            if sanitized_layout:
+                self._template_layout_cache[template_name] = sanitized_layout
+
+        self.template_var.set(template_name)
+
+        doc_type = _to_str(payload.get("doc_type")).strip()
+        if doc_type not in self.DOC_TYPE_OPTIONS:
+            doc_type = self.DOC_TYPE_OPTIONS[0]
+        self.doc_type_var.set(doc_type)
+
+        self.set_doc_number(_to_str(payload.get("doc_number")).strip())
+        self.supplier_var.set(_to_str(payload.get("supplier")).strip())
+        self.delivery_var.set(_to_str(payload.get("delivery")).strip())
+        self.context_label_var.set(
+            _to_str(payload.get("context_label")).strip() or self.DEFAULT_CONTEXT_LABEL
+        )
+        remark = _to_str(payload.get("remark")).strip()
+        self.remark_text.delete("1.0", "end")
+        if remark:
+            self.remark_text.insert("1.0", remark)
+
+        items = payload.get("items") or []
+        self._clear_rows()
+        if isinstance(items, list) and items:
+            for record in items:
+                if isinstance(record, dict):
+                    self.add_row(values=record)
+        if not self.rows:
+            self.add_row()
+        self._update_totals()
 
     # Internal -------------------------------------------------------
     def _update_totals(self) -> None:
