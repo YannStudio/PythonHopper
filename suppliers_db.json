@@ -1720,7 +1720,12 @@
   ],
   "defaults_by_production": {
     "Assembly": "Productora",
-    "Cutting": "MCB"
+    "Cutting": "MCB",
+    "Weld assembly": "Productora",
+    "Tube laser": "Productora",
+    "Sheetmetal": "Productora",
+    "Lasercutting": "Productora",
+    "Spare part": "Productora"
   },
   "defaults_by_finish": {}
 }

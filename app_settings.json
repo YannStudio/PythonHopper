@@ -1,8 +1,8 @@
 {
-  "source_folder": "C:/Cloudstation/SynologyDrive/Documenten/Projects/2025/Standaard modellen/Tecno Eco/20250052 - Leefdaal & Bertem/CAD/3D Soldiworks Files/V1",
-  "dest_folder": "C:/Users/jeroe/Desktop",
-  "project_number": "20250052",
-  "project_name": "Tecno Eco",
+  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/00. Standaard producten/01. Deuren & poorten/00. Deuren/P25-0105 - NMBS/cad",
+  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/00. Standaard producten/01. Deuren & poorten/00. Deuren/P25-0105 - NMBS/export",
+  "project_number": "P25-0105",
+  "project_name": "Java",
   "file_extensions": [
     {
       "key": "pdf",
