@@ -1848,6 +1848,14 @@ def copy_per_production_and_orders(
     selected_exts_set = {ext.lower() for ext in selected_exts}
     count_copied = 0
     chosen: Dict[str, str] = {}
+    company = {
+        "name": client.name if client else "",
+        "address": client.address if client else "",
+        "vat": client.vat if client else "",
+        "email": client.email if client else "",
+        "logo_path": client.logo_path if client else "",
+        "logo_crop": client.logo_crop if client else None,
+    }
     doc_type_map = doc_type_map or {}
     doc_num_map = doc_num_map or {}
     finish_override_map = finish_override_map or {}
@@ -2115,14 +2123,6 @@ def copy_per_production_and_orders(
                 }
             )
 
-        company = {
-            "name": client.name if client else "",
-            "address": client.address if client else "",
-            "vat": client.vat if client else "",
-            "email": client.email if client else "",
-            "logo_path": client.logo_path if client else "",
-            "logo_crop": client.logo_crop if client else None,
-        }
         supplier_name_clean = _to_str(supplier.supplier).strip()
         delivery = delivery_map.get(prod)
         order_remark = (remarks_map.get(prod, "") if remarks_map else "").strip()
