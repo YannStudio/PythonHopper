@@ -668,7 +668,7 @@ class ManualOrderTab(tk.Frame):
 
         header = tk.LabelFrame(self, text="Documentgegevens", labelanchor="n")
         header.configure(padx=12, pady=12)
-        header.grid(row=0, column=0, sticky="nsew")
+        header.grid(row=0, column=0, sticky="nsew", pady=(0, 12))
 
         field_width_px = int(self.winfo_fpixels("6c"))
         manage_spacing_px = int(self.winfo_fpixels("3m"))
@@ -912,7 +912,7 @@ class ManualOrderTab(tk.Frame):
         header.rowconfigure(7, weight=1)
 
         table_container = tk.Frame(self)
-        table_container.grid(row=1, column=0, sticky="nsew", padx=4, pady=(8, 0))
+        table_container.grid(row=1, column=0, sticky="nsew", padx=4, pady=(14, 0))
         table_container.columnconfigure(0, weight=1)
         table_container.rowconfigure(2, weight=1)
 
@@ -1061,13 +1061,14 @@ class ManualOrderTab(tk.Frame):
 
         footer = tk.Frame(self)
         footer.grid(row=2, column=0, sticky="ew", padx=4, pady=(12, 0))
-        footer.columnconfigure(0, weight=1)
+        footer.columnconfigure(0, weight=0)
         footer.columnconfigure(1, weight=0)
+        footer.columnconfigure(2, weight=1)
         tk.Button(
             footer, text="Import bestaande bon", command=self._handle_import
         ).grid(row=0, column=0, sticky="w")
         tk.Button(footer, text="Bestelbon opslaan", command=self._handle_export).grid(
-            row=0, column=1, sticky="e"
+            row=0, column=1, sticky="w", padx=(8, 0)
         )
 
         self.rows: List[_ManualRowWidgets] = []
