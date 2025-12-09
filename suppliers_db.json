@@ -1721,5 +1721,8 @@
   "defaults_by_production": {
     "Laser": "ACME"
   },
-  "defaults_by_finish": {}
+  "defaults_by_finish": {
+    "Finish-Galvanised _ Powder coating-RAL 3014": "Van Gils Coating - Beringen/Maasmechelen",
+    "Finish-Powder coating-RAL 3014": "Van Gils Coating - Beringen/Maasmechelen"
+  }
 }
