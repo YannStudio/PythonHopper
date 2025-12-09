@@ -2202,7 +2202,19 @@ def start_gui():
             return sort_supplier_options(options, self.db.suppliers, disp_to_name)
 
         def _update_cards_for_filters(self) -> None:
-            # If a selection is active, keep showing its preview; otherwise show filtered cards.
+            # When filters are active, always show the filtered supplier cards even if
+            # a combo box already contains a selection. Without this the first filled
+            # combo short-circuited the display, so the cards disappeared when a filter
+            # was chosen on the orders tab.
+            if self.product_type_filter_var.get() or self.product_desc_filter_var.get():
+                options = self._get_filter_options()
+                active_key = self._active_key
+                if active_key is None and self.rows:
+                    active_key = self.rows[0][0]
+                self._populate_cards(options, active_key)
+                return
+
+            # If no filters are set, fall back to the current selection preview.
             self._update_preview_from_any_combo()
 
         def set_en1090_enabled(self, enabled: bool) -> None:
