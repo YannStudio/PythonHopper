@@ -1853,11 +1853,44 @@ def start_gui():
                 labelanchor="n",
             )
             preview_frame.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
-            preview_frame.grid_rowconfigure(0, weight=1)
+            preview_frame.grid_rowconfigure(1, weight=1)
             preview_frame.grid_columnconfigure(0, weight=1)
 
+            filter_bar = tk.Frame(preview_frame)
+            filter_bar.grid(row=0, column=0, sticky="ew", padx=8, pady=(6, 0))
+
+            tk.Label(filter_bar, text="Product type:").pack(side="left", padx=(0, 4))
+            self.product_type_filter_var = tk.StringVar()
+            self.product_type_filter_combo = ttk.Combobox(
+                filter_bar,
+                textvariable=self.product_type_filter_var,
+                width=18,
+                state="readonly",
+            )
+            self.product_type_filter_combo.pack(side="left", padx=(0, 12))
+            self.product_type_filter_var.trace_add(
+                "write", lambda *_: self._on_product_type_filter_changed()
+            )
+
+            tk.Label(filter_bar, text="Beschrijving:").pack(side="left", padx=(0, 4))
+            self.product_desc_filter_var = tk.StringVar()
+            self.product_desc_filter_combo = ttk.Combobox(
+                filter_bar,
+                textvariable=self.product_desc_filter_var,
+                width=28,
+                state="readonly",
+            )
+            self.product_desc_filter_combo.pack(side="left", padx=(0, 12))
+            self.product_desc_filter_var.trace_add(
+                "write", lambda *_: self._update_cards_for_filters()
+            )
+
+            tk.Button(filter_bar, text="Wis filters", command=self._clear_supplier_filters).pack(
+                side="left"
+            )
+
             self.cards_frame = tk.Frame(preview_frame)
-            self.cards_frame.grid(row=0, column=0, sticky="nsew", pady=(8, 0))
+            self.cards_frame.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
 
             # Mapping voor combobox per selectie
             self.combo_by_key = getattr(self, "combo_by_key", {})
@@ -2124,6 +2157,54 @@ def start_gui():
             for widgets in self._row_widget_maps:
                 self._pack_row_widgets(widgets)
 
+        def _update_filter_options(self) -> None:
+            product_types = self.db.get_unique_product_types()
+            current_type = self.product_type_filter_var.get()
+            self.product_type_filter_combo["values"] = [""] + product_types
+
+            if current_type in ([""] + product_types):
+                self.product_type_filter_var.set(current_type)
+            else:
+                self.product_type_filter_var.set("")
+
+            product_descs = self.db.get_product_descriptions_for_type(
+                self.product_type_filter_var.get()
+            )
+            current_desc = self.product_desc_filter_var.get()
+            self.product_desc_filter_combo["values"] = [""] + product_descs
+            if current_desc in ([""] + product_descs):
+                self.product_desc_filter_var.set(current_desc)
+            else:
+                self.product_desc_filter_var.set("")
+
+        def _clear_supplier_filters(self) -> None:
+            self.product_type_filter_var.set("")
+            self.product_desc_filter_var.set("")
+            self._update_filter_options()
+            self._update_cards_for_filters()
+
+        def _on_product_type_filter_changed(self) -> None:
+            self.product_desc_filter_var.set("")
+            self._update_filter_options()
+            self._update_cards_for_filters()
+
+        def _get_filter_options(self) -> List[str]:
+            product_type = self.product_type_filter_var.get()
+            product_desc = self.product_desc_filter_var.get()
+            if not product_type and not product_desc:
+                return []
+
+            sups = self.db.find("", product_type_filter=product_type, product_desc_filter=product_desc)
+            options = [self.db.display_name(s) for s in sups]
+            disp_to_name = getattr(self, "_disp_to_name", {}) or {
+                opt: strip_favorite_marker(opt) for opt in options
+            }
+            return sort_supplier_options(options, self.db.suppliers, disp_to_name)
+
+        def _update_cards_for_filters(self) -> None:
+            # If a selection is active, keep showing its preview; otherwise show filtered cards.
+            self._update_preview_from_any_combo()
+
         def set_en1090_enabled(self, enabled: bool) -> None:
             desired = bool(enabled)
             state_changed = desired != self._en1090_enabled
@@ -2215,6 +2296,8 @@ def start_gui():
             src = self.db.suppliers_sorted()
             for s in src:
                 self._disp_to_name[self.db.display_name(s)] = s.supplier
+
+            self._update_filter_options()
 
             set_combo_value = getattr(
                 type(self), "_set_combo_value", SupplierSelectionFrame._set_combo_value
@@ -2433,7 +2516,7 @@ def start_gui():
         def _update_preview_from_any_combo(self):
             for sel_key, combo in self.rows:
                 t = combo.get()
-                if t:
+                if t and _norm(t) not in {"(geen)", "geen"}:
                     self._active_key = sel_key
                     self._update_preview_for_text(t)
                     self._populate_cards([t], sel_key)
@@ -2455,12 +2538,17 @@ def start_gui():
         def _populate_cards(self, options, sel_key):
             for ch in self.cards_frame.winfo_children():
                 ch.destroy()
-            if not options:
+            valid_options = [opt for opt in options if self._resolve_text_to_supplier(opt)]
+            if not valid_options:
+                valid_options = self._get_filter_options()
+            if not valid_options:
                 return
+            if sel_key is None:
+                sel_key = self._active_key if self._active_key else (self.rows[0][0] if self.rows else None)
             cols = 3
             for i in range(cols):
                 self.cards_frame.grid_columnconfigure(i, weight=0)
-            for idx, opt in enumerate(options):
+            for idx, opt in enumerate(valid_options):
                 s = self._resolve_text_to_supplier(opt)
                 if not s:
                     continue
