@@ -59,3 +59,19 @@ def test_load_bom_without_production_column(tmp_path):
     df = load_bom(str(bom_path))
 
     assert list(df["Production"]) == ["", ""]
+
+
+def test_load_bom_nan_description_becomes_empty(tmp_path):
+    bom_path = tmp_path / "bom_nan_desc.csv"
+    pd.DataFrame(
+        {
+            "PartNumber": ["PN1", "PN2"],
+            "Description": [float("nan"), "  "],
+            "Production": ["Laser", "Laser"],
+            "Aantal": [1, 1],
+        }
+    ).to_csv(bom_path, index=False)
+
+    df = load_bom(str(bom_path))
+
+    assert df["Description"].tolist() == ["", ""]

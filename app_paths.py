@@ -7,7 +7,7 @@ import shutil
 import sys
 from functools import lru_cache
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 
 APP_NAME = "Filehopper"
 
@@ -34,6 +34,72 @@ def storage_dir() -> Path:
     if is_frozen():
         return _user_data_dir()
     return Path.cwd()
+
+
+def runtime_asset_root() -> Path:
+    """Return a stable writable root for mutable assets such as uploaded logos."""
+
+    if is_frozen():
+        return storage_dir()
+    return bundle_root()
+
+
+def runtime_asset_dir(name: str) -> Path:
+    """Return a writable asset subdirectory below :func:`runtime_asset_root`."""
+
+    path = runtime_asset_root() / name
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def to_runtime_relative_path(path: Path) -> str:
+    """Return ``path`` relative to :func:`runtime_asset_root` when possible."""
+
+    try:
+        return path.resolve().relative_to(runtime_asset_root().resolve()).as_posix()
+    except Exception:
+        return str(path)
+
+
+def resolve_runtime_path(
+    path_str: str,
+    *,
+    extra_roots: Optional[Iterable[Path]] = None,
+) -> Optional[Path]:
+    """Resolve ``path_str`` against known runtime roots.
+
+    Relative paths are first looked up below :func:`runtime_asset_root`, then
+    fall back to the mutable storage directory, the application bundle root,
+    and finally the current working directory for backward compatibility.
+    """
+
+    if not path_str:
+        return None
+
+    path = Path(path_str)
+    if path.is_absolute():
+        return path
+
+    roots = [runtime_asset_root(), storage_dir(), bundle_root(), Path.cwd()]
+    if extra_roots:
+        roots.extend(Path(root) for root in extra_roots)
+
+    seen: set[str] = set()
+    fallback: Optional[Path] = None
+    for root in roots:
+        try:
+            candidate = (root / path).resolve()
+        except Exception:
+            candidate = root / path
+        key = str(candidate).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if fallback is None:
+            fallback = candidate
+        if candidate.exists():
+            return candidate
+    return fallback
 
 
 def _user_data_dir() -> Path:

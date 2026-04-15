@@ -3,9 +3,12 @@ import pathlib
 import types
 from typing import List, Dict, Optional
 
+import pandas as pd
+
 from suppliers_db import SuppliersDB
 from delivery_addresses_db import DeliveryAddressesDB
 from clients_db import ClientsDB
+from helpers import _to_str, strip_favorite_marker
 from models import Supplier, DeliveryAddress, Client
 from app_settings import FileExtensionSetting
 
@@ -26,8 +29,19 @@ class DummyCombo:
         self.value = val
 
 
+class DummyVar:
+    def __init__(self, value=""):
+        self.value = value
+
+    def get(self):
+        return self.value
+
+    def set(self, value):
+        self.value = value
+
+
 def _load_gui_classes():
-    source = pathlib.Path("gui.py").read_text()
+    source = pathlib.Path("gui.py").read_text(encoding="utf-8")
     mod = ast.parse(source)
     start = next(
         node for node in mod.body if isinstance(node, ast.FunctionDef) and node.name == "start_gui"
@@ -69,7 +83,10 @@ def _load_gui_classes():
         "DeliveryAddress": DeliveryAddress,
         "SuppliersDB": SuppliersDB,
         "DeliveryAddressesDB": DeliveryAddressesDB,
+        "_to_str": _to_str,
+        "strip_favorite_marker": strip_favorite_marker,
         "FileExtensionSetting": FileExtensionSetting,
+        "prepare_custom_bom_for_main": lambda df, _current: df,
     }
     exec(code, ns)
     return ns["SupplierSelectionFrame"], ns["App"]
@@ -83,7 +100,12 @@ def make_dummy_selection():
     ddb = DeliveryAddressesDB([DeliveryAddress(name="Addr1")])
 
     class DummySel:
+        CLIENT_DELIVERY_PRESET = SupplierSelectionFrame.CLIENT_DELIVERY_PRESET
+        DELIVERY_PRESETS = SupplierSelectionFrame.DELIVERY_PRESETS
         _display_list = SupplierSelectionFrame._display_list
+        _resolve_current_client = SupplierSelectionFrame._resolve_current_client
+        _default_delivery_value = SupplierSelectionFrame._default_delivery_value
+        _delivery_options = SupplierSelectionFrame._delivery_options
         _refresh_options = SupplierSelectionFrame._refresh_options
 
         def __init__(self):
@@ -130,3 +152,106 @@ def test_refresh_clients_combo_preserves_selection():
     app._refresh_clients_combo()
     assert any("Carol" in v for v in app.client_combo.values)
     assert app.client_combo.get() == "Alice"
+
+
+def test_delivery_refresh_keeps_client_address_option_but_defaults_to_none():
+    cdb = ClientsDB([Client(name="Alice", address="Kerkstraat 1, Gent")])
+
+    class DummySel:
+        CLIENT_DELIVERY_PRESET = SupplierSelectionFrame.CLIENT_DELIVERY_PRESET
+        DELIVERY_PRESETS = SupplierSelectionFrame.DELIVERY_PRESETS
+        _display_list = SupplierSelectionFrame._display_list
+        _resolve_current_client = SupplierSelectionFrame._resolve_current_client
+        _default_delivery_value = SupplierSelectionFrame._default_delivery_value
+        _delivery_options = SupplierSelectionFrame._delivery_options
+        _refresh_options = SupplierSelectionFrame._refresh_options
+
+        def __init__(self):
+            self.db = SuppliersDB([])
+            self.delivery_db = DeliveryAddressesDB([])
+            self.clients_db = cdb
+            self.client_var = DummyVar("Alice")
+            self.rows = []
+            self.delivery_combos = {"Prod": DummyCombo("")}
+
+    sel = DummySel()
+    sel._refresh_options(initial=True)
+
+    dcombo = sel.delivery_combos["Prod"]
+    assert SupplierSelectionFrame.CLIENT_DELIVERY_PRESET in dcombo.values
+    assert dcombo.get() == "Geen"
+
+
+def test_app_resolves_client_address_delivery_choice():
+    cdb = ClientsDB([Client(name="Alice", address="Kerkstraat 1, Gent")])
+
+    class DummyApp:
+        _current_client = App._current_client
+        _resolve_delivery_choice = App._resolve_delivery_choice
+
+        def __init__(self):
+            self.client_db = cdb
+            self.delivery_db = DeliveryAddressesDB([])
+            self.client_var = DummyVar("Alice")
+
+    app = DummyApp()
+    delivery = app._resolve_delivery_choice(SupplierSelectionFrame.CLIENT_DELIVERY_PRESET)
+
+    assert delivery is not None
+    assert delivery.name == "Alice"
+    assert delivery.address == "Kerkstraat 1, Gent"
+
+
+def test_apply_custom_bom_refreshes_order_tab_when_present():
+    class DummySelFrame:
+        def winfo_exists(self):
+            return True
+
+    class DummyNotebook:
+        def __init__(self):
+            self.selected = None
+
+        def select(self, tab):
+            self.selected = tab
+
+    class DummyApp:
+        _apply_custom_bom_to_main = App._apply_custom_bom_to_main
+
+        def __init__(self):
+            self.custom_bom_tab = None
+            self.bom_df = pd.DataFrame({"PartNumber": ["OLD"]})
+            self.main_frame = object()
+            self.nb = DummyNotebook()
+            self.sel_frame = DummySelFrame()
+            self.status_var = DummyVar("")
+            self.flags_saved = None
+            self.tree_refreshed = False
+            self.custom_synced = False
+            self.refresh_calls = []
+
+        def _store_custom_row_flags(self, df, flags):
+            self.flags_saved = (df, list(flags))
+
+        def _refresh_tree(self):
+            self.tree_refreshed = True
+
+        def _sync_custom_bom_from_main(self):
+            self.custom_synced = True
+
+        def _show_supplier_selection_tab(self, **kwargs):
+            self.refresh_calls.append(kwargs)
+            return object()
+
+    app = DummyApp()
+    custom_df = pd.DataFrame({"PartNumber": ["PN-001"]})
+
+    app._apply_custom_bom_to_main(custom_df)
+
+    assert app.flags_saved is not None
+    assert app.tree_refreshed is True
+    assert app.custom_synced is True
+    assert app.nb.selected is app.main_frame
+    assert app.refresh_calls == [
+        {"select_tab": False, "prompt_opticutter": False}
+    ]
+    assert app.status_var.get().endswith("Bestelbonnen bijgewerkt.")

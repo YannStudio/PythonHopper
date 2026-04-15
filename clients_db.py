@@ -77,7 +77,7 @@ class ClientsDB:
             cur = self.clients[i]
             for f in asdict(client):
                 val = getattr(client, f)
-                if f in {"logo_path", "logo_crop"}:
+                if f in {"logo_path", "logo_crop", "accent_color"}:
                     setattr(cur, f, val)
                 elif val not in (None, ""):
                     setattr(cur, f, val)

@@ -25,11 +25,17 @@ from helpers import (
     favorite_prefix,
     strip_favorite_marker,
 )
-from models import Supplier, Client, DeliveryAddress
+from models import Supplier, Client, DeliveryAddress, color_to_rgb, normalize_rgb_color
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from clients_db import ClientsDB, CLIENTS_DB_FILE
 from delivery_addresses_db import DeliveryAddressesDB, DELIVERY_DB_FILE
-from app_paths import ensure_runtime_files
+from app_paths import (
+    bundle_root,
+    ensure_runtime_files,
+    resolve_runtime_path,
+    runtime_asset_dir,
+    to_runtime_relative_path,
+)
 from bom import read_csv_flex, load_bom
 from bom_custom_tab import BOMCustomTab
 from manual_order_tab import ManualOrderTab
@@ -37,6 +43,13 @@ from bom_sync import prepare_custom_bom_for_main
 from orders import (
     copy_per_production_and_orders,
     DEFAULT_FOOTER_NOTE,
+    MIAMI_PINK,
+    ORDER_MUTED_TEXT_COLOR,
+    ORDER_RULE_COLOR,
+    ORDER_TABLE_ALT_ROW_COLOR,
+    ORDER_TABLE_GRID_COLOR,
+    ORDER_TABLE_OUTLINE_COLOR,
+    ORDER_TEXT_COLOR,
     combine_pdfs_per_production,
     combine_pdfs_from_source,
     find_related_bom_exports,
@@ -54,6 +67,7 @@ from orders import (
     _WINDOWS_MAX_PATH,
     _fit_filename_within_path,
     _sanitize_component,
+    build_document_export_basename,
     write_order_excel,
     generate_pdf_order_platypus,
 )
@@ -72,7 +86,7 @@ if TYPE_CHECKING:
     from orders import OpticutterOrderComputation
 
 
-CLIENT_LOGO_DIR = Path("client_logos")
+CLIENT_LOGO_DIR = "client_logos"
 # A softer brand accent for manufacturing-focused actions.
 MANUFACT_BRAND_COLOR = "#FADFA8"
 RUNTIME_DATA_FILES = [
@@ -81,6 +95,7 @@ RUNTIME_DATA_FILES = [
     "delivery_addresses_db.json",
     "app_settings.json",
 ]
+SUPPLIERS_TEMPLATE_FILE = "suppliers_template.csv"
 
 
 def _norm(text: str) -> str:
@@ -119,7 +134,7 @@ def start_gui():
     ensure_runtime_files(RUNTIME_DATA_FILES)
     import tkinter as tk
     import tkinter.font as tkfont
-    from tkinter import ttk, filedialog, messagebox, simpledialog
+    from tkinter import ttk, filedialog, messagebox, simpledialog, colorchooser
     try:
         from PIL import Image, ImageTk  # type: ignore
         try:
@@ -480,9 +495,95 @@ def start_gui():
                 if client:
                     ent.insert(0, _to_str(getattr(client, key)))
                 entries[key] = ent
+            accent_row = len(fields)
+            tk.Label(win, text="Kleur RGB:").grid(
+                row=accent_row, column=0, sticky="e", padx=4, pady=(2, 0)
+            )
+            accent_color_var = tk.StringVar(
+                value=(client.accent_color if client and client.accent_color else "")
+            )
+            accent_frame = tk.Frame(win)
+            accent_frame.grid(row=accent_row, column=1, padx=4, pady=(2, 0), sticky="ew")
+            accent_frame.columnconfigure(0, weight=1)
+            accent_entry = tk.Entry(accent_frame, textvariable=accent_color_var, width=28)
+            accent_entry.grid(row=0, column=0, sticky="ew")
+            accent_swatch = tk.Label(
+                accent_frame,
+                width=3,
+                relief="solid",
+                bd=1,
+                anchor="center",
+                cursor="hand2",
+            )
+            accent_swatch.grid(row=0, column=1, padx=(6, 0))
+            accent_help_row = accent_row + 1
+            tk.Label(
+                win,
+                text="bijv. 255,119,255 of #FF77FF",
+                anchor="w",
+                justify="left",
+                fg="#666666",
+            ).grid(row=accent_help_row, column=1, sticky="w", padx=4, pady=(2, 0))
+
+            def current_accent_color() -> str:
+                return normalize_rgb_color(accent_color_var.get()) or MIAMI_PINK
+
+            def current_accent_text_color() -> str:
+                rgb = color_to_rgb(current_accent_color())
+                if rgb is None:
+                    return ORDER_TEXT_COLOR
+                luminance = (
+                    (0.299 * rgb[0]) + (0.587 * rgb[1]) + (0.114 * rgb[2])
+                ) / 255.0
+                return ORDER_TEXT_COLOR if luminance >= 0.68 else "#FFFFFF"
+
+            def update_accent_swatch(*_args) -> None:
+                raw = accent_color_var.get().strip()
+                normalized = normalize_rgb_color(raw)
+                if raw and not normalized:
+                    accent_swatch.configure(bg="#F8D7DA", text="!")
+                    return
+                accent_swatch.configure(bg=(normalized or MIAMI_PINK), text="")
+
+            def open_native_color_chooser() -> None:
+                _rgb, chosen = colorchooser.askcolor(
+                    color=current_accent_color(),
+                    parent=win,
+                    title="Kies klantkleur",
+                )
+                if chosen:
+                    accent_color_var.set(normalize_rgb_color(chosen) or chosen)
+
+            accent_picker_menu = tk.Menu(win, tearoff=0)
+            accent_picker_menu.add_command(
+                label="Kleurenkiezer openen", command=open_native_color_chooser
+            )
+            accent_picker_menu.add_separator()
+            accent_picker_menu.add_command(
+                label="Kleur wissen", command=lambda: accent_color_var.set("")
+            )
+
+            def open_accent_picker_menu(event=None) -> None:
+                try:
+                    accent_picker_menu.tk_popup(
+                        (event.x_root if event else accent_swatch.winfo_rootx()),
+                        (
+                            event.y_root
+                            if event
+                            else accent_swatch.winfo_rooty() + accent_swatch.winfo_height()
+                        ),
+                    )
+                finally:
+                    accent_picker_menu.grab_release()
+
+            accent_color_var.trace_add("write", update_accent_swatch)
+            update_accent_swatch()
+            accent_swatch.bind("<Button-1>", lambda _event: open_native_color_chooser())
+            accent_swatch.bind("<Button-3>", open_accent_picker_menu)
+
             fav_var = tk.BooleanVar(value=client.favorite if client else False)
             tk.Checkbutton(win, text="Favoriet", variable=fav_var).grid(
-                row=len(fields), column=1, sticky="w", padx=4, pady=2
+                row=len(fields) + 2, column=1, sticky="w", padx=4, pady=2
             )
 
             logo_path_var = tk.StringVar(
@@ -494,67 +595,510 @@ def start_gui():
 
             logo_frame = tk.LabelFrame(win, text="Logo")
             logo_frame.grid(
-                row=len(fields) + 1,
+                row=len(fields) + 3,
                 column=0,
                 columnspan=2,
                 sticky="ew",
                 padx=4,
                 pady=(6, 2),
             )
-            logo_frame.columnconfigure(0, weight=1)
+            logo_frame.columnconfigure(0, weight=1, minsize=280)
+            logo_frame.columnconfigure(1, weight=0, minsize=240)
 
             preview_label = tk.Label(
                 logo_frame,
                 text="Geen logo",
                 relief="sunken",
-                width=32,
-                height=8,
+                width=40,
+                height=10,
                 anchor="center",
                 justify="center",
+                cursor="hand2",
             )
-            preview_label.grid(row=0, column=0, rowspan=4, sticky="nsew", padx=4, pady=4)
+            preview_label.grid(row=0, column=0, rowspan=6, sticky="nsew", padx=4, pady=4)
 
             def resolve_logo_path(path_str: str) -> Optional[Path]:
                 if not path_str:
                     return None
-                p = Path(path_str)
-                if not p.is_absolute():
-                    p = Path.cwd() / p
-                return p
+                return resolve_runtime_path(path_str)
 
-            def update_preview() -> None:
+            def load_logo_image(*, apply_crop: bool = True):
                 path_str = logo_path_var.get().strip()
                 if not path_str or Image is None:
-                    preview_label.configure(text="Geen logo", image="")
-                    preview_label.image = None  # type: ignore[attr-defined]
-                    return
+                    return None
                 abs_path = resolve_logo_path(path_str)
                 if not abs_path or not abs_path.exists():
-                    preview_label.configure(text="Logo niet gevonden", image="")
-                    preview_label.image = None  # type: ignore[attr-defined]
-                    return
+                    return None
                 try:
                     with Image.open(abs_path) as src:  # type: ignore[union-attr]
                         img = src.convert("RGBA")
                 except Exception:
-                    preview_label.configure(text="Kan logo niet laden", image="")
-                    preview_label.image = None  # type: ignore[attr-defined]
-                    return
-                crop = logo_crop_state
+                    return None
+                crop = logo_crop_state if apply_crop else None
                 if crop and all(k in crop for k in ("left", "top", "right", "bottom")):
                     left = max(0, min(img.width, int(crop.get("left", 0))))
                     top = max(0, min(img.height, int(crop.get("top", 0))))
                     right = max(left + 1, min(img.width, int(crop.get("right", img.width))))
                     bottom = max(top + 1, min(img.height, int(crop.get("bottom", img.height))))
                     img = img.crop((left, top, right, bottom))
+                return img
+
+            def make_logo_photo(img, max_size: tuple[int, int]):
+                if img is None or ImageTk is None:
+                    return None
                 thumb = img.copy()
                 if RESAMPLE is not None:
-                    thumb.thumbnail((220, 120), RESAMPLE)
+                    thumb.thumbnail(max_size, RESAMPLE)
                 else:  # pragma: no cover - fallback without Pillow resampling enum
-                    thumb.thumbnail((220, 120))
-                photo = ImageTk.PhotoImage(thumb)  # type: ignore[union-attr]
+                    thumb.thumbnail(max_size)
+                return ImageTk.PhotoImage(thumb)  # type: ignore[union-attr]
+
+            def update_preview() -> None:
+                img = load_logo_image(apply_crop=True)
+                if img is None:
+                    preview_label.configure(text="Geen logo", image="")
+                    preview_label.image = None  # type: ignore[attr-defined]
+                    return
+                photo = make_logo_photo(img, (280, 160))
+                if photo is None:
+                    preview_label.configure(text="Kan logo niet laden", image="")
+                    preview_label.image = None  # type: ignore[attr-defined]
+                    return
                 preview_label.configure(image=photo, text="")
                 preview_label.image = photo  # type: ignore[attr-defined]
+
+            def open_logo_preview() -> None:
+                original_img = load_logo_image(apply_crop=False)
+                if original_img is None:
+                    messagebox.showinfo(
+                        "Geen logo",
+                        "Upload eerst een logo voordat je het volledig bekijkt.",
+                        parent=win,
+                    )
+                    return
+
+                current_img = load_logo_image(apply_crop=True) or original_img
+                preview_win = tk.Toplevel(win)
+                preview_win.title("Logo voorbeeld")
+                preview_win.transient(win)
+                preview_win.resizable(False, False)
+
+                tk.Label(
+                    preview_win,
+                    text=(
+                        "Bovenaan zie je het volledige originele bestand. "
+                        "Onderaan zie je exact welk deel op de bon terechtkomt."
+                    ),
+                    anchor="w",
+                    justify="left",
+                    wraplength=760,
+                ).pack(fill="x", padx=10, pady=(10, 8))
+
+                panels = tk.Frame(preview_win)
+                panels.pack(fill="both", expand=True, padx=10, pady=(0, 8))
+
+                def add_logo_panel(title: str, img, max_size: tuple[int, int]) -> None:
+                    frame = tk.LabelFrame(panels, text=title)
+                    frame.pack(fill="both", expand=True, pady=6)
+                    photo = make_logo_photo(img, max_size)
+                    if photo is None:
+                        tk.Label(frame, text="Preview niet beschikbaar").pack(
+                            padx=12, pady=12
+                        )
+                        return
+                    label = tk.Label(frame, image=photo, bg="white", relief="sunken")
+                    label.image = photo  # type: ignore[attr-defined]
+                    label.pack(padx=10, pady=(10, 6))
+                    tk.Label(
+                        frame,
+                        text=f"{img.width} x {img.height} px",
+                        anchor="w",
+                    ).pack(fill="x", padx=10, pady=(0, 10))
+
+                add_logo_panel("Origineel logo", original_img, (720, 260))
+                add_logo_panel("Resultaat op bon", current_img, (720, 180))
+
+                buttons = tk.Frame(preview_win)
+                buttons.pack(fill="x", padx=10, pady=(0, 10))
+                tk.Button(
+                    buttons,
+                    text="Voorbeeld bon",
+                    command=lambda: open_order_preview(parent=preview_win),
+                ).pack(side="left")
+                tk.Button(
+                    buttons, text="Sluiten", command=preview_win.destroy
+                ).pack(side="right")
+
+                _place_window_near_parent(preview_win, win)
+                preview_win.grab_set()
+                preview_win.focus_set()
+
+            def open_order_preview(parent=None) -> None:
+                preview_win = tk.Toplevel(parent or win)
+                preview_win.title("Voorbeeld bon")
+                preview_win.transient(parent or win)
+                preview_win.geometry("860x920")
+
+                tk.Label(
+                    preview_win,
+                    text=(
+                        "Visuele benadering van de PDF-bestelbon. "
+                        "Gebruik dit om snel te controleren of het logo mooi in de kopzone staat."
+                    ),
+                    anchor="w",
+                    justify="left",
+                    wraplength=820,
+                ).pack(fill="x", padx=12, pady=(10, 8))
+
+                canvas_wrap = tk.Frame(preview_win)
+                canvas_wrap.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+                canvas_wrap.grid_columnconfigure(0, weight=1)
+                canvas_wrap.grid_rowconfigure(0, weight=1)
+
+                preview_canvas = tk.Canvas(
+                    canvas_wrap,
+                    width=800,
+                    height=760,
+                    bg="#d7dbe0",
+                    highlightthickness=0,
+                )
+                preview_scroll = tk.Scrollbar(
+                    canvas_wrap, orient="vertical", command=preview_canvas.yview
+                )
+                preview_canvas.configure(yscrollcommand=preview_scroll.set)
+                preview_canvas.grid(row=0, column=0, sticky="nsew")
+                preview_scroll.grid(row=0, column=1, sticky="ns")
+
+                sheet_x = 36
+                sheet_y = 24
+                sheet_w = 720
+                sheet_h = 980
+
+                def render_order_preview() -> None:
+                    preview_canvas.delete("all")
+                    preview_canvas.preview_images = []  # type: ignore[attr-defined]
+                    preview_canvas.configure(
+                        scrollregion=(0, 0, sheet_x + sheet_w + 36, sheet_y + sheet_h + 24)
+                    )
+                    accent_color = current_accent_color()
+                    accent_text_color = current_accent_text_color()
+
+                    preview_canvas.create_rectangle(
+                        0,
+                        0,
+                        sheet_x + sheet_w + 36,
+                        sheet_y + sheet_h + 24,
+                        fill="#d7dbe0",
+                        outline="",
+                    )
+                    preview_canvas.create_rectangle(
+                        sheet_x + 6,
+                        sheet_y + 6,
+                        sheet_x + sheet_w + 6,
+                        sheet_y + sheet_h + 6,
+                        fill="#c6cad0",
+                        outline="",
+                    )
+                    preview_canvas.create_rectangle(
+                        sheet_x,
+                        sheet_y,
+                        sheet_x + sheet_w,
+                        sheet_y + sheet_h,
+                        fill="white",
+                        outline="#c5c5c5",
+                    )
+
+                    title_x = sheet_x + 28
+                    top_y = sheet_y + 28
+                    preview_canvas.create_text(
+                        title_x,
+                        top_y,
+                        anchor="nw",
+                        text="Bestelbon productie: Laser",
+                        font=("TkDefaultFont", 18, "bold"),
+                        fill=accent_color,
+                    )
+                    rule_y = top_y + 34
+                    preview_canvas.create_line(
+                        title_x,
+                        rule_y,
+                        sheet_x + sheet_w - 28,
+                        rule_y,
+                        fill=ORDER_RULE_COLOR,
+                        width=1,
+                    )
+
+                    client_name = entries["name"].get().strip() or "Opdrachtgever"
+                    client_address = entries["address"].get().strip() or "Voorbeeldstraat 1, 2000 Antwerpen"
+                    client_vat = entries["vat"].get().strip() or "BE0123456789"
+                    client_email = entries["email"].get().strip() or "info@example.com"
+                    today_text = datetime.date.today().strftime("%Y-%m-%d")
+                    doc_top_y = rule_y + 10
+                    doc_lines = [
+                        ("Nummer:", "BB-voorbeeld"),
+                        ("Datum:", today_text),
+                        ("Productie:", "Laser"),
+                    ]
+                    label_font = tkfont.Font(font=("TkDefaultFont", 10, "bold"))
+                    value_font = tkfont.Font(font=("TkDefaultFont", 10))
+                    line_height = max(
+                        label_font.metrics("linespace"),
+                        value_font.metrics("linespace"),
+                    ) + 3
+                    doc_right = title_x
+                    for idx, (label_text, value_text) in enumerate(doc_lines):
+                        line_y = doc_top_y + idx * line_height
+                        preview_canvas.create_text(
+                            title_x,
+                            line_y,
+                            anchor="nw",
+                            text=label_text,
+                            font=label_font,
+                            fill=ORDER_TEXT_COLOR,
+                        )
+                        value_x = title_x + label_font.measure(label_text) + 4
+                        value_item = preview_canvas.create_text(
+                            value_x,
+                            line_y,
+                            anchor="nw",
+                            text=value_text,
+                            font=value_font,
+                            fill=ORDER_TEXT_COLOR,
+                        )
+                        value_bbox = preview_canvas.bbox(value_item) or (
+                            value_x,
+                            line_y,
+                            value_x + value_font.measure(value_text),
+                            line_y + line_height,
+                        )
+                        doc_right = max(doc_right, value_bbox[2])
+                    doc_bbox = (
+                        title_x,
+                        doc_top_y,
+                        doc_right,
+                        doc_top_y + (len(doc_lines) * line_height),
+                    )
+
+                    right_block_y = doc_bbox[1]
+                    header_y = doc_bbox[3] + 8
+                    inner_x = sheet_x + 28
+                    inner_w = sheet_w - 56
+                    col_gap = 18
+                    left_col_w = inner_w * 0.58
+                    right_col_w = inner_w - left_col_w - col_gap
+                    left_x = inner_x
+                    right_x = inner_x + left_col_w + col_gap
+
+                    client_x = right_x
+                    logo_x = right_x
+                    logo_y = right_block_y
+                    logo_box_w = max(96, int(right_col_w))
+                    logo_box_h = 72
+                    logo_img = load_logo_image(apply_crop=True)
+                    logo_present = False
+                    logo_render_h = 0
+                    if logo_img is not None and ImageTk is not None:
+                        logo_photo = make_logo_photo(logo_img, (logo_box_w, logo_box_h))
+                        if logo_photo is not None:
+                            logo_present = True
+                            logo_render_h = logo_photo.height()
+                            preview_canvas.preview_images.append(logo_photo)  # type: ignore[attr-defined]
+                            preview_canvas.create_image(
+                                logo_x,
+                                logo_y,
+                                anchor="nw",
+                                image=logo_photo,
+                            )
+                    elif logo_path_var.get().strip():
+                        preview_canvas.create_text(
+                            logo_x,
+                            logo_y + 10,
+                            anchor="nw",
+                            text="Logo",
+                            fill="#9a9a9a",
+                            font=("TkDefaultFont", 11, "italic"),
+                        )
+                        logo_render_h = 28
+
+                    supplier_y = header_y
+                    client_y = right_block_y + (logo_render_h + 6 if logo_render_h else 0)
+
+                    supplier_text = (
+                        "Besteld bij: Leverancier BV\n"
+                        "Leveranciersstraat 12, 9000 Gent\n"
+                        "BTW: BE0000000000\n"
+                        "Contact sales: Voorbeeld Contact\n"
+                        "E-mail: leverancier@example.com\n"
+                        "Tel: +32 3 123 45 67"
+                    )
+                    supplier_item = preview_canvas.create_text(
+                        left_x,
+                        supplier_y,
+                        anchor="nw",
+                        text=supplier_text,
+                        font=("TkDefaultFont", 10),
+                        fill=ORDER_TEXT_COLOR,
+                        width=left_col_w,
+                    )
+                    supplier_bbox = preview_canvas.bbox(supplier_item) or (
+                        left_x,
+                        supplier_y,
+                        left_x,
+                        supplier_y + 110,
+                    )
+
+                    client_text = (
+                        f"{client_name}\n"
+                        f"{client_address}\n"
+                        f"BTW: {client_vat}\n"
+                        f"E-mail: {client_email}"
+                    )
+                    client_item = preview_canvas.create_text(
+                        client_x,
+                        client_y,
+                        anchor="nw",
+                        text=client_text,
+                        font=("TkDefaultFont", 10),
+                        fill=ORDER_TEXT_COLOR,
+                        width=right_col_w,
+                    )
+                    client_bbox = preview_canvas.bbox(client_item) or (
+                        client_x,
+                        client_y,
+                        client_x,
+                        client_y + 90,
+                    )
+
+                    info_bottom = max(supplier_bbox[3], client_bbox[3])
+                    delivery_y = info_bottom + 8
+                    delivery_text = (
+                        "Leveradres: Voorbeeld levering | Werfweg 25, 1000 Brussel"
+                    )
+                    delivery_item = preview_canvas.create_text(
+                        inner_x,
+                        delivery_y,
+                        anchor="nw",
+                        text=delivery_text,
+                        font=("TkDefaultFont", 10),
+                        fill=ORDER_TEXT_COLOR,
+                        width=inner_w,
+                    )
+                    delivery_bbox = preview_canvas.bbox(delivery_item) or (
+                        inner_x,
+                        delivery_y,
+                        inner_x,
+                        delivery_y + 18,
+                    )
+                    delivery_bottom = delivery_bbox[3]
+
+                    header_bottom = max(
+                        right_block_y + (logo_render_h if logo_render_h else 0),
+                        client_bbox[3],
+                        delivery_bottom,
+                    )
+                    table_y = header_bottom + 24
+                    table_x = inner_x
+                    table_w = inner_w
+                    col_fracs = [0.22, 0.40, 0.14, 0.06, 0.09, 0.09]
+                    headers = ["PartNumber", "Omschrijving", "Materiaal", "St.", "m²", "kg"]
+                    rows = [
+                        ["PN-001", "Voetplaat voor voorbeeldbon", "S235JR", "2", "1,25", "4,80"],
+                        ["PN-002", "Tweede regel om de layout te tonen", "RAL9005", "1", "", "2,10"],
+                    ]
+                    row_h = 42
+                    x_positions = [table_x]
+                    for frac in col_fracs:
+                        x_positions.append(x_positions[-1] + table_w * frac)
+
+                    preview_canvas.create_rectangle(
+                        table_x,
+                        table_y,
+                        table_x + table_w,
+                        table_y + row_h,
+                        fill=accent_color,
+                        outline=ORDER_TABLE_OUTLINE_COLOR,
+                    )
+                    for idx, header in enumerate(headers):
+                        x0 = x_positions[idx]
+                        x1 = x_positions[idx + 1]
+                        if idx:
+                            preview_canvas.create_line(
+                                x0,
+                                table_y,
+                                x0,
+                                table_y + row_h,
+                                fill=ORDER_TABLE_OUTLINE_COLOR,
+                            )
+                        preview_canvas.create_text(
+                            x0 + 6,
+                            table_y + 12,
+                            anchor="nw",
+                            text=header,
+                            font=("TkDefaultFont", 10, "bold"),
+                            fill=accent_text_color,
+                            width=max(20, (x1 - x0) - 12),
+                        )
+
+                    for row_index, row_values in enumerate(rows, start=1):
+                        y0 = table_y + row_h * row_index
+                        y1 = y0 + row_h
+                        fill = "#ffffff" if row_index % 2 else ORDER_TABLE_ALT_ROW_COLOR
+                        preview_canvas.create_rectangle(
+                            table_x,
+                            y0,
+                            table_x + table_w,
+                            y1,
+                            fill=fill,
+                            outline=ORDER_TABLE_GRID_COLOR,
+                        )
+                        for idx, value in enumerate(row_values):
+                            x0 = x_positions[idx]
+                            x1 = x_positions[idx + 1]
+                            if idx:
+                                preview_canvas.create_line(
+                                    x0,
+                                    y0,
+                                    x0,
+                                    y1,
+                                    fill=ORDER_TABLE_GRID_COLOR,
+                                )
+                            anchor = "ne" if idx >= 2 else "nw"
+                            text_x = x1 - 6 if idx >= 2 else x0 + 6
+                            preview_canvas.create_text(
+                                text_x,
+                                y0 + 11,
+                                anchor=anchor,
+                                text=value,
+                                font=("TkDefaultFont", 9),
+                                fill=ORDER_TEXT_COLOR,
+                                width=max(20, (x1 - x0) - 12),
+                            )
+
+                    footer_y = table_y + row_h * (len(rows) + 1) + 26
+                    preview_canvas.create_text(
+                        inner_x,
+                        footer_y,
+                        anchor="nw",
+                        text=DEFAULT_FOOTER_NOTE,
+                        font=("TkDefaultFont", 8),
+                        fill=ORDER_MUTED_TEXT_COLOR,
+                        width=inner_w,
+                    )
+
+                render_order_preview()
+
+                buttons = tk.Frame(preview_win)
+                buttons.pack(fill="x", padx=12, pady=(0, 12))
+                tk.Button(
+                    buttons, text="Vernieuwen", command=render_order_preview
+                ).pack(side="left")
+                tk.Button(
+                    buttons, text="Sluiten", command=preview_win.destroy
+                ).pack(side="right")
+
+                _place_window_near_parent(preview_win, parent or win)
+                preview_win.grab_set()
+                preview_win.focus_set()
 
             def upload_logo() -> None:
                 path = filedialog.askopenfilename(
@@ -565,8 +1109,7 @@ def start_gui():
                 )
                 if not path:
                     return
-                dest_dir = CLIENT_LOGO_DIR
-                dest_dir.mkdir(exist_ok=True)
+                dest_dir = runtime_asset_dir(CLIENT_LOGO_DIR)
                 ext = Path(path).suffix or ".png"
                 base = entries["name"].get().strip() or Path(path).stem
                 safe = re.sub(r"[^a-z0-9]+", "_", base.lower()).strip("_") or "logo"
@@ -581,7 +1124,7 @@ def start_gui():
                     return
                 nonlocal logo_crop_state
                 logo_crop_state = None
-                logo_path_var.set(dest.as_posix())
+                logo_path_var.set(to_runtime_relative_path(dest))
                 update_preview()
 
             def clear_logo() -> None:
@@ -628,33 +1171,20 @@ def start_gui():
                 crop_win.transient(win)
                 crop_win.resizable(False, False)
 
-                max_w, max_h = 600, 400
+                max_w, max_h = 720, 420
                 if base_img.width == 0 or base_img.height == 0:
                     messagebox.showerror(
                         "Fout", "Afbeelding heeft ongeldige afmetingen.", parent=win
                     )
                     crop_win.destroy()
                     return
-                scale = min(max_w / base_img.width, max_h / base_img.height, 1.0)
-                disp_w = max(1, int(round(base_img.width * scale)))
-                disp_h = max(1, int(round(base_img.height * scale)))
-                if scale != 1.0:
-                    disp_img = base_img.resize(
-                        (disp_w, disp_h), RESAMPLE or Image.BICUBIC  # type: ignore[union-attr]
-                    )
-                else:
-                    disp_img = base_img.copy()
-                photo = ImageTk.PhotoImage(disp_img)  # type: ignore[union-attr]
-                canvas = tk.Canvas(
-                    crop_win, width=disp_w, height=disp_h, highlightthickness=0
-                )
-                canvas.pack(padx=8, pady=8)
-                canvas.create_image(0, 0, anchor="nw", image=photo)
-                canvas.image = photo  # type: ignore[attr-defined]
-                canvas.configure(cursor="crosshair")
 
-                ratio = base_img.width / base_img.height if base_img.height else 1.0
-                current_box = [0.0, 0.0, float(disp_w), float(disp_h)]
+                fit_scale = min(max_w / base_img.width, max_h / base_img.height)
+                fit_scale = max(0.25, min(4.0, fit_scale if fit_scale > 0 else 1.0))
+                zoom_var = tk.IntVar(value=int(round(fit_scale * 100)))
+                zoom_label_var = tk.StringVar(value=f"{zoom_var.get()}%")
+
+                current_box = [0.0, 0.0, float(base_img.width), float(base_img.height)]
                 if logo_crop_state:
                     left = max(0, min(base_img.width, int(logo_crop_state.get("left", 0))))
                     top = max(0, min(base_img.height, int(logo_crop_state.get("top", 0))))
@@ -669,100 +1199,207 @@ def start_gui():
                             int(logo_crop_state.get("bottom", base_img.height)),
                         ),
                     )
-                    current_box = [
-                        left / base_img.width * disp_w,
-                        top / base_img.height * disp_h,
-                        right / base_img.width * disp_w,
-                        bottom / base_img.height * disp_h,
-                    ]
+                    current_box = [float(left), float(top), float(right), float(bottom)]
 
+                canvas_frame = tk.Frame(crop_win)
+                canvas_frame.pack(fill="both", expand=True, padx=8, pady=(8, 4))
+                canvas_frame.grid_columnconfigure(0, weight=1)
+                canvas_frame.grid_rowconfigure(0, weight=1)
+
+                viewport_w = min(max_w, max(320, int(round(base_img.width * fit_scale))))
+                viewport_h = min(max_h, max(180, int(round(base_img.height * fit_scale))))
+                canvas = tk.Canvas(
+                    canvas_frame,
+                    width=viewport_w,
+                    height=viewport_h,
+                    bg="#1f1f1f",
+                    highlightthickness=1,
+                    highlightbackground="#c8c8c8",
+                    cursor="crosshair",
+                )
+                x_scroll = tk.Scrollbar(
+                    canvas_frame, orient="horizontal", command=canvas.xview
+                )
+                y_scroll = tk.Scrollbar(
+                    canvas_frame, orient="vertical", command=canvas.yview
+                )
+                canvas.configure(
+                    xscrollcommand=x_scroll.set,
+                    yscrollcommand=y_scroll.set,
+                )
+                canvas.grid(row=0, column=0, sticky="nsew")
+                y_scroll.grid(row=0, column=1, sticky="ns")
+                x_scroll.grid(row=1, column=0, sticky="ew")
+
+                status_var = tk.StringVar(value="")
+                tk.Label(
+                    crop_win,
+                    text=(
+                        "Klik en sleep om een selectie te maken. Gebruik het "
+                        "muiswiel of de zoomknoppen voor fijnafstelling. "
+                        "De PDF schaalt het gekozen deel automatisch in een vaste logozone."
+                    ),
+                    anchor="w",
+                    justify="left",
+                    wraplength=720,
+                ).pack(fill="x", padx=8, pady=(0, 2))
+                tk.Label(
+                    crop_win,
+                    textvariable=status_var,
+                    anchor="w",
+                    justify="left",
+                    wraplength=720,
+                ).pack(fill="x", padx=8, pady=(0, 6))
+
+                controls = tk.Frame(crop_win)
+                controls.pack(fill="x", padx=8, pady=(0, 4))
+                tk.Button(
+                    controls,
+                    text="-",
+                    width=3,
+                    command=lambda: set_zoom(zoom_var.get() - 10),
+                ).pack(side="left")
+                tk.Button(
+                    controls,
+                    text="+",
+                    width=3,
+                    command=lambda: set_zoom(zoom_var.get() + 10),
+                ).pack(side="left", padx=(4, 8))
+                tk.Label(controls, text="Zoom").pack(side="left")
+                zoom_scale = tk.Scale(
+                    controls,
+                    from_=25,
+                    to=400,
+                    orient="horizontal",
+                    variable=zoom_var,
+                    showvalue=False,
+                    resolution=5,
+                    length=220,
+                )
+                zoom_scale.pack(side="left", padx=(6, 6))
+                tk.Label(controls, textvariable=zoom_label_var, width=6, anchor="w").pack(
+                    side="left"
+                )
+                tk.Button(
+                    controls,
+                    text="Passend",
+                    command=lambda: set_zoom(int(round(fit_scale * 100))),
+                ).pack(side="left", padx=(8, 0))
+
+                image_id = None
                 rect_id = None
                 start_point = [0.0, 0.0]
 
+                def current_scale() -> float:
+                    return max(0.25, min(4.0, zoom_var.get() / 100.0))
+
+                def update_status() -> None:
+                    width_px = max(0, int(round(current_box[2] - current_box[0])))
+                    height_px = max(0, int(round(current_box[3] - current_box[1])))
+                    if (
+                        current_box[0] <= 0
+                        and current_box[1] <= 0
+                        and current_box[2] >= base_img.width
+                        and current_box[3] >= base_img.height
+                    ):
+                        status_var.set(
+                            "Volledige afbeelding geselecteerd. Gebruik zoom om nauwkeuriger te kaderen."
+                        )
+                    else:
+                        status_var.set(
+                            f"Geselecteerd: {width_px} x {height_px} px. "
+                            "De PDF schaalt dit kader automatisch."
+                        )
+
                 def draw_rect() -> None:
                     nonlocal rect_id
-                    if rect_id is not None:
-                        canvas.delete(rect_id)
-                    rect_id = canvas.create_rectangle(
-                        current_box[0],
-                        current_box[1],
-                        current_box[2],
-                        current_box[3],
-                        outline="#ff007f",
-                        width=2,
+                    scale = current_scale()
+                    x0 = current_box[0] * scale
+                    y0 = current_box[1] * scale
+                    x1 = current_box[2] * scale
+                    y1 = current_box[3] * scale
+                    if rect_id is None:
+                        rect_id = canvas.create_rectangle(
+                            x0,
+                            y0,
+                            x1,
+                            y1,
+                            outline="#ff007f",
+                            width=2,
+                        )
+                    else:
+                        canvas.coords(rect_id, x0, y0, x1, y1)
+                    canvas.tag_raise(rect_id)
+                    update_status()
+
+                def render_image(*_ignored) -> None:
+                    nonlocal image_id
+                    scale = current_scale()
+                    disp_w = max(1, int(round(base_img.width * scale)))
+                    disp_h = max(1, int(round(base_img.height * scale)))
+                    if scale != 1.0:
+                        disp_img = base_img.resize(
+                            (disp_w, disp_h),
+                            RESAMPLE or Image.BICUBIC,  # type: ignore[union-attr]
+                        )
+                    else:
+                        disp_img = base_img.copy()
+                    photo = ImageTk.PhotoImage(disp_img)  # type: ignore[union-attr]
+                    canvas.image = photo  # type: ignore[attr-defined]
+                    if image_id is None:
+                        image_id = canvas.create_image(0, 0, anchor="nw", image=photo)
+                    else:
+                        canvas.itemconfigure(image_id, image=photo)
+                    canvas.configure(scrollregion=(0, 0, disp_w, disp_h))
+                    zoom_label_var.set(f"{zoom_var.get()}%")
+                    draw_rect()
+
+                def set_zoom(value: int) -> None:
+                    zoom_var.set(max(25, min(400, int(value))))
+                    render_image()
+
+                def clamp_to_image(x: float, y: float) -> tuple[float, float]:
+                    return (
+                        max(0.0, min(float(base_img.width), x)),
+                        max(0.0, min(float(base_img.height), y)),
                     )
 
-                def clamp(x: float, y: float) -> tuple[float, float]:
-                    return (
-                        max(0.0, min(float(disp_w), x)),
-                        max(0.0, min(float(disp_h), y)),
+                def image_coords(evt) -> tuple[float, float]:
+                    scale = current_scale()
+                    return clamp_to_image(
+                        canvas.canvasx(evt.x) / scale,
+                        canvas.canvasy(evt.y) / scale,
                     )
 
                 def update_box(x0: float, y0: float, x1: float, y1: float) -> None:
-                    x1, y1 = clamp(x1, y1)
-                    dx = x1 - x0
-                    dy = y1 - y0
-                    if abs(dx) < 1 and abs(dy) < 1:
+                    left = min(x0, x1)
+                    top = min(y0, y1)
+                    right = max(x0, x1)
+                    bottom = max(y0, y1)
+                    if right - left < 1 or bottom - top < 1:
                         return
-                    target_ratio = ratio if ratio > 0 else 1.0
-                    abs_dx = abs(dx)
-                    abs_dy = abs(dy)
-                    if abs_dx == 0 and abs_dy == 0:
-                        return
-                    if abs_dx / target_ratio >= abs_dy:
-                        width = dx
-                        height = (abs(dx) / target_ratio) * (1 if dy >= 0 else -1)
-                    else:
-                        height = dy
-                        width = (abs(dy) * target_ratio) * (1 if dx >= 0 else -1)
-                    x_min = x0 if width >= 0 else x0 + width
-                    x_max = x_min + abs(width)
-                    y_min = y0 if height >= 0 else y0 + height
-                    y_max = y_min + abs(height)
-                    if x_min < 0:
-                        shift = -x_min
-                        x_min = 0
-                        x_max += shift
-                    if x_max > disp_w:
-                        shift = x_max - disp_w
-                        x_max = disp_w
-                        x_min -= shift
-                    if y_min < 0:
-                        shift = -y_min
-                        y_min = 0
-                        y_max += shift
-                    if y_max > disp_h:
-                        shift = y_max - disp_h
-                        y_max = disp_h
-                        y_min -= shift
-                    x_min = max(0.0, min(float(disp_w), x_min))
-                    x_max = max(0.0, min(float(disp_w), x_max))
-                    y_min = max(0.0, min(float(disp_h), y_min))
-                    y_max = max(0.0, min(float(disp_h), y_max))
-                    if x_max - x_min < 1 or y_max - y_min < 1:
-                        return
-                    current_box[0] = x_min
-                    current_box[1] = y_min
-                    current_box[2] = x_max
-                    current_box[3] = y_max
+                    current_box[0] = left
+                    current_box[1] = top
+                    current_box[2] = right
+                    current_box[3] = bottom
                     draw_rect()
 
                 def on_press(evt):
-                    start_point[0], start_point[1] = clamp(evt.x, evt.y)
+                    start_point[0], start_point[1] = image_coords(evt)
+                    update_box(
+                        start_point[0],
+                        start_point[1],
+                        start_point[0] + 1,
+                        start_point[1] + 1,
+                    )
 
                 def on_drag(evt):
-                    update_box(start_point[0], start_point[1], evt.x, evt.y)
+                    x, y = image_coords(evt)
+                    update_box(start_point[0], start_point[1], x, y)
 
                 canvas.bind("<Button-1>", on_press)
                 canvas.bind("<B1-Motion>", on_drag)
                 canvas.bind("<ButtonRelease-1>", on_drag)
-
-                draw_rect()
-
-                tk.Label(
-                    crop_win,
-                    text="Klik en sleep om het logo bij te snijden. Volledige selectie = geen crop.",
-                ).pack(padx=8, pady=(0, 6))
 
                 btns = tk.Frame(crop_win)
                 btns.pack(pady=6)
@@ -770,18 +1407,16 @@ def start_gui():
                 def reset_full() -> None:
                     current_box[0] = 0.0
                     current_box[1] = 0.0
-                    current_box[2] = float(disp_w)
-                    current_box[3] = float(disp_h)
+                    current_box[2] = float(base_img.width)
+                    current_box[3] = float(base_img.height)
                     draw_rect()
 
                 def apply_crop() -> None:
                     nonlocal logo_crop_state
-                    x_scale = base_img.width / disp_w
-                    y_scale = base_img.height / disp_h
-                    left = int(round(current_box[0] * x_scale))
-                    top = int(round(current_box[1] * y_scale))
-                    right = int(round(current_box[2] * x_scale))
-                    bottom = int(round(current_box[3] * y_scale))
+                    left = int(round(current_box[0]))
+                    top = int(round(current_box[1]))
+                    right = int(round(current_box[2]))
+                    bottom = int(round(current_box[3]))
                     left = max(0, min(base_img.width, left))
                     top = max(0, min(base_img.height, top))
                     right = max(left + 1, min(base_img.width, right))
@@ -803,6 +1438,15 @@ def start_gui():
                     crop_win.destroy()
                     update_preview()
 
+                def on_mousewheel(evt):
+                    step = 10 if evt.delta > 0 else -10
+                    set_zoom(zoom_var.get() + step)
+                    return "break"
+
+                canvas.bind("<MouseWheel>", on_mousewheel)
+                zoom_scale.configure(command=lambda _value: render_image())
+                render_image()
+
                 tk.Button(btns, text="Volledige afbeelding", command=reset_full).pack(
                     side="left", padx=4
                 )
@@ -823,15 +1467,43 @@ def start_gui():
             tk.Button(logo_frame, text="Bijsnijden", command=crop_logo).grid(
                 row=1, column=1, sticky="ew", padx=4, pady=2
             )
-            tk.Button(logo_frame, text="Verwijder", command=clear_logo).grid(
+            tk.Button(logo_frame, text="Volledig logo", command=open_logo_preview).grid(
                 row=2, column=1, sticky="ew", padx=4, pady=2
             )
+            tk.Button(logo_frame, text="Voorbeeld bon", command=open_order_preview).grid(
+                row=3, column=1, sticky="ew", padx=4, pady=2
+            )
+            tk.Button(logo_frame, text="Verwijder", command=clear_logo).grid(
+                row=4, column=1, sticky="ew", padx=4, pady=2
+            )
+            tk.Label(
+                logo_frame,
+                text=(
+                    "De PDF schaalt het logo automatisch binnen een vaste kopzone. "
+                    "Gebruik bijsnijden om alleen het juiste deel te tonen."
+                ),
+                anchor="w",
+                justify="left",
+                wraplength=240,
+            ).grid(row=5, column=1, sticky="nw", padx=4, pady=(6, 4))
+
+            preview_label.bind("<Button-1>", lambda _e: open_logo_preview())
 
             update_preview()
 
             def _save():
                 rec = {k: e.get().strip() for k, e in entries.items()}
+                accent_raw = accent_color_var.get().strip()
+                accent_normalized = normalize_rgb_color(accent_raw)
+                if accent_raw and not accent_normalized:
+                    messagebox.showwarning(
+                        "Let op",
+                        "Gebruik RGB als 255,119,255 of hex als #FF77FF.",
+                        parent=win,
+                    )
+                    return
                 rec["favorite"] = fav_var.get()
+                rec["accent_color"] = accent_normalized
                 rec["logo_path"] = logo_path_var.get().strip()
                 rec["logo_crop"] = logo_crop_state
                 if not rec["name"]:
@@ -846,7 +1518,7 @@ def start_gui():
                 win.destroy()
 
             btnf = tk.Frame(win)
-            btnf.grid(row=len(fields) + 2, column=0, columnspan=2, pady=6)
+            btnf.grid(row=len(fields) + 4, column=0, columnspan=2, pady=6)
             tk.Button(btnf, text="Opslaan", command=_save).pack(side="left", padx=4)
             tk.Button(btnf, text="Annuleer", command=win.destroy).pack(side="left", padx=4)
             win.transient(self)
@@ -1089,6 +1761,11 @@ def start_gui():
             tk.Button(btns, text="Bewerken", command=self.edit_sel).pack(side="left", padx=4)
             tk.Button(btns, text="Verwijderen", command=self.remove_sel).pack(side="left", padx=4)
             tk.Button(btns, text="Update uit CSV (merge)", command=self.merge_csv).pack(side="left", padx=4)
+            tk.Button(
+                btns,
+                text="Laad voorbeeldlijst",
+                command=self.load_example_template,
+            ).pack(side="left", padx=4)
             fav_label = f"Favoriet {favorite_marker()}"
             tk.Button(btns, text=fav_label, command=self.toggle_fav_sel).pack(side="left", padx=4)
             self.refresh()
@@ -1231,6 +1908,22 @@ def start_gui():
                 if self.on_change:
                     self.on_change()
 
+        def _merge_suppliers_from_csv_path(self, path) -> int:
+            df = read_csv_flex(str(path))
+            changed = 0
+            for rec in df.to_dict(orient="records"):
+                try:
+                    sup = Supplier.from_any(rec)
+                    self.db.upsert(sup)
+                    changed += 1
+                except Exception:
+                    pass
+            self.db.save(SUPPLIERS_DB_FILE)
+            self.refresh()
+            if self.on_change:
+                self.on_change()
+            return changed
+
         def merge_csv(self):
             path = filedialog.askopenfilename(
                 parent=self,
@@ -1240,17 +1933,40 @@ def start_gui():
             if not path:
                 return
             try:
-                df = read_csv_flex(path)
-                for rec in df.to_dict(orient="records"):
-                    try:
-                        sup = Supplier.from_any(rec)
-                        self.db.upsert(sup)
-                    except Exception:
-                        pass
-                self.db.save(SUPPLIERS_DB_FILE)
-                self.refresh()
-                if self.on_change:
-                    self.on_change()
+                changed = self._merge_suppliers_from_csv_path(path)
+                messagebox.showinfo(
+                    "Import",
+                    f"Verwerkt (merge/upsert): {changed}",
+                    parent=self,
+                )
+            except Exception as e:
+                messagebox.showerror("Fout", str(e), parent=self)
+
+        def load_example_template(self):
+            template_path = bundle_root() / SUPPLIERS_TEMPLATE_FILE
+            if not template_path.exists():
+                messagebox.showerror(
+                    "Template ontbreekt",
+                    "De ingebouwde leveranciers-template werd niet gevonden.",
+                    parent=self,
+                )
+                return
+            if not messagebox.askyesno(
+                "Voorbeeldlijst laden",
+                (
+                    "Laad de ingebouwde voorbeeldlijst met leveranciers?\n\n"
+                    "Bestaande leveranciers met dezelfde naam worden bijgewerkt."
+                ),
+                parent=self,
+            ):
+                return
+            try:
+                changed = self._merge_suppliers_from_csv_path(template_path)
+                messagebox.showinfo(
+                    "Voorbeeldlijst geladen",
+                    f"Verwerkt (merge/upsert): {changed}",
+                    parent=self,
+                )
             except Exception as e:
                 messagebox.showerror("Fout", str(e), parent=self)
 
@@ -1376,6 +2092,14 @@ def start_gui():
                 self._opticutter_notice_var.set("")
                 self._opticutter_notice_label.pack_forget()
 
+        CLIENT_DELIVERY_PRESET = "Klantadres"
+        DELIVERY_PRESETS = (
+            "Geen",
+            CLIENT_DELIVERY_PRESET,
+            "Bestelling wordt opgehaald",
+            "Leveradres wordt nog meegedeeld",
+        )
+
         def __init__(
             self,
             master,
@@ -1386,6 +2110,8 @@ def start_gui():
             callback,
             project_number_var: tk.StringVar,
             project_name_var: tk.StringVar,
+            clients_db: Optional["ClientsDB"] = None,
+            client_var: Optional[tk.StringVar] = None,
             opticutter_details: Dict[str, "OpticutterOrderComputation"] | None = None,
             initial_state: Optional["SupplierSelectionState"] = None,
             en1090_enabled: bool = True,
@@ -1399,6 +2125,8 @@ def start_gui():
             self.callback = callback
             self.project_number_var = project_number_var
             self.project_name_var = project_name_var
+            self.clients_db = clients_db
+            self.client_var = client_var
             self.opticutter_details = opticutter_details or {}
             self._en1090_enabled = bool(en1090_enabled)
             self._preview_supplier: Optional[Supplier] = None
@@ -1470,6 +2198,8 @@ def start_gui():
             ).grid(row=0, column=0, sticky="e", pady=(2, 0))
 
             readonly_bg = "#f0f0f0"
+            copy_button_text = "⧉"
+            copied_button_text = "✓"
 
             pn_row = tk.Frame(proj_frame)
             pn_row.pack(fill="x", pady=3)
@@ -1493,14 +2223,82 @@ def start_gui():
                 highlightbackground=field_border,
                 highlightcolor=field_border,
             )
+
+            copy_reset_job: Optional[str] = None
+            name_copy_reset_job: Optional[str] = None
+
+            def copy_project_number() -> None:
+                nonlocal copy_reset_job
+                project_number = self.project_number_var.get().strip()
+                if not project_number:
+                    self.bell()
+                    return
+                try:
+                    self.clipboard_clear()
+                    self.clipboard_append(project_number)
+                    self.update_idletasks()
+                except tk.TclError:
+                    messagebox.showerror(
+                        "Kopieren mislukt",
+                        "Het projectnummer kon niet naar het klembord worden gekopieerd.",
+                        parent=self,
+                    )
+                    return
+                if copy_reset_job is not None:
+                    try:
+                        self.after_cancel(copy_reset_job)
+                    except Exception:
+                        pass
+                project_number_copy_btn.configure(text=copied_button_text)
+                copy_reset_job = self.after(
+                    1200,
+                    lambda: project_number_copy_btn.configure(text=copy_button_text),
+                )
+
+            def copy_project_name() -> None:
+                nonlocal name_copy_reset_job
+                project_name = self.project_name_var.get().strip()
+                if not project_name:
+                    self.bell()
+                    return
+                try:
+                    self.clipboard_clear()
+                    self.clipboard_append(project_name)
+                    self.update_idletasks()
+                except tk.TclError:
+                    messagebox.showerror(
+                        "Kopieren mislukt",
+                        "De projectnaam kon niet naar het klembord worden gekopieerd.",
+                        parent=self,
+                    )
+                    return
+                if name_copy_reset_job is not None:
+                    try:
+                        self.after_cancel(name_copy_reset_job)
+                    except Exception:
+                        pass
+                project_name_copy_btn.configure(text=copied_button_text)
+                name_copy_reset_job = self.after(
+                    1200,
+                    lambda: project_name_copy_btn.configure(text=copy_button_text),
+                )
+
             project_number_value = tk.Label(
                 pn_row,
                 textvariable=self.project_number_var,
                 **field_kwargs,
             )
             project_number_value.pack(side="left", padx=(6, 0))
+            project_number_copy_btn = tk.Button(
+                pn_row,
+                text=copy_button_text,
+                width=3,
+                command=copy_project_number,
+            )
+            project_number_copy_btn.pack(side="left", padx=(6, 0))
             self._project_number_label = project_number_label
             self._project_number_value = project_number_value
+            self._project_number_copy_btn = project_number_copy_btn
 
             name_row = tk.Frame(proj_frame)
             name_row.pack(fill="x", pady=3)
@@ -1517,8 +2315,16 @@ def start_gui():
                 **field_kwargs,
             )
             project_name_value.pack(side="left", padx=(6, 0))
+            project_name_copy_btn = tk.Button(
+                name_row,
+                text=copy_button_text,
+                width=3,
+                command=copy_project_name,
+            )
+            project_name_copy_btn.pack(side="left", padx=(6, 0))
             self._project_name_label = project_name_label
             self._project_name_value = project_name_value
+            self._project_name_copy_btn = project_name_copy_btn
 
             proj_frame.update_idletasks()
             required_height = proj_frame.winfo_reqheight()
@@ -1536,9 +2342,13 @@ def start_gui():
             )
             width_candidates = [
                 project_number_label.winfo_reqwidth()
-                + project_number_value.winfo_reqwidth(),
+                + project_number_value.winfo_reqwidth()
+                + project_number_copy_btn.winfo_reqwidth()
+                + 6,
                 project_name_label.winfo_reqwidth()
-                + project_name_value.winfo_reqwidth(),
+                + project_name_value.winfo_reqwidth()
+                + project_name_copy_btn.winfo_reqwidth()
+                + 6,
             ]
             pad_conf = proj_frame.cget("padx")
             if isinstance(pad_conf, str):
@@ -1576,15 +2386,13 @@ def start_gui():
                 text="Alles deselecteren",
                 command=lambda: self._set_all_exports(False),
             ).pack(side="left", padx=(6, 0))
+            tk.Button(
+                export_toggle_row,
+                text="Nieuw leveradres",
+                command=self._add_delivery_address,
+            ).pack(side="left", padx=(12, 0))
 
-            delivery_opts = [
-                "Geen",
-                "Bestelling wordt opgehaald",
-                "Leveradres wordt nog meegedeeld",
-            ] + [
-                self.delivery_db.display_name(a)
-                for a in self.delivery_db.addresses_sorted()
-            ]
+            delivery_opts = self._delivery_options()
 
             doc_type_opts = [
                 "Geen",
@@ -1753,7 +2561,7 @@ def start_gui():
                 _scroll_entry_to_end(remark_entry, remark_var)
                 _OverflowTooltip(remark_entry, lambda v=remark_var: v.get().strip())
 
-                dvar = tk.StringVar(value="Geen")
+                dvar = tk.StringVar(value=self._default_delivery_value())
                 self.delivery_vars[sel_key] = dvar
                 dcombo = ttk.Combobox(
                     row,
@@ -1761,6 +2569,13 @@ def start_gui():
                     values=delivery_opts,
                     state="readonly",
                     width=50,
+                )
+                dcombo.bind(
+                    "<FocusIn>", lambda _e, key=sel_key: self._on_focus_key(key)
+                )
+                dcombo.bind(
+                    "<<ComboboxSelected>>",
+                    lambda _e, key=sel_key: self._on_focus_key(key),
                 )
                 self.delivery_combos[sel_key] = dcombo
 
@@ -1901,6 +2716,120 @@ def start_gui():
                 except Exception:
                     pass
             self._update_preview_from_any_combo()
+
+        def _resolve_current_client(self) -> Optional[Client]:
+            clients_db = getattr(self, "clients_db", None)
+            client_var = getattr(self, "client_var", None)
+            if clients_db is None or client_var is None:
+                return None
+
+            try:
+                raw_value = str(client_var.get() or "").strip()
+            except Exception:
+                raw_value = ""
+            if not raw_value:
+                return None
+
+            lowered = raw_value.lower()
+            for client in getattr(clients_db, "clients", []):
+                name = str(getattr(client, "name", "") or "").strip()
+                if name and lowered == name.lower():
+                    return client
+                try:
+                    display_name = str(clients_db.display_name(client) or "").strip()
+                except Exception:
+                    display_name = ""
+                if display_name and lowered == display_name.lower():
+                    return client
+
+            getter = getattr(clients_db, "get", None)
+            if callable(getter):
+                try:
+                    return getter(raw_value)
+                except Exception:
+                    return None
+            return None
+
+        def _default_delivery_value(self) -> str:
+            return self.DELIVERY_PRESETS[0]
+
+        def _delivery_options(self) -> List[str]:
+            options = list(self.DELIVERY_PRESETS)
+            options.extend(
+                self.delivery_db.display_name(a)
+                for a in self.delivery_db.addresses_sorted()
+            )
+            return options
+
+        def _open_delivery_address_dialog(
+            self, addr: Optional[DeliveryAddress] = None
+        ) -> Optional[DeliveryAddress]:
+            win = tk.Toplevel(self)
+            win.title("Leveradres")
+            fields = [
+                ("Naam", "name"),
+                ("Adres", "address"),
+                ("Opmerkingen", "remarks"),
+            ]
+            entries: Dict[str, tk.Entry] = {}
+            for i, (lbl, key) in enumerate(fields):
+                tk.Label(win, text=lbl + ":").grid(
+                    row=i, column=0, sticky="e", padx=4, pady=2
+                )
+                ent = tk.Entry(win, width=40)
+                ent.grid(row=i, column=1, padx=4, pady=2)
+                if addr:
+                    ent.insert(0, _to_str(getattr(addr, key)))
+                entries[key] = ent
+            fav_var = tk.BooleanVar(value=addr.favorite if addr else False)
+            tk.Checkbutton(win, text="Favoriet", variable=fav_var).grid(
+                row=len(fields), column=1, sticky="w", padx=4, pady=2
+            )
+
+            result: Dict[str, Optional[DeliveryAddress]] = {"value": None}
+
+            def _save() -> None:
+                rec = {k: (e.get().strip() or None) for k, e in entries.items()}
+                rec["favorite"] = fav_var.get()
+                if not rec["name"]:
+                    messagebox.showwarning(
+                        "Let op", "Naam is verplicht.", parent=win
+                    )
+                    return
+                result["value"] = DeliveryAddress.from_any(rec)
+                win.destroy()
+
+            btnf = tk.Frame(win)
+            btnf.grid(row=len(fields) + 1, column=0, columnspan=2, pady=6)
+            tk.Button(btnf, text="Opslaan", command=_save).pack(side="left", padx=4)
+            tk.Button(btnf, text="Annuleer", command=win.destroy).pack(
+                side="left", padx=4
+            )
+            win.transient(self)
+            _place_window_near_parent(win, self)
+            win.grab_set()
+            entries["name"].focus_set()
+            self.wait_window(win)
+            return result["value"]
+
+        def _add_delivery_address(self) -> None:
+            created = self._open_delivery_address_dialog(None)
+            if created is None:
+                return
+            self.delivery_db.upsert(created)
+            self.delivery_db.save(DELIVERY_DB_FILE)
+            self._refresh_options()
+            display_name = self.delivery_db.display_name(created)
+            active_key = self._active_key
+            if not active_key and self.rows:
+                active_key = self.rows[0][0]
+            if active_key:
+                dvar = self.delivery_vars.get(active_key)
+                dcombo = self.delivery_combos.get(active_key)
+                if dvar is not None:
+                    dvar.set(display_name)
+                if dcombo is not None:
+                    dcombo.set(display_name)
 
         def serialize_state(self) -> "SupplierSelectionState":
             selections: Dict[str, str] = {}
@@ -2259,19 +3188,15 @@ def start_gui():
                 elif self._base_options:
                     set_combo_value(combo, self._base_options[0])
 
-            delivery_opts = [
-                "Geen",
-                "Bestelling wordt opgehaald",
-                "Leveradres wordt nog meegedeeld",
-            ] + [
-                self.delivery_db.display_name(a)
-                for a in self.delivery_db.addresses_sorted()
-            ]
+            delivery_opts = self._delivery_options()
+            default_delivery = self._default_delivery_value()
             for sel_key, dcombo in self.delivery_combos.items():
                 cur = dcombo.get()
                 dcombo["values"] = delivery_opts
-                if cur:
+                if cur in delivery_opts:
                     dcombo.set(cur)
+                else:
+                    dcombo.set(default_delivery)
 
         def _on_combo_change(self, _evt=None):
             for sel_key, combo in self.rows:
@@ -3495,6 +4420,39 @@ def start_gui():
             self.export_name_custom_suffix_enabled_var = tk.IntVar(
                 master=self, value=1 if self.settings.custom_suffix_enabled else 0
             )
+            self.document_filename_profile_var = tk.StringVar(
+                master=self,
+                value=getattr(self.settings, "document_filename_profile", "standard"),
+            )
+            self.document_filename_show_doc_type_var = tk.IntVar(
+                master=self,
+                value=1 if getattr(self.settings, "document_filename_show_doc_type", True) else 0,
+            )
+            self.document_filename_show_doc_number_var = tk.IntVar(
+                master=self,
+                value=1
+                if getattr(self.settings, "document_filename_show_doc_number", True)
+                else 0,
+            )
+            self.document_filename_show_context_var = tk.IntVar(
+                master=self,
+                value=1 if getattr(self.settings, "document_filename_show_context", True) else 0,
+            )
+            self.document_filename_show_date_var = tk.IntVar(
+                master=self,
+                value=1 if getattr(self.settings, "document_filename_show_date", True) else 0,
+            )
+            self.document_filename_compact_doc_number_var = tk.IntVar(
+                master=self,
+                value=1
+                if getattr(self.settings, "document_filename_compact_doc_number", False)
+                else 0,
+            )
+            self.document_filename_separator_var = tk.StringVar(
+                master=self,
+                value=getattr(self.settings, "document_filename_separator", "underscore"),
+            )
+            self.document_filename_preview_var = tk.StringVar(master=self, value="")
             self.bundle_latest_var = tk.IntVar(
                 master=self, value=1 if self.settings.bundle_latest else 0
             )
@@ -3534,6 +4492,8 @@ def start_gui():
                 self.project_name_var,
                 self.export_name_custom_prefix_text,
                 self.export_name_custom_suffix_text,
+                self.document_filename_profile_var,
+                self.document_filename_separator_var,
             ):
                 var.trace_add("write", self._save_settings)
             for var in (
@@ -3547,11 +4507,31 @@ def start_gui():
                 self.export_date_suffix_var,
                 self.export_name_custom_prefix_enabled_var,
                 self.export_name_custom_suffix_enabled_var,
+                self.document_filename_show_doc_type_var,
+                self.document_filename_show_doc_number_var,
+                self.document_filename_show_context_var,
+                self.document_filename_show_date_var,
+                self.document_filename_compact_doc_number_var,
                 self.bundle_latest_var,
                 self.bundle_dry_run_var,
                 self.autofill_custom_bom_var,
             ):
                 var.trace_add("write", self._save_settings)
+
+            for var in (
+                self.document_filename_profile_var,
+                self.document_filename_show_doc_type_var,
+                self.document_filename_show_doc_number_var,
+                self.document_filename_show_context_var,
+                self.document_filename_show_date_var,
+                self.document_filename_compact_doc_number_var,
+                self.document_filename_separator_var,
+            ):
+                var.trace_add("write", self._update_document_filename_preview)
+
+            self.document_filename_profile_var.trace_add(
+                "write", self._refresh_document_filename_controls
+            )
 
             self.zip_var.trace_add("write", self._update_zip_per_finish_var)
             self.zip_finish_var.trace_add("write", self._update_zip_per_finish_var)
@@ -3612,6 +4592,7 @@ def start_gui():
                 on_manage_clients=lambda: self.nb.select(self.clients_frame),
                 on_manage_suppliers=lambda: self.nb.select(self.suppliers_frame),
                 on_manage_deliveries=lambda: self.nb.select(self.delivery_frame),
+                document_name_builder=self._build_document_export_basename,
             )
             self.nb.add(self.manual_order_tab, text="Bestelbon-editor")
             self.opticutter_frame = tk.Frame(self.nb)
@@ -4075,6 +5056,22 @@ def start_gui():
             options_frame.grid(row=0, column=0, sticky="nw", padx=8, pady=4)
             export_name_inner = tk.Frame(export_name_frame)
             export_name_inner.grid(row=0, column=0, sticky="nw", padx=8, pady=4)
+            general_export_name_frame = tk.LabelFrame(
+                export_name_inner,
+                text="Andere exportbestanden",
+                labelanchor="n",
+            )
+            general_export_name_frame.pack(fill="x", anchor="n")
+            general_export_name_inner = tk.Frame(general_export_name_frame)
+            general_export_name_inner.pack(fill="x", padx=6, pady=6)
+            document_name_frame = tk.LabelFrame(
+                export_name_inner,
+                text="Bestelbon / offerte",
+                labelanchor="n",
+            )
+            document_name_frame.pack(fill="x", anchor="n", pady=(8, 0))
+            document_name_inner = tk.Frame(document_name_frame)
+            document_name_inner.pack(fill="x", padx=6, pady=6)
 
             self._rebuild_extension_checkbuttons()
             tk.Checkbutton(
@@ -4097,18 +5094,18 @@ def start_gui():
                 anchor="w",
             ).pack(anchor="w", pady=2)
             tk.Checkbutton(
-                export_name_inner,
+                general_export_name_inner,
                 text="Datumprefix (YYYYMMDD-)",
                 variable=self.export_date_prefix_var,
                 anchor="w",
             ).pack(anchor="w", pady=2)
             tk.Checkbutton(
-                export_name_inner,
+                general_export_name_inner,
                 text="Datumsuffix (-YYYYMMDD)",
                 variable=self.export_date_suffix_var,
                 anchor="w",
             ).pack(anchor="w", pady=2)
-            prefix_row = tk.Frame(export_name_inner)
+            prefix_row = tk.Frame(general_export_name_inner)
             prefix_row.pack(anchor="w", fill="x", pady=(8, 2))
             tk.Checkbutton(
                 prefix_row,
@@ -4119,7 +5116,7 @@ def start_gui():
                 prefix_row,
                 textvariable=self.export_name_custom_prefix_text,
             ).pack(side="left", fill="x", expand=True)
-            suffix_row = tk.Frame(export_name_inner)
+            suffix_row = tk.Frame(general_export_name_inner)
             suffix_row.pack(anchor="w", fill="x", pady=2)
             tk.Checkbutton(
                 suffix_row,
@@ -4130,6 +5127,88 @@ def start_gui():
                 suffix_row,
                 textvariable=self.export_name_custom_suffix_text,
             ).pack(side="left", fill="x", expand=True)
+            tk.Label(
+                document_name_inner,
+                text="Profiel:",
+                anchor="w",
+            ).pack(anchor="w")
+            for text, value in (
+                ("Standaard", "standard"),
+                ("Kort (BB-123)", "short"),
+                ("Compact (BB123)", "compact"),
+                ("Aangepast", "custom"),
+            ):
+                tk.Radiobutton(
+                    document_name_inner,
+                    text=text,
+                    value=value,
+                    variable=self.document_filename_profile_var,
+                    anchor="w",
+                    justify="left",
+                ).pack(anchor="w")
+
+            custom_document_options = tk.Frame(document_name_inner)
+            custom_document_options.pack(fill="x", pady=(8, 4))
+            self._document_filename_custom_widgets = []
+
+            def _add_doc_custom_checkbutton(text: str, variable: tk.IntVar) -> None:
+                widget = tk.Checkbutton(
+                    custom_document_options,
+                    text=text,
+                    variable=variable,
+                    anchor="w",
+                    justify="left",
+                )
+                widget.pack(anchor="w")
+                self._document_filename_custom_widgets.append(widget)
+
+            _add_doc_custom_checkbutton(
+                "Documenttype tonen",
+                self.document_filename_show_doc_type_var,
+            )
+            _add_doc_custom_checkbutton(
+                "Documentnummer tonen",
+                self.document_filename_show_doc_number_var,
+            )
+            _add_doc_custom_checkbutton(
+                "Productie / afwerking tonen",
+                self.document_filename_show_context_var,
+            )
+            _add_doc_custom_checkbutton(
+                "Datum tonen",
+                self.document_filename_show_date_var,
+            )
+            _add_doc_custom_checkbutton(
+                "Compact documentnummer",
+                self.document_filename_compact_doc_number_var,
+            )
+
+            separator_row = tk.Frame(custom_document_options)
+            separator_row.pack(anchor="w", pady=(4, 0))
+            tk.Label(separator_row, text="Scheiding:").pack(side="left")
+            for text, value in (
+                ("_", "underscore"),
+                ("-", "dash"),
+                ("geen", "none"),
+            ):
+                widget = tk.Radiobutton(
+                    separator_row,
+                    text=text,
+                    value=value,
+                    variable=self.document_filename_separator_var,
+                    anchor="w",
+                )
+                widget.pack(side="left", padx=(8, 0))
+                self._document_filename_custom_widgets.append(widget)
+
+            preview_row = tk.Frame(document_name_inner)
+            preview_row.pack(fill="x", pady=(8, 0))
+            tk.Label(preview_row, text="Voorbeeld:").pack(anchor="w")
+            tk.Entry(
+                preview_row,
+                textvariable=self.document_filename_preview_var,
+                state="readonly",
+            ).pack(fill="x", pady=(2, 0))
             # Legacy options moved to settings tab
 
             # BOM controls
@@ -4224,7 +5303,44 @@ def start_gui():
             # Status
             self.status_var = tk.StringVar(value="Klaar")
             tk.Label(main, textvariable=self.status_var, anchor="w").pack(fill="x", padx=8, pady=(0,8))
+            self._refresh_document_filename_controls()
+            self._update_document_filename_preview()
             self._save_settings()
+
+        def _current_client(self) -> Optional[Client]:
+            if not hasattr(self, "client_var"):
+                return None
+            client_name = strip_favorite_marker(_to_str(self.client_var.get())).strip()
+            if not client_name:
+                return None
+            return self.client_db.get(client_name)
+
+        def _resolve_delivery_choice(
+            self,
+            delivery_display: str,
+            client: Optional[Client] = None,
+        ) -> Optional[DeliveryAddress]:
+            clean = strip_favorite_marker(_to_str(delivery_display)).strip()
+            if not clean or clean == "Geen":
+                return None
+            if clean == SupplierSelectionFrame.CLIENT_DELIVERY_PRESET:
+                selected_client = client if client is not None else self._current_client()
+                if selected_client is None:
+                    return None
+                name = _to_str(selected_client.name).strip() or "Opdrachtgever"
+                address = _to_str(selected_client.address).strip() or None
+                if not name and not address:
+                    return None
+                return DeliveryAddress(name=name, address=address)
+            if clean in (
+                "Bestelling wordt opgehaald",
+                "Leveradres wordt nog meegedeeld",
+            ):
+                return DeliveryAddress(name=clean)
+            delivery = self.delivery_db.get(clean)
+            if delivery is not None:
+                return delivery
+            return DeliveryAddress(name=clean)
 
         def _export_manual_order(self, payload: Dict[str, object]) -> None:
             from tkinter import messagebox, filedialog
@@ -4251,16 +5367,10 @@ def start_gui():
                         supplier = sup
                         break
 
+            client = self._current_client()
+
             delivery_display = _to_str(payload.get("delivery")).strip()
-            delivery_name_clean = strip_favorite_marker(delivery_display).strip()
-            delivery: Optional[DeliveryAddress] = None
-            if delivery_name_clean and delivery_name_clean not in {"", "Geen"}:
-                if delivery_name_clean in ManualOrderTab.DELIVERY_PRESETS[1:]:
-                    delivery = DeliveryAddress(name=delivery_name_clean)
-                else:
-                    delivery = self.delivery_db.get(delivery_name_clean)
-                    if delivery is None:
-                        delivery = DeliveryAddress(name=delivery_name_clean)
+            delivery = self._resolve_delivery_choice(delivery_display, client)
 
             column_layout_raw = payload.get("column_layout")
             column_layout: List[Dict[str, object]] = []
@@ -4335,10 +5445,10 @@ def start_gui():
 
             project_number = self.project_number_var.get().strip()
             project_name = self.project_name_var.get().strip()
-            filename_base = ManualOrderTab.build_document_basename(
+            filename_base = self._build_document_export_basename(
+                doc_type,
                 doc_number,
-                project_name,
-                context_label or ManualOrderTab.DEFAULT_CONTEXT_LABEL,
+                context_label or project_name or ManualOrderTab.DEFAULT_CONTEXT_LABEL,
             )
             excel_requested = f"{filename_base}.xlsx"
             pdf_requested = f"{filename_base}.pdf"
@@ -4347,16 +5457,12 @@ def start_gui():
             excel_path = os.path.join(dest, excel_filename)
             pdf_path = os.path.join(dest, pdf_filename)
 
-            client = None
-            if hasattr(self, "client_var"):
-                client_name = strip_favorite_marker(self.client_var.get()).strip()
-                if client_name:
-                    client = self.client_db.get(client_name)
             company_info = {
                 "name": client.name if client else "",
                 "address": client.address if client else "",
                 "vat": client.vat if client else "",
                 "email": client.email if client else "",
+                "accent_color": client.accent_color if client else "",
                 "logo_path": client.logo_path if client else "",
                 "logo_crop": client.logo_crop if client else None,
             }
@@ -4519,6 +5625,27 @@ def start_gui():
                 self.export_name_custom_suffix_enabled_var.get()
             )
             self.settings.custom_suffix_text = self.export_name_custom_suffix_text.get().strip()
+            self.settings.document_filename_profile = (
+                self.document_filename_profile_var.get().strip() or "standard"
+            )
+            self.settings.document_filename_show_doc_type = bool(
+                self.document_filename_show_doc_type_var.get()
+            )
+            self.settings.document_filename_show_doc_number = bool(
+                self.document_filename_show_doc_number_var.get()
+            )
+            self.settings.document_filename_show_context = bool(
+                self.document_filename_show_context_var.get()
+            )
+            self.settings.document_filename_show_date = bool(
+                self.document_filename_show_date_var.get()
+            )
+            self.settings.document_filename_compact_doc_number = bool(
+                self.document_filename_compact_doc_number_var.get()
+            )
+            self.settings.document_filename_separator = (
+                self.document_filename_separator_var.get().strip() or "underscore"
+            )
             self.settings.bundle_latest = bool(self.bundle_latest_var.get())
             self.settings.bundle_dry_run = bool(self.bundle_dry_run_var.get())
             self.settings.autofill_custom_bom = bool(
@@ -4536,6 +5663,64 @@ def start_gui():
                 self.settings.save()
             except Exception as exc:
                 print(f"Kon instellingen niet opslaan: {exc}", file=sys.stderr)
+
+        def _document_filename_settings_kwargs(self) -> Dict[str, object]:
+            return {
+                "profile": self.document_filename_profile_var.get().strip() or "standard",
+                "show_doc_type": bool(self.document_filename_show_doc_type_var.get()),
+                "show_doc_number": bool(self.document_filename_show_doc_number_var.get()),
+                "show_context": bool(self.document_filename_show_context_var.get()),
+                "show_date": bool(self.document_filename_show_date_var.get()),
+                "compact_doc_number": bool(
+                    self.document_filename_compact_doc_number_var.get()
+                ),
+                "separator": self.document_filename_separator_var.get().strip()
+                or "underscore",
+            }
+
+        def _build_document_export_basename(
+            self,
+            doc_type: str,
+            doc_number: str | None,
+            context_label: str | None,
+            export_date: str | None = None,
+            *,
+            extra_context_label: str | None = None,
+        ) -> str:
+            return build_document_export_basename(
+                doc_type,
+                doc_number,
+                context_label,
+                export_date,
+                extra_context_label=extra_context_label,
+                **self._document_filename_settings_kwargs(),
+            )
+
+        def _refresh_document_filename_controls(self, *_args) -> None:
+            enabled = (
+                self.document_filename_profile_var.get().strip().lower() == "custom"
+            )
+            state = "normal" if enabled else "disabled"
+            for widget in getattr(self, "_document_filename_custom_widgets", []):
+                try:
+                    widget.configure(state=state)
+                except Exception:
+                    pass
+
+        def _update_document_filename_preview(self, *_args) -> None:
+            preview = self._build_document_export_basename(
+                "Bestelbon",
+                "BB-123",
+                "Laser",
+                datetime.date.today().strftime("%Y-%m-%d"),
+            )
+            self.document_filename_preview_var.set(f"{preview}.pdf")
+            manual_tab = getattr(self, "manual_order_tab", None)
+            if manual_tab is not None and hasattr(manual_tab, "_update_doc_name_preview"):
+                try:
+                    manual_tab._update_doc_name_preview()
+                except Exception:
+                    pass
 
         def _sync_en1090_preferences(self) -> None:
             try:
@@ -4931,9 +6116,677 @@ def start_gui():
             self._refresh_tree()
             self._sync_custom_bom_from_main()
             self.nb.select(self.main_frame)
-            self.status_var.set(
-                f"Custom BOM wijzigingen toegepast ({len(normalized)} rijen)."
+            selection_frame = getattr(self, "sel_frame", None)
+            selection_refreshed = False
+            if selection_frame is not None:
+                try:
+                    if selection_frame.winfo_exists():
+                        selection_refreshed = (
+                            self._show_supplier_selection_tab(
+                                select_tab=False,
+                                prompt_opticutter=False,
+                            )
+                            is not None
+                        )
+                except Exception:
+                    selection_refreshed = False
+            status_message = f"Custom BOM wijzigingen toegepast ({len(normalized)} rijen)."
+            if selection_refreshed:
+                status_message += " Bestelbonnen bijgewerkt."
+            self.status_var.set(status_message)
+
+        def _collect_supplier_selection_payload(
+            self,
+            *,
+            prompt_opticutter: bool = True,
+        ) -> Optional[Dict[str, object]]:
+            from tkinter import messagebox
+
+            if not self._ensure_bom_loaded():
+                return None
+
+            bom_df = self.bom_df
+            prods = sorted(
+                set(
+                    (str(r.get("Production") or "").strip() or "_Onbekend")
+                    for _, r in bom_df.iterrows()
+                )
             )
+            finish_meta_map: Dict[str, Dict[str, str]] = {}
+            finish_part_numbers: Dict[str, set[str]] = defaultdict(set)
+            for _, row in bom_df.iterrows():
+                finish_text = _to_str(row.get("Finish")).strip()
+                if not finish_text:
+                    continue
+                meta = describe_finish_combo(row.get("Finish"), row.get("RAL color"))
+                key = meta["key"]
+                if key not in finish_meta_map:
+                    finish_meta_map[key] = meta
+                pn = _to_str(row.get("PartNumber")).strip()
+                if pn:
+                    finish_part_numbers[key].add(pn)
+
+            finish_entries = []
+            for key, meta in finish_meta_map.items():
+                if not finish_part_numbers.get(key):
+                    continue
+                entry = meta.copy()
+                entry["key"] = key
+                finish_entries.append(entry)
+            finish_entries.sort(
+                key=lambda e: (
+                    (_to_str(e.get("label")) or "").lower(),
+                    (_to_str(e.get("key")) or "").lower(),
+                )
+            )
+            finish_label_lookup = {
+                entry["key"]: _to_str(entry.get("label")) or entry["key"]
+                for entry in finish_entries
+            }
+
+            self._refresh_opticutter_table()
+            opticutter_analysis = getattr(self, "opticutter_last_analysis", None)
+            scenarios_ready = bool(self.opticutter_profile_selection_scenarios)
+
+            if (
+                opticutter_analysis is not None
+                and opticutter_analysis.profiles
+                and not scenarios_ready
+            ):
+                if prompt_opticutter:
+                    use_auto = messagebox.askyesno(
+                        "Opticutter niet ingevuld",
+                        (
+                            "De zaagplanning in Opticutter is nog niet ingevuld. "
+                            "Wil je automatisch de beste scenario's gebruiken?\n"
+                            "Kies 'Nee' om eerst naar de Opticutter-tab te gaan."
+                        ),
+                        parent=self,
+                    )
+                    if not use_auto:
+                        self.nb.select(self.opticutter_frame)
+                        return None
+                    for profile in opticutter_analysis.profiles:
+                        self.opticutter_profile_selection_choice[profile.key] = (
+                            profile.best_choice
+                        )
+                        self.opticutter_profile_selection_scenarios[profile.key] = (
+                            profile.scenarios
+                        )
+                    self._refresh_opticutter_table()
+                    opticutter_analysis = getattr(self, "opticutter_last_analysis", None)
+                    scenarios_ready = bool(self.opticutter_profile_selection_scenarios)
+
+            opticutter_notice_message = ""
+            if (
+                opticutter_analysis is not None
+                and opticutter_analysis.profiles
+                and not scenarios_ready
+                and not prompt_opticutter
+            ):
+                opticutter_notice_message = (
+                    "Opticutter is nog niet volledig ingevuld. "
+                    "Werk de zaagplanning bij om brutemateriaalorders te tonen."
+                )
+            elif (
+                opticutter_analysis is not None
+                and not opticutter_analysis.profiles
+                and opticutter_analysis.error
+            ):
+                opticutter_notice_message = opticutter_analysis.error
+
+            opticutter_context = None
+            opticutter_details: Dict[str, OpticutterOrderComputation] = {}
+            if (
+                opticutter_analysis is not None
+                and opticutter_analysis.profiles
+                and scenarios_ready
+            ):
+                try:
+                    opticutter_context = prepare_opticutter_export(
+                        opticutter_analysis,
+                        dict(self.opticutter_profile_selection_choice),
+                    )
+                except Exception:
+                    opticutter_context = None
+            if opticutter_context is not None:
+                try:
+                    opticutter_details = compute_opticutter_order_details(
+                        bom_df, opticutter_context
+                    )
+                except Exception:
+                    opticutter_details = {}
+
+            return {
+                "prods": prods,
+                "finish_entries": finish_entries,
+                "finish_label_lookup": finish_label_lookup,
+                "opticutter_details": opticutter_details,
+                "opticutter_notice_message": opticutter_notice_message,
+            }
+
+        def _show_supplier_selection_tab(
+            self,
+            *,
+            select_tab: bool = True,
+            prompt_opticutter: bool = True,
+        ) -> Optional["SupplierSelectionFrame"]:
+            from tkinter import messagebox
+
+            payload = self._collect_supplier_selection_payload(
+                prompt_opticutter=prompt_opticutter
+            )
+            if payload is None:
+                return None
+
+            prods = list(payload.get("prods") or [])
+            finish_entries = list(payload.get("finish_entries") or [])
+            finish_label_lookup = dict(payload.get("finish_label_lookup") or {})
+            opticutter_details = dict(payload.get("opticutter_details") or {})
+            opticutter_notice_message = _to_str(
+                payload.get("opticutter_notice_message")
+            ).strip()
+            sel_frame = None
+
+            def on_sel(
+                sel_map: Dict[str, str],
+                doc_map: Dict[str, str],
+                doc_num_map: Dict[str, str],
+                delivery_map_raw: Dict[str, str],
+                remarks_map_raw: Dict[str, str],
+                en1090_map_raw: Dict[str, bool],
+                project_number: str,
+                project_name: str,
+                remember: bool,
+                export_flags: Dict[str, bool] | None = None,
+            ):
+                if not self._ensure_bom_loaded():
+                    return
+
+                current_bom = self.bom_df
+                attrs = getattr(current_bom, "attrs", {}) or {}
+                missing_production = bool(attrs.get("production_column_missing"))
+                if missing_production:
+                    messagebox.showwarning(
+                        "Let op",
+                        "De geladen BOM mist de kolom 'Production'. "
+                        "Vul de productie in de BOM in om bestelbonnen per productie te exporteren.",
+                        parent=sel_frame or self,
+                    )
+                    return
+
+                current_exts = self._selected_exts()
+                if not current_exts or not self.source_folder or not self.dest_folder:
+                    messagebox.showwarning(
+                        "Let op",
+                        "Selecteer bron, bestemming en extensies.",
+                        parent=sel_frame or self,
+                    )
+                    return
+
+                client = self._current_client()
+                self._refresh_opticutter_table()
+                opticutter_analysis_current = getattr(
+                    self, "opticutter_last_analysis", None
+                )
+
+                if sel_frame is not None:
+                    try:
+                        if sel_frame.winfo_exists():
+                            self._last_supplier_selection_state = sel_frame.serialize_state()
+                    except Exception:
+                        pass
+
+                prod_override_map: Dict[str, str] = {}
+                finish_override_map: Dict[str, str] = {}
+                opticutter_override_map: Dict[str, str] = {}
+                export_flags = export_flags or {}
+                prod_export_filter: Dict[str, bool] = {}
+                finish_export_filter: Dict[str, bool] = {}
+                opticutter_export_filter: Dict[str, bool] = {}
+                for key, value in sel_map.items():
+                    kind, identifier = parse_selection_key(key)
+                    if kind == "finish":
+                        finish_override_map[identifier] = value
+                    elif kind == "opticutter":
+                        opticutter_override_map[identifier] = value
+                    else:
+                        prod_override_map[identifier] = value
+                for key, enabled in export_flags.items():
+                    kind, identifier = parse_selection_key(key)
+                    target: Dict[str, bool] | None
+                    if kind == "finish":
+                        target = finish_export_filter
+                    elif kind == "opticutter":
+                        target = opticutter_export_filter
+                    else:
+                        target = prod_export_filter
+                    target[identifier] = bool(enabled)
+
+                doc_type_map: Dict[str, str] = {}
+                finish_doc_type_map: Dict[str, str] = {}
+                opticutter_doc_type_map: Dict[str, str] = {}
+                for key, value in doc_map.items():
+                    kind, identifier = parse_selection_key(key)
+                    if kind == "finish":
+                        finish_doc_type_map[identifier] = value
+                    elif kind == "opticutter":
+                        opticutter_doc_type_map[identifier] = value
+                    else:
+                        doc_type_map[identifier] = value
+
+                prod_doc_num_map: Dict[str, str] = {}
+                finish_doc_num_map: Dict[str, str] = {}
+                opticutter_doc_num_map: Dict[str, str] = {}
+                for key, value in doc_num_map.items():
+                    kind, identifier = parse_selection_key(key)
+                    if kind == "finish":
+                        finish_doc_num_map[identifier] = value
+                    elif kind == "opticutter":
+                        opticutter_doc_num_map[identifier] = value
+                    else:
+                        prod_doc_num_map[identifier] = value
+
+                production_delivery_map: Dict[str, DeliveryAddress | None] = {}
+                finish_delivery_map: Dict[str, DeliveryAddress | None] = {}
+                opticutter_delivery_map: Dict[str, DeliveryAddress | None] = {}
+                for key, name in delivery_map_raw.items():
+                    resolved = self._resolve_delivery_choice(name, client)
+                    kind, identifier = parse_selection_key(key)
+                    if kind == "finish":
+                        finish_delivery_map[identifier] = resolved
+                    elif kind == "opticutter":
+                        opticutter_delivery_map[identifier] = resolved
+                    else:
+                        production_delivery_map[identifier] = resolved
+
+                production_remarks_map: Dict[str, str] = {}
+                finish_remarks_map: Dict[str, str] = {}
+                opticutter_remarks_map: Dict[str, str] = {}
+                for key, text in remarks_map_raw.items():
+                    clean_text = text.strip()
+                    if not clean_text:
+                        continue
+                    kind, identifier = parse_selection_key(key)
+                    if kind == "finish":
+                        finish_remarks_map[identifier] = clean_text
+                    elif kind == "opticutter":
+                        opticutter_remarks_map[identifier] = clean_text
+                    else:
+                        production_remarks_map[identifier] = clean_text
+
+                en1090_override_map: Dict[str, bool] = {}
+                for key, flag in en1090_map_raw.items():
+                    kind, identifier = parse_selection_key(key)
+                    if kind not in {"production", "opticutter"}:
+                        continue
+                    norm = normalize_en1090_key(identifier)
+                    if norm:
+                        en1090_override_map[norm] = bool(flag)
+
+                custom_prefix_text = self.export_name_custom_prefix_text.get().strip()
+                custom_prefix_enabled = bool(
+                    self.export_name_custom_prefix_enabled_var.get()
+                )
+                custom_suffix_text = self.export_name_custom_suffix_text.get().strip()
+                custom_suffix_enabled = bool(
+                    self.export_name_custom_suffix_enabled_var.get()
+                )
+
+                def update_status(message: str) -> None:
+                    def apply() -> None:
+                        self.status_var.set(message)
+                        if sel_frame is not None:
+                            try:
+                                if sel_frame.winfo_exists():
+                                    sel_frame.update_status(message)
+                            except tk.TclError:
+                                pass
+
+                    self.after(0, apply)
+
+                def set_busy_state(active: bool, message: Optional[str] = None) -> None:
+                    def apply() -> None:
+                        btn = getattr(self, "copy_per_prod_button", None)
+                        if btn is not None:
+                            try:
+                                btn.configure(state="disabled" if active else "normal")
+                            except tk.TclError:
+                                pass
+                        if sel_frame is not None:
+                            try:
+                                if sel_frame.winfo_exists():
+                                    sel_frame.set_busy(active, message)
+                            except tk.TclError:
+                                pass
+
+                    self.after(0, apply)
+                    if message is not None:
+                        update_status(message)
+
+                def work(
+                    token_prefix_text=custom_prefix_text,
+                    token_suffix_text=custom_suffix_text,
+                    token_prefix_enabled=custom_prefix_enabled,
+                    token_suffix_enabled=custom_suffix_enabled,
+                    opticutter_analysis_snapshot=opticutter_analysis_current,
+                    opticutter_choices_snapshot=None,
+                ):
+                    update_status("Bundelmap voorbereiden...")
+                    try:
+                        bundle = create_export_bundle(
+                            self.dest_folder,
+                            project_number or None,
+                            project_name or None,
+                            latest_symlink="latest" if self.bundle_latest_var.get() else False,
+                            dry_run=bool(self.bundle_dry_run_var.get()),
+                        )
+                    except Exception as exc:
+                        def on_error():
+                            messagebox.showerror(
+                                "Fout",
+                                f"Kon bundelmap niet maken:\n{exc}",
+                                parent=self,
+                            )
+                            update_status("Bundelmap maken mislukt.")
+                            set_busy_state(False)
+
+                        self.after(0, on_error)
+                        return
+
+                    self.last_bundle_result = bundle
+                    bundle_dest = bundle.bundle_dir
+
+                    if bundle.warnings:
+                        warnings = list(bundle.warnings)
+
+                        def show_warnings():
+                            messagebox.showwarning("Let op", "\n".join(warnings), parent=self)
+
+                        self.after(0, show_warnings)
+
+                    if bundle.dry_run:
+                        def on_dry():
+                            lines = ["Testrun - doelmap:", bundle_dest]
+                            if bundle.latest_symlink:
+                                lines.append(f"Snelkoppeling: {bundle.latest_symlink}")
+                            messagebox.showinfo("Testrun", "\n".join(lines), parent=self)
+                            update_status(f"Testrun - doelmap: {bundle_dest}")
+                            set_busy_state(False)
+
+                        self.after(0, on_dry)
+                        return
+
+                    update_status("KopiÃ«ren & bestelbonnen maken...")
+                    path_limit_messages: List[str] = []
+                    try:
+                        if opticutter_choices_snapshot is None:
+                            opticutter_choices_snapshot = dict(
+                                self.opticutter_profile_selection_choice
+                            )
+                        cnt, chosen = copy_per_production_and_orders(
+                            self.source_folder,
+                            bundle_dest,
+                            current_bom,
+                            current_exts,
+                            self.db,
+                            prod_override_map,
+                            doc_type_map,
+                            prod_doc_num_map,
+                            remember,
+                            client=client,
+                            delivery_map=production_delivery_map,
+                            footer_note=self.footer_note_var.get(),
+                            zip_parts=bool(self.zip_var.get()),
+                            date_prefix_exports=bool(self.export_date_prefix_var.get()),
+                            date_suffix_exports=bool(self.export_date_suffix_var.get()),
+                            project_number=project_number,
+                            project_name=project_name,
+                            copy_finish_exports=bool(self.finish_export_var.get()),
+                            zip_finish_exports=bool(self.zip_finish_var.get()),
+                            export_bom=bool(self.export_bom_var.get()),
+                            export_related_files=bool(
+                                self.export_related_files_var.get()
+                            ),
+                            export_name_prefix_text=token_prefix_text,
+                            export_name_prefix_enabled=token_prefix_enabled,
+                            export_name_suffix_text=token_suffix_text,
+                            export_name_suffix_enabled=token_suffix_enabled,
+                            document_filename_profile=self.document_filename_profile_var.get(),
+                            document_filename_show_doc_type=bool(
+                                self.document_filename_show_doc_type_var.get()
+                            ),
+                            document_filename_show_doc_number=bool(
+                                self.document_filename_show_doc_number_var.get()
+                            ),
+                            document_filename_show_context=bool(
+                                self.document_filename_show_context_var.get()
+                            ),
+                            document_filename_show_date=bool(
+                                self.document_filename_show_date_var.get()
+                            ),
+                            document_filename_compact_doc_number=bool(
+                                self.document_filename_compact_doc_number_var.get()
+                            ),
+                            document_filename_separator=self.document_filename_separator_var.get(),
+                            finish_override_map=finish_override_map,
+                            finish_doc_type_map=finish_doc_type_map,
+                            finish_doc_num_map=finish_doc_num_map,
+                            finish_delivery_map=finish_delivery_map,
+                            remarks_map=production_remarks_map,
+                            finish_remarks_map=finish_remarks_map,
+                            bom_source_path=self.bom_source_path,
+                            path_limit_warnings=path_limit_messages,
+                            opticutter_analysis=opticutter_analysis_snapshot,
+                            opticutter_choices=opticutter_choices_snapshot,
+                            opticutter_override_map=opticutter_override_map,
+                            opticutter_doc_type_map=opticutter_doc_type_map,
+                            opticutter_doc_num_map=opticutter_doc_num_map,
+                            opticutter_delivery_map=opticutter_delivery_map,
+                            opticutter_remarks_map=opticutter_remarks_map,
+                            production_export_filter=(
+                                prod_export_filter if prod_export_filter else None
+                            ),
+                            finish_export_filter=(
+                                finish_export_filter if finish_export_filter else None
+                            ),
+                            opticutter_export_filter=(
+                                opticutter_export_filter
+                                if opticutter_export_filter
+                                else None
+                            ),
+                            en1090_overrides=en1090_override_map or None,
+                            en1090_enabled=bool(self.en1090_enabled_var.get()),
+                            en1090_note=self.en1090_note_var.get(),
+                        )
+                    except Exception as exc:
+                        error_message = str(exc)
+
+                        def on_error():
+                            messagebox.showerror(
+                                "Fout",
+                                f"Bestelbonnen exporteren mislukt:\n{error_message}",
+                                parent=self,
+                            )
+                            update_status("Export mislukt.")
+                            set_busy_state(False)
+
+                        self.after(0, on_error)
+                        return
+
+                    def on_done():
+                        friendly_pairs = []
+                        for key, value in chosen.items():
+                            kind, identifier = parse_selection_key(key)
+                            if kind == "finish":
+                                label = finish_label_lookup.get(identifier, identifier)
+                                prefix = "Afwerking"
+                            elif kind == "opticutter":
+                                label = identifier
+                                prefix = "Brutemateriaal"
+                            else:
+                                label = identifier
+                                prefix = "Productie"
+                            friendly_pairs.append(f"{prefix} {label}: {value}")
+                        suppliers_text = (
+                            "; ".join(friendly_pairs)
+                            if friendly_pairs
+                            else str(chosen)
+                        )
+                        final_status = (
+                            f"Klaar. Gekopieerd: {cnt}. Leveranciers: {suppliers_text}. â†’ {bundle_dest}"
+                        )
+                        update_status(final_status)
+                        try:
+                            info_lines = ["Bestelbonnen aangemaakt in:", bundle_dest]
+                            if bundle.latest_symlink:
+                                info_lines.append(f"Symlink: {bundle.latest_symlink}")
+                            messagebox.showinfo("Klaar", "\n".join(info_lines), parent=self)
+                            if path_limit_messages:
+                                warning_lines = [
+                                    "Sommige exportbestanden kregen een kortere naam omdat het pad te lang werd.",
+                                    f"Windows laat maximaal {_WINDOWS_MAX_PATH} tekens per pad toe; Filehopper voegt dan automatisch een korte code toe.",
+                                    "",
+                                ]
+                                warning_lines.extend(f"â€¢ {msg}" for msg in path_limit_messages)
+                                warning_lines.extend(
+                                    [
+                                        "",
+                                        "Kort de doelmap of de bestandsnaam in om dit te vermijden.",
+                                    ]
+                                )
+                                messagebox.showwarning(
+                                    "Padlimiet bereikt",
+                                    "\n".join(warning_lines),
+                                    parent=self,
+                                )
+                            try:
+                                if sys.platform.startswith("win"):
+                                    os.startfile(bundle_dest)
+                                elif sys.platform == "darwin":
+                                    subprocess.run(["open", bundle_dest], check=False)
+                                else:
+                                    subprocess.run(["xdg-open", bundle_dest], check=False)
+                            except Exception as exc:
+                                messagebox.showwarning(
+                                    "Let op",
+                                    f"Kon bundelmap niet openen:\n{exc}",
+                                    parent=self,
+                                )
+                        finally:
+                            current_sel = getattr(self, "sel_frame", None)
+                            if current_sel is not None:
+                                try:
+                                    if current_sel.winfo_exists():
+                                        self._last_supplier_selection_state = current_sel.serialize_state()
+                                except Exception:
+                                    pass
+                            self.nb.select(self.main_frame)
+                            set_busy_state(False)
+
+                    self.after(0, on_done)
+
+                set_busy_state(True, "Bundelmap voorbereiden...")
+
+                choices_snapshot = dict(self.opticutter_profile_selection_choice)
+                threading.Thread(
+                    target=work,
+                    kwargs={"opticutter_choices_snapshot": choices_snapshot},
+                    daemon=True,
+                ).start()
+
+            sup_search_restore = ""
+            sup_frame = getattr(self, "suppliers_frame", None)
+            if sup_frame is not None and hasattr(sup_frame, "suspend_search_filter"):
+                try:
+                    sup_search_restore = sup_frame.suspend_search_filter()
+                except Exception:
+                    sup_search_restore = ""
+
+            previous_state = getattr(self, "_last_supplier_selection_state", None)
+            previous_selected_tab = None
+            try:
+                previous_selected_tab = self.nb.select()
+            except Exception:
+                previous_selected_tab = None
+            existing_frame = getattr(self, "sel_frame", None)
+            existing_selected = False
+            if existing_frame is not None:
+                try:
+                    if existing_frame.winfo_exists():
+                        previous_state = existing_frame.serialize_state()
+                        existing_selected = str(previous_selected_tab) == str(existing_frame)
+                except Exception:
+                    existing_selected = False
+                try:
+                    self.nb.forget(existing_frame)
+                except Exception:
+                    pass
+                try:
+                    existing_frame.destroy()
+                except Exception:
+                    pass
+                self.sel_frame = None
+
+            try:
+                sel_frame = SupplierSelectionFrame(
+                    self.nb,
+                    prods,
+                    finish_entries,
+                    self.db,
+                    self.delivery_db,
+                    on_sel,
+                    self.project_number_var,
+                    self.project_name_var,
+                    clients_db=self.client_db,
+                    client_var=self.client_var,
+                    opticutter_details=opticutter_details,
+                    initial_state=previous_state,
+                    en1090_enabled=bool(self.en1090_enabled_var.get()),
+                    en1090_getter=self._get_en1090_preference,
+                    en1090_setter=self._set_en1090_preference,
+                )
+            except Exception:
+                if sup_search_restore and hasattr(sup_frame, "restore_search_filter"):
+                    try:
+                        sup_frame.restore_search_filter(sup_search_restore)
+                    except Exception:
+                        pass
+                raise
+            self.sel_frame = sel_frame
+            try:
+                sel_frame.set_opticutter_notice(opticutter_notice_message)
+            except Exception:
+                pass
+            try:
+                self._last_supplier_selection_state = sel_frame.serialize_state()
+            except Exception:
+                pass
+            settings_frame = getattr(self, "settings_frame", None)
+            if settings_frame is not None:
+                try:
+                    settings_index = self.nb.index(settings_frame)
+                except tk.TclError:
+                    settings_index = None
+            else:
+                settings_index = None
+            if settings_index is None:
+                self.nb.add(sel_frame, text="Bestelbonnen")
+            else:
+                self.nb.insert(settings_index, sel_frame, text="Bestelbonnen")
+            if select_tab or existing_selected:
+                self.nb.select(sel_frame)
+
+            if sup_search_restore and hasattr(sup_frame, "restore_search_filter"):
+                def _restore_search(_event=None, frame=sup_frame, value=sup_search_restore):
+                    try:
+                        frame.restore_search_filter(value)
+                    except Exception:
+                        pass
+
+                sel_frame.bind("<Destroy>", _restore_search, add="+")
+
+            return sel_frame
 
         def _schedule_opticutter_refresh(self) -> None:
             after_id = getattr(self, "_opticutter_refresh_after_id", None)
@@ -6170,6 +8023,8 @@ def start_gui():
             exts = self._selected_exts()
             if not exts or not self.source_folder or not self.dest_folder:
                 messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies."); return
+            self._show_supplier_selection_tab(select_tab=True, prompt_opticutter=True)
+            return
 
             prods = sorted(
                 set(
@@ -6286,6 +8141,7 @@ def start_gui():
                 if not self._ensure_bom_loaded():
                     return
                 current_bom = self.bom_df
+                client = self._current_client()
                 self._refresh_opticutter_table()
                 opticutter_analysis_current = getattr(
                     self, "opticutter_last_analysis", None
@@ -6352,16 +8208,7 @@ def start_gui():
                 finish_delivery_map: Dict[str, DeliveryAddress | None] = {}
                 opticutter_delivery_map: Dict[str, DeliveryAddress | None] = {}
                 for key, name in delivery_map_raw.items():
-                    clean = strip_favorite_marker(name)
-                    if clean == "Geen":
-                        resolved = None
-                    elif clean in (
-                        "Bestelling wordt opgehaald",
-                        "Leveradres wordt nog meegedeeld",
-                    ):
-                        resolved = DeliveryAddress(name=clean)
-                    else:
-                        resolved = self.delivery_db.get(clean)
+                    resolved = self._resolve_delivery_choice(name, client)
                     kind, identifier = parse_selection_key(key)
                     if kind == "finish":
                         finish_delivery_map[identifier] = resolved
@@ -6488,9 +8335,6 @@ def start_gui():
                         return
 
                     update_status("Kopiëren & bestelbonnen maken...")
-                    client = self.client_db.get(
-                        strip_favorite_marker(self.client_var.get())
-                    )
                     path_limit_messages: List[str] = []
                     try:
                         if opticutter_choices_snapshot is None:
@@ -6525,6 +8369,23 @@ def start_gui():
                             export_name_prefix_enabled=token_prefix_enabled,
                             export_name_suffix_text=token_suffix_text,
                             export_name_suffix_enabled=token_suffix_enabled,
+                            document_filename_profile=self.document_filename_profile_var.get(),
+                            document_filename_show_doc_type=bool(
+                                self.document_filename_show_doc_type_var.get()
+                            ),
+                            document_filename_show_doc_number=bool(
+                                self.document_filename_show_doc_number_var.get()
+                            ),
+                            document_filename_show_context=bool(
+                                self.document_filename_show_context_var.get()
+                            ),
+                            document_filename_show_date=bool(
+                                self.document_filename_show_date_var.get()
+                            ),
+                            document_filename_compact_doc_number=bool(
+                                self.document_filename_compact_doc_number_var.get()
+                            ),
+                            document_filename_separator=self.document_filename_separator_var.get(),
                             finish_override_map=finish_override_map,
                             finish_doc_type_map=finish_doc_type_map,
                             finish_doc_num_map=finish_doc_num_map,
@@ -6687,6 +8548,8 @@ def start_gui():
                     on_sel,
                     self.project_number_var,
                     self.project_name_var,
+                    clients_db=self.client_db,
+                    client_var=self.client_var,
                     opticutter_details=opticutter_details,
                     initial_state=previous_state,
                     en1090_enabled=bool(self.en1090_enabled_var.get()),

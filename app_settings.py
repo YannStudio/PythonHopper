@@ -60,6 +60,30 @@ def _normalize_key(value: str) -> str:
     return key or "ext"
 
 
+DOCUMENT_FILENAME_PROFILES = {"standard", "short", "compact", "custom"}
+DOCUMENT_FILENAME_SEPARATORS = {"underscore", "dash", "none"}
+
+
+def _normalize_document_filename_profile(value: Any) -> str:
+    text = _as_str(value).strip().lower()
+    if text in DOCUMENT_FILENAME_PROFILES:
+        return text
+    return "standard"
+
+
+def _normalize_document_filename_separator(value: Any) -> str:
+    text = _as_str(value).strip().lower()
+    if text in DOCUMENT_FILENAME_SEPARATORS:
+        return text
+    if text == "_":
+        return "underscore"
+    if text == "-":
+        return "dash"
+    if text in {"", "geen"}:
+        return "none"
+    return "underscore"
+
+
 @dataclass
 class FileExtensionSetting:
     key: str
@@ -195,6 +219,13 @@ class AppSettings:
     custom_prefix_text: str = ""
     custom_suffix_enabled: bool = False
     custom_suffix_text: str = ""
+    document_filename_profile: str = "standard"
+    document_filename_show_doc_type: bool = True
+    document_filename_show_doc_number: bool = True
+    document_filename_show_context: bool = True
+    document_filename_show_date: bool = True
+    document_filename_compact_doc_number: bool = False
+    document_filename_separator: str = "underscore"
     bundle_latest: bool = False
     bundle_dry_run: bool = False
     footer_note: str = DEFAULT_FOOTER_NOTE
@@ -255,7 +286,11 @@ class AppSettings:
                 continue
             cur_val = getattr(inst, name)
             raw = data.get(name)
-            if isinstance(cur_val, bool):
+            if name == "document_filename_profile":
+                setattr(inst, name, _normalize_document_filename_profile(raw))
+            elif name == "document_filename_separator":
+                setattr(inst, name, _normalize_document_filename_separator(raw))
+            elif isinstance(cur_val, bool):
                 setattr(inst, name, _as_bool(raw))
             elif isinstance(cur_val, list) and name == "file_extensions":
                 extensions: List[FileExtensionSetting] = []

@@ -58,5 +58,6 @@ def test_copy_prefers_files_outside_bundle_directories(tmp_path):
     )
 
     assert cnt == 2
-    exported = next((dest / "Laser").glob("*.pdf"))
+    exported = dest / "Laser" / "PN1.pdf"
+    assert exported.exists()
     assert exported.read_text() == "new"

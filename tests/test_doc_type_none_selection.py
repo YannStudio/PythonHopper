@@ -73,7 +73,7 @@ class DummyVar:
 
 
 def _load_supplier_frame():
-    source = pathlib.Path("gui.py").read_text()
+    source = pathlib.Path("gui.py").read_text(encoding="utf-8")
     mod = ast.parse(source)
     start = next(
         node for node in mod.body if isinstance(node, ast.FunctionDef) and node.name == "start_gui"

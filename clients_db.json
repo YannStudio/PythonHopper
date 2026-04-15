@@ -6,7 +6,8 @@
       "vat": "BE0700.304.366",
       "email": "jeroen@manufact.be",
       "favorite": true,
-      "logo_path": null,
+      "accent_color": "#FACD64",
+      "logo_path": "client_logos/jeroen_van_dooren_gcv_20260414192154.png",
       "logo_crop": null
     },
     {
@@ -15,6 +16,7 @@
       "vat": "BE0460.973.296",
       "email": "jeroen@tecnoart.be",
       "favorite": false,
+      "accent_color": null,
       "logo_path": null,
       "logo_crop": null
     },
@@ -24,6 +26,7 @@
       "vat": "BE0801.098.353",
       "email": "info@slimp.be",
       "favorite": false,
+      "accent_color": null,
       "logo_path": null,
       "logo_crop": null
     },
@@ -33,6 +36,7 @@
       "vat": "BE0428.678.335",
       "email": "info@stuvex.be",
       "favorite": false,
+      "accent_color": null,
       "logo_path": null,
       "logo_crop": null
     },
@@ -42,7 +46,18 @@
       "vat": "BE0749.799.013",
       "email": "cadservice@alton.be",
       "favorite": false,
+      "accent_color": null,
       "logo_path": null,
+      "logo_crop": null
+    },
+    {
+      "name": "HYE",
+      "address": "Krijgsbaan 372, 2070 Zwijndrecht",
+      "vat": "BE0404646287",
+      "email": "info@HYE.be",
+      "favorite": false,
+      "accent_color": "#F5A500",
+      "logo_path": "client_logos/hye_20260414223258.png",
       "logo_crop": null
     }
   ]

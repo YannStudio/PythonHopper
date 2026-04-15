@@ -6,6 +6,7 @@ from typing import List, Dict, Optional
 
 from suppliers_db import SuppliersDB
 from delivery_addresses_db import DeliveryAddressesDB
+from helpers import strip_favorite_marker
 from models import Supplier, DeliveryAddress
 
 
@@ -71,7 +72,7 @@ class DummyCombo:
 
 
 def _load_supplier_frame():
-    source = pathlib.Path("gui.py").read_text()
+    source = pathlib.Path("gui.py").read_text(encoding="utf-8")
     mod = ast.parse(source)
     start = next(
         node for node in mod.body if isinstance(node, ast.FunctionDef) and node.name == "start_gui"
@@ -144,6 +145,7 @@ def _load_supplier_frame():
         "SuppliersDB": SuppliersDB,
         "DeliveryAddressesDB": DeliveryAddressesDB,
         "sort_supplier_options": sort_supplier_options,
+        "strip_favorite_marker": strip_favorite_marker,
         "_norm": _norm,
     }
     exec(code, ns)
@@ -156,7 +158,12 @@ SupplierSelectionFrame = _load_supplier_frame()
 
 
 class DummySel:
+    CLIENT_DELIVERY_PRESET = SupplierSelectionFrame.CLIENT_DELIVERY_PRESET
+    DELIVERY_PRESETS = SupplierSelectionFrame.DELIVERY_PRESETS
     _display_list = SupplierSelectionFrame._display_list
+    _resolve_current_client = SupplierSelectionFrame._resolve_current_client
+    _default_delivery_value = SupplierSelectionFrame._default_delivery_value
+    _delivery_options = SupplierSelectionFrame._delivery_options
     _refresh_options = SupplierSelectionFrame._refresh_options
     _on_combo_type = SupplierSelectionFrame._on_combo_type
     _resolve_text_to_supplier = SupplierSelectionFrame._resolve_text_to_supplier

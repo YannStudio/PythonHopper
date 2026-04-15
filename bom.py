@@ -131,7 +131,9 @@ def load_bom(path: str) -> pd.DataFrame:
 
     df["PartNumber"] = df[pn_c].astype(str).str.strip()
     if ds_c is not None:
-        df["Description"] = df[ds_c].astype(str).fillna("").str.strip()
+        desc_series = df[ds_c].where(df[ds_c].notna(), "")
+        df["Description"] = desc_series.astype(str).str.strip()
+        df.loc[df["Description"].str.lower() == "nan", "Description"] = ""
     else:
         # Fallback to PartNumber when no description column is present so that
         # downstream code keeps working with a consistent schema.

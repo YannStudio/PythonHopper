@@ -21,6 +21,19 @@ def _setup_basic(tmp_path):
     return db, src, bom_df
 
 
+def _normalize_pdf_text(text):
+    return " ".join((text or "").split())
+
+
+def _assert_pieces_in_order(text, *pieces):
+    normalized = _normalize_pdf_text(text)
+    pos = -1
+    for piece in pieces:
+        next_pos = normalized.find(piece, pos + 1)
+        assert next_pos >= 0, f"'{piece}' not found in '{normalized}'"
+        pos = next_pos
+
+
 def test_delivery_address_present_absent(tmp_path):
     reportlab = pytest.importorskip("reportlab")
     db, src, bom_df = _setup_basic(tmp_path)
@@ -58,7 +71,7 @@ def test_delivery_address_present_absent(tmp_path):
     pdf = next(f for f in os.listdir(prod_folder) if f.endswith(".pdf"))
     reader = PdfReader(prod_folder / pdf)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
-    assert "Leveradres:\nMagazijn" in text
+    _assert_pieces_in_order(text, "Leveradres", "Magazijn", "Straat 1", "achterdeur")
 
     # Without delivery address
     dst2 = tmp_path / "dst2"
@@ -131,7 +144,7 @@ def test_delivery_address_per_production(tmp_path):
     pdf1 = next(f for f in os.listdir(laser) if f.endswith(".pdf"))
     reader1 = PdfReader(laser / pdf1)
     text1 = "\n".join(page.extract_text() or "" for page in reader1.pages)
-    assert "Leveradres:\nMagazijn" in text1
+    _assert_pieces_in_order(text1, "Leveradres", "Magazijn", "Straat 1")
 
     # Plasma folder checks
     plasma = dst / "Plasma"
@@ -145,7 +158,7 @@ def test_delivery_address_per_production(tmp_path):
     pdf2 = next(f for f in os.listdir(plasma) if f.endswith(".pdf"))
     reader2 = PdfReader(plasma / pdf2)
     text2 = "\n".join(page.extract_text() or "" for page in reader2.pages)
-    assert "Leveradres:\nDepot" in text2
+    _assert_pieces_in_order(text2, "Leveradres", "Depot", "Weg 2")
 
 
 def test_delivery_address_placeholder_prints(tmp_path):
@@ -175,7 +188,7 @@ def test_delivery_address_placeholder_prints(tmp_path):
     pdf = next(f for f in os.listdir(prod_folder) if f.endswith(".pdf"))
     reader = PdfReader(prod_folder / pdf)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
-    assert "Bestelling wordt opgehaald" in text
+    _assert_pieces_in_order(text, "Leveradres", "Magazijn", "Bestelling wordt opgehaald")
 
 
 def test_export_remark_rendered_under_delivery(tmp_path):
@@ -208,11 +221,15 @@ def test_export_remark_rendered_under_delivery(tmp_path):
     reader = PdfReader(prod_folder / pdf)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
 
-    expected = (
-        "Leveradres:\nMagazijn\nStraat 1\nAfspraak balie\nOpmerking:\nExport aanwijzing"
+    _assert_pieces_in_order(
+        text,
+        "Leveradres",
+        "Magazijn",
+        "Straat 1",
+        "Afspraak balie",
+        "Opmerking",
+        "Export aanwijzing",
     )
-    assert expected in text
-    assert "Opmerking: Export aanwijzing" not in text
 
     xlsx = next(f for f in os.listdir(prod_folder) if f.endswith(".xlsx"))
     wb = openpyxl.load_workbook(prod_folder / xlsx)
@@ -257,11 +274,15 @@ def test_export_remark_rendered_under_delivery_with_spaced_doc_type(tmp_path):
     reader = PdfReader(prod_folder / pdf)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
 
-    expected = (
-        "Leveradres:\nMagazijn\nStraat 1\nAfspraak balie\nOpmerking:\nExport aanwijzing"
+    _assert_pieces_in_order(
+        text,
+        "Leveradres",
+        "Magazijn",
+        "Straat 1",
+        "Afspraak balie",
+        "Opmerking",
+        "Export aanwijzing",
     )
-    assert expected in text
-    assert "Opmerking: Export aanwijzing" not in text
 
     xlsx = next(f for f in os.listdir(prod_folder) if f.endswith(".xlsx"))
     wb = openpyxl.load_workbook(prod_folder / xlsx)
@@ -302,8 +323,7 @@ def test_export_remark_rendered_without_delivery(tmp_path):
     reader = PdfReader(prod_folder / pdf)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
 
-    assert "Opmerking:\nExport aanwijzing" in text
-    assert "Opmerking: Export aanwijzing" not in text
+    _assert_pieces_in_order(text, "Opmerking", "Export aanwijzing")
     assert "Leveradres" not in text
 
     xlsx = next(f for f in os.listdir(prod_folder) if f.endswith(".xlsx"))

@@ -4,6 +4,39 @@ from typing import Any, Dict, Optional
 from helpers import _to_str
 
 
+def normalize_rgb_color(value: Any) -> Optional[str]:
+    if value in (None, ""):
+        return None
+    if isinstance(value, (list, tuple)) and len(value) == 3:
+        try:
+            parts = [max(0, min(255, int(float(v)))) for v in value]
+        except Exception:
+            return None
+        return "#{:02X}{:02X}{:02X}".format(*parts)
+    text = _to_str(value).strip()
+    if not text:
+        return None
+    if text.startswith("#"):
+        text = text[1:]
+    if len(text) == 6 and all(ch in "0123456789abcdefABCDEF" for ch in text):
+        return f"#{text.upper()}"
+    parts = [p.strip() for p in text.replace(";", ",").split(",") if p.strip()]
+    if len(parts) == 3:
+        try:
+            rgb = [max(0, min(255, int(float(part)))) for part in parts]
+        except Exception:
+            return None
+        return "#{:02X}{:02X}{:02X}".format(*rgb)
+    return None
+
+
+def color_to_rgb(value: Any) -> Optional[tuple[int, int, int]]:
+    normalized = normalize_rgb_color(value)
+    if not normalized:
+        return None
+    return tuple(int(normalized[idx : idx + 2], 16) for idx in (1, 3, 5))
+
+
 @dataclass
 class Supplier:
     supplier: str
@@ -172,6 +205,7 @@ class Client:
     vat: Optional[str] = None
     email: Optional[str] = None
     favorite: bool = False
+    accent_color: Optional[str] = None
     logo_path: Optional[str] = None
     logo_crop: Optional[Dict[str, int]] = None
 
@@ -193,6 +227,13 @@ class Client:
             "favorite": "favorite",
             "favoriet": "favorite",
             "fav": "favorite",
+            "accent_color": "accent_color",
+            "accent color": "accent_color",
+            "accent colour": "accent_color",
+            "kleur": "accent_color",
+            "kleur rgb": "accent_color",
+            "rgb": "accent_color",
+            "rgb kleur": "accent_color",
             "logo": "logo_path",
             "logo_path": "logo_path",
             "logo file": "logo_path",
@@ -248,12 +289,16 @@ class Client:
         crop = _parse_crop(norm.get("logo_crop", d.get("logo_crop")))
         logo_path = _to_str(norm.get("logo_path", d.get("logo_path")))
         logo_path = logo_path.strip() or None if logo_path is not None else None
+        accent_color = normalize_rgb_color(
+            norm.get("accent_color", d.get("accent_color"))
+        )
         return Client(
             name=name,
             address=_to_str(norm.get("address")).strip() or None if ("address" in norm) else None,
             vat=_to_str(norm.get("vat")).strip() or None if ("vat" in norm) else None,
             email=_to_str(norm.get("email")).strip() or None if ("email" in norm) else None,
             favorite=bool(fav),
+            accent_color=accent_color,
             logo_path=logo_path,
             logo_crop=crop,
         )

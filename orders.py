@@ -16,11 +16,13 @@ import tempfile
 import hashlib
 import math
 from collections import defaultdict
+from html import escape
 from pathlib import Path
 from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import pandas as pd
 from dataclasses import dataclass
+from app_paths import resolve_runtime_path
 try:
     from openpyxl.styles import Alignment, Font
     from openpyxl.utils import get_column_letter
@@ -69,6 +71,14 @@ from opticutter import (
 import step_previews
 
 MIAMI_PINK = "#FF77FF"
+ORDER_RULE_COLOR = "#B9C1CA"
+ORDER_TEXT_COLOR = "#1F2329"
+ORDER_MUTED_TEXT_COLOR = "#5D6670"
+ORDER_TABLE_OUTLINE_COLOR = "#B7BEC8"
+ORDER_TABLE_GRID_COLOR = "#D5DAE1"
+ORDER_TABLE_ALT_ROW_COLOR = "#FBFCFD"
+ORDER_TOTAL_FILL_COLOR = "#FFF4FF"
+ORDER_DELIVERY_FILL_COLOR = "#FFF8FD"
 DEFAULT_FOOTER_NOTE = (
     "Gelieve afwijkingen schriftelijk te bevestigen. "
     "Levertermijn in overleg. Betalingsvoorwaarden: 30 dagen netto. "
@@ -78,6 +88,129 @@ DEFAULT_FOOTER_NOTE = (
 STEP_EXTS = {".step", ".stp"}
 
 NO_SUPPLIER_PLACEHOLDER = "(geen)"
+
+
+def _mix_color_with_white(color: str, whiteness: float) -> str:
+    rgb = color_to_rgb(color)
+    if rgb is None:
+        return color
+    ratio = max(0.0, min(1.0, float(whiteness)))
+    mixed = tuple(int(round(channel + (255 - channel) * ratio)) for channel in rgb)
+    return "#{:02X}{:02X}{:02X}".format(*mixed)
+
+
+def _accent_text_color(fill_color: str) -> str:
+    rgb = color_to_rgb(fill_color)
+    if rgb is None:
+        return ORDER_TEXT_COLOR
+    luminance = ((0.299 * rgb[0]) + (0.587 * rgb[1]) + (0.114 * rgb[2])) / 255.0
+    return ORDER_TEXT_COLOR if luminance >= 0.68 else "#FFFFFF"
+
+
+def _order_palette(company_info: Mapping[str, object] | None) -> Dict[str, str]:
+    accent_color = normalize_rgb_color(
+        company_info.get("accent_color") if company_info else None
+    ) or MIAMI_PINK
+    return {
+        "accent": accent_color,
+        "accent_text": _accent_text_color(accent_color),
+        "total_fill": _mix_color_with_white(accent_color, 0.88),
+    }
+
+
+def _clean_order_cell_text(value: object) -> str:
+    text = _to_str(value).strip()
+    if not text or text.lower() == "nan":
+        return ""
+    return " ".join(text.split())
+
+
+def _fit_text_to_width(
+    text: str,
+    width: float,
+    font_name: str,
+    font_size: float,
+) -> Tuple[str, str]:
+    if not text:
+        return "", ""
+    if stringWidth(text, font_name, font_size) <= width:
+        return text, ""
+    lo = 1
+    hi = len(text)
+    best = 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        probe = text[:mid]
+        if stringWidth(probe, font_name, font_size) <= width:
+            best = mid
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    head = text[:best].rstrip()
+    tail = text[best:].lstrip()
+    if not head:
+        head = text[:1]
+        tail = text[1:].lstrip()
+    return head, tail
+
+
+def _truncate_text_to_width(
+    text: str,
+    width: float,
+    font_name: str,
+    font_size: float,
+    suffix: str = "...",
+    force_suffix: bool = False,
+) -> str:
+    text = text.rstrip()
+    if not text:
+        return ""
+    if stringWidth(text, font_name, font_size) <= width and not force_suffix:
+        return text
+    while text and stringWidth(text + suffix, font_name, font_size) > width:
+        text = text[:-1].rstrip()
+    return (text + suffix) if text else suffix
+
+
+def _wrap_words_to_lines(
+    text: str,
+    width: float,
+    font_name: str,
+    font_size: float,
+    max_lines: int,
+) -> List[str]:
+    clean = _clean_order_cell_text(text)
+    if not clean:
+        return []
+    pending = clean.split()
+    lines: List[str] = []
+    while pending and len(lines) < max_lines:
+        current = pending.pop(0)
+        if stringWidth(current, font_name, font_size) > width:
+            current, remainder = _fit_text_to_width(
+                current,
+                width,
+                font_name,
+                font_size,
+            )
+            if remainder:
+                pending.insert(0, remainder)
+        while pending:
+            probe = f"{current} {pending[0]}"
+            if stringWidth(probe, font_name, font_size) > width:
+                break
+            current = probe
+            pending.pop(0)
+        lines.append(current)
+    if pending and lines:
+        lines[-1] = _truncate_text_to_width(
+            lines[-1],
+            width,
+            font_name,
+            font_size,
+            force_suffix=True,
+        )
+    return lines
 
 
 _BOM_STATUS_COLUMNS: Tuple[str, ...] = ("Bestanden gevonden", "Status", "Link")
@@ -411,7 +544,7 @@ from helpers import (
     _material_nowrap,
     _build_file_index,
 )
-from models import Supplier, Client, DeliveryAddress
+from models import Supplier, Client, DeliveryAddress, color_to_rgb, normalize_rgb_color
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from bom import load_bom  # noqa: F401 - imported for module dependency
 
@@ -514,6 +647,146 @@ def _normalize_doc_number(value: object, doc_type: object) -> str:
         doc_num = prefix + remainder.lstrip(" -_")
 
     return doc_num
+
+
+DOCUMENT_FILENAME_PROFILE_STANDARD = "standard"
+DOCUMENT_FILENAME_PROFILE_SHORT = "short"
+DOCUMENT_FILENAME_PROFILE_COMPACT = "compact"
+DOCUMENT_FILENAME_PROFILE_CUSTOM = "custom"
+DOCUMENT_FILENAME_PROFILES = {
+    DOCUMENT_FILENAME_PROFILE_STANDARD,
+    DOCUMENT_FILENAME_PROFILE_SHORT,
+    DOCUMENT_FILENAME_PROFILE_COMPACT,
+    DOCUMENT_FILENAME_PROFILE_CUSTOM,
+}
+DOCUMENT_FILENAME_SEPARATOR_MAP = {
+    "underscore": "_",
+    "dash": "-",
+    "none": "",
+}
+
+
+def normalize_document_filename_profile(value: object) -> str:
+    """Return a supported document filename profile key."""
+
+    text = _to_str(value).strip().lower()
+    if text in DOCUMENT_FILENAME_PROFILES:
+        return text
+    return DOCUMENT_FILENAME_PROFILE_STANDARD
+
+
+def normalize_document_filename_separator(value: object) -> str:
+    """Return a supported document filename separator key."""
+
+    text = _to_str(value).strip().lower()
+    if text in DOCUMENT_FILENAME_SEPARATOR_MAP:
+        return text
+    if text == "_":
+        return "underscore"
+    if text == "-":
+        return "dash"
+    if text in {"", "geen"}:
+        return "none"
+    return "underscore"
+
+
+def _format_doc_number_for_filename(
+    doc_number: object,
+    doc_type: object,
+    *,
+    compact: bool = False,
+) -> str:
+    """Return the filename-safe document number component."""
+
+    normalized = _normalize_doc_number(doc_number, doc_type)
+    if not normalized:
+        return ""
+    if compact:
+        normalized = re.sub(r"[\s\-_]+", "", normalized)
+    return _sanitize_component(normalized)
+
+
+def _join_filename_parts(parts: Sequence[str], separator: str) -> str:
+    cleaned = [part for part in (_sanitize_component(part) for part in parts) if part]
+    if not cleaned:
+        return ""
+    if separator:
+        return separator.join(cleaned)
+    return "".join(cleaned)
+
+
+def build_document_export_basename(
+    doc_type: object,
+    doc_number: object = "",
+    context_label: object = "",
+    export_date: object = None,
+    *,
+    profile: object = DOCUMENT_FILENAME_PROFILE_STANDARD,
+    show_doc_type: bool = True,
+    show_doc_number: bool = True,
+    show_context: bool = True,
+    show_date: bool = True,
+    compact_doc_number: bool = False,
+    separator: object = "underscore",
+    extra_context_label: object = "",
+) -> str:
+    """Return the export basename for order-related PDF/XLSX files."""
+
+    doc_type_text = _to_str(doc_type).strip() or "Bestelbon"
+    context_text = _to_str(context_label).strip()
+    extra_context_text = _to_str(extra_context_label).strip()
+    date_text = _to_str(export_date).strip() or datetime.date.today().strftime("%Y-%m-%d")
+    profile_key = normalize_document_filename_profile(profile)
+    separator_key = normalize_document_filename_separator(separator)
+    separator_text = DOCUMENT_FILENAME_SEPARATOR_MAP[separator_key]
+
+    doc_num_default = _format_doc_number_for_filename(doc_number, doc_type_text, compact=False)
+    doc_num_compact = _format_doc_number_for_filename(doc_number, doc_type_text, compact=True)
+
+    def _standard_name() -> str:
+        return _join_filename_parts(
+            [
+                doc_type_text,
+                doc_num_default,
+                context_text,
+                extra_context_text,
+                date_text,
+            ],
+            "_",
+        )
+
+    if profile_key == DOCUMENT_FILENAME_PROFILE_SHORT:
+        if doc_num_default:
+            return doc_num_default
+        profile_key = DOCUMENT_FILENAME_PROFILE_STANDARD
+    elif profile_key == DOCUMENT_FILENAME_PROFILE_COMPACT:
+        if doc_num_compact:
+            return doc_num_compact
+        profile_key = DOCUMENT_FILENAME_PROFILE_STANDARD
+
+    if profile_key == DOCUMENT_FILENAME_PROFILE_STANDARD:
+        basename = _standard_name()
+        return basename or "document"
+
+    doc_num_custom = doc_num_compact if compact_doc_number else doc_num_default
+    parts: List[str] = []
+    if show_doc_type:
+        parts.append(doc_type_text)
+    if show_doc_number and doc_num_custom:
+        parts.append(doc_num_custom)
+    if show_context:
+        if context_text:
+            parts.append(context_text)
+        if extra_context_text:
+            parts.append(extra_context_text)
+    if show_date and date_text:
+        parts.append(date_text)
+
+    basename = _join_filename_parts(parts, separator_text)
+    if basename:
+        return basename
+    fallback = _standard_name()
+    return fallback or "document"
 
 
 def _should_place_remark_in_delivery_block(
@@ -930,14 +1203,33 @@ def generate_pdf_order_platypus(
         bottomMargin=20 * mm,
     )
     width, _ = A4
+    palette = _order_palette(company_info)
     styles = getSampleStyleSheet()
     title_style = styles["Heading1"]
-    title_style.textColor = colors.HexColor(MIAMI_PINK)
+    title_style.textColor = colors.HexColor(palette["accent"])
     title_style.fontName = "Helvetica-Bold"
-    title_style.fontSize = 18
+    title_style.fontSize = 20
+    title_style.leading = 22
+    title_style.spaceAfter = 1
     text_style = styles["Normal"]
-    text_style.leading = 13
-    small_style = ParagraphStyle("small", parent=text_style, fontSize=8.5, leading=10.5)
+    text_style.fontSize = 10
+    text_style.leading = 12.2
+    text_style.textColor = colors.HexColor(ORDER_TEXT_COLOR)
+    meta_style = ParagraphStyle("meta", parent=text_style, leading=12.4)
+    delivery_style = ParagraphStyle(
+        "delivery",
+        parent=text_style,
+        fontSize=9.2,
+        leading=11.2,
+        textColor=colors.HexColor(ORDER_TEXT_COLOR),
+    )
+    small_style = ParagraphStyle(
+        "small",
+        parent=text_style,
+        fontSize=8.4,
+        leading=10.3,
+        textColor=colors.HexColor(ORDER_MUTED_TEXT_COLOR),
+    )
 
     doc_type_text = (_to_str(doc_type).strip() or "Bestelbon")
     doc_type_text_lower = doc_type_text.lower()
@@ -979,10 +1271,8 @@ def generate_pdf_order_platypus(
     logo_flowable = None
     logo_path_info = company_info.get("logo_path") if company_info else None
     if logo_path_info:
-        logo_path = str(logo_path_info)
-        if not os.path.isabs(logo_path):
-            logo_path = os.path.join(os.getcwd(), logo_path)
-        if os.path.exists(logo_path):
+        logo_path = resolve_runtime_path(str(logo_path_info))
+        if logo_path and logo_path.exists():
             try:
                 from PIL import Image as PILImage  # type: ignore
             except Exception:  # pragma: no cover - Pillow missing during runtime
@@ -1007,8 +1297,8 @@ def generate_pdf_order_platypus(
                                 if logo_img.height
                                 else 1.0
                             )
-                            max_width = 50 * mm
-                            max_height = 25 * mm
+                            max_width = 38 * mm
+                            max_height = 18 * mm
                             width_pt = max_width
                             height_pt = width_pt / aspect if aspect else max_height
                             if height_pt > max_height:
@@ -1046,39 +1336,77 @@ def generate_pdf_order_platypus(
         if supplier.phone:
             supp_lines.append(f"Tel: {supplier.phone}")
 
-    left_lines = list(company_lines)
-    if supp_lines:
-        left_lines.append("")
-        left_lines.extend(supp_lines)
-    left_paragraph = Paragraph("<br/>".join(left_lines), text_style)
-    left_elements: List[object] = []
-    if logo_flowable is not None:
-        left_elements.extend([logo_flowable, Spacer(0, 4)])
-    left_elements.append(left_paragraph)
-    if len(left_elements) == 1:
-        left_cell = left_elements[0]
-    else:
-        left_cell = KeepTogether(left_elements)
+    doc_html_lines: List[str] = []
+    if doc_number:
+        doc_html_lines.append(f"<b>Nummer:</b> {escape(_to_str(doc_number))}")
+    doc_html_lines.append(f"<b>Datum:</b> {escape(today)}")
+    if production:
+        doc_html_lines.append(
+            f"<b>{escape(label_title)}:</b> {escape(_to_str(production))}"
+        )
+    if project_number:
+        doc_html_lines.append(
+            f"<b>Projectnummer:</b> {escape(_to_str(project_number))}"
+        )
+    if project_name:
+        doc_html_lines.append(
+            f"<b>Projectnaam:</b> {escape(_to_str(project_name))}"
+        )
+    if order_remark_has_content and not place_remark_in_delivery_block:
+        doc_html_lines.append(
+            f"<b>Opmerking:</b> {escape(order_remark_text)}"
+        )
 
-    right_lines: List[str] = []
-    include_right_block = not is_standaard_doc and (
+    client_block = Paragraph("<br/>".join(company_lines), text_style)
+    doc_block = (
+        Paragraph("<br/>".join(doc_html_lines), meta_style)
+        if doc_html_lines
+        else Paragraph("", meta_style)
+    )
+
+    supplier_block_parts: List[object] = []
+    if supp_lines:
+        supplier_block_parts.append(Paragraph("<br/>".join(supp_lines), text_style))
+
+    delivery_html: str | None = None
+    include_delivery_block = not is_standaard_doc and (
         delivery is not None or place_remark_in_delivery_block
     )
-    if include_right_block:
+    if include_delivery_block:
+        delivery_text_parts: List[str] = []
         if delivery:
-            # Delivery address block with each piece of information on its own line
-            right_lines.append("<b>Leveradres:</b>")
-            right_lines.append(delivery.name)
-            if delivery.address:
-                right_lines.extend(delivery.address.splitlines())
-            if delivery.remarks:
-                right_lines.append(delivery.remarks)
+            if _to_str(delivery.name).strip():
+                delivery_text_parts.append(escape(_to_str(delivery.name).strip()))
+            address_text = ", ".join(
+                line.strip()
+                for line in _to_str(delivery.address).splitlines()
+                if line.strip()
+            )
+            if address_text:
+                delivery_text_parts.append(escape(address_text))
+            if _to_str(delivery.remarks).strip():
+                delivery_text_parts.append(escape(_to_str(delivery.remarks).strip()))
+        delivery_sections: List[str] = []
+        if delivery_text_parts:
+            delivery_sections.append(
+                f"<b>Leveradres:</b> {' | '.join(delivery_text_parts)}"
+            )
         if place_remark_in_delivery_block:
-            right_lines.append("<b>Opmerking:</b>")
             remark_lines = order_remark_text.splitlines()
             if not remark_lines:
                 remark_lines = [order_remark_text]
-            right_lines.extend(remark_lines)
+            delivery_sections.append(
+                "<b>Opmerking:</b><br/>"
+                + "<br/>".join(escape(line) for line in remark_lines if line.strip())
+            )
+        if delivery_sections:
+            delivery_html = "<br/>".join(delivery_sections)
+
+    left_block_parts: List[object] = [doc_block]
+    if supplier_block_parts:
+        left_block_parts.append(Spacer(0, 8))
+        left_block_parts.extend(supplier_block_parts)
+    left_block: object = left_block_parts
 
     story = []
     title = (
@@ -1087,21 +1415,53 @@ def generate_pdf_order_platypus(
         else f"{doc_type_text}"
     )
     story.append(Paragraph(title, title_style))
-    if doc_lines:
-        story.append(Paragraph("<br/>".join(doc_lines), text_style))
-    story.append(Spacer(0, 6))
-    header_tbl = LongTable(
-        [
+    title_rule = Table([[""]], colWidths=[width - 2 * margin], rowHeights=[2])
+    title_rule.setStyle(
+        TableStyle(
             [
-                left_cell,
-                Paragraph("<br/>".join(right_lines), text_style),
+                ("LINEBELOW", (0, 0), (-1, -1), 0.55, colors.HexColor(ORDER_RULE_COLOR)),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
             ]
-        ],
-        colWidths=[(width - 2 * margin) / 2, (width - 2 * margin) / 2],
+        )
     )
-    header_tbl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    story.append(title_rule)
+    story.append(Spacer(0, 9))
+
+    left_col_width = (width - 2 * margin) * 0.58
+    right_col_width = (width - 2 * margin) - left_col_width
+    right_block_parts: List[object] = []
+    if logo_flowable is not None:
+        logo_flowable.hAlign = "LEFT"
+        right_block_parts.append(logo_flowable)
+        right_block_parts.append(Spacer(0, 6))
+    right_block_parts.append(client_block)
+    right_block: object = right_block_parts
+
+    header_tbl = LongTable(
+        [[left_block, right_block]],
+        colWidths=[left_col_width, right_col_width],
+    )
+    header_tbl.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
     story.append(header_tbl)
-    story.append(Spacer(0, 10))
+    if delivery_html:
+        story.append(Spacer(0, 6))
+        story.append(Paragraph(delivery_html, delivery_style))
+        story.append(Spacer(0, 12))
+    else:
+        story.append(Spacer(0, 10))
 
     # Headers and data
     if custom_layout:
@@ -1128,6 +1488,68 @@ def generate_pdf_order_platypus(
         if align:
             style.alignment = {"LEFT": 0, "CENTER": 1, "RIGHT": 2}.get(align.upper(), 0)
         return Paragraph(str(val if (val is not None) else ""), style)
+
+    usable_w = width - 2 * margin
+    standard_col_widths: List[float] | None = None
+    if not custom_layout and not is_raw_material_order:
+        col_fracs = [0.22, 0.40, 0.14, 0.06, 0.09, 0.09]
+        non_empty_desc_count = sum(
+            1 for it in items if _clean_order_cell_text(it.get("Description", ""))
+        )
+        if items:
+            empty_desc_ratio = 1.0 - (non_empty_desc_count / len(items))
+        else:
+            empty_desc_ratio = 0.0
+        extra_pn_frac = 0.12 * max(0.0, min(1.0, empty_desc_ratio))
+        col_fracs[0] += extra_pn_frac
+        col_fracs[1] -= extra_pn_frac
+
+        desc_w = usable_w * col_fracs[1]
+        mat_w = usable_w * col_fracs[2]
+        try:
+            header_width = stringWidth("Materiaal", "Helvetica-Bold", 10) + 6
+            material_values = [
+                stringWidth(
+                    _material_nowrap(_clean_order_cell_text(it.get("Materiaal", ""))),
+                    "Helvetica",
+                    9,
+                )
+                for it in items
+                if _clean_order_cell_text(it.get("Materiaal", ""))
+            ]
+            value_width = (max(material_values) if material_values else 0) + 6
+            max_mat = max(header_width, value_width)
+            if max_mat < mat_w:
+                desc_w += mat_w - max_mat
+                mat_w = max_mat
+            elif max_mat > mat_w:
+                desc_w -= max_mat - mat_w
+                mat_w = max_mat
+            min_desc_w = 42 * mm
+            if desc_w < min_desc_w:
+                diff = min_desc_w - desc_w
+                desc_w = min_desc_w
+                mat_w = max(0, mat_w - diff)
+        except Exception:
+            pass
+        standard_col_widths = [
+            usable_w * col_fracs[0],
+            desc_w,
+            mat_w,
+            usable_w * col_fracs[3],
+            usable_w * col_fracs[4],
+            usable_w * col_fracs[5],
+        ]
+
+    def description_cell_html(val: object, width: float) -> str:
+        lines = _wrap_words_to_lines(
+            _clean_order_cell_text(val),
+            max(24.0, width),
+            "Helvetica",
+            9,
+            max_lines=2,
+        )
+        return "<br/>".join(escape(line) for line in lines)
 
     data = [head]
     total_row_index: int | None = None
@@ -1206,9 +1628,12 @@ def generate_pdf_order_platypus(
             total_row_index = len(data) - 1
     else:
         for it in items:
-            pn = _pn_wrap_25(it.get("PartNumber", ""))
-            desc = _to_str(it.get("Description", ""))
-            mat = _material_nowrap(it.get("Materiaal", ""))
+            pn = escape(_clean_order_cell_text(it.get("PartNumber", "")))
+            desc_width = (
+                (standard_col_widths[1] - 10) if standard_col_widths else (usable_w * 0.40)
+            )
+            desc = description_cell_html(it.get("Description", ""), desc_width)
+            mat = _material_nowrap(_clean_order_cell_text(it.get("Materiaal", "")))
             qty = it.get("Aantal", "")
             opp = _num_to_2dec(it.get("Oppervlakte", ""))
             gew = _num_to_2dec(it.get("Gewicht", ""))
@@ -1223,7 +1648,6 @@ def generate_pdf_order_platypus(
                 ]
             )
 
-    usable_w = width - 2 * margin
     if custom_layout and column_layout:
         weights: List[float] = []
         for column in column_layout:
@@ -1238,56 +1662,39 @@ def generate_pdf_order_platypus(
         col_fracs = [0.32, 0.24, 0.16, 0.12, 0.16]
         col_widths = [usable_w * frac for frac in col_fracs]
     else:
-        col_fracs = [0.22, 0.40, 0.14, 0.06, 0.09, 0.09]
-        desc_w = usable_w * col_fracs[1]
-        mat_w = usable_w * col_fracs[2]
-        try:
-            header_width = stringWidth("Materiaal", "Helvetica-Bold", 10) + 6
-            value_width = (
-                max(
-                    stringWidth(
-                        _material_nowrap(it.get("Materiaal", "")), "Helvetica", 9
-                    )
-                    for it in items
-                )
-                + 6
-            )
-            max_mat = max(header_width, value_width)
-            if max_mat < mat_w:
-                desc_w += mat_w - max_mat
-                mat_w = max_mat
-            elif max_mat > mat_w:
-                desc_w -= max_mat - mat_w
-                mat_w = max_mat
-            min_desc_w = 40 * mm
-            if desc_w < min_desc_w:
-                diff = min_desc_w - desc_w
-                desc_w = min_desc_w
-                mat_w = max(0, mat_w - diff)
-        except Exception:
-            pass
-        col_widths = [
-            usable_w * col_fracs[0],
-            desc_w,
-            mat_w,
-            usable_w * col_fracs[3],
-            usable_w * col_fracs[4],
-            usable_w * col_fracs[5],
+        col_widths = standard_col_widths or [
+            usable_w * 0.22,
+            usable_w * 0.40,
+            usable_w * 0.14,
+            usable_w * 0.06,
+            usable_w * 0.09,
+            usable_w * 0.09,
         ]
 
     tbl = LongTable(data, colWidths=col_widths, repeatRows=1)
     style_cmds = [
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(MIAMI_PINK)),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(palette["accent"])),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor(palette["accent_text"])),
+        ("TEXTCOLOR", (0, 1), (-1, -1), colors.HexColor(ORDER_TEXT_COLOR)),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, 0), 10),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
-        ("LEFTPADDING", (0, 0), (-1, -1), 3),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-        ("TOPPADDING", (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+        ("BOX", (0, 0), (-1, -1), 0.45, colors.HexColor(ORDER_TABLE_OUTLINE_COLOR)),
+        ("INNERGRID", (0, 0), (-1, -1), 0.3, colors.HexColor(ORDER_TABLE_GRID_COLOR)),
+        (
+            "ROWBACKGROUNDS",
+            (0, 1),
+            (-1, -1),
+            [colors.white, colors.HexColor(ORDER_TABLE_ALT_ROW_COLOR)],
+        ),
+        ("LEFTPADDING", (0, 0), (-1, 0), 6),
+        ("RIGHTPADDING", (0, 0), (-1, 0), 6),
+        ("TOPPADDING", (0, 0), (-1, 0), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+        ("LEFTPADDING", (0, 1), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 1), (-1, -1), 5),
+        ("TOPPADDING", (0, 1), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 5),
     ]
     if custom_layout and column_layout:
         for idx, column in enumerate(column_layout):
@@ -1305,7 +1712,24 @@ def generate_pdf_order_platypus(
             ]
         )
     if total_row_index is not None:
-        style_cmds.append(("FONTNAME", (0, total_row_index), (-1, total_row_index), "Helvetica-Bold"))
+        style_cmds.extend(
+            [
+                ("FONTNAME", (0, total_row_index), (-1, total_row_index), "Helvetica-Bold"),
+                (
+                    "BACKGROUND",
+                    (0, total_row_index),
+                    (-1, total_row_index),
+                    colors.HexColor(palette["total_fill"]),
+                ),
+                (
+                    "LINEABOVE",
+                    (0, total_row_index),
+                    (-1, total_row_index),
+                    0.45,
+                    colors.HexColor(ORDER_TABLE_OUTLINE_COLOR),
+                ),
+            ]
+        )
     tbl.setStyle(TableStyle(style_cmds))
     story.append(tbl)
 
@@ -1318,10 +1742,14 @@ def generate_pdf_order_platypus(
                 en1090_note_html = f"<b>{en1090_note_html}</b>"
             story.append(Paragraph(en1090_note_html, small_style))
 
-    if footer_note is None:
-        note = DEFAULT_FOOTER_NOTE
+    include_footer_note = doc_type_text_lower.startswith("bestelbon")
+    if include_footer_note:
+        if footer_note is None:
+            note = DEFAULT_FOOTER_NOTE
+        else:
+            note = _to_str(footer_note)
     else:
-        note = _to_str(footer_note)
+        note = ""
     if note:
         story.append(Spacer(0, 8))
         story.append(Paragraph(note, small_style))
@@ -1738,6 +2166,13 @@ def copy_per_production_and_orders(
     export_name_prefix_enabled: bool | None = None,
     export_name_suffix_text: str = "",
     export_name_suffix_enabled: bool | None = None,
+    document_filename_profile: str = DOCUMENT_FILENAME_PROFILE_STANDARD,
+    document_filename_show_doc_type: bool = True,
+    document_filename_show_doc_number: bool = True,
+    document_filename_show_context: bool = True,
+    document_filename_show_date: bool = True,
+    document_filename_compact_doc_number: bool = False,
+    document_filename_separator: str = "underscore",
     copy_finish_exports: bool = False,
     zip_finish_exports: bool = True,
     export_bom: bool = True,
@@ -1946,6 +2381,12 @@ def copy_per_production_and_orders(
     delivery_map = delivery_map or {}
     export_name_prefix_text = (export_name_prefix_text or "").strip()
     export_name_suffix_text = (export_name_suffix_text or "").strip()
+    document_filename_profile = normalize_document_filename_profile(
+        document_filename_profile
+    )
+    document_filename_separator = normalize_document_filename_separator(
+        document_filename_separator
+    )
     prefix_has_text = bool(export_name_prefix_text)
     suffix_has_text = bool(export_name_suffix_text)
     if export_name_prefix_enabled is None:
@@ -2120,6 +2561,7 @@ def copy_per_production_and_orders(
             "address": client.address if client else "",
             "vat": client.vat if client else "",
             "email": client.email if client else "",
+            "accent_color": client.accent_color if client else "",
             "logo_path": client.logo_path if client else "",
             "logo_crop": client.logo_crop if client else None,
         }
@@ -2133,7 +2575,20 @@ def copy_per_production_and_orders(
             delivery_for_docs = None
 
         if supplier_name_clean or is_standaard_doc:
-            excel_requested = f"{doc_type}{num_part}_{prod}_{today}.xlsx"
+            document_base = build_document_export_basename(
+                doc_type,
+                doc_num,
+                prod,
+                today,
+                profile=document_filename_profile,
+                show_doc_type=document_filename_show_doc_type,
+                show_doc_number=document_filename_show_doc_number,
+                show_context=document_filename_show_context,
+                show_date=document_filename_show_date,
+                compact_doc_number=document_filename_compact_doc_number,
+                separator=document_filename_separator,
+            )
+            excel_requested = f"{document_base}.xlsx"
             excel_filename = _fit_filename_within_path(prod_folder, excel_requested)
             _record_path_warning(
                 prod_folder,
@@ -2159,7 +2614,7 @@ def copy_per_production_and_orders(
                 en1090_note=en1090_note_text,
             )
 
-            pdf_requested = f"{doc_type}{num_part}_{prod}_{today}.pdf"
+            pdf_requested = f"{document_base}.pdf"
             pdf_filename = _fit_filename_within_path(prod_folder, pdf_requested)
             _record_path_warning(
                 prod_folder,
@@ -2298,12 +2753,6 @@ def copy_per_production_and_orders(
                 and opticutter_doc_num.upper() == opticutter_prefix.upper()
             ):
                 opticutter_doc_num = ""
-            opticutter_doc_token = (
-                _sanitize_component(opticutter_doc_num) if opticutter_doc_num else ""
-            )
-            opticutter_num_part = (
-                f"_{opticutter_doc_token}" if opticutter_doc_token else ""
-            )
             opticutter_doc_lower = opticutter_doc_type.lower()
             opticutter_is_standaard = opticutter_doc_lower.startswith("standaard")
 
@@ -2333,10 +2782,21 @@ def copy_per_production_and_orders(
             if should_generate_opticutter_order:
                 should_write_order_overview = False
 
-                opticutter_excel_requested = (
-                    f"{opticutter_doc_type}{opticutter_num_part}_"
-                    f"{prod}_Brutemateriaal_{today}.xlsx"
+                opticutter_document_base = build_document_export_basename(
+                    opticutter_doc_type,
+                    opticutter_doc_num,
+                    prod,
+                    today,
+                    profile=document_filename_profile,
+                    show_doc_type=document_filename_show_doc_type,
+                    show_doc_number=document_filename_show_doc_number,
+                    show_context=document_filename_show_context,
+                    show_date=document_filename_show_date,
+                    compact_doc_number=document_filename_compact_doc_number,
+                    separator=document_filename_separator,
+                    extra_context_label="Brutemateriaal",
                 )
+                opticutter_excel_requested = f"{opticutter_document_base}.xlsx"
                 opticutter_excel_filename = _fit_filename_within_path(
                     prod_folder, opticutter_excel_requested
                 )
@@ -2371,10 +2831,7 @@ def copy_per_production_and_orders(
                     en1090_note=en1090_note_text,
                 )
 
-                opticutter_pdf_requested = (
-                    f"{opticutter_doc_type}{opticutter_num_part}_"
-                    f"{prod}_Brutemateriaal_{today}.pdf"
-                )
+                opticutter_pdf_requested = f"{opticutter_document_base}.pdf"
                 opticutter_pdf_filename = _fit_filename_within_path(
                     prod_folder, opticutter_pdf_requested
                 )
@@ -2544,9 +3001,6 @@ def copy_per_production_and_orders(
                 doc_num = ""
             elif doc_num and prefix and not doc_num.upper().startswith(prefix.upper()):
                 doc_num = f"{prefix}{doc_num}"
-            doc_num_token = _sanitize_component(doc_num) if doc_num else ""
-            num_part = f"_{doc_num_token}" if doc_num_token else ""
-
             folder_name = info.get("folder_name", finish_key)
             target_dir = os.path.join(dest, folder_name)
             os.makedirs(target_dir, exist_ok=True)
@@ -2576,9 +3030,20 @@ def copy_per_production_and_orders(
                 supplier_for_docs = None
                 delivery_for_docs = None
 
-            excel_requested = (
-                f"{doc_type}{num_part}_{filename_component}_{today}.xlsx"
+            finish_document_base = build_document_export_basename(
+                doc_type,
+                doc_num,
+                filename_component,
+                today,
+                profile=document_filename_profile,
+                show_doc_type=document_filename_show_doc_type,
+                show_doc_number=document_filename_show_doc_number,
+                show_context=document_filename_show_context,
+                show_date=document_filename_show_date,
+                compact_doc_number=document_filename_compact_doc_number,
+                separator=document_filename_separator,
             )
+            excel_requested = f"{finish_document_base}.xlsx"
             excel_filename = _fit_filename_within_path(target_dir, excel_requested)
             _record_path_warning(
                 target_dir,
@@ -2602,7 +3067,7 @@ def copy_per_production_and_orders(
                 order_remark=finish_remark or None,
             )
 
-            pdf_requested = f"{doc_type}{num_part}_{filename_component}_{today}.pdf"
+            pdf_requested = f"{finish_document_base}.pdf"
             pdf_filename = _fit_filename_within_path(target_dir, pdf_requested)
             _record_path_warning(
                 target_dir,

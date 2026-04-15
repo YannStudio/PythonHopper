@@ -2,10 +2,10 @@ import datetime
 import os
 import zipfile
 
+import openpyxl
 import pandas as pd
 import pytest
 pytest.importorskip("openpyxl")
-import pytest
 from PyPDF2 import PdfReader
 
 from models import Supplier

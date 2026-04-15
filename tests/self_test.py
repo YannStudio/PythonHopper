@@ -1,13 +1,23 @@
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 import datetime
 
 import pandas as pd
-import pytest
+try:
+    import pytest
+except Exception:  # pragma: no cover - optional for CLI self-test runs
+    pytest = None  # type: ignore[assignment]
 
-openpyxl = pytest.importorskip("openpyxl")
+try:
+    import openpyxl
+except Exception:  # pragma: no cover - handled in run_tests / pytest skip
+    openpyxl = None  # type: ignore[assignment]
+
+if pytest is not None and openpyxl is None:
+    pytest.skip("openpyxl not installed", allow_module_level=True)
 
 from models import Supplier, Client
 from suppliers_db import SuppliersDB
@@ -22,6 +32,10 @@ from orders import (
 
 
 def run_tests() -> int:
+    if openpyxl is None:
+        print("openpyxl ontbreekt; self-tests kunnen niet draaien.", file=sys.stderr)
+        return 1
+
     print("Running self-tests...")
     db = SuppliersDB()
     db.upsert(Supplier.from_any({
@@ -93,7 +107,7 @@ def run_tests() -> int:
             db,
             {},
             {},
-            {"Laser": "1"},
+            {"Laser": "BB-1"},
             True,
             client=client,
             delivery_map={},
@@ -151,7 +165,7 @@ def run_tests() -> int:
             db,
             {},
             {},
-            {"Laser": "1"},
+            {"Laser": "BB-1"},
             True,
             client=client,
             delivery_map={},
@@ -176,7 +190,7 @@ def run_tests() -> int:
             db,
             {},
             {},
-            {"Laser": "1"},
+            {"Laser": "BB-1"},
             True,
             client=client,
             delivery_map={},
@@ -200,7 +214,7 @@ def run_tests() -> int:
             db,
             {},
             {},
-            {"Laser": "1"},
+            {"Laser": "BB-1"},
             True,
             client=client,
             delivery_map={},

@@ -10,7 +10,7 @@ from typing import Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 import tkinter as tk
 from tkinter import font, messagebox, ttk
 
-from helpers import _to_str
+from helpers import _to_str, strip_favorite_marker
 from orders import _prefix_for_doc_type, _sanitize_component
 
 if TYPE_CHECKING:
@@ -603,8 +603,10 @@ class ManualOrderTab(tk.Frame):
     QUANTITY_KEY_HINTS = {"aantal", "st", "st.", "qty", "quantity", "stuks"}
 
     DOC_TYPE_OPTIONS: tuple[str, ...] = ("Bestelbon", "Standaard bon", "Offerteaanvraag")
+    CLIENT_ADDRESS_PRESET = "Klantadres"
     DELIVERY_PRESETS: tuple[str, ...] = (
         "Geen",
+        CLIENT_ADDRESS_PRESET,
         "Bestelling wordt opgehaald",
         "Leveradres wordt nog meegedeeld",
     )
@@ -1129,7 +1131,21 @@ class ManualOrderTab(tk.Frame):
         current_delivery = self.delivery_var.get()
         self.delivery_combo.configure(values=delivery_opts)
         if current_delivery not in delivery_opts:
-            self.delivery_var.set(self.DELIVERY_PRESETS[0])
+            self.delivery_var.set(self._default_delivery_choice())
+
+    def _selected_client(self):
+        if self.clients_db is None:
+            return None
+        raw_name = _to_str(self.client_var.get()).strip()
+        if not raw_name:
+            return None
+        clean_name = strip_favorite_marker(raw_name).strip()
+        if not clean_name:
+            return None
+        return self.clients_db.get(clean_name)
+
+    def _default_delivery_choice(self) -> str:
+        return self.DELIVERY_PRESETS[0]
 
     def set_doc_number(self, value: str) -> None:
         self.doc_number_var.set(value)
