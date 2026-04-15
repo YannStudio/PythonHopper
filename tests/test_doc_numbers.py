@@ -14,6 +14,8 @@ from orders import (
     copy_per_production_and_orders,
     _prefix_for_doc_type,
     _normalize_doc_number,
+    build_document_export_basename,
+    format_document_number_for_display,
 )
 
 
@@ -80,6 +82,81 @@ def test_normalize_doc_number_removes_duplicate_prefix():
     assert _normalize_doc_number("BB64646", "Bestelbon") == "BB-64646"
     assert _normalize_doc_number("64646", "Bestelbon") == "64646"
     assert _normalize_doc_number(None, "Bestelbon") == ""
+
+
+def test_build_document_export_basename_profiles():
+    export_date = "2026-04-15"
+
+    assert (
+        build_document_export_basename(
+            "Bestelbon",
+            "BB-123/45",
+            "Laser",
+            export_date,
+        )
+        == "Bestelbon_BB-123_45_Laser_2026-04-15"
+    )
+    assert (
+        build_document_export_basename(
+            "Bestelbon",
+            "BB-123/45",
+            "Laser",
+            export_date,
+            profile="short",
+        )
+        == "BB-123_45"
+    )
+    assert (
+        build_document_export_basename(
+            "Bestelbon",
+            "BB-123/45",
+            "Laser",
+            export_date,
+            profile="compact",
+        )
+        == "BB123_45"
+    )
+    assert (
+        build_document_export_basename(
+            "Bestelbon",
+            "BB-123/45",
+            "Laser",
+            export_date,
+            profile="custom",
+            show_doc_type=False,
+            show_doc_number=True,
+            show_context=False,
+            show_date=False,
+            compact_doc_number=True,
+            separator="none",
+        )
+        == "BB123_45"
+    )
+    assert (
+        build_document_export_basename(
+            "Bestelbon",
+            "",
+            "Laser",
+            export_date,
+            profile="short",
+        )
+        == "Bestelbon_Laser_2026-04-15"
+    )
+
+
+def test_format_document_number_for_display():
+    assert (
+        format_document_number_for_display("BB-5487", "Bestelbon", compact=False)
+        == "BB-5487"
+    )
+    assert (
+        format_document_number_for_display("BB-5487", "Bestelbon", compact=True)
+        == "BB5487"
+    )
+    assert (
+        format_document_number_for_display("OFF-12/34", "Offerteaanvraag", compact=True)
+        == "OFF12/34"
+    )
 
 
 def test_offerte_prefix_in_output(tmp_path):
@@ -181,6 +258,104 @@ def test_missing_doc_number_omits_prefix_and_header(tmp_path):
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
     assert "Nummer:" not in text
     assert f"Datum: {today}" in text
+
+
+@pytest.mark.parametrize(
+    ("profile", "expected_base"),
+    [
+        ("short", "BB-123_45"),
+        ("compact", "BB123_45"),
+    ],
+)
+def test_document_filename_profile_controls_export_name(
+    tmp_path,
+    profile,
+    expected_base,
+):
+    pytest.importorskip("reportlab")
+
+    db = SuppliersDB()
+    db.upsert(Supplier.from_any({"supplier": "ACME"}))
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "PN1.pdf").write_text("dummy")
+
+    bom_df = pd.DataFrame(
+        [{"PartNumber": "PN1", "Description": "", "Production": "Laser", "Aantal": 1}]
+    )
+
+    dst = tmp_path / f"dst_{profile}"
+    dst.mkdir()
+
+    copy_per_production_and_orders(
+        str(src),
+        str(dst),
+        bom_df,
+        [".pdf"],
+        db,
+        {},
+        {},
+        {"Laser": "BB-123/45"},
+        False,
+        client=None,
+        delivery_map={},
+        document_filename_profile=profile,
+    )
+
+    prod_folder = dst / "Laser"
+    assert (prod_folder / f"{expected_base}.xlsx").exists()
+    assert (prod_folder / f"{expected_base}.pdf").exists()
+
+
+def test_document_display_compact_doc_number_changes_pdf_and_excel_header(tmp_path):
+    pytest.importorskip("reportlab")
+
+    db = SuppliersDB()
+    db.upsert(Supplier.from_any({"supplier": "ACME"}))
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "PN1.pdf").write_text("dummy")
+
+    bom_df = pd.DataFrame(
+        [{"PartNumber": "PN1", "Description": "", "Production": "Laser", "Aantal": 1}]
+    )
+
+    dst = tmp_path / "dst_display"
+    dst.mkdir()
+
+    copy_per_production_and_orders(
+        str(src),
+        str(dst),
+        bom_df,
+        [".pdf"],
+        db,
+        {},
+        {},
+        {"Laser": "BB-5487"},
+        False,
+        client=None,
+        delivery_map={},
+        document_display_compact_doc_number=True,
+    )
+
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    prod_folder = dst / "Laser"
+
+    xlsx_path = prod_folder / f"Bestelbon_BB-5487_Laser_{today}.xlsx"
+    assert xlsx_path.exists()
+    wb = openpyxl.load_workbook(xlsx_path)
+    ws = wb.active
+    assert ws["A1"].value == "Nummer"
+    assert ws["B1"].value == "BB5487"
+
+    pdf_path = prod_folder / f"Bestelbon_BB-5487_Laser_{today}.pdf"
+    assert pdf_path.exists()
+    reader = PdfReader(pdf_path)
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    assert "Nummer: BB5487" in text
+    assert "Nummer: BB-5487" not in text
 
 
 def test_doc_number_applied_to_zip_filename(tmp_path):

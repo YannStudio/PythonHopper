@@ -706,6 +706,22 @@ def _format_doc_number_for_filename(
     return _sanitize_component(normalized)
 
 
+def format_document_number_for_display(
+    doc_number: object,
+    doc_type: object,
+    *,
+    compact: bool = False,
+) -> str:
+    """Return the document number as it should appear in PDF/XLSX headers."""
+
+    normalized = _normalize_doc_number(doc_number, doc_type)
+    if not normalized:
+        return ""
+    if compact:
+        normalized = re.sub(r"[\s\-_]+", "", normalized)
+    return normalized
+
+
 def _join_filename_parts(parts: Sequence[str], separator: str) -> str:
     cleaned = [part for part in (_sanitize_component(part) for part in parts) if part]
     if not cleaned:
@@ -2173,6 +2189,7 @@ def copy_per_production_and_orders(
     document_filename_show_date: bool = True,
     document_filename_compact_doc_number: bool = False,
     document_filename_separator: str = "underscore",
+    document_display_compact_doc_number: bool = False,
     copy_finish_exports: bool = False,
     zip_finish_exports: bool = True,
     export_bom: bool = True,
@@ -2206,7 +2223,8 @@ def copy_per_production_and_orders(
     ``"Bestelbon"``.
 
     ``doc_num_map`` provides document numbers per production which are used in
-    filenames and document headers.
+    filenames and document headers. The filename and displayed document number
+    can be formatted independently through the document filename/display flags.
 
     ``delivery_map`` can provide a :class:`DeliveryAddress` per production.
 
@@ -2387,6 +2405,7 @@ def copy_per_production_and_orders(
     document_filename_separator = normalize_document_filename_separator(
         document_filename_separator
     )
+    document_display_compact_doc_number = bool(document_display_compact_doc_number)
     prefix_has_text = bool(export_name_prefix_text)
     suffix_has_text = bool(export_name_suffix_text)
     if export_name_prefix_enabled is None:
@@ -2466,6 +2485,11 @@ def copy_per_production_and_orders(
         prefix = _prefix_for_doc_type(doc_type)
         if doc_num and prefix and doc_num.upper() == prefix.upper():
             doc_num = ""
+        doc_num_display = format_document_number_for_display(
+            doc_num,
+            doc_type,
+            compact=document_display_compact_doc_number,
+        )
         doc_num_token = _sanitize_component(doc_num) if doc_num else ""
         num_part = f"_{doc_num_token}" if doc_num_token else ""
         doc_type_lower = doc_type.lower()
@@ -2604,7 +2628,7 @@ def copy_per_production_and_orders(
                 supplier_for_docs,
                 delivery_for_docs,
                 doc_type,
-                doc_num or None,
+                doc_num_display or None,
                 project_number=project_number,
                 project_name=project_name,
                 context_label=prod,
@@ -2631,7 +2655,7 @@ def copy_per_production_and_orders(
                     prod,
                     items,
                     doc_type=doc_type,
-                    doc_number=doc_num or None,
+                    doc_number=doc_num_display or None,
                     footer_note=footer_note_text,
                     delivery=delivery_for_docs,
                     project_number=project_number,
@@ -2753,6 +2777,11 @@ def copy_per_production_and_orders(
                 and opticutter_doc_num.upper() == opticutter_prefix.upper()
             ):
                 opticutter_doc_num = ""
+            opticutter_doc_num_display = format_document_number_for_display(
+                opticutter_doc_num,
+                opticutter_doc_type,
+                compact=document_display_compact_doc_number,
+            )
             opticutter_doc_lower = opticutter_doc_type.lower()
             opticutter_is_standaard = opticutter_doc_lower.startswith("standaard")
 
@@ -2820,7 +2849,7 @@ def copy_per_production_and_orders(
                     supplier_for_opticutter_docs,
                     delivery_for_opticutter_docs,
                     opticutter_doc_type,
-                    opticutter_doc_num or None,
+                    opticutter_doc_num_display or None,
                     project_number=project_number,
                     project_name=project_name,
                     context_label=prod,
@@ -2850,7 +2879,7 @@ def copy_per_production_and_orders(
                         prod,
                         opticutter_order_items,
                         doc_type=opticutter_doc_type,
-                        doc_number=opticutter_doc_num or None,
+                        doc_number=opticutter_doc_num_display or None,
                         footer_note=footer_note_text,
                         delivery=delivery_for_opticutter_docs,
                         project_number=project_number,
@@ -3001,6 +3030,11 @@ def copy_per_production_and_orders(
                 doc_num = ""
             elif doc_num and prefix and not doc_num.upper().startswith(prefix.upper()):
                 doc_num = f"{prefix}{doc_num}"
+            doc_num_display = format_document_number_for_display(
+                doc_num,
+                doc_type,
+                compact=document_display_compact_doc_number,
+            )
             folder_name = info.get("folder_name", finish_key)
             target_dir = os.path.join(dest, folder_name)
             os.makedirs(target_dir, exist_ok=True)
@@ -3059,7 +3093,7 @@ def copy_per_production_and_orders(
                 supplier_for_docs,
                 delivery_for_docs,
                 doc_type,
-                doc_num or None,
+                doc_num_display or None,
                 project_number=project_number,
                 project_name=project_name,
                 context_label=label,
@@ -3084,7 +3118,7 @@ def copy_per_production_and_orders(
                     label,
                     items,
                     doc_type=doc_type,
-                    doc_number=doc_num or None,
+                    doc_number=doc_num_display or None,
                     footer_note=footer_note_text,
                     delivery=delivery_for_docs,
                     project_number=project_number,

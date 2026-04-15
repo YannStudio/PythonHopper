@@ -573,6 +573,30 @@ def cli_copy_per_prod(args):
         export_name_prefix_enabled=export_prefix_enabled,
         export_name_suffix_text=export_suffix_text,
         export_name_suffix_enabled=export_suffix_enabled,
+        document_filename_profile=getattr(
+            settings, "document_filename_profile", "standard"
+        ),
+        document_filename_show_doc_type=bool(
+            getattr(settings, "document_filename_show_doc_type", True)
+        ),
+        document_filename_show_doc_number=bool(
+            getattr(settings, "document_filename_show_doc_number", True)
+        ),
+        document_filename_show_context=bool(
+            getattr(settings, "document_filename_show_context", True)
+        ),
+        document_filename_show_date=bool(
+            getattr(settings, "document_filename_show_date", True)
+        ),
+        document_filename_compact_doc_number=bool(
+            getattr(settings, "document_filename_compact_doc_number", False)
+        ),
+        document_filename_separator=getattr(
+            settings, "document_filename_separator", "underscore"
+        ),
+        document_display_compact_doc_number=bool(
+            getattr(settings, "document_display_compact_doc_number", False)
+        ),
         finish_override_map=finish_override_map,
         finish_doc_type_map=finish_doc_type_map,
         finish_doc_num_map=finish_doc_num_map,

@@ -40,6 +40,14 @@ def test_cli_doc_options_parsing(monkeypatch, tmp_path):
     settings = AppSettings()
     settings.en1090_enabled = False
     settings.en1090_note = "Custom EN 1090\r\nNote"
+    settings.document_filename_profile = "custom"
+    settings.document_filename_show_doc_type = False
+    settings.document_filename_show_doc_number = True
+    settings.document_filename_show_context = False
+    settings.document_filename_show_date = False
+    settings.document_filename_compact_doc_number = True
+    settings.document_filename_separator = "none"
+    settings.document_display_compact_doc_number = True
     monkeypatch.setattr(
         AppSettings,
         "load",
@@ -60,3 +68,11 @@ def test_cli_doc_options_parsing(monkeypatch, tmp_path):
     assert captured["en1090_enabled"] is False
     assert captured["en1090_note"] == "Custom EN 1090\nNote"
     assert captured["en1090_overrides"] is None
+    assert captured["document_filename_profile"] == "custom"
+    assert captured["document_filename_show_doc_type"] is False
+    assert captured["document_filename_show_doc_number"] is True
+    assert captured["document_filename_show_context"] is False
+    assert captured["document_filename_show_date"] is False
+    assert captured["document_filename_compact_doc_number"] is True
+    assert captured["document_filename_separator"] == "none"
+    assert captured["document_display_compact_doc_number"] is True

@@ -650,6 +650,7 @@ class ManualOrderTab(tk.Frame):
         on_manage_clients: Optional[Callable[[], None]] = None,
         on_manage_suppliers: Optional[Callable[[], None]] = None,
         on_manage_deliveries: Optional[Callable[[], None]] = None,
+        document_name_builder: Optional[Callable[..., str]] = None,
     ) -> None:
         super().__init__(master)
         self.suppliers_db = suppliers_db
@@ -662,6 +663,7 @@ class ManualOrderTab(tk.Frame):
         self._on_export = on_export
         self._on_manage_suppliers = on_manage_suppliers
         self._on_manage_deliveries = on_manage_deliveries
+        self._document_name_builder = document_name_builder
 
         self.configure(padx=12, pady=12)
         self.columnconfigure(0, weight=1)
@@ -1153,11 +1155,29 @@ class ManualOrderTab(tk.Frame):
         self._update_doc_name_preview()
 
     def _update_doc_name_preview(self) -> None:
-        basename = self.build_document_basename(
-            self.doc_number_var.get(),
-            self.project_name_var.get(),
-            self.context_label_var.get() or self.DEFAULT_CONTEXT_LABEL,
+        context_label = (
+            self.context_label_var.get().strip()
+            or self.project_name_var.get().strip()
+            or self.DEFAULT_CONTEXT_LABEL
         )
+        basename = ""
+        if self._document_name_builder is not None:
+            try:
+                basename = _to_str(
+                    self._document_name_builder(
+                        self.doc_type_var.get().strip() or self.DOC_TYPE_OPTIONS[0],
+                        self.doc_number_var.get(),
+                        context_label,
+                    )
+                ).strip()
+            except Exception:
+                basename = ""
+        if not basename:
+            basename = self.build_document_basename(
+                self.doc_number_var.get(),
+                self.project_name_var.get(),
+                context_label,
+            )
         self.doc_name_preview_var.set(f"{basename}.pdf")
 
     # Row management -------------------------------------------------

@@ -68,6 +68,7 @@ from orders import (
     _fit_filename_within_path,
     _sanitize_component,
     build_document_export_basename,
+    format_document_number_for_display,
     write_order_excel,
     generate_pdf_order_platypus,
 )
@@ -833,9 +834,13 @@ def start_gui():
                     client_vat = entries["vat"].get().strip() or "BE0123456789"
                     client_email = entries["email"].get().strip() or "info@example.com"
                     today_text = datetime.date.today().strftime("%Y-%m-%d")
+                    preview_doc_number = self._format_document_display_number(
+                        "Bestelbon",
+                        "BB-123",
+                    )
                     doc_top_y = rule_y + 10
                     doc_lines = [
-                        ("Nummer:", "BB-voorbeeld"),
+                        ("Nummer:", preview_doc_number or "BB-123"),
                         ("Datum:", today_text),
                         ("Productie:", "Laser"),
                     ]
@@ -4453,6 +4458,12 @@ def start_gui():
                 value=getattr(self.settings, "document_filename_separator", "underscore"),
             )
             self.document_filename_preview_var = tk.StringVar(master=self, value="")
+            self.document_display_compact_doc_number_var = tk.IntVar(
+                master=self,
+                value=1
+                if getattr(self.settings, "document_display_compact_doc_number", False)
+                else 0,
+            )
             self.bundle_latest_var = tk.IntVar(
                 master=self, value=1 if self.settings.bundle_latest else 0
             )
@@ -4512,6 +4523,7 @@ def start_gui():
                 self.document_filename_show_context_var,
                 self.document_filename_show_date_var,
                 self.document_filename_compact_doc_number_var,
+                self.document_display_compact_doc_number_var,
                 self.bundle_latest_var,
                 self.bundle_dry_run_var,
                 self.autofill_custom_bom_var,
@@ -5209,6 +5221,13 @@ def start_gui():
                 textvariable=self.document_filename_preview_var,
                 state="readonly",
             ).pack(fill="x", pady=(2, 0))
+            tk.Checkbutton(
+                document_name_inner,
+                text="Compact documentnummer tonen in PDF/Excel",
+                variable=self.document_display_compact_doc_number_var,
+                anchor="w",
+                justify="left",
+            ).pack(anchor="w", pady=(8, 0))
             # Legacy options moved to settings tab
 
             # BOM controls
@@ -5352,6 +5371,10 @@ def start_gui():
             doc_type = _to_str(payload.get("doc_type")).strip() or "Bestelbon"
             doc_number_raw = payload.get("doc_number", "")
             doc_number = _normalize_doc_number(doc_number_raw, doc_type)
+            doc_number_display = self._format_document_display_number(
+                doc_type,
+                doc_number,
+            )
             if manual_tab is not None:
                 try:
                     manual_tab.set_doc_number(doc_number)
@@ -5483,7 +5506,7 @@ def start_gui():
                     supplier,
                     delivery,
                     doc_type,
-                    doc_number or None,
+                    doc_number_display or None,
                     project_number=project_number or None,
                     project_name=project_name or None,
                     context_label=context_label,
@@ -5501,7 +5524,7 @@ def start_gui():
                     context_label,
                     items,
                     doc_type=doc_type,
-                    doc_number=doc_number or None,
+                    doc_number=doc_number_display or None,
                     footer_note=footer_note_text,
                     delivery=delivery,
                     project_number=project_number or None,
@@ -5646,6 +5669,9 @@ def start_gui():
             self.settings.document_filename_separator = (
                 self.document_filename_separator_var.get().strip() or "underscore"
             )
+            self.settings.document_display_compact_doc_number = bool(
+                self.document_display_compact_doc_number_var.get()
+            )
             self.settings.bundle_latest = bool(self.bundle_latest_var.get())
             self.settings.bundle_dry_run = bool(self.bundle_dry_run_var.get())
             self.settings.autofill_custom_bom = bool(
@@ -5694,6 +5720,17 @@ def start_gui():
                 export_date,
                 extra_context_label=extra_context_label,
                 **self._document_filename_settings_kwargs(),
+            )
+
+        def _format_document_display_number(
+            self,
+            doc_type: str,
+            doc_number: str | None,
+        ) -> str:
+            return format_document_number_for_display(
+                doc_number,
+                doc_type,
+                compact=bool(self.document_display_compact_doc_number_var.get()),
             )
 
         def _refresh_document_filename_controls(self, *_args) -> None:
@@ -6569,6 +6606,9 @@ def start_gui():
                                 self.document_filename_compact_doc_number_var.get()
                             ),
                             document_filename_separator=self.document_filename_separator_var.get(),
+                            document_display_compact_doc_number=bool(
+                                self.document_display_compact_doc_number_var.get()
+                            ),
                             finish_override_map=finish_override_map,
                             finish_doc_type_map=finish_doc_type_map,
                             finish_doc_num_map=finish_doc_num_map,
@@ -8386,6 +8426,9 @@ def start_gui():
                                 self.document_filename_compact_doc_number_var.get()
                             ),
                             document_filename_separator=self.document_filename_separator_var.get(),
+                            document_display_compact_doc_number=bool(
+                                self.document_display_compact_doc_number_var.get()
+                            ),
                             finish_override_map=finish_override_map,
                             finish_doc_type_map=finish_doc_type_map,
                             finish_doc_num_map=finish_doc_num_map,

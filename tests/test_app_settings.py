@@ -1,5 +1,4 @@
 import json
-import json
 
 from app_settings import AppSettings, FileExtensionSetting, DEFAULT_FILE_EXTENSIONS
 from en1090 import EN1090_NOTE_TEXT
@@ -43,6 +42,14 @@ def test_app_settings_roundtrip(tmp_path):
         en1090_enabled=False,
         en1090_note="Aangepaste EN 1090-tekst",
         en1090_preferences={"Lasercutting": True, "Weld Assembly": False},
+        document_filename_profile="custom",
+        document_filename_show_doc_type=False,
+        document_filename_show_doc_number=True,
+        document_filename_show_context=False,
+        document_filename_show_date=False,
+        document_filename_compact_doc_number=True,
+        document_filename_separator="none",
+        document_display_compact_doc_number=True,
     )
     settings.save(path)
 

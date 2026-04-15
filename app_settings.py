@@ -226,6 +226,7 @@ class AppSettings:
     document_filename_show_date: bool = True
     document_filename_compact_doc_number: bool = False
     document_filename_separator: str = "underscore"
+    document_display_compact_doc_number: bool = False
     bundle_latest: bool = False
     bundle_dry_run: bool = False
     footer_note: str = DEFAULT_FOOTER_NOTE
