@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import pandas as pd
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from app_paths import resolve_runtime_path
 try:
     from openpyxl.styles import Alignment, Font
@@ -69,6 +69,16 @@ from opticutter import (
 )
 
 import step_previews
+from helpers import (
+    _to_str,
+    _num_to_2dec,
+    _pn_wrap_25,
+    _material_nowrap,
+    _build_file_index,
+)
+from models import Supplier, Client, DeliveryAddress, color_to_rgb, normalize_rgb_color
+from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
+from bom import load_bom  # noqa: F401 - imported for module dependency
 
 MIAMI_PINK = "#FF77FF"
 ORDER_RULE_COLOR = "#B9C1CA"
@@ -267,6 +277,54 @@ class OpticutterOrderComputation:
     total_bars: int
     total_weight_kg: float | None
     selection_count: int
+
+
+@dataclass(slots=True)
+class OrderDocumentSection:
+    """A single logical section inside an order document."""
+
+    context_label: str
+    context_kind: str
+    items: List[Dict[str, object]]
+    total_weight_kg: float | None = None
+    column_layout: Optional[List[Dict[str, object]]] = None
+
+
+@dataclass(slots=True)
+class OrderDocumentCandidate:
+    """Collected data for one selectable order document before grouping."""
+
+    selection_key: str
+    context_label: str
+    context_kind: str
+    filename_context: str
+    target_dir: str
+    supplier: Supplier | None
+    delivery: DeliveryAddress | None
+    doc_type: str
+    doc_num: str
+    doc_num_display: str
+    order_remark: str | None
+    items: List[Dict[str, object]]
+    total_weight_kg: float | None = None
+    column_layout: Optional[List[Dict[str, object]]] = None
+    en1090_required: bool = False
+
+
+@dataclass(slots=True)
+class OrderDocumentJob:
+    """A concrete PDF/XLSX document to render."""
+
+    target_dir: str
+    context_for_filename: str
+    doc_type: str
+    doc_num: str
+    doc_num_display: str
+    supplier: Supplier | None
+    delivery: DeliveryAddress | None
+    order_remark: str | None
+    sections: List[OrderDocumentSection] = field(default_factory=list)
+    en1090_required: bool = False
 
 
 _INVALID_PATH_CHARS = set('<>:"/\\|?*')
@@ -535,19 +593,6 @@ def _normalize_crop_box(
     if right <= left or bottom <= top:
         return None
     return left, top, right, bottom
-
-
-from helpers import (
-    _to_str,
-    _num_to_2dec,
-    _pn_wrap_25,
-    _material_nowrap,
-    _build_file_index,
-)
-from models import Supplier, Client, DeliveryAddress, color_to_rgb, normalize_rgb_color
-from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
-from bom import load_bom  # noqa: F401 - imported for module dependency
-
 
 def _parse_qty(val: object) -> int:
     """Parse quantity values to int within [1, 999]."""
@@ -893,6 +938,99 @@ def parse_selection_key(key: str) -> Tuple[str, str]:
     return "production", key
 
 
+def _clean_document_group_map(
+    group_map: Mapping[str, str] | None,
+) -> Dict[str, str]:
+    cleaned: Dict[str, str] = {}
+    for raw_follower, raw_master in (group_map or {}).items():
+        follower = _to_str(raw_follower).strip()
+        master = _to_str(raw_master).strip()
+        if not follower or not master or follower == master:
+            continue
+        follower_kind, _ = parse_selection_key(follower)
+        master_kind, _ = parse_selection_key(master)
+        if follower_kind != master_kind or follower_kind not in {"production", "finish"}:
+            continue
+        cleaned[follower] = master
+    return cleaned
+
+
+def _resolve_document_group_root(
+    selection_key: str,
+    group_map: Mapping[str, str],
+) -> str:
+    current = selection_key
+    seen = {selection_key}
+    while True:
+        parent = _to_str(group_map.get(current)).strip()
+        if not parent or parent == current:
+            return current
+        if parent in seen:
+            return selection_key
+        seen.add(parent)
+        current = parent
+
+
+def _build_grouped_document_jobs(
+    candidates: Sequence[OrderDocumentCandidate],
+    group_map: Mapping[str, str] | None,
+) -> List[OrderDocumentJob]:
+    cleaned_group_map = _clean_document_group_map(group_map)
+    candidate_by_key = {candidate.selection_key: candidate for candidate in candidates}
+    grouped_members: Dict[str, List[OrderDocumentCandidate]] = {}
+
+    for candidate in candidates:
+        root_key = _resolve_document_group_root(candidate.selection_key, cleaned_group_map)
+        root_candidate = candidate_by_key.get(root_key)
+        follower_kind, _ = parse_selection_key(candidate.selection_key)
+        root_kind, _ = parse_selection_key(root_key)
+        if root_candidate is None or follower_kind != root_kind:
+            root_key = candidate.selection_key
+            root_candidate = candidate
+        grouped_members.setdefault(root_key, []).append(candidate)
+
+    jobs: List[OrderDocumentJob] = []
+    for root_key, members in grouped_members.items():
+        master = candidate_by_key.get(root_key) or members[0]
+        ordered_members = [master] + [
+            member for member in members if member.selection_key != master.selection_key
+        ]
+        master_kind, _ = parse_selection_key(master.selection_key)
+        en1090_states = {bool(member.en1090_required) for member in ordered_members}
+        if master_kind == "production" and len(en1090_states) > 1:
+            raise ValueError(
+                "Gekoppelde producties moeten dezelfde EN 1090-instelling hebben."
+            )
+        jobs.append(
+            OrderDocumentJob(
+                target_dir=master.target_dir,
+                context_for_filename=master.filename_context,
+                doc_type=master.doc_type,
+                doc_num=master.doc_num,
+                doc_num_display=master.doc_num_display,
+                supplier=master.supplier,
+                delivery=master.delivery,
+                order_remark=master.order_remark,
+                sections=[
+                    OrderDocumentSection(
+                        context_label=member.context_label,
+                        context_kind=member.context_kind,
+                        items=list(member.items),
+                        total_weight_kg=member.total_weight_kg,
+                        column_layout=(
+                            [dict(col) for col in member.column_layout]
+                            if member.column_layout
+                            else None
+                        ),
+                    )
+                    for member in ordered_members
+                ],
+                en1090_required=bool(en1090_states and True in en1090_states),
+            )
+        )
+    return jobs
+
+
 def _parse_weight_kg(value: object) -> float | None:
     """Parse a textual kilogram value to float."""
 
@@ -1179,6 +1317,483 @@ def describe_finish_combo(
     }
 
 
+def _format_order_section_title(context_kind: object, context_label: object) -> str:
+    kind_text = (_to_str(context_kind) or "productie").strip() or "productie"
+    label_text = _to_str(context_label).strip()
+    kind_title = kind_text[0].upper() + kind_text[1:] if kind_text else "Productie"
+    if label_text:
+        return f"{kind_title}: {label_text}"
+    return kind_title
+
+
+def _normalize_order_sections(
+    production: object,
+    items: List[Dict[str, object]],
+    label_kind: object,
+    total_weight_kg: float | None,
+    column_layout: Optional[List[Dict[str, object]]],
+    sections: Optional[List[OrderDocumentSection]],
+) -> List[OrderDocumentSection]:
+    if sections:
+        normalized: List[OrderDocumentSection] = []
+        for section in sections:
+            if isinstance(section, OrderDocumentSection):
+                normalized.append(
+                    OrderDocumentSection(
+                        context_label=_to_str(section.context_label),
+                        context_kind=_to_str(section.context_kind) or "productie",
+                        items=list(section.items or []),
+                        total_weight_kg=section.total_weight_kg,
+                        column_layout=(
+                            [dict(col) for col in section.column_layout]
+                            if section.column_layout
+                            else None
+                        ),
+                    )
+                )
+                continue
+            normalized.append(
+                OrderDocumentSection(
+                    context_label=_to_str(section.get("context_label")),
+                    context_kind=_to_str(section.get("context_kind")) or "productie",
+                    items=list(section.get("items") or []),
+                    total_weight_kg=section.get("total_weight_kg"),
+                    column_layout=(
+                        [dict(col) for col in section.get("column_layout")]
+                        if section.get("column_layout")
+                        else None
+                    ),
+                )
+            )
+        if normalized:
+            return normalized
+
+    return [
+        OrderDocumentSection(
+            context_label=_to_str(production),
+            context_kind=_to_str(label_kind) or "productie",
+            items=list(items or []),
+            total_weight_kg=total_weight_kg,
+            column_layout=[dict(col) for col in column_layout] if column_layout else None,
+        )
+    ]
+
+
+def _order_group_summary_text(sections: Sequence[OrderDocumentSection]) -> str:
+    labels = [_to_str(section.context_label).strip() for section in sections]
+    labels = [label for label in labels if label]
+    if len(labels) <= 1:
+        return ""
+    return ", ".join(labels)
+
+
+def _build_order_excel_section_data(
+    section: OrderDocumentSection,
+) -> tuple[pd.DataFrame, set[str], set[str]]:
+    context_kind_clean = (
+        (_to_str(section.context_kind) or "productie").strip() or "productie"
+    )
+    is_raw_material_order = context_kind_clean.lower().startswith("brutemateriaal")
+    column_layout = (
+        [dict(col) for col in section.column_layout] if section.column_layout else []
+    )
+    custom_layout = bool(column_layout)
+
+    if custom_layout:
+        headers: List[str] = []
+        for column in column_layout:
+            header = _to_str(column.get("label") or column.get("key") or "").strip()
+            if not header:
+                header = column.get("key", "")
+            column["label"] = header
+            headers.append(header)
+        rows: List[Dict[str, object]] = []
+        for item in section.items:
+            row: Dict[str, object] = {}
+            for column, header in zip(column_layout, headers):
+                key = column.get("key")
+                value = item.get(key, "") if key else ""
+                if column.get("integer"):
+                    value = _coerce_integer_like(value)
+                row[header] = value
+            rows.append(row)
+        df = pd.DataFrame(rows, columns=headers)
+        weight_header: str | None = None
+        for column in column_layout:
+            if column.get("total_weight"):
+                weight_header = column["label"]
+                break
+        if weight_header and section.total_weight_kg is not None:
+            total_row = {header: "" for header in headers}
+            if headers:
+                total_row[headers[0]] = "Totaal"
+            total_row[weight_header] = _format_weight_kg(section.total_weight_kg)
+            df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
+        left_cols = {
+            _to_str(column.get("label") or column.get("key") or "").strip()
+            or column.get("key", "")
+            for column in column_layout
+            if _to_str(column.get("justify") or "left").strip().lower() != "right"
+        }
+        wrap_cols = {
+            _to_str(column.get("label") or column.get("key") or "").strip()
+            or column.get("key", "")
+            for column in column_layout
+            if bool(column.get("wrap"))
+        }
+        return df, left_cols, wrap_cols
+
+    if is_raw_material_order:
+        df_columns = ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
+    else:
+        df_columns = [
+            "PartNumber",
+            "Description",
+            "Materiaal",
+            "Aantal",
+            "Oppervlakte",
+            "Gewicht",
+        ]
+    df = pd.DataFrame(section.items, columns=df_columns)
+    if is_raw_material_order and section.total_weight_kg is not None:
+        total_row = {
+            "Profiel": "Totaal",
+            "Materiaal": "",
+            "Lengte": "",
+            "St.": "",
+            "kg": _format_weight_kg(section.total_weight_kg),
+        }
+        df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
+        return df, {"Profiel", "Materiaal"}, {"Profiel", "Materiaal"}
+
+    return df, {"PartNumber", "Description"}, {"PartNumber", "Description"}
+
+
+def _build_order_pdf_section_story(
+    section: OrderDocumentSection,
+    *,
+    story: List[object],
+    usable_w: float,
+    palette: Mapping[str, str],
+    section_title_style: ParagraphStyle,
+    show_title: bool,
+) -> None:
+    context_kind_clean = (
+        (_to_str(section.context_kind) or "productie").strip() or "productie"
+    )
+    is_raw_material_order = context_kind_clean.lower().startswith("brutemateriaal")
+    column_layout = (
+        [dict(col) for col in section.column_layout] if section.column_layout else []
+    )
+    custom_layout = bool(column_layout)
+
+    if show_title:
+        story.append(
+            Paragraph(
+                _format_order_section_title(
+                    context_kind_clean,
+                    section.context_label,
+                ),
+                section_title_style,
+            )
+        )
+        story.append(Spacer(0, 6))
+
+    if custom_layout:
+        head = []
+        for column in column_layout:
+            header = _to_str(column.get("label") or column.get("key") or "").strip()
+            if not header:
+                header = column.get("key", "")
+            column["label"] = header
+            head.append(header)
+    elif is_raw_material_order:
+        head = ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
+    else:
+        head = ["PartNumber", "Omschrijving", "Materiaal", "St.", "mÂ²", "kg"]
+
+    def wrap_cell_html(val: str, small=False, align=None):
+        style = ParagraphStyle(
+            "cellsmall" if small else "cell",
+            fontName="Helvetica",
+            fontSize=8.5 if small else 9,
+            leading=10.5 if small else 11,
+            wordWrap="CJK",
+        )
+        if align:
+            style.alignment = {"LEFT": 0, "CENTER": 1, "RIGHT": 2}.get(
+                align.upper(), 0
+            )
+        return Paragraph(str(val if (val is not None) else ""), style)
+
+    standard_col_widths: List[float] | None = None
+    if not custom_layout and not is_raw_material_order:
+        col_fracs = [0.22, 0.40, 0.14, 0.06, 0.09, 0.09]
+        non_empty_desc_count = sum(
+            1
+            for item in section.items
+            if _clean_order_cell_text(item.get("Description", ""))
+        )
+        if section.items:
+            empty_desc_ratio = 1.0 - (non_empty_desc_count / len(section.items))
+        else:
+            empty_desc_ratio = 0.0
+        extra_pn_frac = 0.12 * max(0.0, min(1.0, empty_desc_ratio))
+        col_fracs[0] += extra_pn_frac
+        col_fracs[1] -= extra_pn_frac
+
+        desc_w = usable_w * col_fracs[1]
+        mat_w = usable_w * col_fracs[2]
+        try:
+            header_width = stringWidth("Materiaal", "Helvetica-Bold", 10) + 6
+            material_values = [
+                stringWidth(
+                    _material_nowrap(_clean_order_cell_text(item.get("Materiaal", ""))),
+                    "Helvetica",
+                    9,
+                )
+                for item in section.items
+                if _clean_order_cell_text(item.get("Materiaal", ""))
+            ]
+            value_width = (max(material_values) if material_values else 0) + 6
+            max_mat = max(header_width, value_width)
+            if max_mat < mat_w:
+                desc_w += mat_w - max_mat
+                mat_w = max_mat
+            elif max_mat > mat_w:
+                desc_w -= max_mat - mat_w
+                mat_w = max_mat
+            min_desc_w = 42 * mm
+            if desc_w < min_desc_w:
+                diff = min_desc_w - desc_w
+                desc_w = min_desc_w
+                mat_w = max(0, mat_w - diff)
+        except Exception:
+            pass
+        standard_col_widths = [
+            usable_w * col_fracs[0],
+            desc_w,
+            mat_w,
+            usable_w * col_fracs[3],
+            usable_w * col_fracs[4],
+            usable_w * col_fracs[5],
+        ]
+
+    def description_cell_html(val: object, width: float) -> str:
+        lines = _wrap_words_to_lines(
+            _clean_order_cell_text(val),
+            max(24.0, width),
+            "Helvetica",
+            9,
+            max_lines=2,
+        )
+        return "<br/>".join(escape(line) for line in lines)
+
+    data = [head]
+    total_row_index: int | None = None
+    if custom_layout:
+        weight_idx: int | None = None
+        for idx, column in enumerate(column_layout):
+            if column.get("total_weight"):
+                weight_idx = idx
+                break
+        for item in section.items:
+            row_cells: List[Paragraph] = []
+            for idx, column in enumerate(column_layout):
+                key = column.get("key")
+                value = item.get(key, "") if key else ""
+                if column.get("numeric"):
+                    if column.get("integer"):
+                        value = _format_integer_like(value)
+                    else:
+                        value = _num_to_2dec(value)
+                    small = True
+                else:
+                    value = _to_str(value)
+                    small = False
+                align = (
+                    _to_str(column.get("justify") or "left").strip().upper()
+                    or "LEFT"
+                )
+                if align not in {"LEFT", "RIGHT", "CENTER"}:
+                    align = "LEFT"
+                row_cells.append(wrap_cell_html(value, small=small, align=align))
+            data.append(row_cells)
+
+        if weight_idx is not None and section.total_weight_kg is not None:
+            total_row: List[Paragraph] = []
+            for idx, column in enumerate(column_layout):
+                align = (
+                    _to_str(column.get("justify") or "left").strip().upper()
+                    or "LEFT"
+                )
+                if align not in {"LEFT", "RIGHT", "CENTER"}:
+                    align = "LEFT"
+                if idx == weight_idx:
+                    total_row.append(
+                        wrap_cell_html(
+                            _num_to_2dec(section.total_weight_kg),
+                            small=True,
+                            align=align,
+                        )
+                    )
+                elif idx == 0:
+                    total_row.append(
+                        wrap_cell_html("Totaal", small=False, align="LEFT")
+                    )
+                else:
+                    total_row.append(
+                        wrap_cell_html(
+                            "",
+                            small=bool(column.get("numeric")),
+                            align=align,
+                        )
+                    )
+            data.append(total_row)
+            total_row_index = len(data) - 1
+    elif is_raw_material_order:
+        for item in section.items:
+            prof = _to_str(item.get("Profiel", ""))
+            mat = _to_str(item.get("Materiaal", ""))
+            length_val = item.get("Lengte", "")
+            length = _to_str("" if length_val in (None, "") else length_val)
+            qty_val = item.get("St.", "")
+            qty = _to_str("" if qty_val in (None, "") else qty_val)
+            weight_val = item.get("kg", "")
+            weight = _num_to_2dec(weight_val)
+            data.append(
+                [
+                    wrap_cell_html(prof, small=False, align="LEFT"),
+                    wrap_cell_html(mat, small=False, align="LEFT"),
+                    wrap_cell_html(length, small=True, align="RIGHT"),
+                    wrap_cell_html(qty, small=True, align="RIGHT"),
+                    wrap_cell_html(weight, small=True, align="RIGHT"),
+                ]
+            )
+        if section.total_weight_kg is not None:
+            total_row = [
+                wrap_cell_html("Totaal", small=False, align="LEFT"),
+                wrap_cell_html("", small=False, align="LEFT"),
+                wrap_cell_html("", small=True, align="RIGHT"),
+                wrap_cell_html("", small=True, align="RIGHT"),
+                wrap_cell_html(
+                    _num_to_2dec(section.total_weight_kg),
+                    small=True,
+                    align="RIGHT",
+                ),
+            ]
+            data.append(total_row)
+            total_row_index = len(data) - 1
+    else:
+        for item in section.items:
+            pn = escape(_clean_order_cell_text(item.get("PartNumber", "")))
+            desc_width = (
+                (standard_col_widths[1] - 10)
+                if standard_col_widths
+                else (usable_w * 0.40)
+            )
+            desc = description_cell_html(item.get("Description", ""), desc_width)
+            mat = _material_nowrap(_clean_order_cell_text(item.get("Materiaal", "")))
+            qty = item.get("Aantal", "")
+            opp = _num_to_2dec(item.get("Oppervlakte", ""))
+            gew = _num_to_2dec(item.get("Gewicht", ""))
+            data.append(
+                [
+                    wrap_cell_html(pn, small=False, align="LEFT"),
+                    wrap_cell_html(desc, small=False, align="LEFT"),
+                    wrap_cell_html(mat, small=True, align="RIGHT"),
+                    wrap_cell_html(qty, small=True, align="RIGHT"),
+                    wrap_cell_html(opp, small=True, align="RIGHT"),
+                    wrap_cell_html(gew, small=True, align="RIGHT"),
+                ]
+            )
+
+    if custom_layout and column_layout:
+        weights: List[float] = []
+        for column in column_layout:
+            try:
+                weight_val = float(column.get("weight", 0))
+            except Exception:
+                weight_val = 0.0
+            weights.append(weight_val if weight_val > 0 else 1.0)
+        total_weight_units = sum(weights) or len(weights) or 1
+        col_widths = [usable_w * (w / total_weight_units) for w in weights]
+    elif is_raw_material_order:
+        col_fracs = [0.32, 0.24, 0.16, 0.12, 0.16]
+        col_widths = [usable_w * frac for frac in col_fracs]
+    else:
+        col_widths = standard_col_widths or [
+            usable_w * 0.22,
+            usable_w * 0.40,
+            usable_w * 0.14,
+            usable_w * 0.06,
+            usable_w * 0.09,
+            usable_w * 0.09,
+        ]
+
+    tbl = LongTable(data, colWidths=col_widths, repeatRows=1)
+    style_cmds = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(palette["accent"])),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor(palette["accent_text"])),
+        ("TEXTCOLOR", (0, 1), (-1, -1), colors.HexColor(ORDER_TEXT_COLOR)),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 10),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BOX", (0, 0), (-1, -1), 0.45, colors.HexColor(ORDER_TABLE_OUTLINE_COLOR)),
+        ("INNERGRID", (0, 0), (-1, -1), 0.3, colors.HexColor(ORDER_TABLE_GRID_COLOR)),
+        (
+            "ROWBACKGROUNDS",
+            (0, 1),
+            (-1, -1),
+            [colors.white, colors.HexColor(ORDER_TABLE_ALT_ROW_COLOR)],
+        ),
+        ("LEFTPADDING", (0, 0), (-1, 0), 6),
+        ("RIGHTPADDING", (0, 0), (-1, 0), 6),
+        ("TOPPADDING", (0, 0), (-1, 0), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+        ("LEFTPADDING", (0, 1), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 1), (-1, -1), 5),
+        ("TOPPADDING", (0, 1), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 5),
+    ]
+    if custom_layout and column_layout:
+        for idx, column in enumerate(column_layout):
+            align = _to_str(column.get("justify") or "left").strip().upper() or "LEFT"
+            if align not in {"LEFT", "RIGHT", "CENTER"}:
+                align = "LEFT"
+            style_cmds.append(("ALIGN", (idx, 0), (idx, -1), align))
+    elif is_raw_material_order:
+        style_cmds.append(("ALIGN", (2, 0), (4, -1), "RIGHT"))
+    else:
+        style_cmds.extend(
+            [
+                ("ALIGN", (2, 0), (5, 0), "RIGHT"),
+                ("ALIGN", (2, 1), (5, -1), "RIGHT"),
+            ]
+        )
+    if total_row_index is not None:
+        style_cmds.extend(
+            [
+                ("FONTNAME", (0, total_row_index), (-1, total_row_index), "Helvetica-Bold"),
+                (
+                    "BACKGROUND",
+                    (0, total_row_index),
+                    (-1, total_row_index),
+                    colors.HexColor(palette["total_fill"]),
+                ),
+                (
+                    "LINEABOVE",
+                    (0, total_row_index),
+                    (-1, total_row_index),
+                    0.45,
+                    colors.HexColor(ORDER_TABLE_OUTLINE_COLOR),
+                ),
+            ]
+        )
+    tbl.setStyle(TableStyle(style_cmds))
+    story.append(tbl)
+
+
 def generate_pdf_order_platypus(
     path: str,
     company_info: Dict[str, object],
@@ -1197,6 +1812,7 @@ def generate_pdf_order_platypus(
     en1090_required: bool = False,
     en1090_note: Optional[str] = None,
     column_layout: Optional[List[Dict[str, object]]] = None,
+    sections: Optional[List[OrderDocumentSection]] = None,
 ) -> None:
     """Generate a PDF order using ReportLab if available.
 
@@ -1206,8 +1822,15 @@ def generate_pdf_order_platypus(
     if not REPORTLAB_OK:
         return
 
-    column_layout = [dict(col) for col in column_layout] if column_layout else []
-    custom_layout = bool(column_layout)
+    normalized_sections = _normalize_order_sections(
+        production,
+        items,
+        label_kind,
+        total_weight_kg,
+        column_layout,
+        sections,
+    )
+    multiple_sections = len(normalized_sections) > 1
 
     margin = 18 * mm
     doc = SimpleDocTemplate(
@@ -1246,11 +1869,29 @@ def generate_pdf_order_platypus(
         leading=10.3,
         textColor=colors.HexColor(ORDER_MUTED_TEXT_COLOR),
     )
+    section_title_style = ParagraphStyle(
+        "sectiontitle",
+        parent=text_style,
+        fontName="Helvetica-Bold",
+        fontSize=11.2,
+        leading=13.2,
+        textColor=colors.HexColor(ORDER_TEXT_COLOR),
+    )
 
     doc_type_text = (_to_str(doc_type).strip() or "Bestelbon")
     doc_type_text_lower = doc_type_text.lower()
     doc_type_text_slug = re.sub(r"[^0-9a-z]+", "", doc_type_text_lower)
     is_standaard_doc = doc_type_text_lower.startswith("standaard")
+    primary_section = normalized_sections[0]
+    production_text = _to_str(production).strip()
+    label_kind_clean = (_to_str(label_kind) or "productie").strip() or "productie"
+    if not multiple_sections:
+        if not production_text:
+            production_text = _to_str(primary_section.context_label).strip()
+        label_kind_clean = (
+            (_to_str(primary_section.context_kind) or label_kind_clean).strip()
+            or label_kind_clean
+        )
     order_remark_text = _to_str(order_remark) if order_remark is not None else ""
     order_remark_has_content = bool(order_remark_text.strip())
     place_remark_in_delivery_block = _should_place_remark_in_delivery_block(
@@ -1265,11 +1906,13 @@ def generate_pdf_order_platypus(
         doc_lines.append(f"Nummer: {doc_number}")
     today = datetime.date.today().strftime("%Y-%m-%d")
     doc_lines.append(f"Datum: {today}")
-    label_kind_clean = (_to_str(label_kind) or "productie").strip() or "productie"
     label_title = label_kind_clean[0].upper() + label_kind_clean[1:]
-    is_raw_material_order = label_kind_clean.lower().startswith("brutemateriaal")
-    if production:
-        doc_lines.append(f"{label_title}: {production}")
+    group_summary = _order_group_summary_text(normalized_sections)
+    if multiple_sections:
+        if group_summary:
+            doc_lines.append(f"Gecombineerde bon voor: {group_summary}")
+    elif production_text:
+        doc_lines.append(f"{label_title}: {production_text}")
     if project_number:
         doc_lines.append(f"Projectnummer: {project_number}")
     if project_name:
@@ -1356,9 +1999,14 @@ def generate_pdf_order_platypus(
     if doc_number:
         doc_html_lines.append(f"<b>Nummer:</b> {escape(_to_str(doc_number))}")
     doc_html_lines.append(f"<b>Datum:</b> {escape(today)}")
-    if production:
+    if multiple_sections:
+        if group_summary:
+            doc_html_lines.append(
+                f"<b>Gecombineerde bon voor:</b> {escape(group_summary)}"
+            )
+    elif production_text:
         doc_html_lines.append(
-            f"<b>{escape(label_title)}:</b> {escape(_to_str(production))}"
+            f"<b>{escape(label_title)}:</b> {escape(production_text)}"
         )
     if project_number:
         doc_html_lines.append(
@@ -1426,9 +2074,9 @@ def generate_pdf_order_platypus(
 
     story = []
     title = (
-        f"{doc_type_text} {label_kind_clean}: {production}"
-        if production
-        else f"{doc_type_text}"
+        doc_type_text
+        if multiple_sections or not production_text
+        else f"{doc_type_text} {label_kind_clean}: {production_text}"
     )
     story.append(Paragraph(title, title_style))
     title_rule = Table([[""]], colWidths=[width - 2 * margin], rowHeights=[2])
@@ -1773,6 +2421,355 @@ def generate_pdf_order_platypus(
     doc.build(story)
 
 
+def generate_pdf_order_platypus(
+    path: str,
+    company_info: Dict[str, object],
+    supplier: Supplier | None,
+    production: str,
+    items: List[Dict[str, object]],
+    doc_type: str = "Bestelbon",
+    doc_number: str | None = None,
+    footer_note: Optional[str] = None,
+    delivery: DeliveryAddress | None = None,
+    project_number: str | None = None,
+    project_name: str | None = None,
+    label_kind: str = "productie",
+    order_remark: str | None = None,
+    total_weight_kg: float | None = None,
+    en1090_required: bool = False,
+    en1090_note: Optional[str] = None,
+    column_layout: Optional[List[Dict[str, object]]] = None,
+    sections: Optional[List[OrderDocumentSection]] = None,
+) -> None:
+    """Generate a PDF order using ReportLab if available."""
+
+    if not REPORTLAB_OK:
+        return
+
+    normalized_sections = _normalize_order_sections(
+        production,
+        items,
+        label_kind,
+        total_weight_kg,
+        column_layout,
+        sections,
+    )
+    multiple_sections = len(normalized_sections) > 1
+
+    margin = 18 * mm
+    doc = SimpleDocTemplate(
+        path,
+        pagesize=A4,
+        leftMargin=margin,
+        rightMargin=margin,
+        topMargin=20 * mm,
+        bottomMargin=20 * mm,
+    )
+    width, _ = A4
+    palette = _order_palette(company_info)
+    styles = getSampleStyleSheet()
+    title_style = styles["Heading1"]
+    title_style.textColor = colors.HexColor(palette["accent"])
+    title_style.fontName = "Helvetica-Bold"
+    title_style.fontSize = 20
+    title_style.leading = 22
+    title_style.spaceAfter = 1
+    text_style = styles["Normal"]
+    text_style.fontSize = 10
+    text_style.leading = 12.2
+    text_style.textColor = colors.HexColor(ORDER_TEXT_COLOR)
+    meta_style = ParagraphStyle("meta-grouped", parent=text_style, leading=12.4)
+    delivery_style = ParagraphStyle(
+        "delivery-grouped",
+        parent=text_style,
+        fontSize=9.2,
+        leading=11.2,
+        textColor=colors.HexColor(ORDER_TEXT_COLOR),
+    )
+    small_style = ParagraphStyle(
+        "small-grouped",
+        parent=text_style,
+        fontSize=8.4,
+        leading=10.3,
+        textColor=colors.HexColor(ORDER_MUTED_TEXT_COLOR),
+    )
+    section_title_style = ParagraphStyle(
+        "sectiontitle-grouped",
+        parent=text_style,
+        fontName="Helvetica-Bold",
+        fontSize=11.2,
+        leading=13.2,
+        textColor=colors.HexColor(ORDER_TEXT_COLOR),
+    )
+
+    doc_type_text = (_to_str(doc_type).strip() or "Bestelbon")
+    doc_type_text_lower = doc_type_text.lower()
+    doc_type_text_slug = re.sub(r"[^0-9a-z]+", "", doc_type_text_lower)
+    is_standaard_doc = doc_type_text_lower.startswith("standaard")
+    primary_section = normalized_sections[0]
+    production_text = _to_str(production).strip()
+    label_kind_clean = (_to_str(label_kind) or "productie").strip() or "productie"
+    if not multiple_sections:
+        if not production_text:
+            production_text = _to_str(primary_section.context_label).strip()
+        label_kind_clean = (
+            (_to_str(primary_section.context_kind) or label_kind_clean).strip()
+            or label_kind_clean
+        )
+    order_remark_text = _to_str(order_remark) if order_remark is not None else ""
+    order_remark_has_content = bool(order_remark_text.strip())
+    place_remark_in_delivery_block = _should_place_remark_in_delivery_block(
+        order_remark_has_content=order_remark_has_content,
+        doc_type_text_slug=doc_type_text_slug,
+        is_standaard_doc=is_standaard_doc,
+        delivery=delivery,
+    )
+
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    label_title = label_kind_clean[0].upper() + label_kind_clean[1:]
+    group_summary = _order_group_summary_text(normalized_sections)
+
+    company_lines = [
+        f"<b>{company_info.get('name', '')}</b>",
+        f"{company_info.get('address', '')}",
+        f"BTW: {company_info.get('vat', '')}",
+        f"E-mail: {company_info.get('email', '')}",
+    ]
+
+    logo_flowable = None
+    logo_path_info = company_info.get("logo_path") if company_info else None
+    if logo_path_info:
+        logo_path = resolve_runtime_path(str(logo_path_info))
+        if logo_path and logo_path.exists():
+            try:
+                from PIL import Image as PILImage  # type: ignore
+            except Exception:
+                PILImage = None  # type: ignore
+            if PILImage is not None:
+                try:
+                    with PILImage.open(logo_path) as src_logo:  # type: ignore[union-attr]
+                        logo_img = src_logo.convert("RGBA")
+                        crop_box = _normalize_crop_box(
+                            company_info.get("logo_crop"),
+                            logo_img.width,
+                            logo_img.height,
+                        )
+                        if crop_box:
+                            logo_img = logo_img.crop(crop_box)
+                        if logo_img.width > 0 and logo_img.height > 0:
+                            buffer = io.BytesIO()
+                            logo_img.save(buffer, format="PNG")
+                            buffer.seek(0)
+                            aspect = (
+                                logo_img.width / logo_img.height
+                                if logo_img.height
+                                else 1.0
+                            )
+                            max_width = 38 * mm
+                            max_height = 18 * mm
+                            width_pt = max_width
+                            height_pt = width_pt / aspect if aspect else max_height
+                            if height_pt > max_height:
+                                height_pt = max_height
+                                width_pt = height_pt * aspect
+                            logo_flowable = RLImage(
+                                buffer, width=width_pt, height=height_pt
+                            )
+                            logo_flowable.hAlign = "LEFT"
+                except Exception:
+                    logo_flowable = None
+
+    supp_lines: List[str] = []
+    if supplier is not None and not is_standaard_doc:
+        addr_parts = []
+        if supplier.adres_1:
+            addr_parts.append(supplier.adres_1)
+        if supplier.adres_2:
+            addr_parts.append(supplier.adres_2)
+        pc_gem = " ".join(x for x in [supplier.postcode, supplier.gemeente] if x)
+        if pc_gem:
+            addr_parts.append(pc_gem)
+        if supplier.land:
+            addr_parts.append(supplier.land)
+        full_addr = ", ".join(addr_parts)
+
+        supp_lines = [f"<b>Besteld bij:</b> {supplier.supplier}"]
+        if full_addr:
+            supp_lines.append(full_addr)
+        supp_lines.append(f"BTW: {supplier.btw or ''}")
+        if supplier.contact_sales:
+            supp_lines.append(f"Contact sales: {supplier.contact_sales}")
+        if supplier.sales_email:
+            supp_lines.append(f"E-mail: {supplier.sales_email}")
+        if supplier.phone:
+            supp_lines.append(f"Tel: {supplier.phone}")
+
+    doc_html_lines: List[str] = []
+    if doc_number:
+        doc_html_lines.append(f"<b>Nummer:</b> {escape(_to_str(doc_number))}")
+    doc_html_lines.append(f"<b>Datum:</b> {escape(today)}")
+    if multiple_sections:
+        if group_summary:
+            doc_html_lines.append(
+                f"<b>Gecombineerde bon voor:</b> {escape(group_summary)}"
+            )
+    elif production_text:
+        doc_html_lines.append(
+            f"<b>{escape(label_title)}:</b> {escape(production_text)}"
+        )
+    if project_number:
+        doc_html_lines.append(
+            f"<b>Projectnummer:</b> {escape(_to_str(project_number))}"
+        )
+    if project_name:
+        doc_html_lines.append(
+            f"<b>Projectnaam:</b> {escape(_to_str(project_name))}"
+        )
+    if order_remark_has_content and not place_remark_in_delivery_block:
+        doc_html_lines.append(
+            f"<b>Opmerking:</b> {escape(order_remark_text)}"
+        )
+
+    client_block = Paragraph("<br/>".join(company_lines), text_style)
+    doc_block = (
+        Paragraph("<br/>".join(doc_html_lines), meta_style)
+        if doc_html_lines
+        else Paragraph("", meta_style)
+    )
+
+    supplier_block_parts: List[object] = []
+    if supp_lines:
+        supplier_block_parts.append(Paragraph("<br/>".join(supp_lines), text_style))
+
+    delivery_html: str | None = None
+    include_delivery_block = not is_standaard_doc and (
+        delivery is not None or place_remark_in_delivery_block
+    )
+    if include_delivery_block:
+        delivery_text_parts: List[str] = []
+        if delivery:
+            if _to_str(delivery.name).strip():
+                delivery_text_parts.append(escape(_to_str(delivery.name).strip()))
+            address_text = ", ".join(
+                line.strip()
+                for line in _to_str(delivery.address).splitlines()
+                if line.strip()
+            )
+            if address_text:
+                delivery_text_parts.append(escape(address_text))
+            if _to_str(delivery.remarks).strip():
+                delivery_text_parts.append(escape(_to_str(delivery.remarks).strip()))
+        delivery_sections: List[str] = []
+        if delivery_text_parts:
+            delivery_sections.append(
+                f"<b>Leveradres:</b> {' | '.join(delivery_text_parts)}"
+            )
+        if place_remark_in_delivery_block:
+            remark_lines = order_remark_text.splitlines()
+            if not remark_lines:
+                remark_lines = [order_remark_text]
+            delivery_sections.append(
+                "<b>Opmerking:</b><br/>"
+                + "<br/>".join(escape(line) for line in remark_lines if line.strip())
+            )
+        if delivery_sections:
+            delivery_html = "<br/>".join(delivery_sections)
+
+    left_block_parts: List[object] = [doc_block]
+    if supplier_block_parts:
+        left_block_parts.append(Spacer(0, 8))
+        left_block_parts.extend(supplier_block_parts)
+    left_block: object = left_block_parts
+
+    story: List[object] = []
+    title = (
+        doc_type_text
+        if multiple_sections or not production_text
+        else f"{doc_type_text} {label_kind_clean}: {production_text}"
+    )
+    story.append(Paragraph(title, title_style))
+    title_rule = Table([[""]], colWidths=[width - 2 * margin], rowHeights=[2])
+    title_rule.setStyle(
+        TableStyle(
+            [
+                ("LINEBELOW", (0, 0), (-1, -1), 0.55, colors.HexColor(ORDER_RULE_COLOR)),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+    story.append(title_rule)
+    story.append(Spacer(0, 9))
+
+    left_col_width = (width - 2 * margin) * 0.58
+    right_col_width = (width - 2 * margin) - left_col_width
+    right_block_parts: List[object] = []
+    if logo_flowable is not None:
+        logo_flowable.hAlign = "LEFT"
+        right_block_parts.append(logo_flowable)
+        right_block_parts.append(Spacer(0, 6))
+    right_block_parts.append(client_block)
+    right_block: object = right_block_parts
+
+    header_tbl = LongTable(
+        [[left_block, right_block]],
+        colWidths=[left_col_width, right_col_width],
+    )
+    header_tbl.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+    story.append(header_tbl)
+    if delivery_html:
+        story.append(Spacer(0, 6))
+        story.append(Paragraph(delivery_html, delivery_style))
+        story.append(Spacer(0, 12))
+    else:
+        story.append(Spacer(0, 10))
+
+    usable_w = width - 2 * margin
+    for idx, section in enumerate(normalized_sections):
+        if idx > 0:
+            story.append(Spacer(0, 12))
+        _build_order_pdf_section_story(
+            section,
+            story=story,
+            usable_w=usable_w,
+            palette=palette,
+            section_title_style=section_title_style,
+            show_title=multiple_sections,
+        )
+
+    if en1090_required:
+        note_text = EN1090_NOTE_TEXT if en1090_note is None else _to_str(en1090_note)
+        if note_text:
+            story.append(Spacer(0, 12))
+            en1090_note_html = note_text.replace("\n", "<br/>")
+            if note_text == EN1090_NOTE_TEXT:
+                en1090_note_html = f"<b>{en1090_note_html}</b>"
+            story.append(Paragraph(en1090_note_html, small_style))
+
+    include_footer_note = doc_type_text_lower.startswith("bestelbon")
+    if include_footer_note:
+        note = DEFAULT_FOOTER_NOTE if footer_note is None else _to_str(footer_note)
+    else:
+        note = ""
+    if note:
+        story.append(Spacer(0, 8))
+        story.append(Paragraph(note, small_style))
+
+    doc.build(story)
+
+
 def generate_packlist_pdf(
     path: str,
     production: str,
@@ -2078,6 +3075,205 @@ def write_order_excel(
                     cell.alignment = Alignment(horizontal="left", wrap_text=True)
 
 
+def write_order_excel(
+    path: str,
+    items: List[Dict[str, object]],
+    company_info: Dict[str, str] | None = None,
+    supplier: Supplier | None = None,
+    delivery: DeliveryAddress | None = None,
+    doc_type: str = "Bestelbon",
+    doc_number: str | None = None,
+    project_number: str | None = None,
+    project_name: str | None = None,
+    context_label: str | None = None,
+    context_kind: str = "productie",
+    order_remark: str | None = None,
+    total_weight_kg: float | None = None,
+    en1090_required: bool = False,
+    en1090_note: Optional[str] = None,
+    column_layout: Optional[List[Dict[str, object]]] = None,
+    sections: Optional[List[OrderDocumentSection]] = None,
+) -> None:
+    """Write order information to an Excel file with header info."""
+
+    if Alignment is None or not hasattr(pd, "ExcelWriter"):
+        return
+
+    normalized_sections = _normalize_order_sections(
+        context_label,
+        items,
+        context_kind,
+        total_weight_kg,
+        column_layout,
+        sections,
+    )
+    multiple_sections = len(normalized_sections) > 1
+    primary_section = normalized_sections[0]
+
+    context_kind_clean = (_to_str(context_kind) or "productie").strip() or "productie"
+    context_label_text = _to_str(context_label).strip()
+    if not multiple_sections:
+        if not context_label_text:
+            context_label_text = _to_str(primary_section.context_label).strip()
+        context_kind_clean = (
+            (_to_str(primary_section.context_kind) or context_kind_clean).strip()
+            or context_kind_clean
+        )
+
+    note_text = EN1090_NOTE_TEXT if en1090_note is None else _to_str(en1090_note)
+    doc_type_text = (_to_str(doc_type).strip() or "Bestelbon")
+    doc_type_text_lower = doc_type_text.lower()
+    doc_type_text_slug = re.sub(r"[^0-9a-z]+", "", doc_type_text_lower)
+    is_standaard_doc = doc_type_text_lower.startswith("standaard")
+    order_remark_text = _to_str(order_remark) if order_remark is not None else ""
+    order_remark_has_content = bool(order_remark_text.strip())
+    place_remark_in_delivery_block = _should_place_remark_in_delivery_block(
+        order_remark_has_content=order_remark_has_content,
+        doc_type_text_slug=doc_type_text_slug,
+        is_standaard_doc=is_standaard_doc,
+        delivery=delivery,
+    )
+
+    header_lines: List[Tuple[str, str]] = []
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    if doc_number:
+        header_lines.append(("Nummer", str(doc_number)))
+    header_lines.append(("Datum", today))
+    group_summary = _order_group_summary_text(normalized_sections)
+    if multiple_sections:
+        if group_summary:
+            header_lines.append(("Gecombineerde bon voor", group_summary))
+    elif context_label_text:
+        header_lines.append((context_kind_clean.capitalize(), context_label_text))
+    if project_number:
+        header_lines.append(("Projectnummer", project_number))
+    if project_name:
+        header_lines.append(("Projectnaam", project_name))
+    if order_remark_has_content and not place_remark_in_delivery_block:
+        header_lines.append(("Opmerking", order_remark_text))
+    header_lines.append(("", ""))
+    if company_info:
+        header_lines.extend(
+            [
+                ("Bedrijf", company_info.get("name", "")),
+                ("Adres", company_info.get("address", "")),
+                ("BTW", company_info.get("vat", "")),
+                ("E-mail", company_info.get("email", "")),
+                ("", ""),
+            ]
+        )
+
+    supplier_name = _to_str(supplier.supplier).strip() if supplier else ""
+    include_supplier_block = supplier is not None and (
+        not is_standaard_doc or bool(supplier_name)
+    )
+    if include_supplier_block:
+        addr_parts = []
+        if supplier.adres_1:
+            addr_parts.append(supplier.adres_1)
+        if supplier.adres_2:
+            addr_parts.append(supplier.adres_2)
+        pc_gem = " ".join(x for x in [supplier.postcode, supplier.gemeente] if x)
+        if pc_gem:
+            addr_parts.append(pc_gem)
+        if supplier.land:
+            addr_parts.append(supplier.land)
+        full_addr = ", ".join(addr_parts)
+        header_lines.extend(
+            [
+                ("Leverancier", supplier.supplier),
+                ("Adres", full_addr),
+                ("BTW", supplier.btw or ""),
+                ("E-mail", supplier.sales_email or ""),
+                ("Tel", supplier.phone or ""),
+                ("", ""),
+            ]
+        )
+
+    include_delivery_block = False
+    if delivery is not None:
+        delivery_has_content = any(
+            _to_str(value).strip()
+            for value in (delivery.name, delivery.address, delivery.remarks)
+        )
+        include_delivery_block = (
+            not is_standaard_doc
+            or delivery_has_content
+            or place_remark_in_delivery_block
+        )
+    elif place_remark_in_delivery_block and not is_standaard_doc:
+        include_delivery_block = True
+    if include_delivery_block:
+        if delivery:
+            header_lines.extend(
+                [
+                    ("Leveradres", ""),
+                    ("", delivery.name),
+                    ("Adres", delivery.address or ""),
+                    ("Opmerking", delivery.remarks or ""),
+                ]
+            )
+        if place_remark_in_delivery_block and order_remark_has_content:
+            header_lines.append(("Opmerking", order_remark_text))
+        header_lines.append(("", ""))
+
+    with pd.ExcelWriter(path, engine="openpyxl") as writer:
+        pd.DataFrame().to_excel(writer, index=False)
+        ws = writer.sheets[list(writer.sheets.keys())[0]]
+
+        for r, (label, value) in enumerate(header_lines, start=1):
+            ws.cell(row=r, column=1, value=label)
+            ws.cell(row=r, column=2, value=value)
+
+        current_startrow = len(header_lines)
+        for idx, section in enumerate(normalized_sections):
+            df, left_cols, wrap_cols = _build_order_excel_section_data(section)
+            if multiple_sections:
+                title_row = current_startrow + 1
+                cell = ws.cell(
+                    row=title_row,
+                    column=1,
+                    value=_format_order_section_title(
+                        section.context_kind,
+                        section.context_label,
+                    ),
+                )
+                if Font is not None:
+                    cell.font = Font(bold=True)
+                cell.alignment = Alignment(horizontal="left", wrap_text=True)
+                current_startrow += 1
+
+            df.to_excel(writer, index=False, startrow=current_startrow)
+
+            for col_idx, col_name in enumerate(df.columns, start=1):
+                align = Alignment(
+                    horizontal="left" if col_name in left_cols else "right",
+                    wrap_text=col_name in wrap_cols,
+                )
+                if (
+                    col_name in {"PartNumber", "Profiel"}
+                    and get_column_letter is not None
+                ):
+                    column_letter = get_column_letter(col_idx)
+                    ws.column_dimensions[column_letter].width = 25
+                for row_idx in range(
+                    current_startrow + 1,
+                    current_startrow + len(df) + 2,
+                ):
+                    ws.cell(row=row_idx, column=col_idx).alignment = align
+
+            current_startrow += len(df) + 1
+            if multiple_sections and idx < len(normalized_sections) - 1:
+                current_startrow += 1
+
+        if en1090_required and note_text:
+            note_row = ws.max_row + 2
+            cell = ws.cell(row=note_row, column=1, value=note_text)
+            if Font is not None:
+                cell.font = Font(bold=True)
+            cell.alignment = Alignment(horizontal="left", wrap_text=True)
+
+
 def pick_supplier_for_production(
     prod: str,
     db: SuppliersDB,
@@ -2200,6 +3396,7 @@ def copy_per_production_and_orders(
     finish_delivery_map: Dict[str, DeliveryAddress | None] | None = None,
     remarks_map: Dict[str, str] | None = None,
     finish_remarks_map: Dict[str, str] | None = None,
+    document_group_map: Mapping[str, str] | None = None,
     bom_source_path: str | None = None,
     path_limit_warnings: List[str] | None = None,
     opticutter_analysis: OpticutterAnalysis | None = None,
@@ -2322,6 +3519,7 @@ def copy_per_production_and_orders(
         if text:
             remarks_clean[key] = text
     remarks_map = remarks_clean
+    document_group_map = _clean_document_group_map(document_group_map)
 
     finish_remarks_clean: Dict[str, str] = {}
     for key, value in (finish_remarks_map or {}).items():
@@ -2466,6 +3664,16 @@ def copy_per_production_and_orders(
         if footer_note is None
         else _to_str(footer_note).replace("\r\n", "\n")
     )
+    company = {
+        "name": client.name if client else "",
+        "address": client.address if client else "",
+        "vat": client.vat if client else "",
+        "email": client.email if client else "",
+        "accent_color": client.accent_color if client else "",
+        "logo_path": client.logo_path if client else "",
+        "logo_crop": client.logo_crop if client else None,
+    }
+    order_candidates: List[OrderDocumentCandidate] = []
 
     for prod, rows in prod_to_rows.items():
         if production_export_filter and not production_export_filter.get(prod, True):
@@ -2580,93 +3788,25 @@ def copy_per_production_and_orders(
                 }
             )
 
-        company = {
-            "name": client.name if client else "",
-            "address": client.address if client else "",
-            "vat": client.vat if client else "",
-            "email": client.email if client else "",
-            "accent_color": client.accent_color if client else "",
-            "logo_path": client.logo_path if client else "",
-            "logo_crop": client.logo_crop if client else None,
-        }
-        supplier_name_clean = _to_str(supplier.supplier).strip()
         delivery = delivery_map.get(prod)
         order_remark = (remarks_map.get(prod, "") if remarks_map else "").strip()
-        supplier_for_docs: Supplier | None = supplier
-        delivery_for_docs = delivery
-        if is_standaard_doc and not supplier_name_clean:
-            supplier_for_docs = None
-            delivery_for_docs = None
-
-        if supplier_name_clean or is_standaard_doc:
-            document_base = build_document_export_basename(
-                doc_type,
-                doc_num,
-                prod,
-                today,
-                profile=document_filename_profile,
-                show_doc_type=document_filename_show_doc_type,
-                show_doc_number=document_filename_show_doc_number,
-                show_context=document_filename_show_context,
-                show_date=document_filename_show_date,
-                compact_doc_number=document_filename_compact_doc_number,
-                separator=document_filename_separator,
-            )
-            excel_requested = f"{document_base}.xlsx"
-            excel_filename = _fit_filename_within_path(prod_folder, excel_requested)
-            _record_path_warning(
-                prod_folder,
-                excel_requested,
-                excel_filename,
-                context=f"Productie '{prod}' – {doc_type}",
-            )
-            excel_path = os.path.join(prod_folder, excel_filename)
-            write_order_excel(
-                excel_path,
-                items,
-                company,
-                supplier_for_docs,
-                delivery_for_docs,
-                doc_type,
-                doc_num_display or None,
-                project_number=project_number,
-                project_name=project_name,
+        order_candidates.append(
+            OrderDocumentCandidate(
+                selection_key=make_production_selection_key(prod),
                 context_label=prod,
                 context_kind="Productie",
+                filename_context=prod,
+                target_dir=prod_folder,
+                supplier=supplier,
+                delivery=delivery,
+                doc_type=doc_type,
+                doc_num=doc_num,
+                doc_num_display=doc_num_display,
                 order_remark=order_remark or None,
+                items=items,
                 en1090_required=en1090_required,
-                en1090_note=en1090_note_text,
             )
-
-            pdf_requested = f"{document_base}.pdf"
-            pdf_filename = _fit_filename_within_path(prod_folder, pdf_requested)
-            _record_path_warning(
-                prod_folder,
-                pdf_requested,
-                pdf_filename,
-                context=f"Productie '{prod}' – {doc_type}",
-            )
-            pdf_path = os.path.join(prod_folder, pdf_filename)
-            try:
-                generate_pdf_order_platypus(
-                    pdf_path,
-                    company,
-                    supplier_for_docs,
-                    prod,
-                    items,
-                    doc_type=doc_type,
-                    doc_number=doc_num_display or None,
-                    footer_note=footer_note_text,
-                    delivery=delivery_for_docs,
-                    project_number=project_number,
-                    project_name=project_name,
-                    label_kind="productie",
-                    order_remark=order_remark or None,
-                    en1090_required=en1090_required,
-                    en1090_note=en1090_note_text,
-                )
-            except Exception as e:
-                print(f"[WAARSCHUWING] PDF mislukt voor {prod}: {e}", file=sys.stderr)
+        )
 
         opticutter_order_items: List[Dict[str, object]] = []
         opticutter_total_weight: float | None = None
@@ -3019,8 +4159,6 @@ def copy_per_production_and_orders(
             is_standaard_doc = doc_type_lower.startswith("standaard")
 
             supplier_name_clean = _to_str(supplier.supplier).strip()
-            if not supplier_name_clean and not is_standaard_doc:
-                continue
 
             doc_num = _normalize_doc_number(
                 finish_doc_num_map.get(finish_key, ""), doc_type
@@ -3058,16 +4196,56 @@ def copy_per_production_and_orders(
             finish_remark = (
                 finish_remarks_map.get(finish_key, "") if finish_remarks_map else ""
             ).strip()
-            supplier_for_docs: Supplier | None = supplier
-            delivery_for_docs = delivery
-            if is_standaard_doc and not supplier_name_clean:
+            order_candidates.append(
+                OrderDocumentCandidate(
+                    selection_key=make_finish_selection_key(finish_key),
+                    context_label=label,
+                    context_kind="Afwerking",
+                    filename_context=filename_component,
+                    target_dir=target_dir,
+                    supplier=supplier,
+                    delivery=delivery,
+                    doc_type=doc_type,
+                    doc_num=doc_num,
+                    doc_num_display=doc_num_display,
+                    order_remark=finish_remark or None,
+                    items=items,
+                )
+            )
+            continue
+
+    if order_candidates:
+        for job in _build_grouped_document_jobs(
+            order_candidates,
+            document_group_map,
+        ):
+            supplier_name_clean = (
+                _to_str(job.supplier.supplier).strip() if job.supplier else ""
+            )
+            job_doc_type_lower = job.doc_type.lower()
+            job_is_standaard = job_doc_type_lower.startswith("standaard")
+            supplier_for_docs: Supplier | None = job.supplier
+            delivery_for_docs = job.delivery
+            if job_is_standaard and not supplier_name_clean:
                 supplier_for_docs = None
                 delivery_for_docs = None
+            if not (supplier_name_clean or job_is_standaard):
+                continue
 
-            finish_document_base = build_document_export_basename(
-                doc_type,
-                doc_num,
-                filename_component,
+            primary_section = job.sections[0]
+            context_label = _to_str(primary_section.context_label).strip()
+            context_kind = _to_str(primary_section.context_kind).strip() or "Productie"
+            extra_context_label = "Groep" if len(job.sections) > 1 else ""
+            context_for_warning = (
+                f"Groep '{job.context_for_filename}'"
+                if len(job.sections) > 1
+                else _format_order_section_title(context_kind, context_label)
+            )
+
+            document_base = build_document_export_basename(
+                job.doc_type,
+                job.doc_num,
+                job.context_for_filename,
                 today,
                 profile=document_filename_profile,
                 show_doc_type=document_filename_show_doc_type,
@@ -3076,58 +4254,69 @@ def copy_per_production_and_orders(
                 show_date=document_filename_show_date,
                 compact_doc_number=document_filename_compact_doc_number,
                 separator=document_filename_separator,
+                extra_context_label=extra_context_label,
             )
-            excel_requested = f"{finish_document_base}.xlsx"
-            excel_filename = _fit_filename_within_path(target_dir, excel_requested)
+
+            excel_requested = f"{document_base}.xlsx"
+            excel_filename = _fit_filename_within_path(job.target_dir, excel_requested)
             _record_path_warning(
-                target_dir,
+                job.target_dir,
                 excel_requested,
                 excel_filename,
-                context=f"Afwerking '{label}' – {doc_type}",
+                context=f"{context_for_warning} - {job.doc_type}",
             )
-            excel_path = os.path.join(target_dir, excel_filename)
+            excel_path = os.path.join(job.target_dir, excel_filename)
             write_order_excel(
                 excel_path,
-                items,
+                primary_section.items,
                 company,
                 supplier_for_docs,
                 delivery_for_docs,
-                doc_type,
-                doc_num_display or None,
+                job.doc_type,
+                job.doc_num_display or None,
                 project_number=project_number,
                 project_name=project_name,
-                context_label=label,
-                context_kind="Afwerking",
-                order_remark=finish_remark or None,
+                context_label=context_label,
+                context_kind=context_kind,
+                order_remark=job.order_remark,
+                en1090_required=job.en1090_required,
+                en1090_note=en1090_note_text,
+                sections=job.sections,
             )
 
-            pdf_requested = f"{finish_document_base}.pdf"
-            pdf_filename = _fit_filename_within_path(target_dir, pdf_requested)
+            pdf_requested = f"{document_base}.pdf"
+            pdf_filename = _fit_filename_within_path(job.target_dir, pdf_requested)
             _record_path_warning(
-                target_dir,
+                job.target_dir,
                 pdf_requested,
                 pdf_filename,
-                context=f"Afwerking '{label}' – {doc_type}",
+                context=f"{context_for_warning} - {job.doc_type}",
             )
-            pdf_path = os.path.join(target_dir, pdf_filename)
+            pdf_path = os.path.join(job.target_dir, pdf_filename)
             try:
                 generate_pdf_order_platypus(
                     pdf_path,
                     company,
                     supplier_for_docs,
-                    label,
-                    items,
-                    doc_type=doc_type,
-                    doc_number=doc_num_display or None,
+                    context_label,
+                    primary_section.items,
+                    doc_type=job.doc_type,
+                    doc_number=job.doc_num_display or None,
                     footer_note=footer_note_text,
                     delivery=delivery_for_docs,
                     project_number=project_number,
                     project_name=project_name,
-                    label_kind="afwerking",
-                    order_remark=finish_remark or None,
+                    label_kind=context_kind,
+                    order_remark=job.order_remark,
+                    en1090_required=job.en1090_required,
+                    en1090_note=en1090_note_text,
+                    sections=job.sections,
                 )
-            except Exception as e:
-                print(f"[WAARSCHUWING] PDF mislukt voor {label}: {e}", file=sys.stderr)
+            except Exception as exc:
+                print(
+                    f"[WAARSCHUWING] PDF mislukt voor {context_for_warning}: {exc}",
+                    file=sys.stderr,
+                )
 
     # Persist any (possibly unchanged) supplier defaults so that callers can rely on
     # the database reflecting the latest state on disk.

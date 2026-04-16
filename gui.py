@@ -2035,6 +2035,7 @@ def start_gui():
     @dataclass
     class SupplierSelectionState:
         selections: Dict[str, str]
+        groups: Dict[str, str]
         doc_types: Dict[str, str]
         doc_numbers: Dict[str, str]
         remarks: Dict[str, str]
@@ -2138,18 +2139,24 @@ def start_gui():
             self._active_key: Optional[str] = None  # laatst gefocuste rij
             self._type_filter_by_key: Dict[str, str] = {}
             self.sel_vars: Dict[str, tk.StringVar] = {}
+            self.group_vars: Dict[str, tk.StringVar] = {}
             self.doc_vars: Dict[str, tk.StringVar] = {}
             self.doc_num_vars: Dict[str, tk.StringVar] = {}
             self.remark_vars: Dict[str, tk.StringVar] = {}
             self.delivery_vars: Dict[str, tk.StringVar] = {}
+            self.group_combos: Dict[str, ttk.Combobox] = {}
+            self.group_value_to_display: Dict[str, Dict[str, str]] = {}
+            self.group_display_to_value: Dict[str, Dict[str, str]] = {}
             self.delivery_combos: Dict[str, ttk.Combobox] = {}
             self.row_meta: Dict[str, Dict[str, str]] = {}
             self.en1090_vars: Dict[str, tk.IntVar] = {}
             self.export_vars: Dict[str, tk.IntVar] = {}
+            self._group_sync_in_progress = False
             self._en1090_getter = en1090_getter
             self._en1090_setter = en1090_setter
             self.finish_entries = finishes
             self._row_widget_maps: List[Dict[str, tk.Misc]] = []
+            self._row_widgets_by_key: Dict[str, Dict[str, tk.Misc]] = {}
 
             # Grid layout: content (row=0, weight=1), buttons (row=1)
             self.grid_columnconfigure(0, weight=1)
@@ -2423,6 +2430,7 @@ def start_gui():
             self._column_specs: List[Tuple[str, str, int, Optional[Tuple[str, int, str]]]] = [
                 ("export_check", "Export", 8, header_font),
                 ("label", "Producttype", self.LABEL_COLUMN_WIDTH, header_font),
+                ("group_combo", "Bon", 24, None),
                 ("supplier_combo", "Leverancier", 50, None),
                 ("doc_combo", "Documenttype", 18, None),
                 (
@@ -2502,6 +2510,24 @@ def start_gui():
                     "<KeyRelease>",
                     lambda ev, key=sel_key, c=combo: self._on_combo_type(ev, key, c),
                 )
+
+                group_var = tk.StringVar(value="Apart")
+                self.group_vars[sel_key] = group_var
+                group_combo = ttk.Combobox(
+                    row,
+                    textvariable=group_var,
+                    values=("Apart",),
+                    state="readonly",
+                    width=24,
+                )
+                group_combo.bind(
+                    "<<ComboboxSelected>>",
+                    lambda _e, key=sel_key: self._on_group_change(key),
+                )
+                group_combo.bind(
+                    "<FocusIn>", lambda _e, key=sel_key: self._on_focus_key(key)
+                )
+                self.group_combos[sel_key] = group_combo
 
                 doc_var = tk.StringVar(value="Bestelbon")
                 self.doc_vars[sel_key] = doc_var
@@ -2588,9 +2614,21 @@ def start_gui():
                 self.combo_by_key[sel_key] = combo
                 self.row_meta[sel_key] = dict(metadata)
 
+                for trace_var in (
+                    var,
+                    doc_var,
+                    doc_num_var,
+                    remark_var,
+                    dvar,
+                    export_var,
+                    en1090_var,
+                ):
+                    trace_var.trace_add("write", lambda *_args: self._sync_grouped_rows())
+
                 row_widgets = {
                     "export_check": export_check,
                     "label": row_label,
+                    "group_combo": group_combo,
                     "supplier_combo": combo,
                     "doc_combo": doc_combo,
                     "en1090_widget": en1090_frame,
@@ -2599,11 +2637,13 @@ def start_gui():
                     "delivery_combo": dcombo,
                 }
                 self._row_widget_maps.append(row_widgets)
+                self._row_widgets_by_key[sel_key] = row_widgets
                 self._pack_row_widgets(row_widgets)
 
                 self._schedule_header_alignment(
                     {
                         "label": row_label,
+                        "group_combo": group_combo,
                         "supplier_combo": combo,
                         "doc_combo": doc_combo,
                         "en1090_widget": en1090_widget,
@@ -2845,6 +2885,8 @@ def start_gui():
                     continue
 
             exports = {key: bool(var.get()) for key, var in self.export_vars.items()}
+            current_group_links = getattr(self, "_current_group_links", None)
+            groups = current_group_links() if callable(current_group_links) else {}
             doc_types = {key: var.get() for key, var in self.doc_vars.items()}
             doc_numbers = {
                 key: var.get() for key, var in self.doc_num_vars.items()
@@ -2859,6 +2901,7 @@ def start_gui():
 
             return SupplierSelectionState(
                 selections=selections,
+                groups=groups,
                 exports=exports,
                 doc_types=doc_types,
                 doc_numbers=doc_numbers,
@@ -2920,6 +2963,9 @@ def start_gui():
                     self.remember_var.set(1 if state.remember else 0)
                 except tk.TclError:
                     pass
+            refresh_group_options = getattr(self, "_refresh_group_options", None)
+            if callable(refresh_group_options):
+                refresh_group_options(getattr(state, "groups", {}))
 
         def _compute_initial_en1090_width(self) -> int:
             width = self.EN1090_COLUMN_WIDTH
@@ -3011,6 +3057,9 @@ def start_gui():
                 setter(metadata, bool(var.get()))
             except Exception:
                 pass
+            sync_grouped_rows = getattr(self, "_sync_grouped_rows", None)
+            if callable(sync_grouped_rows):
+                sync_grouped_rows()
 
         def _align_header_columns(self, row_widgets: Dict[str, "tk.Misc"]) -> None:
             try:
@@ -3107,6 +3156,9 @@ def start_gui():
             for rvar in getattr(self, "remark_vars", {}).values():
                 rvar.set("")
 
+            refresh_group_options = getattr(self, "_refresh_group_options", None)
+            if callable(refresh_group_options):
+                refresh_group_options({})
             self._on_combo_change()
 
         def _on_focus_key(self, sel_key: str):
@@ -3120,6 +3172,9 @@ def start_gui():
                     var.set(value)
                 except tk.TclError:
                     continue
+            sync_grouped_rows = getattr(self, "_sync_grouped_rows", None)
+            if callable(sync_grouped_rows):
+                sync_grouped_rows()
 
         @staticmethod
         def _get_type_filter_map(instance) -> Dict[str, str]:
@@ -3150,6 +3205,222 @@ def start_gui():
                     return prefix, identifier
 
             return "production", key
+
+        @staticmethod
+        def _is_groupable_kind(kind: str) -> bool:
+            return kind in {"production", "finish"}
+
+        @staticmethod
+        def _resolve_group_root(sel_key: str, group_map: Dict[str, str]) -> str:
+            current = sel_key
+            seen = {sel_key}
+            while True:
+                parent = _to_str(group_map.get(current)).strip()
+                if not parent or parent == current:
+                    return current
+                if parent in seen:
+                    return sel_key
+                seen.add(parent)
+                current = parent
+
+        def _group_row_label(self, sel_key: str) -> str:
+            metadata = self.row_meta.get(sel_key, {})
+            label = _to_str(metadata.get("display") or metadata.get("identifier")).strip()
+            return label or sel_key
+
+        def _current_group_links_raw(self) -> Dict[str, str]:
+            raw_links: Dict[str, str] = {}
+            for sel_key, var in self.group_vars.items():
+                display_value = var.get().strip()
+                actual_value = self.group_display_to_value.get(sel_key, {}).get(
+                    display_value, ""
+                )
+                if actual_value:
+                    raw_links[sel_key] = actual_value
+            return raw_links
+
+        def _sanitize_group_links(
+            self, raw_group_links: Optional[Dict[str, str]] = None
+        ) -> Dict[str, str]:
+            raw_links = dict(raw_group_links or {})
+            sanitized: Dict[str, str] = {}
+            seen_by_kind: Dict[str, List[str]] = {"production": [], "finish": []}
+
+            for sel_key, _combo in self.rows:
+                kind, _identifier = self._parse_selection_key(sel_key)
+                if not self._is_groupable_kind(kind):
+                    continue
+                allowed_masters = seen_by_kind[kind]
+                raw_master = _to_str(raw_links.get(sel_key)).strip()
+                if raw_master and raw_master in allowed_masters:
+                    root = self._resolve_group_root(raw_master, sanitized)
+                    if root in allowed_masters:
+                        sanitized[sel_key] = root
+                seen_by_kind[kind].append(sel_key)
+            return sanitized
+
+        def _available_group_roots(
+            self, sel_key: str, group_links: Dict[str, str]
+        ) -> List[str]:
+            kind, _identifier = self._parse_selection_key(sel_key)
+            if not self._is_groupable_kind(kind):
+                return []
+
+            roots: List[str] = []
+            seen_roots: set[str] = set()
+            for row_key, _combo in self.rows:
+                if row_key == sel_key:
+                    break
+                row_kind, _row_identifier = self._parse_selection_key(row_key)
+                if row_kind != kind or not self._is_groupable_kind(row_kind):
+                    continue
+                root = self._resolve_group_root(row_key, group_links)
+                if root == sel_key or root in seen_roots:
+                    continue
+                seen_roots.add(root)
+                roots.append(root)
+            return roots
+
+        def _set_row_grouped_state(self, sel_key: str, grouped: bool) -> None:
+            widgets = self._row_widgets_by_key.get(sel_key, {})
+            supplier_combo = widgets.get("supplier_combo")
+            if supplier_combo is not None:
+                supplier_combo.configure(state="disabled" if grouped else "normal")
+
+            doc_combo = widgets.get("doc_combo")
+            if doc_combo is not None:
+                doc_combo.configure(state="disabled" if grouped else "readonly")
+
+            doc_entry = widgets.get("doc_entry")
+            if doc_entry is not None:
+                doc_entry.configure(state="disabled" if grouped else "normal")
+
+            remark_entry = widgets.get("remark_entry")
+            if remark_entry is not None:
+                remark_entry.configure(state="disabled" if grouped else "normal")
+
+            delivery_combo = widgets.get("delivery_combo")
+            if delivery_combo is not None:
+                delivery_combo.configure(state="disabled" if grouped else "readonly")
+
+            export_check = widgets.get("export_check")
+            if export_check is not None:
+                export_check.configure(state="disabled" if grouped else "normal")
+
+            en1090_widget = widgets.get("en1090_widget")
+            if en1090_widget is not None:
+                for child in en1090_widget.winfo_children():
+                    try:
+                        child.configure(state="disabled" if grouped else "normal")
+                    except tk.TclError:
+                        continue
+
+        def _copy_group_master_values(self, follower_key: str, master_key: str) -> None:
+            follower_combo = self.combo_by_key.get(follower_key)
+            master_combo = self.combo_by_key.get(master_key)
+            if follower_combo is not None and master_combo is not None:
+                self._set_combo_value(follower_combo, master_combo.get())
+
+            for source_map in (self.doc_vars, self.doc_num_vars, self.remark_vars):
+                follower_var = source_map.get(follower_key)
+                master_var = source_map.get(master_key)
+                if follower_var is not None and master_var is not None:
+                    follower_var.set(master_var.get())
+
+            follower_delivery = self.delivery_combos.get(follower_key)
+            master_delivery = self.delivery_combos.get(master_key)
+            if follower_delivery is not None and master_delivery is not None:
+                follower_delivery.set(master_delivery.get())
+
+            follower_export = self.export_vars.get(follower_key)
+            master_export = self.export_vars.get(master_key)
+            if follower_export is not None and master_export is not None:
+                follower_export.set(master_export.get())
+
+            follower_en1090 = self.en1090_vars.get(follower_key)
+            master_en1090 = self.en1090_vars.get(master_key)
+            if follower_en1090 is not None and master_en1090 is not None:
+                follower_en1090.set(master_en1090.get())
+
+        def _current_group_links(self) -> Dict[str, str]:
+            return self._sanitize_group_links(self._current_group_links_raw())
+
+        def _refresh_group_options(
+            self, desired_group_links: Optional[Dict[str, str]] = None
+        ) -> None:
+            group_links = self._sanitize_group_links(
+                desired_group_links
+                if desired_group_links is not None
+                else self._current_group_links_raw()
+            )
+
+            for sel_key, _combo in self.rows:
+                group_combo = self.group_combos.get(sel_key)
+                group_var = self.group_vars.get(sel_key)
+                if group_combo is None or group_var is None:
+                    continue
+
+                kind, _identifier = self._parse_selection_key(sel_key)
+                value_to_display = {"": "Apart"}
+                if self._is_groupable_kind(kind):
+                    for master_key in self._available_group_roots(sel_key, group_links):
+                        value_to_display[master_key] = self._group_row_label(master_key)
+                    group_combo.configure(
+                        state="readonly" if len(value_to_display) > 1 else "disabled"
+                    )
+                else:
+                    group_combo.configure(state="disabled")
+
+                display_to_value = {
+                    display: value for value, display in value_to_display.items()
+                }
+                self.group_value_to_display[sel_key] = value_to_display
+                self.group_display_to_value[sel_key] = display_to_value
+                group_combo["values"] = list(value_to_display.values())
+                group_var.set(value_to_display.get(group_links.get(sel_key, ""), "Apart"))
+
+            self._sync_grouped_rows(group_links)
+
+        def _on_group_change(self, sel_key: str) -> None:
+            from tkinter import messagebox
+
+            desired_links = self._sanitize_group_links(self._current_group_links_raw())
+            master_key = desired_links.get(sel_key, "")
+            kind, _identifier = self._parse_selection_key(sel_key)
+            if kind == "production" and master_key:
+                follower_var = self.en1090_vars.get(sel_key)
+                master_var = self.en1090_vars.get(master_key)
+                follower_en1090 = bool(follower_var.get()) if follower_var is not None else False
+                master_en1090 = bool(master_var.get()) if master_var is not None else False
+                if follower_en1090 != master_en1090:
+                    desired_links.pop(sel_key, None)
+                    self._refresh_group_options(desired_links)
+                    messagebox.showwarning(
+                        "EN 1090 ongeldig",
+                        "Gekoppelde producties moeten dezelfde EN 1090-instelling hebben.",
+                        parent=self,
+                    )
+                    return
+            self._refresh_group_options(desired_links)
+
+        def _sync_grouped_rows(
+            self, group_links: Optional[Dict[str, str]] = None
+        ) -> None:
+            if self._group_sync_in_progress:
+                return
+
+            sanitized_links = self._sanitize_group_links(
+                group_links if group_links is not None else self._current_group_links_raw()
+            )
+            self._group_sync_in_progress = True
+            try:
+                for sel_key, _combo in self.rows:
+                    master_key = sanitized_links.get(sel_key, "")
+                    self._set_row_grouped_state(sel_key, bool(master_key))
+                    if master_key:
+                        self._copy_group_master_values(sel_key, master_key)
+            finally:
+                self._group_sync_in_progress = False
 
         def _refresh_options(self, initial=False):
             self._base_options = self._display_list()
@@ -3202,6 +3473,9 @@ def start_gui():
                     dcombo.set(cur)
                 else:
                     dcombo.set(default_delivery)
+            refresh_group_options = getattr(self, "_refresh_group_options", None)
+            if callable(refresh_group_options):
+                refresh_group_options()
 
         def _on_combo_change(self, _evt=None):
             for sel_key, combo in self.rows:
@@ -3217,6 +3491,9 @@ def start_gui():
                     doc_var.set("Bestelbon")
                 self._on_doc_type_change(sel_key)
             self._update_preview_from_any_combo()
+            sync_grouped_rows = getattr(self, "_sync_grouped_rows", None)
+            if callable(sync_grouped_rows):
+                sync_grouped_rows()
 
         def _on_doc_type_change(self, sel_key: str):
             doc_var = self.doc_vars.get(sel_key)
@@ -3228,6 +3505,9 @@ def start_gui():
             prefixes = getattr(self, "_doc_type_prefixes", {prefix})
             if not cur or cur in prefixes:
                 doc_num_var.set(prefix)
+            sync_grouped_rows = getattr(self, "_sync_grouped_rows", None)
+            if callable(sync_grouped_rows):
+                sync_grouped_rows()
 
         def _on_combo_type(self, evt, sel_key: str, combo):
             self._active_key = sel_key
@@ -3490,6 +3770,8 @@ def start_gui():
             sel_map: Dict[str, str] = {}
             export_map: Dict[str, bool] = {}
             doc_map: Dict[str, str] = {}
+            current_group_links = getattr(self, "_current_group_links", None)
+            group_map = current_group_links() if callable(current_group_links) else {}
             export_vars = getattr(self, "export_vars", {}) or {}
             for sel_key, combo in self.rows:
                 typed = combo.get().strip()
@@ -3526,6 +3808,20 @@ def start_gui():
             en1090_vars = getattr(self, "en1090_vars", {}) or {}
             en1090_map = {key: bool(var.get()) for key, var in en1090_vars.items()}
 
+            for follower_key, master_key in group_map.items():
+                sel_map[follower_key] = sel_map.get(master_key, "")
+                export_map[follower_key] = export_map.get(master_key, True)
+                doc_map[follower_key] = doc_map.get(master_key, "Bestelbon")
+                doc_num_map[follower_key] = doc_num_map.get(master_key, "")
+                default_delivery_value = getattr(
+                    self, "_default_delivery_value", lambda: "Geen"
+                )
+                delivery_map[follower_key] = delivery_map.get(
+                    master_key, default_delivery_value()
+                )
+                remarks_map[follower_key] = remarks_map.get(master_key, "")
+                en1090_map[follower_key] = en1090_map.get(master_key, False)
+
             project_number = self.project_number_var.get().strip()
             project_name = self.project_name_var.get().strip()
 
@@ -3552,10 +3848,10 @@ def start_gui():
                 ):
                     use_new_signature = True
                     supports_exports = True
-                elif len(params) >= 10:
+                elif len(params) >= 11:
                     use_new_signature = True
                     supports_exports = True
-                elif len(params) >= 9:
+                elif len(params) >= 10:
                     use_new_signature = True
 
             if use_new_signature:
@@ -3565,6 +3861,7 @@ def start_gui():
                     doc_num_map,
                     delivery_map,
                     remarks_map,
+                    group_map,
                     en1090_map,
                     project_number,
                     project_name,
@@ -6331,6 +6628,7 @@ def start_gui():
                 doc_num_map: Dict[str, str],
                 delivery_map_raw: Dict[str, str],
                 remarks_map_raw: Dict[str, str],
+                group_map_raw: Dict[str, str],
                 en1090_map_raw: Dict[str, bool],
                 project_number: str,
                 project_name: str,
@@ -6615,6 +6913,7 @@ def start_gui():
                             finish_delivery_map=finish_delivery_map,
                             remarks_map=production_remarks_map,
                             finish_remarks_map=finish_remarks_map,
+                            document_group_map=group_map_raw if group_map_raw else None,
                             bom_source_path=self.bom_source_path,
                             path_limit_warnings=path_limit_messages,
                             opticutter_analysis=opticutter_analysis_snapshot,
@@ -8172,6 +8471,7 @@ def start_gui():
                 doc_num_map: Dict[str, str],
                 delivery_map_raw: Dict[str, str],
                 remarks_map_raw: Dict[str, str],
+                group_map_raw: Dict[str, str],
                 en1090_map_raw: Dict[str, bool],
                 project_number: str,
                 project_name: str,
@@ -8435,6 +8735,7 @@ def start_gui():
                             finish_delivery_map=finish_delivery_map,
                             remarks_map=production_remarks_map,
                             finish_remarks_map=finish_remarks_map,
+                            document_group_map=group_map_raw if group_map_raw else None,
                             bom_source_path=self.bom_source_path,
                             path_limit_warnings=path_limit_messages,
                             opticutter_analysis=opticutter_analysis_snapshot,
