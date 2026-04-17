@@ -57,6 +57,7 @@
   "document_filename_show_date": true,
   "document_filename_compact_doc_number": true,
   "document_filename_separator": "underscore",
+  "document_display_compact_doc_number": false,
   "bundle_latest": false,
   "bundle_dry_run": false,
   "footer_note": "Gelieve afwijkingen schriftelijk te bevestigen. Levertermijn in overleg. Betalingsvoorwaarden: 30 dagen netto. Vermeld onze productiereferentie bij levering.",
