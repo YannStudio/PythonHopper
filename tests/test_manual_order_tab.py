@@ -55,3 +55,14 @@ def test_ensure_column_metrics_marks_integer_column():
     length_column = {"key": "Lengte", "numeric": True, "width": 10}
     ManualOrderTab._ensure_column_metrics(tab, length_column)
     assert "integer" not in length_column
+
+
+def test_build_document_basename_ignores_prefix_only_doc_number():
+    assert (
+        ManualOrderTab.build_document_basename(
+            "BB-",
+            "Leien-60x80",
+            doc_type="Bestelbon",
+        )
+        == "Leien-60x80"
+    )

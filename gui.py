@@ -5750,7 +5750,13 @@ def start_gui():
                         supplier = sup
                         break
 
-            client = self._current_client()
+            client_display = _to_str(payload.get("client")).strip()
+            client_name_clean = strip_favorite_marker(client_display).strip()
+            client: Optional[Client] = None
+            if client_name_clean:
+                client = self.client_db.get(client_name_clean)
+            if client is None:
+                client = self._current_client()
 
             delivery_display = _to_str(payload.get("delivery")).strip()
             delivery = self._resolve_delivery_choice(delivery_display, client)

@@ -11,7 +11,7 @@ import tkinter as tk
 from tkinter import font, messagebox, ttk
 
 from helpers import _to_str, strip_favorite_marker
-from orders import _prefix_for_doc_type, _sanitize_component
+from orders import _normalize_doc_number, _prefix_for_doc_type, _sanitize_component
 
 if TYPE_CHECKING:
     from clients_db import ClientsDB
@@ -616,24 +616,21 @@ class ManualOrderTab(tk.Frame):
         doc_number: str | None,
         project_name: str | None,
         fallback_label: str | None = None,
+        doc_type: str | None = None,
     ) -> str:
         """Return a sanitized base filename for manual document exports."""
 
-        doc_clean = _to_str(doc_number).strip()
-        project_clean = _to_str(project_name).strip()
-        fallback = _to_str(fallback_label).strip() or ManualOrderTab.DEFAULT_CONTEXT_LABEL
-        if doc_clean and project_clean:
-            base = f"{doc_clean}-{project_clean}"
-        elif doc_clean:
-            base = doc_clean
-        elif project_clean:
-            base = project_clean
-        else:
-            base = fallback
-        sanitized = _sanitize_component(base)
-        if sanitized:
-            return sanitized
-        return _sanitize_component(fallback) or "document"
+        doc_clean = _sanitize_component(
+            _normalize_doc_number(doc_number, doc_type or "")
+        )
+        project_clean = _sanitize_component(_to_str(project_name).strip())
+        fallback = _sanitize_component(
+            _to_str(fallback_label).strip() or ManualOrderTab.DEFAULT_CONTEXT_LABEL
+        )
+        base = "-".join(part for part in (doc_clean, project_clean) if part)
+        if base:
+            return base
+        return fallback or "document"
 
     def __init__(
         self,
@@ -1177,6 +1174,7 @@ class ManualOrderTab(tk.Frame):
                 self.doc_number_var.get(),
                 self.project_name_var.get(),
                 context_label,
+                self.doc_type_var.get(),
             )
         self.doc_name_preview_var.set(f"{basename}.pdf")
 
@@ -1484,6 +1482,7 @@ class ManualOrderTab(tk.Frame):
         export_payload = {
             "doc_type": self.doc_type_var.get().strip() or self.DOC_TYPE_OPTIONS[0],
             "doc_number": self.doc_number_var.get().strip(),
+            "client": self.client_var.get().strip(),
             "supplier": self.supplier_var.get().strip(),
             "delivery": self.delivery_var.get().strip(),
             "context_label": self.context_label_var.get().strip()

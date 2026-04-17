@@ -81,6 +81,7 @@ def test_normalize_doc_number_removes_duplicate_prefix():
     assert _normalize_doc_number("BB-BB64646", "Bestelbon") == "BB-64646"
     assert _normalize_doc_number("BB64646", "Bestelbon") == "BB-64646"
     assert _normalize_doc_number("64646", "Bestelbon") == "64646"
+    assert _normalize_doc_number("BB-", "Bestelbon") == ""
     assert _normalize_doc_number(None, "Bestelbon") == ""
 
 
@@ -139,6 +140,15 @@ def test_build_document_export_basename_profiles():
             "Laser",
             export_date,
             profile="short",
+        )
+        == "Bestelbon_Laser_2026-04-15"
+    )
+    assert (
+        build_document_export_basename(
+            "Bestelbon",
+            "BB-",
+            "Laser",
+            export_date,
         )
         == "Bestelbon_Laser_2026-04-15"
     )

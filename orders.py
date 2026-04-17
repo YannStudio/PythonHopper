@@ -691,6 +691,10 @@ def _normalize_doc_number(value: object, doc_type: object) -> str:
         remainder = doc_num[len(prefix_compact) :]
         doc_num = prefix + remainder.lstrip(" -_")
 
+    normalized_compact = re.sub(r"[^A-Z0-9]", "", doc_num.upper())
+    if prefix_compact and normalized_compact == prefix_compact:
+        return ""
+
     return doc_num
 
 
