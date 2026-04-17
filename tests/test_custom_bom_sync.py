@@ -84,6 +84,7 @@ def test_prepare_custom_bom_maps_custom_tab_headers():
                 "Description": "plaat",
                 "Profile": "  L-100  ",
                 "Length profile": " 2500 ",
+                "Thickness": " 8 ",
                 "Material": "S235",
                 "QTY.": "5",
                 "Surface Area (m²)": "2.5",
@@ -100,6 +101,7 @@ def test_prepare_custom_bom_maps_custom_tab_headers():
     assert result.loc[0, "Gewicht"] == "1.25"
     assert result.loc[0, "Profile"] == "L-100"
     assert result.loc[0, "Length profile"] == "2500"
+    assert result.loc[0, "Plate thickness"] == "8"
 
 
 def test_prepare_custom_bom_missing_partnumber_column_raises():

@@ -13,6 +13,7 @@ EXPECTED_COLUMNS = [
     "Description",
     "Profile",
     "Length profile",
+    "Plate thickness",
     "Production",
     "Bestanden gevonden",
     "Status",
@@ -37,6 +38,7 @@ def test_load_bom_preserves_supplier_fields(tmp_path):
             "Description": ["Widget"],
             "Profile": ["  L-100  "],
             "Length profile": [" 2500 "],
+            "Plate thickness": [" 8 "],
             "Production": ["Laser"],
             "Supplier": ["  Supplier NV  "],
             "Supplier code": [" SUP-001 "],
@@ -55,6 +57,7 @@ def test_load_bom_preserves_supplier_fields(tmp_path):
     assert df.loc[0, "Manufacturer code"] == "M-42"
     assert df.loc[0, "Profile"] == "L-100"
     assert df.loc[0, "Length profile"] == "2500"
+    assert df.loc[0, "Plate thickness"] == "8"
 
 
 def test_custom_bom_export_includes_supplier_columns(tmp_path):
@@ -96,3 +99,43 @@ def test_custom_bom_export_includes_supplier_columns(tmp_path):
     ]
     assert header == list(BOMCustomTab.HEADERS)
     assert data[-4:] == ["Supplier BV", "SUP-42", "Maker BV", "M-007"]
+
+
+def test_custom_bom_load_from_main_maps_plate_thickness():
+    tab = object.__new__(BOMCustomTab)
+    tab.DEFAULT_EMPTY_ROWS = BOMCustomTab.DEFAULT_EMPTY_ROWS
+    tab.HEADERS = BOMCustomTab.HEADERS
+    tab.MAIN_TO_CUSTOM_COLUMN_MAP = BOMCustomTab.MAIN_TO_CUSTOM_COLUMN_MAP
+    captured = {}
+
+    def set_dataframe(self, df, **_kwargs):
+        captured["df"] = df.copy(deep=True)
+
+    def no_op(self, *_args, **_kwargs):
+        return None
+
+    tab._create_empty_dataframe = BOMCustomTab._create_empty_dataframe.__get__(
+        tab, BOMCustomTab
+    )
+    tab._set_dataframe = set_dataframe.__get__(tab, BOMCustomTab)
+    tab._store_baseline_state = no_op.__get__(tab, BOMCustomTab)
+    tab.clear_history = no_op.__get__(tab, BOMCustomTab)
+    tab._update_status = no_op.__get__(tab, BOMCustomTab)
+
+    BOMCustomTab.load_from_main_dataframe(
+        tab,
+        pd.DataFrame(
+            [
+                {
+                    "PartNumber": "PN1",
+                    "Description": "Plaat",
+                    "Plate thickness": "10",
+                    "Production": "Laser",
+                }
+            ]
+        ),
+    )
+
+    result = captured["df"]
+    assert result.loc[0, "PartNumber"] == "PN1"
+    assert result.loc[0, "Thickness"] == "10"

@@ -10,6 +10,7 @@ _MAIN_STATUS_COLUMNS: Tuple[str, ...] = ("Bestanden gevonden", "Status", "Link")
 _CUSTOM_TO_MAIN_ALIASES = {
     "Material": "Materiaal",
     "QTY.": "Aantal",
+    "Thickness": "Plate thickness",
     "Surface Area (m²)": "Oppervlakte",
     "Weight (kg)": "Gewicht",
 }
@@ -18,6 +19,7 @@ MAIN_BOM_COLUMNS: Tuple[str, ...] = (
     "Description",
     "Profile",
     "Length profile",
+    "Plate thickness",
     "Production",
     "Bestanden gevonden",
     "Status",

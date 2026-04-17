@@ -66,6 +66,7 @@ from orders import (
     parse_selection_key,
     _WINDOWS_MAX_PATH,
     _fit_filename_within_path,
+    _normalize_crop_box,
     _sanitize_component,
     build_document_export_basename,
     format_document_number_for_display,
@@ -130,6 +131,58 @@ def sort_supplier_options(
         return (not fav_map.get(n, False), n)
 
     return sorted(options, key=sort_key)
+
+
+def _crop_logo_preview_image(img, crop: object):
+    """Return ``img`` cropped with validated logo crop data.
+
+    The client editor preview should remain usable even when legacy or invalid
+    crop metadata is stored on the client record.
+    """
+
+    if img is None:
+        return None
+
+    try:
+        width = int(getattr(img, "width", 0) or 0)
+        height = int(getattr(img, "height", 0) or 0)
+    except Exception:
+        return img
+
+    crop_box = _normalize_crop_box(crop, width, height)
+    if crop_box is None:
+        return img
+
+    try:
+        cropped = img.crop(crop_box)
+    except Exception:
+        return img
+
+    try:
+        if int(getattr(cropped, "width", 0) or 0) <= 0:
+            return img
+        if int(getattr(cropped, "height", 0) or 0) <= 0:
+            return img
+    except Exception:
+        return img
+    return cropped
+
+
+def _safe_make_logo_photo(img, image_tk, resample, max_size: tuple[int, int]):
+    """Return a resized ``PhotoImage`` or ``None`` when rendering fails."""
+
+    if img is None or image_tk is None:
+        return None
+
+    try:
+        thumb = img.copy()
+        if resample is not None:
+            thumb.thumbnail(max_size, resample)
+        else:  # pragma: no cover - fallback without Pillow resampling enum
+            thumb.thumbnail(max_size)
+        return image_tk.PhotoImage(thumb)
+    except Exception:
+        return None
 
 def start_gui():
     ensure_runtime_files(RUNTIME_DATA_FILES)
@@ -636,23 +689,10 @@ def start_gui():
                 except Exception:
                     return None
                 crop = logo_crop_state if apply_crop else None
-                if crop and all(k in crop for k in ("left", "top", "right", "bottom")):
-                    left = max(0, min(img.width, int(crop.get("left", 0))))
-                    top = max(0, min(img.height, int(crop.get("top", 0))))
-                    right = max(left + 1, min(img.width, int(crop.get("right", img.width))))
-                    bottom = max(top + 1, min(img.height, int(crop.get("bottom", img.height))))
-                    img = img.crop((left, top, right, bottom))
-                return img
+                return _crop_logo_preview_image(img, crop)
 
             def make_logo_photo(img, max_size: tuple[int, int]):
-                if img is None or ImageTk is None:
-                    return None
-                thumb = img.copy()
-                if RESAMPLE is not None:
-                    thumb.thumbnail(max_size, RESAMPLE)
-                else:  # pragma: no cover - fallback without Pillow resampling enum
-                    thumb.thumbnail(max_size)
-                return ImageTk.PhotoImage(thumb)  # type: ignore[union-attr]
+                return _safe_make_logo_photo(img, ImageTk, RESAMPLE, max_size)
 
             def update_preview() -> None:
                 img = load_logo_image(apply_crop=True)

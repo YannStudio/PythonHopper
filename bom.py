@@ -69,8 +69,8 @@ def load_bom(path: str) -> pd.DataFrame:
     """Load a BOM spreadsheet and normalize expected columns.
 
     Returns a DataFrame with canonical column names: PartNumber, Description,
-    Production, Bestanden gevonden, Status, Materiaal, Finish, RAL color,
-    Aantal, Oppervlakte, Gewicht.
+    Profile, Length profile, Plate thickness, Production, Bestanden gevonden,
+    Status, Materiaal, Finish, RAL color, Aantal, Oppervlakte, Gewicht.
     """
 
     if path.lower().endswith(".csv"):
@@ -176,9 +176,17 @@ def load_bom(path: str) -> pd.DataFrame:
         profile_length_col = _find_col_by_regex(
             df, [r"length\s*profile", r"profile\s*length"]
         )
+    thickness_col = find_any(
+        ["Plate thickness", "Plate Thickness", "Thickness", "Plaatdikte"]
+    )
+    if thickness_col is None:
+        thickness_col = _find_col_by_regex(
+            df, [r"plate\s*thick", r"\bthickness\b", r"plaat\s*dikte", r"plaatdikte"]
+        )
 
     df["Profile"] = _text_column(profile_col)
     df["Length profile"] = _text_column(profile_length_col)
+    df["Plate thickness"] = _text_column(thickness_col)
 
     supplier_col = find_any(["Supplier"])
     supplier_code_col = find_any(["Supplier code"])
@@ -211,6 +219,7 @@ def load_bom(path: str) -> pd.DataFrame:
             "Description",
             "Profile",
             "Length profile",
+            "Plate thickness",
             "Production",
             "Bestanden gevonden",
             "Status",

@@ -20,6 +20,7 @@ def test_load_bom_without_description(tmp_path):
         "Description",
         "Profile",
         "Length profile",
+        "Plate thickness",
         "Production",
         "Bestanden gevonden",
         "Status",
@@ -41,6 +42,7 @@ def test_load_bom_without_description(tmp_path):
     assert df["Manufacturer code"].tolist() == ["", ""]
     assert df["Profile"].tolist() == ["", ""]
     assert df["Length profile"].tolist() == ["", ""]
+    assert df["Plate thickness"].tolist() == ["", ""]
 
     grouped = df.groupby("PartNumber")["Aantal"].sum().to_dict()
     assert grouped == {"PN1": 2, "PN2": 1}

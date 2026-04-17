@@ -1,8 +1,8 @@
 {
-  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/HYE/01.Projecten/260316-Berendrecht/cad",
-  "dest_folder": "C:/Users/jeroe/Desktop",
-  "project_number": "SLBES-V00405-ASB-D3-MW-TE-780",
-  "project_name": "Kabelsleep",
+  "source_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2026/20260030 - CIAW Huldenberg schuilhuisje/CAD/3D Soldiworks Files/V4",
+  "dest_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2026/20260030 - CIAW Huldenberg schuilhuisje/CAD/Bestellingen",
+  "project_number": "20260030",
+  "project_name": "Huldenberg",
   "file_extensions": [
     {
       "key": "pdf",
@@ -36,6 +36,14 @@
         ".dwg"
       ],
       "enabled": false
+    },
+    {
+      "key": "html",
+      "label": "eDrawing",
+      "patterns": [
+        ".html"
+      ],
+      "enabled": true
     }
   ],
   "zip_per_production": false,
@@ -50,14 +58,14 @@
   "custom_prefix_text": "",
   "custom_suffix_enabled": false,
   "custom_suffix_text": "",
-  "document_filename_profile": "standard",
+  "document_filename_profile": "compact",
   "document_filename_show_doc_type": true,
   "document_filename_show_doc_number": true,
   "document_filename_show_context": true,
   "document_filename_show_date": true,
   "document_filename_compact_doc_number": true,
   "document_filename_separator": "underscore",
-  "document_display_compact_doc_number": false,
+  "document_display_compact_doc_number": true,
   "bundle_latest": false,
   "bundle_dry_run": false,
   "footer_note": "Gelieve afwijkingen schriftelijk te bevestigen. Levertermijn in overleg. Betalingsvoorwaarden: 30 dagen netto. Vermeld onze productiereferentie bij levering.",

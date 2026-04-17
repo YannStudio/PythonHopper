@@ -3,6 +3,7 @@ from PIL import Image
 
 import app_paths
 from clients_db import ClientsDB
+from gui import _crop_logo_preview_image, _safe_make_logo_photo
 from models import Client, Supplier, normalize_rgb_color
 from orders import DEFAULT_FOOTER_NOTE, generate_pdf_order_platypus, REPORTLAB_OK
 
@@ -36,6 +37,29 @@ def test_client_normalizes_accent_color_formats():
     assert normalize_rgb_color("255,119,255") == "#FF77FF"
     assert normalize_rgb_color("#0c2238") == "#0C2238"
     assert normalize_rgb_color("ongeldig") is None
+
+
+def test_crop_logo_preview_image_ignores_invalid_crop_data():
+    img = Image.new("RGBA", (120, 60), "red")
+
+    cropped = _crop_logo_preview_image(
+        img,
+        {"left": "niet-numeriek", "top": 0, "right": 60, "bottom": 40},
+    )
+
+    assert cropped is not None
+    assert cropped.size == (120, 60)
+
+
+def test_safe_make_logo_photo_returns_none_when_photoimage_fails():
+    img = Image.new("RGBA", (120, 60), "red")
+
+    class BrokenImageTk:
+        @staticmethod
+        def PhotoImage(_img):
+            raise RuntimeError("kan image niet renderen")
+
+    assert _safe_make_logo_photo(img, BrokenImageTk, None, (80, 40)) is None
 
 
 @pytest.mark.skipif(not REPORTLAB_OK, reason="ReportLab niet beschikbaar")
