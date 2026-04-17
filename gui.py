@@ -4726,6 +4726,25 @@ def start_gui():
                 master=self,
                 value=getattr(self.settings, "document_filename_profile", "standard"),
             )
+            self._document_filename_profile_choices: List[Tuple[str, str]] = [
+                ("Standaard", "standard"),
+                ("Kort (BB-123)", "short"),
+                ("Compact (BB123)", "compact"),
+                ("Aangepast", "custom"),
+            ]
+            self._document_filename_profile_value_to_display = {
+                value: label for label, value in self._document_filename_profile_choices
+            }
+            self._document_filename_profile_display_to_value = {
+                label: value for label, value in self._document_filename_profile_choices
+            }
+            self.document_filename_profile_display_var = tk.StringVar(
+                master=self,
+                value=self._document_filename_profile_value_to_display.get(
+                    self.document_filename_profile_var.get().strip() or "standard",
+                    "Standaard",
+                ),
+            )
             self.document_filename_show_doc_type_var = tk.IntVar(
                 master=self,
                 value=1 if getattr(self.settings, "document_filename_show_doc_type", True) else 0,
@@ -4755,6 +4774,12 @@ def start_gui():
                 value=getattr(self.settings, "document_filename_separator", "underscore"),
             )
             self.document_filename_preview_var = tk.StringVar(master=self, value="")
+            self.document_filename_details_open_var = tk.IntVar(
+                master=self,
+                value=1
+                if (self.document_filename_profile_var.get().strip().lower() == "custom")
+                else 0,
+            )
             self.document_display_compact_doc_number_var = tk.IntVar(
                 master=self,
                 value=1
@@ -4838,6 +4863,9 @@ def start_gui():
             ):
                 var.trace_add("write", self._update_document_filename_preview)
 
+            self.document_filename_profile_var.trace_add(
+                "write", self._sync_document_filename_profile_display
+            )
             self.document_filename_profile_var.trace_add(
                 "write", self._refresh_document_filename_controls
             )
@@ -5276,8 +5304,14 @@ def start_gui():
             self.settings_frame.configure(padx=12, pady=12)
             self.nb.add(self.settings_frame, text="⚙ Settings")
 
+            main_body = tk.Frame(main)
+            main_body.pack(fill="both", expand=True)
+            main_footer = tk.Frame(main)
+            main_footer.pack(fill="x", side="bottom")
+
             # Top folders
-            top = tk.Frame(main); top.pack(fill="x", padx=8, pady=6)
+            top = tk.Frame(main_body)
+            top.pack(fill="x", padx=8, pady=6)
             FOLDER_ICON = "\U0001F4C1"
             USER_ICON = "\U0001F464"
             label_font = tkfont.nametofont("TkDefaultFont")
@@ -5331,7 +5365,7 @@ def start_gui():
 
 
             # Filters
-            filters_row = tk.Frame(main)
+            filters_row = tk.Frame(main_body)
             filters_row.pack(fill="x", padx=8, pady=6)
             filters_row.grid_columnconfigure(0, weight=1)
             filters_row.grid_columnconfigure(1, weight=1)
@@ -5364,13 +5398,17 @@ def start_gui():
             options_frame = tk.Frame(options_frame_parent)
             options_frame.grid(row=0, column=0, sticky="nw", padx=8, pady=4)
             export_name_inner = tk.Frame(export_name_frame)
-            export_name_inner.grid(row=0, column=0, sticky="nw", padx=8, pady=4)
+            export_name_inner.grid(row=0, column=0, sticky="nsew", padx=8, pady=4)
+            export_name_inner.grid_columnconfigure(0, weight=1, uniform="export_name")
+            export_name_inner.grid_columnconfigure(1, weight=1, uniform="export_name")
             general_export_name_frame = tk.LabelFrame(
                 export_name_inner,
                 text="Andere exportbestanden",
                 labelanchor="n",
             )
-            general_export_name_frame.pack(fill="x", anchor="n")
+            general_export_name_frame.grid(
+                row=0, column=0, sticky="nsew", padx=(0, 6)
+            )
             general_export_name_inner = tk.Frame(general_export_name_frame)
             general_export_name_inner.pack(fill="x", padx=6, pady=6)
             document_name_frame = tk.LabelFrame(
@@ -5378,7 +5416,9 @@ def start_gui():
                 text="Bestelbon / offerte",
                 labelanchor="n",
             )
-            document_name_frame.pack(fill="x", anchor="n", pady=(8, 0))
+            document_name_frame.grid(
+                row=0, column=1, sticky="nsew", padx=(6, 0)
+            )
             document_name_inner = tk.Frame(document_name_frame)
             document_name_inner.pack(fill="x", padx=6, pady=6)
 
@@ -5436,28 +5476,59 @@ def start_gui():
                 suffix_row,
                 textvariable=self.export_name_custom_suffix_text,
             ).pack(side="left", fill="x", expand=True)
+            profile_row = tk.Frame(document_name_inner)
+            profile_row.pack(fill="x")
             tk.Label(
-                document_name_inner,
+                profile_row,
                 text="Profiel:",
                 anchor="w",
-            ).pack(anchor="w")
-            for text, value in (
-                ("Standaard", "standard"),
-                ("Kort (BB-123)", "short"),
-                ("Compact (BB123)", "compact"),
-                ("Aangepast", "custom"),
-            ):
-                tk.Radiobutton(
-                    document_name_inner,
-                    text=text,
-                    value=value,
-                    variable=self.document_filename_profile_var,
-                    anchor="w",
-                    justify="left",
-                ).pack(anchor="w")
+            ).pack(side="left")
+            self.document_filename_profile_combo = ttk.Combobox(
+                profile_row,
+                textvariable=self.document_filename_profile_display_var,
+                values=[
+                    label for label, _value in self._document_filename_profile_choices
+                ],
+                state="readonly",
+                width=18,
+            )
+            self.document_filename_profile_combo.pack(side="left", padx=(8, 0))
+            self.document_filename_profile_combo.bind(
+                "<<ComboboxSelected>>",
+                self._on_document_filename_profile_selected,
+            )
 
-            custom_document_options = tk.Frame(document_name_inner)
-            custom_document_options.pack(fill="x", pady=(8, 4))
+            preview_row = tk.Frame(document_name_inner)
+            preview_row.pack(fill="x", pady=(8, 0))
+            tk.Label(preview_row, text="Voorbeeld:").pack(anchor="w")
+            tk.Entry(
+                preview_row,
+                textvariable=self.document_filename_preview_var,
+                state="readonly",
+            ).pack(fill="x", pady=(2, 0))
+            tk.Checkbutton(
+                document_name_inner,
+                text="Compact documentnummer tonen in PDF/Excel",
+                variable=self.document_display_compact_doc_number_var,
+                anchor="w",
+                justify="left",
+                wraplength=280,
+            ).pack(anchor="w", pady=(8, 0))
+
+            self.document_filename_details_toggle_row = tk.Frame(document_name_inner)
+            self.document_filename_details_toggle_text_var = tk.StringVar(master=self, value="")
+            tk.Button(
+                self.document_filename_details_toggle_row,
+                textvariable=self.document_filename_details_toggle_text_var,
+                command=self._toggle_document_filename_details,
+                relief="flat",
+                anchor="w",
+                cursor="hand2",
+            ).pack(anchor="w")
+
+            self.document_filename_details_frame = tk.Frame(document_name_inner)
+            custom_document_options = tk.Frame(self.document_filename_details_frame)
+            custom_document_options.pack(fill="x")
             self._document_filename_custom_widgets = []
 
             def _add_doc_custom_checkbutton(text: str, variable: tk.IntVar) -> None:
@@ -5509,26 +5580,11 @@ def start_gui():
                 )
                 widget.pack(side="left", padx=(8, 0))
                 self._document_filename_custom_widgets.append(widget)
-
-            preview_row = tk.Frame(document_name_inner)
-            preview_row.pack(fill="x", pady=(8, 0))
-            tk.Label(preview_row, text="Voorbeeld:").pack(anchor="w")
-            tk.Entry(
-                preview_row,
-                textvariable=self.document_filename_preview_var,
-                state="readonly",
-            ).pack(fill="x", pady=(2, 0))
-            tk.Checkbutton(
-                document_name_inner,
-                text="Compact documentnummer tonen in PDF/Excel",
-                variable=self.document_display_compact_doc_number_var,
-                anchor="w",
-                justify="left",
-            ).pack(anchor="w", pady=(8, 0))
             # Legacy options moved to settings tab
 
             # BOM controls
-            bf = tk.Frame(main); bf.pack(fill="x", padx=8, pady=6)
+            bf = tk.Frame(main_body)
+            bf.pack(fill="x", padx=8, pady=6)
             tk.Button(bf, text="Laad BOM (CSV/Excel)", command=self._load_bom).pack(side="left", padx=6)
             tk.Button(
                 bf,
@@ -5546,7 +5602,7 @@ def start_gui():
 
             # Tree
             style.configure("Treeview", rowheight=24)
-            treef = tk.Frame(main)
+            treef = tk.Frame(main_body)
             treef.pack(fill="both", expand=True, padx=8, pady=6)
             self.tree = ttk.Treeview(
                 treef,
@@ -5589,7 +5645,9 @@ def start_gui():
             self.item_links: Dict[str, str] = {}
 
             # Actions
-            act = tk.Frame(main); act.pack(fill="x", padx=8, pady=8)
+            ttk.Separator(main_footer, orient="horizontal").pack(fill="x", padx=8)
+            act = tk.Frame(main_footer)
+            act.pack(fill="x", padx=8, pady=(8, 4))
             button_style = dict(
                 bg=MANUFACT_BRAND_COLOR,
                 activebackground="#F4C46C",
@@ -5618,8 +5676,13 @@ def start_gui():
 
             # Status
             self.status_var = tk.StringVar(value="Klaar")
-            tk.Label(main, textvariable=self.status_var, anchor="w").pack(fill="x", padx=8, pady=(0,8))
+            tk.Label(
+                main_footer,
+                textvariable=self.status_var,
+                anchor="w",
+            ).pack(fill="x", padx=8, pady=(0, 8))
             self._refresh_document_filename_controls()
+            self._sync_document_filename_profile_display()
             self._update_document_filename_preview()
             self._save_settings()
 
@@ -6030,16 +6093,79 @@ def start_gui():
                 compact=bool(self.document_display_compact_doc_number_var.get()),
             )
 
-        def _refresh_document_filename_controls(self, *_args) -> None:
-            enabled = (
-                self.document_filename_profile_var.get().strip().lower() == "custom"
+        def _sync_document_filename_profile_display(self, *_args) -> None:
+            display_var = getattr(self, "document_filename_profile_display_var", None)
+            if display_var is None:
+                return
+            value_to_display = getattr(
+                self, "_document_filename_profile_value_to_display", {}
             )
+            current_value = self.document_filename_profile_var.get().strip() or "standard"
+            desired_display = value_to_display.get(current_value, "Standaard")
+            if display_var.get() != desired_display:
+                display_var.set(desired_display)
+
+        def _on_document_filename_profile_selected(self, _evt=None) -> None:
+            display_var = getattr(self, "document_filename_profile_display_var", None)
+            display_to_value = getattr(
+                self, "_document_filename_profile_display_to_value", {}
+            )
+            if display_var is None:
+                return
+            selected_display = display_var.get().strip()
+            selected_value = display_to_value.get(selected_display, "standard")
+            details_open_var = getattr(self, "document_filename_details_open_var", None)
+            if details_open_var is not None and selected_value == "custom":
+                details_open_var.set(1)
+            if self.document_filename_profile_var.get().strip() != selected_value:
+                self.document_filename_profile_var.set(selected_value)
+
+        def _toggle_document_filename_details(self) -> None:
+            details_open_var = getattr(self, "document_filename_details_open_var", None)
+            if details_open_var is None:
+                return
+            current = 1 if bool(details_open_var.get()) else 0
+            details_open_var.set(0 if current else 1)
+            self._refresh_document_filename_controls()
+
+        def _refresh_document_filename_controls(self, *_args) -> None:
+            enabled = self.document_filename_profile_var.get().strip().lower() == "custom"
             state = "normal" if enabled else "disabled"
             for widget in getattr(self, "_document_filename_custom_widgets", []):
                 try:
                     widget.configure(state=state)
                 except Exception:
                     pass
+
+            details_open_var = getattr(self, "document_filename_details_open_var", None)
+            details_toggle_row = getattr(
+                self, "document_filename_details_toggle_row", None
+            )
+            details_frame = getattr(self, "document_filename_details_frame", None)
+            details_toggle_text_var = getattr(
+                self, "document_filename_details_toggle_text_var", None
+            )
+
+            details_open = bool(details_open_var.get()) if details_open_var is not None else enabled
+
+            if details_toggle_text_var is not None:
+                details_toggle_text_var.set(
+                    "Naamopties verbergen ▴" if enabled and details_open else "Naamopties tonen ▾"
+                )
+
+            if details_toggle_row is not None:
+                if enabled:
+                    if not details_toggle_row.winfo_manager():
+                        details_toggle_row.pack(fill="x", pady=(8, 0))
+                elif details_toggle_row.winfo_manager():
+                    details_toggle_row.pack_forget()
+
+            if details_frame is not None:
+                if enabled and details_open:
+                    if not details_frame.winfo_manager():
+                        details_frame.pack(fill="x", pady=(6, 0))
+                elif details_frame.winfo_manager():
+                    details_frame.pack_forget()
 
         def _update_document_filename_preview(self, *_args) -> None:
             preview = self._build_document_export_basename(
