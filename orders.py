@@ -1514,7 +1514,7 @@ def _build_order_pdf_section_story(
     elif is_raw_material_order:
         head = ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
     else:
-        head = ["PartNumber", "Omschrijving", "Materiaal", "St.", "mÂ²", "kg"]
+        head = ["PartNumber", "Omschrijving", "Materiaal", "St.", "m²", "kg"]
 
     def wrap_cell_html(val: str, small=False, align=None):
         style = ParagraphStyle(
