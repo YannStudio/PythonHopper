@@ -192,6 +192,144 @@ def test_grouped_finish_orders_create_single_document_in_master_folder(tmp_path)
     assert "Nummer: BB-300" in text
 
 
+def test_grouped_finish_orders_report_master_folder_path(tmp_path):
+    pytest.importorskip("reportlab")
+    pytest.importorskip("openpyxl")
+
+    db = SuppliersDB([Supplier.from_any({"supplier": "ACME"})])
+    src = tmp_path / "src"
+    dest = tmp_path / "dest"
+    src.mkdir()
+    dest.mkdir()
+    (src / "PN1.pdf").write_text("pdf", encoding="utf-8")
+    (src / "PN2.pdf").write_text("pdf", encoding="utf-8")
+
+    bom_df = pd.DataFrame(
+        [
+            {
+                "PartNumber": "PN1",
+                "Description": "",
+                "Production": "Laser",
+                "Finish": "Poedercoating",
+                "RAL color": "RAL 9005",
+                "Aantal": 1,
+            },
+            {
+                "PartNumber": "PN2",
+                "Description": "",
+                "Production": "Laser",
+                "Finish": "Nattenlak",
+                "RAL color": "RAL 9010",
+                "Aantal": 1,
+            },
+        ]
+    )
+
+    finish_key_a = (
+        "Finish-"
+        + _normalize_finish_folder("Poedercoating")
+        + "-"
+        + _normalize_finish_folder("RAL 9005")
+    )
+    finish_key_b = (
+        "Finish-"
+        + _normalize_finish_folder("Nattenlak")
+        + "-"
+        + _normalize_finish_folder("RAL 9010")
+    )
+    master_key = make_finish_selection_key(finish_key_a)
+    follower_key = make_finish_selection_key(finish_key_b)
+    status_lines = []
+
+    copy_per_production_and_orders(
+        str(src),
+        str(dest),
+        bom_df,
+        [".pdf"],
+        db,
+        {"Laser": "ACME"},
+        {},
+        {},
+        False,
+        client=None,
+        delivery_map={},
+        copy_finish_exports=True,
+        finish_override_map={
+            finish_key_a: "ACME",
+            finish_key_b: "ACME",
+        },
+        finish_doc_num_map={
+            finish_key_a: "BB-300",
+            finish_key_b: "BB-301",
+        },
+        document_group_map={follower_key: master_key},
+        export_bom=False,
+        document_status_messages=status_lines,
+    )
+
+    finish_reports = [
+        line for line in status_lines if "Samengestelde afwerkingsbon" in line
+    ]
+    assert len(finish_reports) == 1
+    assert "Poedercoating" in finish_reports[0]
+    assert finish_key_a in finish_reports[0]
+    assert "Bestelbon_BB-300" in finish_reports[0]
+
+
+def test_finish_export_filter_reports_skipped_finish(tmp_path):
+    db = SuppliersDB([Supplier.from_any({"supplier": "ACME"})])
+    src = tmp_path / "src"
+    dest = tmp_path / "dest"
+    src.mkdir()
+    dest.mkdir()
+    (src / "PN1.pdf").write_text("pdf", encoding="utf-8")
+
+    bom_df = pd.DataFrame(
+        [
+            {
+                "PartNumber": "PN1",
+                "Description": "",
+                "Production": "Laser",
+                "Finish": "Poedercoating",
+                "RAL color": "RAL 9005",
+                "Aantal": 1,
+            }
+        ]
+    )
+
+    finish_key = (
+        "Finish-"
+        + _normalize_finish_folder("Poedercoating")
+        + "-"
+        + _normalize_finish_folder("RAL 9005")
+    )
+    status_lines = []
+
+    copy_per_production_and_orders(
+        str(src),
+        str(dest),
+        bom_df,
+        [".pdf"],
+        db,
+        {"Laser": "ACME"},
+        {},
+        {},
+        False,
+        client=None,
+        delivery_map={},
+        copy_finish_exports=True,
+        finish_override_map={finish_key: "ACME"},
+        finish_export_filter={finish_key: False},
+        export_bom=False,
+        document_status_messages=status_lines,
+    )
+
+    assert len(status_lines) == 1
+    assert "Afwerking 'Poedercoating" in status_lines[0]
+    assert "RAL 9005" in status_lines[0]
+    assert "overgeslagen: export uitgeschakeld." in status_lines[0]
+
+
 def test_grouped_production_orders_reject_mixed_en1090(tmp_path):
     db = SuppliersDB([Supplier.from_any({"supplier": "ACME"})])
     src = tmp_path / "src"

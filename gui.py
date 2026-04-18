@@ -874,9 +874,9 @@ def start_gui():
                     client_vat = entries["vat"].get().strip() or "BE0123456789"
                     client_email = entries["email"].get().strip() or "info@example.com"
                     today_text = datetime.date.today().strftime("%Y-%m-%d")
-                    preview_doc_number = self._format_document_display_number(
-                        "Bestelbon",
+                    preview_doc_number = format_document_number_for_display(
                         "BB-123",
+                        "Bestelbon",
                     )
                     doc_top_y = rule_y + 10
                     doc_lines = [
@@ -2205,12 +2205,80 @@ def start_gui():
             content = tk.Frame(self)
             content.grid(row=0, column=0, sticky="nsew", padx=10, pady=6)
             content.grid_columnconfigure(0, weight=1)
-            content.grid_rowconfigure(0, weight=0)
-            content.grid_rowconfigure(1, weight=1)
+            content.grid_rowconfigure(0, weight=1)
+            content.grid_rowconfigure(1, weight=0)
 
-            # Left: per productie comboboxen
-            left = tk.Frame(content)
-            left.grid(row=0, column=0, sticky="nw")
+            rows_scroll_container = tk.Frame(content)
+            rows_scroll_container.grid(row=0, column=0, sticky="nsew")
+            rows_scroll_container.grid_columnconfigure(0, weight=1)
+            rows_scroll_container.grid_rowconfigure(0, weight=1)
+
+            self.selection_rows_canvas = tk.Canvas(
+                rows_scroll_container,
+                highlightthickness=0,
+                borderwidth=0,
+            )
+            self.selection_rows_canvas.grid(row=0, column=0, sticky="nsew")
+            self.selection_rows_scrollbar = ttk.Scrollbar(
+                rows_scroll_container,
+                orient="vertical",
+                command=self.selection_rows_canvas.yview,
+            )
+            self.selection_rows_scrollbar.grid(row=0, column=1, sticky="ns")
+            self.selection_rows_canvas.configure(
+                yscrollcommand=self.selection_rows_scrollbar.set
+            )
+
+            left = tk.Frame(self.selection_rows_canvas)
+            self._selection_rows_window = self.selection_rows_canvas.create_window(
+                (0, 0),
+                window=left,
+                anchor="nw",
+            )
+
+            def _update_selection_scroll_region(_event=None) -> None:
+                try:
+                    bbox = self.selection_rows_canvas.bbox("all")
+                except tk.TclError:
+                    return
+                if bbox:
+                    self.selection_rows_canvas.configure(scrollregion=bbox)
+
+            left.bind("<Configure>", _update_selection_scroll_region)
+
+            def _resize_selection_rows_content(event) -> None:
+                try:
+                    self.selection_rows_canvas.itemconfigure(
+                        self._selection_rows_window,
+                        width=event.width,
+                    )
+                except tk.TclError:
+                    return
+
+            self.selection_rows_canvas.bind("<Configure>", _resize_selection_rows_content)
+
+            def _on_selection_rows_mousewheel(event):
+                delta = getattr(event, "delta", 0)
+                if delta:
+                    step = -1 if delta > 0 else 1
+                elif getattr(event, "num", 0) == 4:
+                    step = -1
+                elif getattr(event, "num", 0) == 5:
+                    step = 1
+                else:
+                    return None
+                try:
+                    self.selection_rows_canvas.yview_scroll(step, "units")
+                except tk.TclError:
+                    return None
+                return "break"
+
+            self.selection_rows_canvas.bind("<MouseWheel>", _on_selection_rows_mousewheel)
+            self.selection_rows_canvas.bind("<Button-4>", _on_selection_rows_mousewheel)
+            self.selection_rows_canvas.bind("<Button-5>", _on_selection_rows_mousewheel)
+            left.bind("<MouseWheel>", _on_selection_rows_mousewheel)
+            left.bind("<Button-4>", _on_selection_rows_mousewheel)
+            left.bind("<Button-5>", _on_selection_rows_mousewheel)
 
             self._opticutter_notice_var = tk.StringVar(value="")
             self._opticutter_notice_label = tk.Label(
@@ -7026,6 +7094,7 @@ def start_gui():
 
                     update_status("KopiÃ«ren & bestelbonnen maken...")
                     path_limit_messages: List[str] = []
+                    document_status_lines: List[str] = []
                     try:
                         if opticutter_choices_snapshot is None:
                             opticutter_choices_snapshot = dict(
@@ -7109,6 +7178,7 @@ def start_gui():
                             en1090_overrides=en1090_override_map or None,
                             en1090_enabled=bool(self.en1090_enabled_var.get()),
                             en1090_note=self.en1090_note_var.get(),
+                            document_status_messages=document_status_lines,
                         )
                     except Exception as exc:
                         error_message = str(exc)
@@ -7152,6 +7222,12 @@ def start_gui():
                             info_lines = ["Bestelbonnen aangemaakt in:", bundle_dest]
                             if bundle.latest_symlink:
                                 info_lines.append(f"Symlink: {bundle.latest_symlink}")
+                            if document_status_lines:
+                                info_lines.append("")
+                                info_lines.append("Details:")
+                                info_lines.extend(
+                                    f"- {line}" for line in document_status_lines
+                                )
                             messagebox.showinfo("Klaar", "\n".join(info_lines), parent=self)
                             if path_limit_messages:
                                 warning_lines = [
@@ -8848,6 +8924,7 @@ def start_gui():
 
                     update_status("Kopiëren & bestelbonnen maken...")
                     path_limit_messages: List[str] = []
+                    document_status_lines: List[str] = []
                     try:
                         if opticutter_choices_snapshot is None:
                             opticutter_choices_snapshot = dict(
@@ -8931,6 +9008,7 @@ def start_gui():
                             en1090_overrides=en1090_override_map or None,
                             en1090_enabled=bool(self.en1090_enabled_var.get()),
                             en1090_note=self.en1090_note_var.get(),
+                            document_status_messages=document_status_lines,
                         )
                     except Exception as exc:
                         error_message = str(exc)
@@ -8974,6 +9052,12 @@ def start_gui():
                             info_lines = ["Bestelbonnen aangemaakt in:", bundle_dest]
                             if bundle.latest_symlink:
                                 info_lines.append(f"Symlink: {bundle.latest_symlink}")
+                            if document_status_lines:
+                                info_lines.append("")
+                                info_lines.append("Details:")
+                                info_lines.extend(
+                                    f"- {line}" for line in document_status_lines
+                                )
                             messagebox.showinfo("Klaar", "\n".join(info_lines), parent=self)
                             if path_limit_messages:
                                 warning_lines = [

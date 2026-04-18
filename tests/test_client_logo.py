@@ -1,3 +1,6 @@
+import ast
+import pathlib
+
 import pytest
 from PIL import Image
 
@@ -60,6 +63,33 @@ def test_safe_make_logo_photo_returns_none_when_photoimage_fails():
             raise RuntimeError("kan image niet renderen")
 
     assert _safe_make_logo_photo(img, BrokenImageTk, None, (80, 40)) is None
+
+
+def test_client_logo_order_preview_uses_shared_doc_number_formatter():
+    source = pathlib.Path("gui.py").read_text(encoding="utf-8")
+    mod = ast.parse(source)
+    start = next(
+        node for node in mod.body if isinstance(node, ast.FunctionDef) and node.name == "start_gui"
+    )
+    client_cls = next(
+        node
+        for node in start.body
+        if isinstance(node, ast.ClassDef) and node.name == "ClientsManagerFrame"
+    )
+    open_dialog = next(
+        node
+        for node in client_cls.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_open_edit_dialog"
+    )
+
+    assert not any(
+        isinstance(node, ast.Attribute) and node.attr == "_format_document_display_number"
+        for node in ast.walk(open_dialog)
+    )
+    assert any(
+        isinstance(node, ast.Name) and node.id == "format_document_number_for_display"
+        for node in ast.walk(open_dialog)
+    )
 
 
 @pytest.mark.skipif(not REPORTLAB_OK, reason="ReportLab niet beschikbaar")

@@ -202,6 +202,32 @@ def test_app_resolves_client_address_delivery_choice():
     assert delivery.address == "Kerkstraat 1, Gent"
 
 
+def test_supplier_selection_frame_uses_scrollable_rows_canvas():
+    source = pathlib.Path("gui.py").read_text(encoding="utf-8")
+    mod = ast.parse(source)
+    start = next(
+        node for node in mod.body if isinstance(node, ast.FunctionDef) and node.name == "start_gui"
+    )
+    sup_cls = next(
+        n for n in start.body if isinstance(n, ast.ClassDef) and n.name == "SupplierSelectionFrame"
+    )
+    init_fn = next(
+        n for n in sup_cls.body if isinstance(n, ast.FunctionDef) and n.name == "__init__"
+    )
+
+    assert any(
+        isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Attribute) and target.attr == "selection_rows_canvas"
+            for target in node.targets
+        )
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Attribute)
+        and node.value.func.attr == "Canvas"
+        for node in ast.walk(init_fn)
+    )
+
+
 def test_apply_custom_bom_refreshes_order_tab_when_present():
     class DummySelFrame:
         def winfo_exists(self):

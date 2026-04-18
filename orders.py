@@ -3416,6 +3416,7 @@ def copy_per_production_and_orders(
     en1090_enabled: bool = True,
     en1090_overrides: Mapping[str, bool] | None = None,
     en1090_note: Optional[str] = None,
+    document_status_messages: List[str] | None = None,
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
 
@@ -3599,6 +3600,7 @@ def copy_per_production_and_orders(
     today = today_date.strftime("%Y-%m-%d")
     date_token = today_date.strftime("%Y%m%d")
     delivery_map = delivery_map or {}
+    dest_abs = os.path.abspath(dest)
     export_name_prefix_text = (export_name_prefix_text or "").strip()
     export_name_suffix_text = (export_name_suffix_text or "").strip()
     document_filename_profile = normalize_document_filename_profile(
@@ -3662,6 +3664,22 @@ def copy_per_production_and_orders(
         )
         if detail not in path_limit_warnings:
             path_limit_warnings.append(detail)
+
+    def _append_document_status(message: object) -> None:
+        if document_status_messages is None:
+            return
+        clean = _to_str(message).strip()
+        if clean and clean not in document_status_messages:
+            document_status_messages.append(clean)
+
+    def _report_export_path(path: str) -> str:
+        try:
+            relative = os.path.relpath(os.path.abspath(path), dest_abs)
+        except Exception:
+            return os.path.abspath(path)
+        if relative.startswith(".."):
+            return os.path.abspath(path)
+        return relative
 
     footer_note_text = (
         DEFAULT_FOOTER_NOTE
@@ -4146,9 +4164,17 @@ def copy_per_production_and_orders(
             finish_groups.items(), key=lambda item: _to_str(item[1].get("label", "")).lower()
         ):
             if finish_export_filter and not finish_export_filter.get(finish_key, True):
+                label = _to_str(info.get("label")) or finish_key
+                _append_document_status(
+                    f"Afwerking '{label}' overgeslagen: export uitgeschakeld."
+                )
                 continue
             rows = list(info.get("rows", []))
             if not rows:
+                label = _to_str(info.get("label")) or finish_key
+                _append_document_status(
+                    f"Afwerking '{label}' overgeslagen: geen BOM-rijen gevonden."
+                )
                 continue
             supplier = pick_supplier_for_finish(
                 finish_key, db, finish_override_map, suppliers_sorted=suppliers_sorted
@@ -4223,6 +4249,7 @@ def copy_per_production_and_orders(
             order_candidates,
             document_group_map,
         ):
+            primary_section = job.sections[0]
             supplier_name_clean = (
                 _to_str(job.supplier.supplier).strip() if job.supplier else ""
             )
@@ -4233,10 +4260,20 @@ def copy_per_production_and_orders(
             if job_is_standaard and not supplier_name_clean:
                 supplier_for_docs = None
                 delivery_for_docs = None
+            group_summary = _order_group_summary_text(job.sections)
+            is_finish_job = primary_section.context_kind.strip().lower() == "afwerking"
             if not (supplier_name_clean or job_is_standaard):
+                if is_finish_job:
+                    if len(job.sections) > 1 and group_summary:
+                        _append_document_status(
+                            f"Samengestelde afwerking '{group_summary}' overgeslagen: geen leverancier gekozen."
+                        )
+                    else:
+                        _append_document_status(
+                            f"Afwerking '{primary_section.context_label}' overgeslagen: geen leverancier gekozen."
+                        )
                 continue
 
-            primary_section = job.sections[0]
             context_label = _to_str(primary_section.context_label).strip()
             context_kind = _to_str(primary_section.context_kind).strip() or "Productie"
             extra_context_label = "Groep" if len(job.sections) > 1 else ""
@@ -4298,6 +4335,7 @@ def copy_per_production_and_orders(
             )
             pdf_path = os.path.join(job.target_dir, pdf_filename)
             try:
+                pdf_created = True
                 generate_pdf_order_platypus(
                     pdf_path,
                     company,
@@ -4317,9 +4355,17 @@ def copy_per_production_and_orders(
                     sections=job.sections,
                 )
             except Exception as exc:
+                pdf_created = False
                 print(
                     f"[WAARSCHUWING] PDF mislukt voor {context_for_warning}: {exc}",
                     file=sys.stderr,
+                )
+            if is_finish_job and len(job.sections) > 1:
+                target_path = pdf_path if pdf_created else excel_path
+                target_label = _report_export_path(target_path)
+                summary_text = group_summary or context_label
+                _append_document_status(
+                    f"Samengestelde afwerkingsbon '{summary_text}' opgeslagen in {target_label}."
                 )
 
     # Persist any (possibly unchanged) supplier defaults so that callers can rely on

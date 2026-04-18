@@ -73,14 +73,14 @@
   "en1090_enabled": true,
   "en1090_note": "Bestelling conform EN 1090-2:2018+A1:2024.\nLevering met materiaalcertificaat type 2.2 of 3.1 volgens EN 10204.\nProfielen in constructiestaal S235JR/S355J2 conform EN 10025-2 met toleranties volgens EN 10034.",
   "en1090_preferences": {
-    "cutting": false,
+    "cutting": true,
     "dummy part": false,
-    "lasercutting": false,
-    "sheetmetal": false,
-    "sheetmetal 4m": false,
+    "lasercutting": true,
+    "sheetmetal": true,
+    "sheetmetal 4m": true,
     "spare part": false,
     "tube laser": true,
-    "tube laser l": false,
+    "tube laser l": true,
     "onbekend": false,
     "assembly": false,
     "glass": false,
@@ -92,6 +92,11 @@
     "watercutting": false,
     "mount material": false,
     "roof": false,
-    "sheet milling": false
+    "sheet milling": false,
+    "bending": true,
+    "dummy assembly": false,
+    "groendak": false,
+    "sticker": false,
+    "weld assembly alu": false
   }
 }
