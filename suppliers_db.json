@@ -1595,5 +1595,8 @@
     "Weld assembly alu": "Productora",
     "Groendak": "Dirk Maris nv"
   },
-  "defaults_by_finish": {}
+  "defaults_by_finish": {
+    "Finish-Galvanised _ Powder coating-RAL 7000": "Van Gils Coating - Beringen/Maasmechelen",
+    "Finish-Powder coating-RAL 7000": "Van Gils Coating - Beringen/Maasmechelen"
+  }
 }

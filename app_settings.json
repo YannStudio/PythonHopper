@@ -1,8 +1,8 @@
 {
   "source_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2026/20260030 - CIAW Huldenberg schuilhuisje/CAD/3D Soldiworks Files/V4",
-  "dest_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2026/20260030 - CIAW Huldenberg schuilhuisje/CAD/Bestellingen",
-  "project_number": "20260030",
-  "project_name": "Huldenberg",
+  "dest_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/Interne projecten/00. Stock bestelbonnen/200426-p01",
+  "project_number": "Stock",
+  "project_name": "Test pieces",
   "file_extensions": [
     {
       "key": "pdf",
@@ -46,10 +46,10 @@
       "enabled": true
     }
   ],
-  "zip_per_production": false,
+  "zip_per_production": true,
   "combine_pdf_per_production": false,
   "copy_finish_exports": true,
-  "zip_finish_exports": false,
+  "zip_finish_exports": true,
   "export_processed_bom": true,
   "export_related_bom_files": true,
   "export_date_prefix": false,
@@ -97,6 +97,7 @@
     "dummy assembly": false,
     "groendak": false,
     "sticker": false,
-    "weld assembly alu": false
+    "weld assembly alu": false,
+    "woodwork": false
   }
 }
