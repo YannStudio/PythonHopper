@@ -192,6 +192,7 @@ def test_manual_order_export_uses_editor_client_supplier_and_delivery(tmp_path, 
                         address="Editorstraat 2",
                         vat="BE0123456789",
                         email="editor@example.com",
+                        website="https://editor.example.com",
                     ),
                 ]
             )
@@ -232,6 +233,7 @@ def test_manual_order_export_uses_editor_client_supplier_and_delivery(tmp_path, 
     assert pathlib.Path(excel["path"]).name == f"Bestelbon_Leien-60x80_{today}.xlsx"
     assert excel["company_info"]["name"] == "Editor Client"
     assert excel["company_info"]["address"] == "Editorstraat 2"
+    assert excel["company_info"]["website"] == "https://editor.example.com"
     assert excel["supplier"] is not None
     assert excel["supplier"].supplier == "ACME"
     assert excel["delivery"] is not None
@@ -242,4 +244,5 @@ def test_manual_order_export_uses_editor_client_supplier_and_delivery(tmp_path, 
     pdf = captured["pdf"]
     assert pathlib.Path(pdf["path"]).name == f"Bestelbon_Leien-60x80_{today}.pdf"
     assert pdf["company_info"]["name"] == "Editor Client"
+    assert pdf["company_info"]["website"] == "https://editor.example.com"
     assert pdf["kwargs"]["doc_number"] is None

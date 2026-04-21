@@ -204,6 +204,7 @@ class Client:
     address: Optional[str] = None
     vat: Optional[str] = None
     email: Optional[str] = None
+    website: Optional[str] = None
     favorite: bool = False
     accent_color: Optional[str] = None
     logo_path: Optional[str] = None
@@ -224,6 +225,11 @@ class Client:
             "email": "email",
             "e-mail": "email",
             "mail": "email",
+            "website": "website",
+            "web site": "website",
+            "site": "website",
+            "url": "website",
+            "site web": "website",
             "favorite": "favorite",
             "favoriet": "favorite",
             "fav": "favorite",
@@ -297,6 +303,7 @@ class Client:
             address=_to_str(norm.get("address")).strip() or None if ("address" in norm) else None,
             vat=_to_str(norm.get("vat")).strip() or None if ("vat" in norm) else None,
             email=_to_str(norm.get("email")).strip() or None if ("email" in norm) else None,
+            website=_to_str(norm.get("website")).strip() or None if ("website" in norm) else None,
             favorite=bool(fav),
             accent_color=accent_color,
             logo_path=logo_path,

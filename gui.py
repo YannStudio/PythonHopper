@@ -495,7 +495,7 @@ def start_gui():
             self.db = db
             self.on_change = on_change
 
-            cols = ("Naam", "Adres", "BTW", "E-mail")
+            cols = ("Naam", "Adres", "BTW", "E-mail", "Website")
             self.tree = ttk.Treeview(self, columns=cols, show="headings", selectmode="browse")
             for c in cols:
                 self.tree.heading(c, text=c)
@@ -518,7 +518,7 @@ def start_gui():
                 self.tree.delete(it)
             for idx, c in enumerate(self.db.clients_sorted()):
                 name = self.db.display_name(c)
-                vals = (name, c.address or "", c.vat or "", c.email or "")
+                vals = (name, c.address or "", c.vat or "", c.email or "", c.website or "")
                 tag = "odd" if idx % 2 == 0 else "even"
                 self.tree.insert("", "end", values=vals, tags=(tag,))
             self.tree.tag_configure("odd", background=TREE_ODD_BG)
@@ -540,6 +540,7 @@ def start_gui():
                 ("Adres", "address"),
                 ("BTW", "vat"),
                 ("E-mail", "email"),
+                ("Website", "website"),
             ]
             entries: Dict[str, tk.Entry] = {}
             for i, (lbl, key) in enumerate(fields):
@@ -873,6 +874,7 @@ def start_gui():
                     client_address = entries["address"].get().strip() or "Voorbeeldstraat 1, 2000 Antwerpen"
                     client_vat = entries["vat"].get().strip() or "BE0123456789"
                     client_email = entries["email"].get().strip() or "info@example.com"
+                    client_website = entries["website"].get().strip()
                     today_text = datetime.date.today().strftime("%Y-%m-%d")
                     preview_doc_number = format_document_number_for_display(
                         "BB-123",
@@ -992,12 +994,15 @@ def start_gui():
                         supplier_y + 110,
                     )
 
-                    client_text = (
-                        f"{client_name}\n"
-                        f"{client_address}\n"
-                        f"BTW: {client_vat}\n"
-                        f"E-mail: {client_email}"
-                    )
+                    client_lines = [
+                        client_name,
+                        client_address,
+                        f"BTW: {client_vat}",
+                        f"E-mail: {client_email}",
+                    ]
+                    if client_website:
+                        client_lines.append(f"Website: {client_website}")
+                    client_text = "\n".join(client_lines)
                     client_item = preview_canvas.create_text(
                         client_x,
                         client_y,
@@ -1922,15 +1927,18 @@ def start_gui():
             return None
 
         def add_supplier(self):
-            name = simpledialog.askstring("Nieuwe leverancier", "Naam:", parent=self)
-            if not name:
-                return
-            s = Supplier.from_any({"supplier": name})
-            self.db.upsert(s)
-            self.db.save(SUPPLIERS_DB_FILE)
-            self.refresh()
-            if self.on_change:
-                self.on_change()
+            dlg = self._EditDialog(
+                self,
+                Supplier(supplier=""),
+                title="Nieuwe leverancier",
+            )
+            self.wait_window(dlg)
+            if dlg.result:
+                self.db.upsert(dlg.result)
+                self.db.save(SUPPLIERS_DB_FILE)
+                self.refresh()
+                if self.on_change:
+                    self.on_change()
 
         def remove_sel(self):
             n = self._sel_name()
@@ -2016,9 +2024,15 @@ def start_gui():
                 messagebox.showerror("Fout", str(e), parent=self)
 
         class _EditDialog(tk.Toplevel):
-            def __init__(self, master, supplier: Supplier):
+            def __init__(
+                self,
+                master,
+                supplier: Supplier,
+                *,
+                title: str = "Leverancier bewerken",
+            ):
                 super().__init__(master)
-                self.title("Leverancier bewerken")
+                self.title(title)
                 self.result = None
                 fields = [
                     ("supplier", "Naam"),
@@ -2037,11 +2051,15 @@ def start_gui():
                     ("phone", "Tel"),
                 ]
                 self.vars = {}
+                first_entry = None
                 for i, (f, lbl) in enumerate(fields):
                     tk.Label(self, text=lbl + ":").grid(row=i, column=0, sticky="e", padx=4, pady=2)
                     var = tk.StringVar(value=getattr(supplier, f) or "")
-                    tk.Entry(self, textvariable=var, width=40).grid(row=i, column=1, padx=4, pady=2)
+                    entry = tk.Entry(self, textvariable=var, width=40)
+                    entry.grid(row=i, column=1, padx=4, pady=2)
                     self.vars[f] = var
+                    if first_entry is None:
+                        first_entry = entry
                 btn = tk.Frame(self)
                 btn.grid(row=len(fields), column=0, columnspan=2, pady=4)
                 tk.Button(btn, text="Opslaan", command=self._ok).pack(side="left", padx=4)
@@ -2049,6 +2067,8 @@ def start_gui():
                 self.transient(master)
                 _place_window_near_parent(self, master)
                 self.grab_set()
+                if first_entry is not None:
+                    self.after_idle(first_entry.focus_set)
 
             def _ok(self):
                 data = {f: v.get().strip() or None for f, v in self.vars.items()}
@@ -5959,6 +5979,7 @@ def start_gui():
                 "address": client.address if client else "",
                 "vat": client.vat if client else "",
                 "email": client.email if client else "",
+                "website": client.website if client else "",
                 "accent_color": client.accent_color if client else "",
                 "logo_path": client.logo_path if client else "",
                 "logo_crop": client.logo_crop if client else None,

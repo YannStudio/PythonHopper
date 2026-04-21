@@ -1473,6 +1473,37 @@ def _build_order_excel_section_data(
     return df, {"PartNumber", "Description"}, {"PartNumber", "Description"}
 
 
+def _pdf_order_column_label(column: Mapping[str, object]) -> str:
+    """Return a compact header label for PDF tables."""
+
+    key = _to_str(column.get("key")).strip().lower()
+    label = _to_str(column.get("label") or column.get("key") or "").strip()
+    label_lower = label.lower()
+
+    if key == "oppervlakte" or label_lower == "oppervlakte":
+        return "m\u00b2"
+    if key == "gewicht" or label_lower in {"gewicht", "gewicht (kg)"}:
+        return "kg"
+    return label or _to_str(column.get("key")).strip()
+
+
+def _order_company_lines(company_info: Mapping[str, object] | None) -> List[str]:
+    """Return formatted company lines for order headers."""
+
+    if not company_info:
+        return []
+    lines = [
+        f"<b>{company_info.get('name','')}</b>",
+        f"{company_info.get('address','')}",
+        f"BTW: {company_info.get('vat','')}",
+        f"E-mail: {company_info.get('email','')}",
+    ]
+    website = _to_str(company_info.get("website")).strip()
+    if website:
+        lines.append(f"Website: {website}")
+    return lines
+
+
 def _build_order_pdf_section_story(
     section: OrderDocumentSection,
     *,
@@ -1481,6 +1512,7 @@ def _build_order_pdf_section_story(
     palette: Mapping[str, str],
     section_title_style: ParagraphStyle,
     show_title: bool,
+    start_item_number: int = 1,
 ) -> None:
     context_kind_clean = (
         (_to_str(section.context_kind) or "productie").strip() or "productie"
@@ -1490,6 +1522,18 @@ def _build_order_pdf_section_story(
         [dict(col) for col in section.column_layout] if section.column_layout else []
     )
     custom_layout = bool(column_layout)
+    table_header_font_size = 9.5
+    table_body_font_size = 8.7
+    table_small_font_size = 8.2
+    item_column_title = "Item"
+    item_col_width = min(13 * mm, usable_w * 0.08)
+    item_col_width = max(item_col_width, min(10 * mm, usable_w * 0.05))
+    content_usable_w = max(usable_w - item_col_width, usable_w * 0.7)
+    item_col_width = usable_w - content_usable_w
+    try:
+        next_item_number = max(1, int(start_item_number))
+    except Exception:
+        next_item_number = 1
 
     if show_title:
         story.append(
@@ -1504,24 +1548,32 @@ def _build_order_pdf_section_story(
         story.append(Spacer(0, 6))
 
     if custom_layout:
-        head = []
+        head = [item_column_title]
         for column in column_layout:
-            header = _to_str(column.get("label") or column.get("key") or "").strip()
+            header = _pdf_order_column_label(column)
             if not header:
                 header = column.get("key", "")
             column["label"] = header
             head.append(header)
     elif is_raw_material_order:
-        head = ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
+        head = [item_column_title, "Profiel", "Materiaal", "Lengte", "St.", "kg"]
     else:
-        head = ["PartNumber", "Omschrijving", "Materiaal", "St.", "m²", "kg"]
+        head = [
+            item_column_title,
+            "PartNumber",
+            "Omschrijving",
+            "Materiaal",
+            "St.",
+            "m\u00b2",
+            "kg",
+        ]
 
     def wrap_cell_html(val: str, small=False, align=None):
         style = ParagraphStyle(
             "cellsmall" if small else "cell",
             fontName="Helvetica",
-            fontSize=8.5 if small else 9,
-            leading=10.5 if small else 11,
+            fontSize=table_small_font_size if small else table_body_font_size,
+            leading=10.0 if small else 10.7,
             wordWrap="CJK",
         )
         if align:
@@ -1546,15 +1598,17 @@ def _build_order_pdf_section_story(
         col_fracs[0] += extra_pn_frac
         col_fracs[1] -= extra_pn_frac
 
-        desc_w = usable_w * col_fracs[1]
-        mat_w = usable_w * col_fracs[2]
+        desc_w = content_usable_w * col_fracs[1]
+        mat_w = content_usable_w * col_fracs[2]
         try:
-            header_width = stringWidth("Materiaal", "Helvetica-Bold", 10) + 6
+            header_width = (
+                stringWidth("Materiaal", "Helvetica-Bold", table_header_font_size) + 6
+            )
             material_values = [
                 stringWidth(
                     _material_nowrap(_clean_order_cell_text(item.get("Materiaal", ""))),
                     "Helvetica",
-                    9,
+                    table_small_font_size,
                 )
                 for item in section.items
                 if _clean_order_cell_text(item.get("Materiaal", ""))
@@ -1575,12 +1629,12 @@ def _build_order_pdf_section_story(
         except Exception:
             pass
         standard_col_widths = [
-            usable_w * col_fracs[0],
+            content_usable_w * col_fracs[0],
             desc_w,
             mat_w,
-            usable_w * col_fracs[3],
-            usable_w * col_fracs[4],
-            usable_w * col_fracs[5],
+            content_usable_w * col_fracs[3],
+            content_usable_w * col_fracs[4],
+            content_usable_w * col_fracs[5],
         ]
 
     def description_cell_html(val: object, width: float) -> str:
@@ -1588,7 +1642,7 @@ def _build_order_pdf_section_story(
             _clean_order_cell_text(val),
             max(24.0, width),
             "Helvetica",
-            9,
+            table_body_font_size,
             max_lines=2,
         )
         return "<br/>".join(escape(line) for line in lines)
@@ -1601,8 +1655,14 @@ def _build_order_pdf_section_story(
             if column.get("total_weight"):
                 weight_idx = idx
                 break
-        for item in section.items:
-            row_cells: List[Paragraph] = []
+        for row_offset, item in enumerate(section.items):
+            row_cells: List[Paragraph] = [
+                wrap_cell_html(
+                    str(next_item_number + row_offset),
+                    small=True,
+                    align="CENTER",
+                )
+            ]
             for idx, column in enumerate(column_layout):
                 key = column.get("key")
                 value = item.get(key, "") if key else ""
@@ -1625,7 +1685,9 @@ def _build_order_pdf_section_story(
             data.append(row_cells)
 
         if weight_idx is not None and section.total_weight_kg is not None:
-            total_row: List[Paragraph] = []
+            total_row: List[Paragraph] = [
+                wrap_cell_html("", small=True, align="CENTER")
+            ]
             for idx, column in enumerate(column_layout):
                 align = (
                     _to_str(column.get("justify") or "left").strip().upper()
@@ -1656,7 +1718,7 @@ def _build_order_pdf_section_story(
             data.append(total_row)
             total_row_index = len(data) - 1
     elif is_raw_material_order:
-        for item in section.items:
+        for row_offset, item in enumerate(section.items):
             prof = _to_str(item.get("Profiel", ""))
             mat = _to_str(item.get("Materiaal", ""))
             length_val = item.get("Lengte", "")
@@ -1667,6 +1729,11 @@ def _build_order_pdf_section_story(
             weight = _num_to_2dec(weight_val)
             data.append(
                 [
+                    wrap_cell_html(
+                        str(next_item_number + row_offset),
+                        small=True,
+                        align="CENTER",
+                    ),
                     wrap_cell_html(prof, small=False, align="LEFT"),
                     wrap_cell_html(mat, small=False, align="LEFT"),
                     wrap_cell_html(length, small=True, align="RIGHT"),
@@ -1676,6 +1743,7 @@ def _build_order_pdf_section_story(
             )
         if section.total_weight_kg is not None:
             total_row = [
+                wrap_cell_html("", small=True, align="CENTER"),
                 wrap_cell_html("Totaal", small=False, align="LEFT"),
                 wrap_cell_html("", small=False, align="LEFT"),
                 wrap_cell_html("", small=True, align="RIGHT"),
@@ -1689,12 +1757,12 @@ def _build_order_pdf_section_story(
             data.append(total_row)
             total_row_index = len(data) - 1
     else:
-        for item in section.items:
+        for row_offset, item in enumerate(section.items):
             pn = escape(_clean_order_cell_text(item.get("PartNumber", "")))
             desc_width = (
                 (standard_col_widths[1] - 10)
                 if standard_col_widths
-                else (usable_w * 0.40)
+                else (content_usable_w * 0.40)
             )
             desc = description_cell_html(item.get("Description", ""), desc_width)
             mat = _material_nowrap(_clean_order_cell_text(item.get("Materiaal", "")))
@@ -1703,6 +1771,11 @@ def _build_order_pdf_section_story(
             gew = _num_to_2dec(item.get("Gewicht", ""))
             data.append(
                 [
+                    wrap_cell_html(
+                        str(next_item_number + row_offset),
+                        small=True,
+                        align="CENTER",
+                    ),
                     wrap_cell_html(pn, small=False, align="LEFT"),
                     wrap_cell_html(desc, small=False, align="LEFT"),
                     wrap_cell_html(mat, small=True, align="RIGHT"),
@@ -1721,19 +1794,26 @@ def _build_order_pdf_section_story(
                 weight_val = 0.0
             weights.append(weight_val if weight_val > 0 else 1.0)
         total_weight_units = sum(weights) or len(weights) or 1
-        col_widths = [usable_w * (w / total_weight_units) for w in weights]
+        col_widths = [item_col_width] + [
+            content_usable_w * (w / total_weight_units) for w in weights
+        ]
     elif is_raw_material_order:
         col_fracs = [0.32, 0.24, 0.16, 0.12, 0.16]
-        col_widths = [usable_w * frac for frac in col_fracs]
-    else:
-        col_widths = standard_col_widths or [
-            usable_w * 0.22,
-            usable_w * 0.40,
-            usable_w * 0.14,
-            usable_w * 0.06,
-            usable_w * 0.09,
-            usable_w * 0.09,
+        col_widths = [item_col_width] + [
+            content_usable_w * frac for frac in col_fracs
         ]
+    else:
+        col_widths = [item_col_width] + (
+            standard_col_widths
+            or [
+                content_usable_w * 0.22,
+                content_usable_w * 0.40,
+                content_usable_w * 0.14,
+                content_usable_w * 0.06,
+                content_usable_w * 0.09,
+                content_usable_w * 0.09,
+            ]
+        )
 
     tbl = LongTable(data, colWidths=col_widths, repeatRows=1)
     style_cmds = [
@@ -1741,7 +1821,7 @@ def _build_order_pdf_section_story(
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor(palette["accent_text"])),
         ("TEXTCOLOR", (0, 1), (-1, -1), colors.HexColor(ORDER_TEXT_COLOR)),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 10),
+        ("FONTSIZE", (0, 0), (-1, 0), table_header_font_size),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("BOX", (0, 0), (-1, -1), 0.45, colors.HexColor(ORDER_TABLE_OUTLINE_COLOR)),
         ("INNERGRID", (0, 0), (-1, -1), 0.3, colors.HexColor(ORDER_TABLE_GRID_COLOR)),
@@ -1761,18 +1841,25 @@ def _build_order_pdf_section_story(
         ("BOTTOMPADDING", (0, 1), (-1, -1), 5),
     ]
     if custom_layout and column_layout:
-        for idx, column in enumerate(column_layout):
+        style_cmds.append(("ALIGN", (0, 0), (0, -1), "CENTER"))
+        for idx, column in enumerate(column_layout, start=1):
             align = _to_str(column.get("justify") or "left").strip().upper() or "LEFT"
             if align not in {"LEFT", "RIGHT", "CENTER"}:
                 align = "LEFT"
             style_cmds.append(("ALIGN", (idx, 0), (idx, -1), align))
     elif is_raw_material_order:
-        style_cmds.append(("ALIGN", (2, 0), (4, -1), "RIGHT"))
+        style_cmds.extend(
+            [
+                ("ALIGN", (0, 0), (0, -1), "CENTER"),
+                ("ALIGN", (3, 0), (5, -1), "RIGHT"),
+            ]
+        )
     else:
         style_cmds.extend(
             [
-                ("ALIGN", (2, 0), (5, 0), "RIGHT"),
-                ("ALIGN", (2, 1), (5, -1), "RIGHT"),
+                ("ALIGN", (0, 0), (0, -1), "CENTER"),
+                ("ALIGN", (3, 0), (6, 0), "RIGHT"),
+                ("ALIGN", (3, 1), (6, -1), "RIGHT"),
             ]
         )
     if total_row_index is not None:
@@ -1924,12 +2011,7 @@ def generate_pdf_order_platypus(
     if order_remark_has_content and not place_remark_in_delivery_block:
         doc_lines.append(f"Opmerking: {order_remark_text}")
 
-    company_lines = [
-        f"<b>{company_info.get('name','')}</b>",
-        f"{company_info.get('address','')}",
-        f"BTW: {company_info.get('vat','')}",
-        f"E-mail: {company_info.get('email','')}",
-    ]
+    company_lines = _order_company_lines(company_info)
 
     logo_flowable = None
     logo_path_info = company_info.get("logo_path") if company_info else None
@@ -2533,12 +2615,7 @@ def generate_pdf_order_platypus(
     label_title = label_kind_clean[0].upper() + label_kind_clean[1:]
     group_summary = _order_group_summary_text(normalized_sections)
 
-    company_lines = [
-        f"<b>{company_info.get('name', '')}</b>",
-        f"{company_info.get('address', '')}",
-        f"BTW: {company_info.get('vat', '')}",
-        f"E-mail: {company_info.get('email', '')}",
-    ]
+    company_lines = _order_company_lines(company_info)
 
     logo_flowable = None
     logo_path_info = company_info.get("logo_path") if company_info else None
@@ -2741,6 +2818,7 @@ def generate_pdf_order_platypus(
         story.append(Spacer(0, 10))
 
     usable_w = width - 2 * margin
+    next_item_number = 1
     for idx, section in enumerate(normalized_sections):
         if idx > 0:
             story.append(Spacer(0, 12))
@@ -2751,7 +2829,9 @@ def generate_pdf_order_platypus(
             palette=palette,
             section_title_style=section_title_style,
             show_title=multiple_sections,
+            start_item_number=next_item_number,
         )
+        next_item_number += len(section.items)
 
     if en1090_required:
         note_text = EN1090_NOTE_TEXT if en1090_note is None else _to_str(en1090_note)
@@ -3163,6 +3243,7 @@ def write_order_excel(
                 ("Adres", company_info.get("address", "")),
                 ("BTW", company_info.get("vat", "")),
                 ("E-mail", company_info.get("email", "")),
+                ("Website", company_info.get("website", "")),
                 ("", ""),
             ]
         )
@@ -3546,6 +3627,15 @@ def copy_per_production_and_orders(
     finish_export_filter = _clean_export_filter(finish_export_filter)
     opticutter_export_filter = _clean_export_filter(opticutter_export_filter)
 
+    def _normalized_production_name(value: object) -> str:
+        return _to_str(value).strip() or "_Onbekend"
+
+    def _production_enabled(value: object) -> bool:
+        production_name = _normalized_production_name(value)
+        if not production_export_filter:
+            return True
+        return production_export_filter.get(production_name, True)
+
     opticutter_context: OpticutterExportContext | None = None
     if opticutter_analysis is not None and opticutter_analysis.profiles:
         try:
@@ -3575,7 +3665,9 @@ def copy_per_production_and_orders(
     step_seen: Dict[str, set[str]] = defaultdict(set)
     finish_groups: Dict[str, Dict[str, object]] = {}
     for _, row in bom_df.iterrows():
-        prod = (row.get("Production") or "").strip() or "_Onbekend"
+        prod = _normalized_production_name(row.get("Production"))
+        if not _production_enabled(prod):
+            continue
         prod_to_rows[prod].append(row)
         pn = _to_str(row.get("PartNumber")).strip()
         finish_text = _to_str(row.get("Finish")).strip()
@@ -3691,6 +3783,7 @@ def copy_per_production_and_orders(
         "address": client.address if client else "",
         "vat": client.vat if client else "",
         "email": client.email if client else "",
+        "website": client.website if client else "",
         "accent_color": client.accent_color if client else "",
         "logo_path": client.logo_path if client else "",
         "logo_crop": client.logo_crop if client else None,
@@ -4375,8 +4468,17 @@ def copy_per_production_and_orders(
             bom_filename = make_bom_export_filename(
                 bom_source_path, today, _transform_export_name
             )
+            if production_export_filter:
+                bom_export_df = bom_df[
+                    bom_df.apply(
+                        lambda row: _production_enabled(row.get("Production")),
+                        axis=1,
+                    )
+                ].copy()
+            else:
+                bom_export_df = bom_df
             _export_bom_workbook(
-                bom_df, dest, bom_filename
+                bom_export_df, dest, bom_filename
             )
         except Exception as exc:  # pragma: no cover - unexpected
             raise RuntimeError(f"Kon BOM-export niet opslaan: {exc}") from exc

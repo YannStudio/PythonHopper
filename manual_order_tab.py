@@ -829,7 +829,7 @@ class ManualOrderTab(tk.Frame):
             padx=(6, 0),
             pady=(8, 0),
         )
-        self.supplier_combo = ttk.Combobox(
+        self.supplier_combo = SearchableCombobox(
             supplier_field,
             textvariable=self.supplier_var,
             width=field_char_width,
@@ -900,7 +900,12 @@ class ManualOrderTab(tk.Frame):
         self._update_doc_name_preview()
 
         tk.Label(header, text="Opmerkingen:").grid(row=7, column=0, sticky="nw", pady=(8, 0))
-        self.remark_text = tk.Text(header, height=4, wrap="word")
+        self.remark_text = tk.Text(
+            header,
+            height=4,
+            wrap="word",
+            font=base_font,
+        )
         self.remark_text.grid(
             row=7,
             column=1,
@@ -1117,7 +1122,7 @@ class ManualOrderTab(tk.Frame):
                 for s in self.suppliers_db.suppliers_sorted()
             )
         current_supplier = self.supplier_var.get()
-        self.supplier_combo.configure(values=supplier_opts)
+        self.supplier_combo.set_choices(supplier_opts)
         if current_supplier not in supplier_opts:
             self.supplier_var.set("Geen")
 

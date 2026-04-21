@@ -66,3 +66,61 @@ def test_build_document_basename_ignores_prefix_only_doc_number():
         )
         == "Leien-60x80"
     )
+
+
+class _DummyVar:
+    def __init__(self, value=""):
+        self.value = value
+
+    def get(self):
+        return self.value
+
+    def set(self, value):
+        self.value = value
+
+
+class _DummyCombo:
+    def __init__(self):
+        self.values = []
+
+    def configure(self, **kwargs):
+        if "values" in kwargs:
+            self.values = list(kwargs["values"])
+
+
+class _DummySearchableCombo(_DummyCombo):
+    def __init__(self):
+        super().__init__()
+        self.set_choices_calls = []
+
+    def set_choices(self, values):
+        self.values = list(values)
+        self.set_choices_calls.append(list(values))
+
+
+class _FakeSuppliersDb:
+    def suppliers_sorted(self):
+        return ["Leverancier A", "Leverancier B"]
+
+    def display_name(self, supplier):
+        return supplier
+
+
+def test_refresh_data_uses_searchable_supplier_choices():
+    tab = ManualOrderTab.__new__(ManualOrderTab)
+    tab.clients_db = None
+    tab.suppliers_db = _FakeSuppliersDb()
+    tab.delivery_db = None
+    tab.client_var = _DummyVar("")
+    tab.client_combo = _DummyCombo()
+    tab.supplier_var = _DummyVar("Leverancier B")
+    tab.supplier_combo = _DummySearchableCombo()
+    tab.delivery_var = _DummyVar("")
+    tab.delivery_combo = _DummyCombo()
+
+    ManualOrderTab.refresh_data(tab)
+
+    assert tab.supplier_combo.set_choices_calls == [
+        ["Geen", "Leverancier A", "Leverancier B"]
+    ]
+    assert tab.supplier_var.get() == "Leverancier B"

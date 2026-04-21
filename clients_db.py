@@ -55,6 +55,7 @@ class ClientsDB:
                 c.address or "",
                 c.vat or "",
                 c.email or "",
+                c.website or "",
             ]).lower()
             if q in hay:
                 res.append(c)
@@ -77,7 +78,7 @@ class ClientsDB:
             cur = self.clients[i]
             for f in asdict(client):
                 val = getattr(client, f)
-                if f in {"logo_path", "logo_crop", "accent_color"}:
+                if f in {"logo_path", "logo_crop", "accent_color", "website"}:
                     setattr(cur, f, val)
                 elif val not in (None, ""):
                     setattr(cur, f, val)

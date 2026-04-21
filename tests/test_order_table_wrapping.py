@@ -57,4 +57,94 @@ def test_order_pdf_section_uses_square_meter_header():
     )
 
     table = story[-1]
-    assert table._cellvalues[0][4] == "m²"
+    assert table._cellvalues[0][0] == "Item"
+    assert table._cellvalues[0][5] == "m\u00b2"
+    assert table._cellvalues[1][0].getPlainText() == "1"
+
+
+def test_order_pdf_section_numbers_raw_material_rows_and_keeps_total_label():
+    pytest.importorskip("reportlab")
+    from reportlab.lib.styles import ParagraphStyle
+
+    section = OrderDocumentSection(
+        context_label="Brutemateriaal",
+        context_kind="brutemateriaal",
+        items=[
+            {
+                "Profiel": "Koker 40x40",
+                "Materiaal": "S235",
+                "Lengte": "6000",
+                "St.": 2,
+                "kg": "25.4",
+            },
+            {
+                "Profiel": "L-profiel 30x30",
+                "Materiaal": "S235",
+                "Lengte": "3000",
+                "St.": 1,
+                "kg": "8.1",
+            },
+        ],
+        total_weight_kg=33.5,
+    )
+    story = []
+
+    _build_order_pdf_section_story(
+        section,
+        story=story,
+        usable_w=500,
+        palette=_order_palette({}),
+        section_title_style=ParagraphStyle("section"),
+        show_title=False,
+        start_item_number=4,
+    )
+
+    table = story[-1]
+    assert table._cellvalues[0][0] == "Item"
+    assert table._cellvalues[1][0].getPlainText() == "4"
+    assert table._cellvalues[2][0].getPlainText() == "5"
+    assert table._cellvalues[3][0].getPlainText() == ""
+    assert table._cellvalues[3][1].getPlainText() == "Totaal"
+
+
+def test_order_pdf_section_compacts_custom_area_and_weight_headers():
+    pytest.importorskip("reportlab")
+    from reportlab.lib.styles import ParagraphStyle
+
+    section = OrderDocumentSection(
+        context_label="Document",
+        context_kind="document",
+        items=[
+            {
+                "part_number": "200426-p01",
+                "description": "Test piece - ISO 9606-1:20",
+                "material": "S235JR",
+                "quantity": 20,
+                "Oppervlakte": 0.10,
+                "Gewicht": 2.50,
+            }
+        ],
+        total_weight_kg=2.50,
+        column_layout=[
+            {"key": "part_number", "label": "Artikel nr.", "justify": "left", "weight": 1.8},
+            {"key": "description", "label": "Omschrijving", "justify": "left", "weight": 2.9},
+            {"key": "material", "label": "Materiaal", "justify": "left", "weight": 1.8},
+            {"key": "quantity", "label": "Aantal", "justify": "right", "numeric": True, "integer": True, "weight": 0.9},
+            {"key": "Oppervlakte", "label": "Oppervlakte", "justify": "right", "numeric": True, "weight": 1.1},
+            {"key": "Gewicht", "label": "Gewicht (kg)", "justify": "right", "numeric": True, "weight": 1.1, "total_weight": True},
+        ],
+    )
+    story = []
+
+    _build_order_pdf_section_story(
+        section,
+        story=story,
+        usable_w=500,
+        palette=_order_palette({}),
+        section_title_style=ParagraphStyle("section"),
+        show_title=False,
+    )
+
+    table = story[-1]
+    assert table._cellvalues[0][5] == "m\u00b2"
+    assert table._cellvalues[0][6] == "kg"
