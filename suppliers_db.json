@@ -1580,17 +1580,34 @@
       "product_type": "Metal processing",
       "product_description": "Metal processing - 2D / 3D laser & bending",
       "favorite": false
+    },
+    {
+      "supplier": "Van Eycken",
+      "description": "Metal processing - Bending Tubes & pipes",
+      "supplier_id": null,
+      "adres_1": "Industrie West-Grijpen",
+      "adres_2": "Walstraat 9",
+      "postcode": "3300",
+      "gemeente": "Tienen",
+      "land": "Belgie",
+      "btw": null,
+      "contact_sales": "Jolien Lelièvre",
+      "sales_email": "info@vaneycken.be",
+      "phone": "+32 (0)16 499 700",
+      "product_type": null,
+      "product_description": "Metal processing - Bending Tubes & pipes",
+      "favorite": false
     }
   ],
   "defaults_by_production": {
-    "Tube laser L": "Saey",
+    "Tube laser L": "Van Eycken",
     "Lasercutting": "Productora",
     "Bending": "Kersten Europe",
     "Sheetmetal +4m": "Meeuwsen bv",
     "Sheetmetal": "Productora",
     "Glass": "Sprimo Glass",
     "Tube laser": "Productora",
-    "Cutting::Opticutter": "Saey",
+    "Cutting::Opticutter": "Van Eycken",
     "Sticker": "Atoz beletteringen bvba",
     "Weld assembly alu": "Productora",
     "Groendak": "Dirk Maris nv"
