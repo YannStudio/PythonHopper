@@ -1525,9 +1525,9 @@ def _build_order_pdf_section_story(
     table_header_font_size = 9.5
     table_body_font_size = 8.7
     table_small_font_size = 8.2
-    item_column_title = "Item"
-    item_col_width = min(13 * mm, usable_w * 0.08)
-    item_col_width = max(item_col_width, min(10 * mm, usable_w * 0.05))
+    item_column_title = "Nr."
+    item_col_width = min(11 * mm, usable_w * 0.07)
+    item_col_width = max(item_col_width, min(9 * mm, usable_w * 0.045))
     content_usable_w = max(usable_w - item_col_width, usable_w * 0.7)
     item_col_width = usable_w - content_usable_w
     try:

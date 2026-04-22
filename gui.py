@@ -1055,6 +1055,20 @@ def start_gui():
                         ["PN-001", "Voetplaat voor voorbeeldbon", "S235JR", "2", "1,25", "4,80"],
                         ["PN-002", "Tweede regel om de layout te tonen", "RAL9005", "1", "", "2,10"],
                     ]
+                    col_fracs = [0.07, 0.18, 0.37, 0.17, 0.07, 0.07, 0.07]
+                    headers = [
+                        "Nr.",
+                        "PartNumber",
+                        "Omschrijving",
+                        "Materiaal",
+                        "St.",
+                        "m²",
+                        "kg",
+                    ]
+                    rows = [
+                        ["1", "PN-001", "Voetplaat voor voorbeeldbon", "S235JR", "2", "1,25", "4,80"],
+                        ["2", "PN-002", "Tweede regel om de layout te tonen", "RAL9005", "1", "", "2,10"],
+                    ]
                     row_h = 42
                     x_positions = [table_x]
                     for frac in col_fracs:
@@ -1079,15 +1093,25 @@ def start_gui():
                                 table_y + row_h,
                                 fill=ORDER_TABLE_OUTLINE_COLOR,
                             )
-                        preview_canvas.create_text(
-                            x0 + 6,
-                            table_y + 12,
-                            anchor="nw",
-                            text=header,
-                            font=("TkDefaultFont", 10, "bold"),
-                            fill=accent_text_color,
-                            width=max(20, (x1 - x0) - 12),
-                        )
+                        if idx == 0:
+                            preview_canvas.create_text(
+                                (x0 + x1) / 2,
+                                table_y + 12,
+                                anchor="n",
+                                text=header,
+                                font=("TkDefaultFont", 10, "bold"),
+                                fill=accent_text_color,
+                            )
+                        else:
+                            preview_canvas.create_text(
+                                x0 + 6,
+                                table_y + 12,
+                                anchor="nw",
+                                text=header,
+                                font=("TkDefaultFont", 10, "bold"),
+                                fill=accent_text_color,
+                                width=max(20, (x1 - x0) - 12),
+                            )
 
                     for row_index, row_values in enumerate(rows, start=1):
                         y0 = table_y + row_h * row_index
@@ -1112,17 +1136,28 @@ def start_gui():
                                     y1,
                                     fill=ORDER_TABLE_GRID_COLOR,
                                 )
-                            anchor = "ne" if idx >= 2 else "nw"
-                            text_x = x1 - 6 if idx >= 2 else x0 + 6
-                            preview_canvas.create_text(
-                                text_x,
-                                y0 + 11,
-                                anchor=anchor,
-                                text=value,
-                                font=("TkDefaultFont", 9),
-                                fill=ORDER_TEXT_COLOR,
-                                width=max(20, (x1 - x0) - 12),
-                            )
+                            if idx == 0:
+                                preview_canvas.create_text(
+                                    (x0 + x1) / 2,
+                                    y0 + 11,
+                                    anchor="n",
+                                    text=value,
+                                    font=("TkDefaultFont", 9),
+                                    fill=ORDER_TEXT_COLOR,
+                                )
+                            else:
+                                is_numeric = idx >= 4
+                                anchor = "ne" if is_numeric else "nw"
+                                text_x = x1 - 6 if is_numeric else x0 + 6
+                                preview_canvas.create_text(
+                                    text_x,
+                                    y0 + 11,
+                                    anchor=anchor,
+                                    text=value,
+                                    font=("TkDefaultFont", 9),
+                                    fill=ORDER_TEXT_COLOR,
+                                    width=max(20, (x1 - x0) - 12),
+                                )
 
                     footer_y = table_y + row_h * (len(rows) + 1) + 26
                     preview_canvas.create_text(
@@ -2114,6 +2149,19 @@ def start_gui():
         EN1090_MIN_COLUMN_WIDTH = 32
         EN1090_COLUMN_PADDING = 12
         EN1090_HEADER_TEXT = "EN 1090"
+        GROUP_APART_LABEL = "Apart"
+        GROUP_INDICATOR_WIDTH = 10
+        GROUP_INDICATOR_GAP = 6
+        GROUP_ACCENT_COLORS = (
+            "#D55E00",
+            "#009E73",
+            "#0072B2",
+            "#CC79A7",
+            "#E69F00",
+            "#56B4E9",
+            "#6C5CE7",
+            "#7A5230",
+        )
 
         @staticmethod
         def _install_supplier_focus_behavior(combo: "ttk.Combobox") -> None:
@@ -2546,6 +2594,15 @@ def start_gui():
 
             header_row = tk.Frame(left)
             header_row.pack(fill="x", pady=(8, 3))
+            self._group_header_spacer = tk.Frame(
+                header_row,
+                width=self.GROUP_INDICATOR_WIDTH,
+                background=left.cget("bg"),
+            )
+            self._group_header_spacer.pack(
+                side="left",
+                padx=(0, self.GROUP_INDICATOR_GAP),
+            )
             header_label_kwargs = dict(
                 anchor=tk.W,
                 justify=tk.LEFT,
@@ -2609,10 +2666,21 @@ def start_gui():
             self.rows = []
             self.combo_by_key: Dict[str, ttk.Combobox] = {}
             self._en1090_frames: List[tk.Frame] = []
+            self._rows_background = left.cget("bg")
 
             def add_row(display_text: str, sel_key: str, metadata: Dict[str, str]):
-                row = tk.Frame(left)
+                row = tk.Frame(left, background=self._rows_background)
                 row.pack(fill="x", pady=3)
+                group_stripe = tk.Frame(
+                    row,
+                    width=self.GROUP_INDICATOR_WIDTH,
+                    background=self._rows_background,
+                )
+                group_stripe.pack(
+                    side="left",
+                    fill="y",
+                    padx=(0, self.GROUP_INDICATOR_GAP),
+                )
                 export_var = tk.IntVar(value=1)
                 self.export_vars[sel_key] = export_var
                 export_check = tk.Checkbutton(
@@ -2625,6 +2693,7 @@ def start_gui():
                     text=display_text,
                     width=self.LABEL_COLUMN_WIDTH,
                     anchor="w",
+                    background=self._rows_background,
                 )
                 var = tk.StringVar()
                 self.sel_vars[sel_key] = var
@@ -2740,7 +2809,9 @@ def start_gui():
 
                 self.rows.append((sel_key, combo))
                 self.combo_by_key[sel_key] = combo
-                self.row_meta[sel_key] = dict(metadata)
+                metadata_record = dict(metadata)
+                metadata_record["base_display"] = display_text
+                self.row_meta[sel_key] = metadata_record
 
                 for trace_var in (
                     var,
@@ -2754,6 +2825,8 @@ def start_gui():
                     trace_var.trace_add("write", lambda *_args: self._sync_grouped_rows())
 
                 row_widgets = {
+                    "row": row,
+                    "group_stripe": group_stripe,
                     "export_check": export_check,
                     "label": row_label,
                     "group_combo": group_combo,
@@ -2763,6 +2836,8 @@ def start_gui():
                     "doc_entry": doc_entry,
                     "remark_entry": remark_entry,
                     "delivery_combo": dcombo,
+                    "label_default_fg": row_label.cget("fg"),
+                    "label_default_font": row_label.cget("font"),
                 }
                 self._row_widget_maps.append(row_widgets)
                 self._row_widgets_by_key[sel_key] = row_widgets
@@ -3339,6 +3414,154 @@ def start_gui():
             return kind in {"production", "finish"}
 
         @staticmethod
+        def _group_code_from_index(index):
+            try:
+                remaining = int(index)
+            except (TypeError, ValueError):
+                remaining = 0
+            remaining = max(remaining, 0)
+            letters = ""
+            while True:
+                remaining, offset = divmod(remaining, 26)
+                letters = chr(ord("A") + offset) + letters
+                if remaining == 0:
+                    return letters
+                remaining -= 1
+
+        def _base_row_label(self, sel_key: str) -> str:
+            metadata = self.row_meta.get(sel_key, {})
+            label = _to_str(
+                metadata.get("base_display")
+                or metadata.get("display")
+                or metadata.get("identifier")
+            ).strip()
+            return label or sel_key
+
+        def _group_root_code_map(self, group_links) -> Dict[str, str]:
+            root_codes: Dict[str, str] = {}
+            seen_roots: set[str] = set()
+            counters_by_kind: Dict[str, int] = {}
+            for row_key, _combo in self.rows:
+                kind, _identifier = self._parse_selection_key(row_key)
+                if not self._is_groupable_kind(kind):
+                    continue
+                root_key = self._resolve_group_root(row_key, group_links)
+                if root_key in seen_roots:
+                    continue
+                seen_roots.add(root_key)
+                index = counters_by_kind.get(kind, 0)
+                counters_by_kind[kind] = index + 1
+                root_codes[root_key] = self._group_code_from_index(index)
+            return root_codes
+
+        def _group_root_color_map(self, group_links) -> Dict[str, str]:
+            color_map: Dict[str, str] = {}
+            root_codes = self._group_root_code_map(group_links)
+            roots_by_kind: Dict[str, List[str]] = {"production": [], "finish": []}
+            for root_key in root_codes:
+                kind, _identifier = self._parse_selection_key(root_key)
+                if kind not in roots_by_kind:
+                    roots_by_kind[kind] = []
+                roots_by_kind[kind].append(root_key)
+
+            for roots in roots_by_kind.values():
+                for index, root_key in enumerate(roots):
+                    color_map[root_key] = self.GROUP_ACCENT_COLORS[
+                        index % len(self.GROUP_ACCENT_COLORS)
+                    ]
+            return color_map
+
+        def _group_followers_by_root(self, group_links) -> Dict[str, List[str]]:
+            followers: Dict[str, List[str]] = {}
+            for row_key, _combo in self.rows:
+                kind, _identifier = self._parse_selection_key(row_key)
+                if not self._is_groupable_kind(kind):
+                    continue
+                root_key = self._resolve_group_root(row_key, group_links)
+                if root_key == row_key:
+                    followers.setdefault(root_key, [])
+                    continue
+                followers.setdefault(root_key, []).append(row_key)
+            return followers
+
+        def _group_visual_spec(self, sel_key: str, group_links):
+            base_label = self._base_row_label(sel_key)
+            kind, _identifier = self._parse_selection_key(sel_key)
+            if not self._is_groupable_kind(kind):
+                return {
+                    "text": base_label,
+                    "accent": "",
+                    "grouped": False,
+                    "is_root": False,
+                }
+
+            root_key = self._resolve_group_root(sel_key, group_links)
+            followers_by_root = self._group_followers_by_root(group_links)
+            root_codes = self._group_root_code_map(group_links)
+            color_map = self._group_root_color_map(group_links)
+            followers = followers_by_root.get(root_key, [])
+            has_group = bool(followers)
+            if root_key == sel_key and not has_group:
+                return {
+                    "text": base_label,
+                    "accent": "",
+                    "grouped": False,
+                    "is_root": True,
+                }
+
+            code = root_codes.get(root_key, "")
+            accent = color_map.get(root_key, "")
+            if root_key == sel_key:
+                suffix = f"[Bon {code}]" if code else "[Bon]"
+                text = f"{base_label} {suffix}"
+                return {
+                    "text": text,
+                    "accent": accent,
+                    "grouped": True,
+                    "is_root": True,
+                }
+
+            suffix = f"[Volgt {code}]" if code else "[Volgt]"
+            text = f"{base_label} {suffix}"
+            return {
+                "text": text,
+                "accent": accent,
+                "grouped": True,
+                "is_root": False,
+            }
+
+        def _apply_group_visuals(self, group_links) -> None:
+            base_bg = getattr(self, "_rows_background", None) or self.cget("bg")
+            for sel_key, _combo in self.rows:
+                widgets = self._row_widgets_by_key.get(sel_key, {})
+                row_label = widgets.get("label")
+                group_stripe = widgets.get("group_stripe")
+                default_fg = widgets.get("label_default_fg", "")
+                default_font = widgets.get("label_default_font", "")
+                if row_label is None:
+                    continue
+
+                spec = self._group_visual_spec(sel_key, group_links)
+                accent = _to_str(spec.get("accent")).strip()
+                grouped = bool(spec.get("grouped"))
+                is_root = bool(spec.get("is_root"))
+                try:
+                    row_label.configure(
+                        text=_to_str(spec.get("text")).strip() or self._base_row_label(sel_key),
+                        fg=accent if accent else default_fg,
+                        font=("TkDefaultFont", 10, "bold") if grouped and is_root else default_font,
+                        background=base_bg,
+                    )
+                except tk.TclError:
+                    pass
+
+                if group_stripe is not None:
+                    try:
+                        group_stripe.configure(background=accent if accent else base_bg)
+                    except tk.TclError:
+                        pass
+
+        @staticmethod
         def _resolve_group_root(sel_key: str, group_map: Dict[str, str]) -> str:
             current = sel_key
             seen = {sel_key}
@@ -3351,10 +3574,17 @@ def start_gui():
                 seen.add(parent)
                 current = parent
 
-        def _group_row_label(self, sel_key: str) -> str:
-            metadata = self.row_meta.get(sel_key, {})
-            label = _to_str(metadata.get("display") or metadata.get("identifier")).strip()
-            return label or sel_key
+        def _group_row_label(self, sel_key: str, group_links=None) -> str:
+            base_label = self._base_row_label(sel_key)
+            links = (
+                group_links
+                if group_links is not None
+                else self._sanitize_group_links(self._current_group_links_raw())
+            )
+            code = self._group_root_code_map(links).get(sel_key, "")
+            if code:
+                return f"Bon {code} - {base_label}"
+            return base_label
 
         def _current_group_links_raw(self) -> Dict[str, str]:
             raw_links: Dict[str, str] = {}
@@ -3489,10 +3719,12 @@ def start_gui():
                     continue
 
                 kind, _identifier = self._parse_selection_key(sel_key)
-                value_to_display = {"": "Apart"}
+                value_to_display = {"": self.GROUP_APART_LABEL}
                 if self._is_groupable_kind(kind):
                     for master_key in self._available_group_roots(sel_key, group_links):
-                        value_to_display[master_key] = self._group_row_label(master_key)
+                        value_to_display[master_key] = self._group_row_label(
+                            master_key, group_links
+                        )
                     group_combo.configure(
                         state="readonly" if len(value_to_display) > 1 else "disabled"
                     )
@@ -3505,7 +3737,12 @@ def start_gui():
                 self.group_value_to_display[sel_key] = value_to_display
                 self.group_display_to_value[sel_key] = display_to_value
                 group_combo["values"] = list(value_to_display.values())
-                group_var.set(value_to_display.get(group_links.get(sel_key, ""), "Apart"))
+                group_var.set(
+                    value_to_display.get(
+                        group_links.get(sel_key, ""),
+                        self.GROUP_APART_LABEL,
+                    )
+                )
 
             self._sync_grouped_rows(group_links)
 
@@ -3547,6 +3784,7 @@ def start_gui():
                     self._set_row_grouped_state(sel_key, bool(master_key))
                     if master_key:
                         self._copy_group_master_values(sel_key, master_key)
+                self._apply_group_visuals(sanitized_links)
             finally:
                 self._group_sync_in_progress = False
 

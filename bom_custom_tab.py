@@ -55,6 +55,7 @@ from __future__ import annotations
 
 import csv
 import os
+import re
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -146,6 +147,185 @@ def _dataframe_slice_to_clipboard(
             cells.append(normalized)
         lines.append("\t".join(cells))
     return "\n".join(lines)
+
+
+def _coerce_row_indices(
+    frame: pd.DataFrame, row_scope: Optional[Sequence[int]] = None
+) -> List[int]:
+    row_count = len(frame.index)
+    if row_scope is None:
+        return list(range(row_count))
+
+    rows: List[int] = []
+    seen: set[int] = set()
+    for raw in row_scope:
+        try:
+            index = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= index < row_count and index not in seen:
+            seen.add(index)
+            rows.append(index)
+    return rows
+
+
+def _coerce_search_columns(
+    frame: pd.DataFrame, columns: Optional[Sequence[str]] = None
+) -> List[str]:
+    if columns is None:
+        return list(frame.columns)
+
+    resolved: List[str] = []
+    seen: set[str] = set()
+    for column in columns:
+        if column in frame.columns and column not in seen:
+            seen.add(column)
+            resolved.append(column)
+    return resolved
+
+
+def _build_match_pattern(
+    query: str,
+    *,
+    match_mode: str = "contains",
+    case_sensitive: bool = False,
+) -> Optional[re.Pattern[str]]:
+    if not query:
+        return None
+
+    escaped = re.escape(query)
+    if match_mode == "exact":
+        expression = rf"^{escaped}$"
+    elif match_mode == "startswith":
+        expression = rf"^{escaped}"
+    else:
+        expression = escaped
+
+    flags = 0 if case_sensitive else re.IGNORECASE
+    return re.compile(expression, flags)
+
+
+def _cell_matches_query(
+    value: object,
+    query: str,
+    *,
+    match_mode: str = "contains",
+    case_sensitive: bool = False,
+) -> bool:
+    pattern = _build_match_pattern(
+        query,
+        match_mode=match_mode,
+        case_sensitive=case_sensitive,
+    )
+    if pattern is None:
+        return False
+    text = "" if pd.isna(value) else str(value)
+    return pattern.search(text) is not None
+
+
+def _replace_query_in_text(
+    text: str,
+    query: str,
+    replacement: str,
+    *,
+    match_mode: str = "contains",
+    case_sensitive: bool = False,
+) -> str:
+    pattern = _build_match_pattern(
+        query,
+        match_mode=match_mode,
+        case_sensitive=case_sensitive,
+    )
+    if pattern is None:
+        return text
+    if match_mode == "exact":
+        return replacement if pattern.fullmatch(text) is not None else text
+    if match_mode == "startswith":
+        return pattern.sub(replacement, text, count=1)
+    return pattern.sub(replacement, text)
+
+
+def _find_matching_rows(
+    frame: pd.DataFrame,
+    columns: Optional[Sequence[str]],
+    query: str,
+    *,
+    match_mode: str = "contains",
+    case_sensitive: bool = False,
+    row_scope: Optional[Sequence[int]] = None,
+) -> List[int]:
+    if frame.empty or not query:
+        return []
+
+    search_columns = _coerce_search_columns(frame, columns)
+    if not search_columns:
+        return []
+
+    matches: List[int] = []
+    for row_index in _coerce_row_indices(frame, row_scope):
+        row = frame.iloc[row_index]
+        for column in search_columns:
+            if _cell_matches_query(
+                row.get(column, ""),
+                query,
+                match_mode=match_mode,
+                case_sensitive=case_sensitive,
+            ):
+                matches.append(row_index)
+                break
+    return matches
+
+
+def _replace_matching_cells(
+    frame: pd.DataFrame,
+    columns: Optional[Sequence[str]],
+    query: str,
+    replacement: str,
+    *,
+    match_mode: str = "contains",
+    case_sensitive: bool = False,
+    row_scope: Optional[Sequence[int]] = None,
+) -> Tuple[pd.DataFrame, List[CellCoord], List[int]]:
+    if frame.empty or not query:
+        return frame.copy(deep=True), [], []
+
+    search_columns = _coerce_search_columns(frame, columns)
+    if not search_columns:
+        return frame.copy(deep=True), [], []
+
+    updated = frame.copy(deep=True)
+    changed_cells: List[CellCoord] = []
+    changed_rows: List[int] = []
+    seen_rows: set[int] = set()
+
+    for row_index in _coerce_row_indices(updated, row_scope):
+        for column in search_columns:
+            col_index = updated.columns.get_loc(column)
+            current = updated.iat[row_index, col_index]
+            current_text = "" if pd.isna(current) else str(current)
+            if not _cell_matches_query(
+                current_text,
+                query,
+                match_mode=match_mode,
+                case_sensitive=case_sensitive,
+            ):
+                continue
+            replaced = _replace_query_in_text(
+                current_text,
+                query,
+                replacement,
+                match_mode=match_mode,
+                case_sensitive=case_sensitive,
+            )
+            if replaced == current_text:
+                continue
+            updated.iat[row_index, col_index] = replaced
+            changed_cells.append((row_index, col_index))
+            if row_index not in seen_rows:
+                seen_rows.add(row_index)
+                changed_rows.append(row_index)
+
+    return updated, changed_cells, changed_rows
 
 
 class _UndoableTableModel(TableModel):
@@ -615,6 +795,14 @@ class _UndoAwareTable(Table):
 class BOMCustomTab(ttk.Frame):
     """Tabblad met spreadsheet-functionaliteit voor custom BOM-data."""
 
+    FIND_ALL_COLUMNS_LABEL: str = "Alle kolommen"
+    FIND_SCOPE_ALL_LABEL: str = "Hele tabel"
+    FIND_SCOPE_SELECTION_LABEL: str = "Geselecteerde rijen"
+    FIND_MATCH_MODE_LABELS: Dict[str, str] = {
+        "Bevat": "contains",
+        "Exact": "exact",
+        "Begint met": "startswith",
+    }
     HEADERS: Tuple[str, ...] = (
         "PartNumber",
         "Description",
@@ -704,6 +892,14 @@ class BOMCustomTab(ttk.Frame):
         self._baseline_dataframe: pd.DataFrame = pd.DataFrame()
         self._baseline_qty_reference: pd.Series = pd.Series(dtype=object)
         self._baseline_multiplier: Decimal = Decimal(1)
+        self._find_replace_dialog: Optional[tk.Toplevel] = None
+        self._find_replace_query_var: Optional[tk.StringVar] = None
+        self._find_replace_replacement_var: Optional[tk.StringVar] = None
+        self._find_replace_column_var: Optional[tk.StringVar] = None
+        self._find_replace_scope_var: Optional[tk.StringVar] = None
+        self._find_replace_match_mode_var: Optional[tk.StringVar] = None
+        self._find_replace_case_sensitive_var: Optional[tk.BooleanVar] = None
+        self._find_replace_summary_var: Optional[tk.StringVar] = None
 
         self.status_var = tk.StringVar(value="")
         self.qty_multiplier_var = tk.StringVar(value="")
@@ -766,6 +962,20 @@ class BOMCustomTab(ttk.Frame):
             command=self._reset_to_baseline,
         )
         reset_btn.pack(side="left", padx=(0, 4))
+
+        find_btn = ttk.Button(
+            left_controls,
+            text="Zoek / vervang",
+            command=self._open_find_replace_dialog,
+        )
+        find_btn.pack(side="left", padx=(0, 4))
+
+        delete_selection_btn = ttk.Button(
+            left_controls,
+            text="Verwijder selectie",
+            command=self._delete_selected_rows_from_toolbar,
+        )
+        delete_selection_btn.pack(side="left", padx=(0, 4))
 
         status_label = ttk.Label(controls, textvariable=self.status_var, anchor="w")
         status_label.grid(row=0, column=1, sticky="ew", padx=(4, 4))
@@ -851,6 +1061,15 @@ class BOMCustomTab(ttk.Frame):
             self.table.bind(sequence, self._on_redo, add="+")
         for sequence in ("<Delete>", "<BackSpace>"):
             self.table.bind(sequence, self._clear_selection, add="+")
+        for sequence in (
+            "<Control-h>",
+            "<Control-H>",
+            "<Command-h>",
+            "<Command-H>",
+            "<Meta-h>",
+            "<Meta-H>",
+        ):
+            self.table.bind(sequence, self._open_find_replace_dialog, add="+")
 
         self._reset_qty_multiplier_reference()
         self._store_baseline_state()
@@ -1096,6 +1315,400 @@ class BOMCustomTab(ttk.Frame):
         self._update_status(no_change_status)
         return 0
 
+    def _selected_row_indices(self) -> List[int]:
+        if not hasattr(self, "table"):
+            return []
+        table = self.table
+        rows = getattr(table, "multiplerowlist", None) or []
+        safe_rows = _coerce_row_indices(self.table_model.df, rows)
+        if safe_rows:
+            return safe_rows
+
+        current = getattr(table, "currentrow", None)
+        if current is None:
+            return []
+        return _coerce_row_indices(self.table_model.df, [current])
+
+    def _select_rows_in_table(self, rows: Sequence[int]) -> None:
+        if not hasattr(self, "table"):
+            return
+        safe_rows = _coerce_row_indices(self.table_model.df, rows)
+        table = self.table
+        try:
+            table.clearSelected()
+        except Exception:
+            pass
+
+        table.multiplerowlist = []
+        table.multiplecollist = []
+        if not safe_rows:
+            table.currentrow = None
+            try:
+                table.redraw()
+            except Exception:
+                pass
+            return
+
+        first = safe_rows[0]
+        try:
+            table.movetoSelection(row=first, col=0)
+        except Exception:
+            table.currentrow = first
+            table.currentcol = 0
+
+        table.setSelectedRows(safe_rows)
+        table.currentrow = first
+        table.startrow = first
+        table.endrow = safe_rows[-1]
+
+        try:
+            table.drawMultipleRows(safe_rows)
+        except Exception:
+            try:
+                table.drawSelectedRow()
+            except Exception:
+                pass
+        try:
+            table.rowheader.drawSelectedRows(safe_rows)
+        except Exception:
+            pass
+        try:
+            table.setLeftClickSrc("row")
+        except Exception:
+            setattr(table, "_Table__last_left_click_src", "row")
+        try:
+            table.focus_set()
+        except Exception:
+            pass
+
+    def _resolve_find_replace_columns(self) -> List[str]:
+        selected = (
+            self._find_replace_column_var.get().strip()
+            if self._find_replace_column_var is not None
+            else ""
+        )
+        if not selected or selected == self.FIND_ALL_COLUMNS_LABEL:
+            return list(self.HEADERS)
+        if selected in self.HEADERS:
+            return [selected]
+        return []
+
+    def _resolve_find_replace_row_scope(self) -> Optional[List[int]]:
+        scope = (
+            self._find_replace_scope_var.get().strip()
+            if self._find_replace_scope_var is not None
+            else self.FIND_SCOPE_ALL_LABEL
+        )
+        if scope == self.FIND_SCOPE_SELECTION_LABEL:
+            return self._selected_row_indices()
+        return None
+
+    def _resolve_find_replace_match_mode(self) -> str:
+        label = (
+            self._find_replace_match_mode_var.get().strip()
+            if self._find_replace_match_mode_var is not None
+            else ""
+        )
+        return self.FIND_MATCH_MODE_LABELS.get(label, "contains")
+
+    def _describe_find_matches(self) -> Tuple[List[int], str]:
+        query = (
+            self._find_replace_query_var.get().strip()
+            if self._find_replace_query_var is not None
+            else ""
+        )
+        if not query:
+            return [], "Vul zoektekst in."
+
+        columns = self._resolve_find_replace_columns()
+        if not columns:
+            return [], "Geen geldige kolommen geselecteerd."
+
+        row_scope = self._resolve_find_replace_row_scope()
+        if (
+            row_scope is not None
+            and self._find_replace_scope_var is not None
+            and self._find_replace_scope_var.get().strip()
+            == self.FIND_SCOPE_SELECTION_LABEL
+            and not row_scope
+        ):
+            return [], "Geen geselecteerde rijen als zoekbereik."
+
+        matches = _find_matching_rows(
+            self.table_model.df,
+            columns,
+            query,
+            match_mode=self._resolve_find_replace_match_mode(),
+            case_sensitive=bool(
+                self._find_replace_case_sensitive_var.get()
+            )
+            if self._find_replace_case_sensitive_var is not None
+            else False,
+            row_scope=row_scope,
+        )
+        count = len(matches)
+        label = "rij" if count == 1 else "rijen"
+        return matches, f"{count} {label} voldoen aan de zoekcriteria."
+
+    def _update_find_replace_preview(self, *_args) -> None:
+        if self._find_replace_summary_var is None:
+            return
+        _matches, message = self._describe_find_matches()
+        self._find_replace_summary_var.set(message)
+
+    def _close_find_replace_dialog(self) -> None:
+        dialog = self._find_replace_dialog
+        self._find_replace_dialog = None
+        self._find_replace_query_var = None
+        self._find_replace_replacement_var = None
+        self._find_replace_column_var = None
+        self._find_replace_scope_var = None
+        self._find_replace_match_mode_var = None
+        self._find_replace_case_sensitive_var = None
+        self._find_replace_summary_var = None
+        if dialog is None:
+            return
+        try:
+            dialog.destroy()
+        except tk.TclError:
+            pass
+
+    def _open_find_replace_dialog(self, event=None):
+        existing = self._find_replace_dialog
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.deiconify()
+                    existing.lift()
+                    existing.focus_force()
+                    query_entry = getattr(existing, "_fh_query_entry", None)
+                    if query_entry is not None:
+                        query_entry.focus_set()
+                        query_entry.selection_range(0, tk.END)
+                    self._update_find_replace_preview()
+                    return "break" if event is not None else None
+            except tk.TclError:
+                self._find_replace_dialog = None
+
+        dialog = tk.Toplevel(self)
+        dialog.title("Zoek / vervang")
+        dialog.transient(self.winfo_toplevel())
+        dialog.resizable(False, False)
+        dialog.protocol("WM_DELETE_WINDOW", self._close_find_replace_dialog)
+        dialog.bind(
+            "<Destroy>",
+            lambda e, win=dialog: self._close_find_replace_dialog()
+            if e.widget is win
+            else None,
+            add="+",
+        )
+
+        self._find_replace_dialog = dialog
+        self._find_replace_query_var = tk.StringVar()
+        self._find_replace_replacement_var = tk.StringVar()
+        self._find_replace_column_var = tk.StringVar(
+            value="Material" if "Material" in self.HEADERS else self.HEADERS[0]
+        )
+        self._find_replace_scope_var = tk.StringVar(value=self.FIND_SCOPE_ALL_LABEL)
+        self._find_replace_match_mode_var = tk.StringVar(value="Bevat")
+        self._find_replace_case_sensitive_var = tk.BooleanVar(value=False)
+        self._find_replace_summary_var = tk.StringVar(value="Vul zoektekst in.")
+
+        body = ttk.Frame(dialog, padding=12)
+        body.pack(fill="both", expand=True)
+        body.columnconfigure(1, weight=1)
+
+        ttk.Label(body, text="Kolom:").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=(0, 6))
+        column_combo = ttk.Combobox(
+            body,
+            textvariable=self._find_replace_column_var,
+            values=[self.FIND_ALL_COLUMNS_LABEL, *self.HEADERS],
+            state="readonly",
+            width=24,
+        )
+        column_combo.grid(row=0, column=1, sticky="ew", pady=(0, 6))
+
+        ttk.Label(body, text="Zoek naar:").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=6)
+        query_entry = ttk.Entry(body, textvariable=self._find_replace_query_var, width=32)
+        query_entry.grid(row=1, column=1, sticky="ew", pady=6)
+        dialog._fh_query_entry = query_entry
+
+        ttk.Label(body, text="Vervang door:").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=6)
+        replacement_entry = ttk.Entry(
+            body,
+            textvariable=self._find_replace_replacement_var,
+            width=32,
+        )
+        replacement_entry.grid(row=2, column=1, sticky="ew", pady=6)
+
+        ttk.Label(body, text="Zoektype:").grid(row=3, column=0, sticky="w", padx=(0, 8), pady=6)
+        mode_combo = ttk.Combobox(
+            body,
+            textvariable=self._find_replace_match_mode_var,
+            values=list(self.FIND_MATCH_MODE_LABELS.keys()),
+            state="readonly",
+            width=24,
+        )
+        mode_combo.grid(row=3, column=1, sticky="ew", pady=6)
+
+        ttk.Label(body, text="Bereik:").grid(row=4, column=0, sticky="w", padx=(0, 8), pady=6)
+        scope_combo = ttk.Combobox(
+            body,
+            textvariable=self._find_replace_scope_var,
+            values=[self.FIND_SCOPE_ALL_LABEL, self.FIND_SCOPE_SELECTION_LABEL],
+            state="readonly",
+            width=24,
+        )
+        scope_combo.grid(row=4, column=1, sticky="ew", pady=6)
+
+        ttk.Checkbutton(
+            body,
+            text="Hoofdlettergevoelig",
+            variable=self._find_replace_case_sensitive_var,
+        ).grid(row=5, column=1, sticky="w", pady=(4, 6))
+
+        ttk.Label(
+            body,
+            textvariable=self._find_replace_summary_var,
+            anchor="w",
+            foreground="#4A4A4A",
+        ).grid(row=6, column=0, columnspan=2, sticky="ew", pady=(4, 10))
+
+        actions = ttk.Frame(body)
+        actions.grid(row=7, column=0, columnspan=2, sticky="e")
+
+        ttk.Button(
+            actions,
+            text="Selecteer treffers",
+            command=self._select_find_replace_matches,
+        ).pack(side="left", padx=(0, 6))
+        ttk.Button(
+            actions,
+            text="Vervang treffers",
+            command=self._replace_find_replace_matches,
+        ).pack(side="left", padx=(0, 6))
+        ttk.Button(
+            actions,
+            text="Verwijder selectie",
+            command=self._delete_selected_rows_from_toolbar,
+        ).pack(side="left", padx=(0, 6))
+        ttk.Button(actions, text="Sluiten", command=self._close_find_replace_dialog).pack(
+            side="left"
+        )
+
+        for variable in (
+            self._find_replace_query_var,
+            self._find_replace_column_var,
+            self._find_replace_scope_var,
+            self._find_replace_match_mode_var,
+            self._find_replace_case_sensitive_var,
+        ):
+            variable.trace_add("write", self._update_find_replace_preview)
+
+        query_entry.bind("<Return>", self._select_find_replace_matches, add="+")
+        replacement_entry.bind("<Return>", self._replace_find_replace_matches, add="+")
+        dialog.bind("<Escape>", lambda _e: self._close_find_replace_dialog(), add="+")
+
+        self._update_find_replace_preview()
+        query_entry.focus_set()
+        return "break" if event is not None else None
+
+    def _select_find_replace_matches(self, event=None):
+        if not self.table._commit_active_edit():
+            return "break" if event is not None else None
+
+        matches, message = self._describe_find_matches()
+        if not matches:
+            self._select_rows_in_table([])
+            self._update_status(message)
+            self._update_find_replace_preview()
+            return "break" if event is not None else None
+
+        self._select_rows_in_table(matches)
+        count = len(matches)
+        label = "rij" if count == 1 else "rijen"
+        self._update_status(f"{count} {label} geselecteerd.")
+        self._update_find_replace_preview()
+        return "break" if event is not None else None
+
+    def _replace_find_replace_matches(self, event=None):
+        if not self.table._commit_active_edit():
+            return "break" if event is not None else None
+
+        query = (
+            self._find_replace_query_var.get().strip()
+            if self._find_replace_query_var is not None
+            else ""
+        )
+        if not query:
+            self._update_status("Vul eerst zoektekst in.")
+            self._update_find_replace_preview()
+            return "break" if event is not None else None
+
+        columns = self._resolve_find_replace_columns()
+        row_scope = self._resolve_find_replace_row_scope()
+        if (
+            row_scope is not None
+            and self._find_replace_scope_var is not None
+            and self._find_replace_scope_var.get().strip()
+            == self.FIND_SCOPE_SELECTION_LABEL
+            and not row_scope
+        ):
+            self._update_status("Geen geselecteerde rijen als zoekbereik.")
+            self._update_find_replace_preview()
+            return "break" if event is not None else None
+
+        replacement = (
+            self._find_replace_replacement_var.get()
+            if self._find_replace_replacement_var is not None
+            else ""
+        )
+        before = self.table_model.df.copy(deep=True)
+        before_reference = self._capture_qty_reference_snapshot()
+        updated, changed_cells, changed_rows = _replace_matching_cells(
+            before,
+            columns,
+            query,
+            replacement,
+            match_mode=self._resolve_find_replace_match_mode(),
+            case_sensitive=bool(
+                self._find_replace_case_sensitive_var.get()
+            )
+            if self._find_replace_case_sensitive_var is not None
+            else False,
+            row_scope=row_scope,
+        )
+        if not changed_cells:
+            self._update_status("Geen waarden vervangen.")
+            self._update_find_replace_preview()
+            return "break" if event is not None else None
+
+        self._push_undo(
+            "zoek/vervang",
+            before,
+            changed_cells,
+            qty_reference=before_reference,
+        )
+        self._set_dataframe(
+            updated,
+            reset_multiplier_reference=False,
+            update_multiplier_entry=False,
+        )
+        self._dataframe = self.table_model.df.copy(deep=True)
+        self._sync_qty_reference_for_cells(changed_cells)
+        self._ensure_minimum_rows(self.DEFAULT_EMPTY_ROWS)
+        self._select_rows_in_table(changed_rows)
+
+        cell_count = len(changed_cells)
+        row_count = len(changed_rows)
+        cell_label = "cel" if cell_count == 1 else "cellen"
+        row_label = "rij" if row_count == 1 else "rijen"
+        self._update_status(
+            f"{cell_count} {cell_label} vervangen in {row_count} {row_label}."
+        )
+        self._update_find_replace_preview()
+        return "break" if event is not None else None
+
     def _apply_qty_multiplier(self, event=None):
         if not self.table._commit_active_edit():
             return "break" if event is not None else None
@@ -1275,6 +1888,29 @@ class BOMCustomTab(ttk.Frame):
         label = "rij" if count == 1 else "rijen"
         self._update_status(f"{count} {label} verwijderd.")
         return count
+
+    def _delete_selected_rows_from_toolbar(self, event=None):
+        if not self.table._commit_active_edit():
+            return "break" if event is not None else None
+
+        rows = self._selected_row_indices()
+        if not rows:
+            self._update_status("Selecteer eerst rijen om te verwijderen.")
+            return "break" if event is not None else None
+
+        count = len(rows)
+        label = "rij" if count == 1 else "rijen"
+        if not messagebox.askyesno(
+            "Bevestigen",
+            f"{count} {label} verwijderen?",
+            parent=self,
+        ):
+            self._update_status("Verwijderen geannuleerd.")
+            return "break" if event is not None else None
+
+        self._delete_rows(rows)
+        self._update_find_replace_preview()
+        return "break" if event is not None else None
 
     def _parse_clipboard_text(self, text: str) -> List[List[str]]:
         import io

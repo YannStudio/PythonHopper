@@ -102,6 +102,62 @@ def test_client_logo_order_preview_uses_shared_doc_number_formatter():
     )
 
 
+def test_client_logo_order_preview_includes_item_column():
+    source = pathlib.Path("gui.py").read_text(encoding="utf-8")
+    mod = ast.parse(source)
+    start = next(
+        node for node in mod.body if isinstance(node, ast.FunctionDef) and node.name == "start_gui"
+    )
+    client_cls = next(
+        node
+        for node in start.body
+        if isinstance(node, ast.ClassDef) and node.name == "ClientsManagerFrame"
+    )
+    open_dialog = next(
+        node
+        for node in client_cls.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_open_edit_dialog"
+    )
+    open_order_preview = next(
+        node
+        for node in ast.walk(open_dialog)
+        if isinstance(node, ast.FunctionDef) and node.name == "open_order_preview"
+    )
+
+    header_lists = []
+    row_lists = []
+    for node in ast.walk(open_order_preview):
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id == "headers":
+                if isinstance(node.value, ast.List):
+                    header_lists.append(
+                        [
+                            elt.value
+                            for elt in node.value.elts
+                            if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+                        ]
+                    )
+            if isinstance(target, ast.Name) and target.id == "rows":
+                if isinstance(node.value, ast.List):
+                    parsed_rows = []
+                    for row in node.value.elts:
+                        if not isinstance(row, ast.List):
+                            continue
+                        parsed_rows.append(
+                            [
+                                elt.value
+                                for elt in row.elts
+                                if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+                            ]
+                        )
+                    row_lists.append(parsed_rows)
+
+    assert any(headers[:3] == ["Nr.", "PartNumber", "Omschrijving"] for headers in header_lists)
+    assert any(rows and rows[0][0] == "1" and rows[1][0] == "2" for rows in row_lists if len(rows) >= 2)
+
+
 def test_client_dialog_includes_website_field():
     source = pathlib.Path("gui.py").read_text(encoding="utf-8")
     assert '("Website", "website")' in source

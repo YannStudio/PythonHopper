@@ -57,7 +57,7 @@ def test_order_pdf_section_uses_square_meter_header():
     )
 
     table = story[-1]
-    assert table._cellvalues[0][0] == "Item"
+    assert table._cellvalues[0][0] == "Nr."
     assert table._cellvalues[0][5] == "m\u00b2"
     assert table._cellvalues[1][0].getPlainText() == "1"
 
@@ -100,7 +100,7 @@ def test_order_pdf_section_numbers_raw_material_rows_and_keeps_total_label():
     )
 
     table = story[-1]
-    assert table._cellvalues[0][0] == "Item"
+    assert table._cellvalues[0][0] == "Nr."
     assert table._cellvalues[1][0].getPlainText() == "4"
     assert table._cellvalues[2][0].getPlainText() == "5"
     assert table._cellvalues[3][0].getPlainText() == ""
