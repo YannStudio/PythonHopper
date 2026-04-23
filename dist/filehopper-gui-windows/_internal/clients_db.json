@@ -5,8 +5,10 @@
       "address": "Belgiëlei 85, 2018 Antwerpen",
       "vat": "BE0700.304.366",
       "email": "jeroen@manufact.be",
+      "website": null,
       "favorite": true,
-      "logo_path": null,
+      "accent_color": "#FACD64",
+      "logo_path": "client_logos/jeroen_van_dooren_gcv_20260414192154.png",
       "logo_crop": null
     },
     {
@@ -14,8 +16,10 @@
       "address": "Kwade Weide 13, 2920 Kalmthout",
       "vat": "BE0460.973.296",
       "email": "jeroen@tecnoart.be",
+      "website": null,
       "favorite": false,
-      "logo_path": null,
+      "accent_color": "#EF5123",
+      "logo_path": "client_logos/tecno_art_bvba_20260417141035.png",
       "logo_crop": null
     },
     {
@@ -23,7 +27,9 @@
       "address": "Veilingstraat 13, 2320 Hoogstraten – België",
       "vat": "BE0801.098.353",
       "email": "info@slimp.be",
+      "website": null,
       "favorite": false,
+      "accent_color": null,
       "logo_path": null,
       "logo_crop": null
     },
@@ -32,7 +38,9 @@
       "address": "Heiveldekens 8, 2550 Kontich – België",
       "vat": "BE0428.678.335",
       "email": "info@stuvex.be",
+      "website": null,
       "favorite": false,
+      "accent_color": null,
       "logo_path": null,
       "logo_crop": null
     },
@@ -41,8 +49,21 @@
       "address": "Zagerijstraat 2, 2240 Massenhoven",
       "vat": "BE0749.799.013",
       "email": "cadservice@alton.be",
+      "website": "www.alton.be",
       "favorite": false,
-      "logo_path": null,
+      "accent_color": "#000000",
+      "logo_path": "client_logos/alton_20260422135125.png",
+      "logo_crop": null
+    },
+    {
+      "name": "HYE",
+      "address": "Krijgsbaan 372, 2070 Zwijndrecht",
+      "vat": "BE0404646287",
+      "email": "info@HYE.be",
+      "website": null,
+      "favorite": false,
+      "accent_color": "#F5A500",
+      "logo_path": "client_logos/hye_20260414223258.png",
       "logo_crop": null
     }
   ]

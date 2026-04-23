@@ -3,4 +3,5 @@ pandas
 openpyxl
 pandastable
 Pillow
+reportlab
 # optional: pythonocc-core

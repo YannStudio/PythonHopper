@@ -30,6 +30,8 @@ from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from clients_db import ClientsDB, CLIENTS_DB_FILE
 from delivery_addresses_db import DeliveryAddressesDB, DELIVERY_DB_FILE
 from app_paths import (
+    APP_NAME,
+    APP_VERSION,
     bundle_root,
     ensure_runtime_files,
     resolve_runtime_path,
@@ -5008,7 +5010,7 @@ def start_gui():
                     style.configure("Tab.TButton", padding=(12, 4))
 
             _configure_tab_like_button_style()
-            self.title("Filehopper")
+            self.title(f"{APP_NAME} {APP_VERSION}")
             
             self.minsize(1024, 720)
             self._schedule_window_maximize()
@@ -6042,11 +6044,18 @@ def start_gui():
 
             # Status
             self.status_var = tk.StringVar(value="Klaar")
+            status_row = tk.Frame(main_footer)
+            status_row.pack(fill="x", padx=8, pady=(0, 8))
             tk.Label(
-                main_footer,
+                status_row,
                 textvariable=self.status_var,
                 anchor="w",
-            ).pack(fill="x", padx=8, pady=(0, 8))
+            ).pack(side="left", fill="x", expand=True)
+            tk.Label(
+                status_row,
+                text=f"Versie {APP_VERSION}",
+                anchor="e",
+            ).pack(side="right")
             self._refresh_document_filename_controls()
             self._sync_document_filename_profile_display()
             self._update_document_filename_preview()

@@ -31,12 +31,21 @@ python build_executable.py --target macos
 python build_executable.py --target windows
 ```
 
+Voor een enkele `.exe` in plaats van een portable map gebruik je `--onefile`:
+
+```bash
+python build_executable.py --target windows --onefile
+python build_executable.py --target windows --onefile --only-gui
+```
+
 Standaard worden er twee varianten gemaakt:
 
 * `filehopper-<target>` — console-app met CLI-ondersteuning.
 * `filehopper-gui-<target>` — windowed app die rechtstreeks de GUI opent.
 
-De resultaten verschijnen in de map `dist/`.
+Zonder `--onefile` verschijnen de resultaten als portable mappen in `dist/`.
+Met `--onefile` krijg je losse bestanden zoals `dist/filehopper-windows.exe`
+en `dist/filehopper-gui-windows.exe`.
 
 ### Gebruikersgegevens
 

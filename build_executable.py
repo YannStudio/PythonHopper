@@ -3,17 +3,25 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import platform
+import re
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 from typing import Iterable, List
+
+from app_settings import AppSettings
+from app_paths import APP_NAME, APP_VERSION
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 BUILD_DIR = PROJECT_ROOT / "build" / "pyinstaller"
 DIST_DIR = PROJECT_ROOT / "dist"
 SPEC_DIR = BUILD_DIR / "specs"
+VERSION_FILE_DIR = BUILD_DIR / "version-files"
+DATA_FILE_DIR = BUILD_DIR / "data-files"
 
 DEFAULT_DATA_FILES = [
     "clients_db.json",
@@ -28,7 +36,88 @@ class BuildError(RuntimeError):
     """Raised when the PyInstaller invocation fails."""
 
 
-def _pyinstaller_cmd(entry: str, name: str, *, windowed: bool, data_files: Iterable[str]) -> List[str]:
+def _windows_version_tuple(version: str) -> tuple[int, int, int, int]:
+    """Convert an app version like ``3.0`` to a Windows four-part tuple."""
+
+    parts = [int(part) for part in re.findall(r"\d+", version)]
+    while len(parts) < 4:
+        parts.append(0)
+    return tuple(parts[:4])
+
+
+def _render_windows_version_file(exe_name: str) -> str:
+    """Return a PyInstaller-compatible Windows version resource file."""
+
+    version_parts = _windows_version_tuple(APP_VERSION)
+    version_text = ".".join(str(part) for part in version_parts)
+    return textwrap.dedent(
+        f"""\
+        # UTF-8
+        VSVersionInfo(
+          ffi=FixedFileInfo(
+            filevers={version_parts},
+            prodvers={version_parts},
+            mask=0x3f,
+            flags=0x0,
+            OS=0x40004,
+            fileType=0x1,
+            subtype=0x0,
+            date=(0, 0)
+          ),
+          kids=[
+            StringFileInfo(
+              [
+                StringTable(
+                  '040904B0',
+                  [
+                    StringStruct('CompanyName', '{APP_NAME}'),
+                    StringStruct('FileDescription', '{APP_NAME}'),
+                    StringStruct('FileVersion', '{version_text}'),
+                    StringStruct('InternalName', '{exe_name}'),
+                    StringStruct('OriginalFilename', '{exe_name}.exe'),
+                    StringStruct('ProductName', '{APP_NAME}'),
+                    StringStruct('ProductVersion', '{version_text}')
+                  ]
+                )
+              ]
+            ),
+            VarFileInfo([VarStruct('Translation', [1033, 1200])])
+          ]
+        )
+        """
+    )
+
+
+def _prepare_windows_version_file(exe_name: str) -> Path:
+    """Write and return the version resource text file for a Windows build."""
+
+    VERSION_FILE_DIR.mkdir(parents=True, exist_ok=True)
+    version_file = VERSION_FILE_DIR / f"{exe_name}.version.txt"
+    version_file.write_text(_render_windows_version_file(exe_name), encoding="utf-8")
+    return version_file
+
+
+def _prepare_build_data_file(filename: str) -> Path:
+    """Return the source path that should be bundled for ``filename``."""
+
+    if filename == "app_settings.json":
+        DATA_FILE_DIR.mkdir(parents=True, exist_ok=True)
+        clean_settings_path = DATA_FILE_DIR / filename
+        clean_settings = AppSettings().to_dict()
+        with open(clean_settings_path, "w", encoding="utf-8") as fh:
+            json.dump(clean_settings, fh, indent=2, ensure_ascii=False)
+        return clean_settings_path
+    return PROJECT_ROOT / filename
+
+
+def _pyinstaller_cmd(
+    entry: str,
+    name: str,
+    *,
+    windowed: bool,
+    onefile: bool,
+    data_files: Iterable[str],
+) -> List[str]:
     cmd = [
         sys.executable,
         "-m",
@@ -48,9 +137,14 @@ def _pyinstaller_cmd(entry: str, name: str, *, windowed: bool, data_files: Itera
         "pandastable",
     ]
     cmd.append("--windowed" if windowed else "--console")
+    if onefile:
+        cmd.append("--onefile")
+
+    if platform.system().lower().startswith("windows"):
+        cmd.extend(["--version-file", str(_prepare_windows_version_file(name))])
 
     for filename in data_files:
-        src = PROJECT_ROOT / filename
+        src = _prepare_build_data_file(filename)
         if not src.exists():
             continue
         cmd.extend(["--add-data", f"{src}{os.pathsep}."])
@@ -58,15 +152,35 @@ def _pyinstaller_cmd(entry: str, name: str, *, windowed: bool, data_files: Itera
     return cmd
 
 
-def run_pyinstaller(entry: str, name: str, *, windowed: bool, data_files: Iterable[str]) -> None:
-    cmd = _pyinstaller_cmd(entry, name, windowed=windowed, data_files=data_files)
+def run_pyinstaller(
+    entry: str,
+    name: str,
+    *,
+    windowed: bool,
+    onefile: bool,
+    data_files: Iterable[str],
+) -> None:
+    cmd = _pyinstaller_cmd(
+        entry,
+        name,
+        windowed=windowed,
+        onefile=onefile,
+        data_files=data_files,
+    )
     print("Running", " ".join(cmd))
     result = subprocess.run(cmd, check=False)
     if result.returncode != 0:
         raise BuildError(f"PyInstaller failed with exit code {result.returncode}")
 
 
-def build_targets(targets: Iterable[str], *, include_gui: bool, include_cli: bool, data_files: Iterable[str]) -> None:
+def build_targets(
+    targets: Iterable[str],
+    *,
+    include_gui: bool,
+    include_cli: bool,
+    onefile: bool,
+    data_files: Iterable[str],
+) -> None:
     data_files = list(data_files)
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
     DIST_DIR.mkdir(parents=True, exist_ok=True)
@@ -74,9 +188,21 @@ def build_targets(targets: Iterable[str], *, include_gui: bool, include_cli: boo
 
     for target in targets:
         if include_cli:
-            run_pyinstaller("main.py", f"filehopper-{target}", windowed=False, data_files=data_files)
+            run_pyinstaller(
+                "main.py",
+                f"filehopper-{target}",
+                windowed=False,
+                onefile=onefile,
+                data_files=data_files,
+            )
         if include_gui:
-            run_pyinstaller("main.py", f"filehopper-gui-{target}", windowed=True, data_files=data_files)
+            run_pyinstaller(
+                "main.py",
+                f"filehopper-gui-{target}",
+                windowed=True,
+                onefile=onefile,
+                data_files=data_files,
+            )
 
 
 def _detect_target() -> str:
@@ -112,6 +238,11 @@ def main(argv: List[str] | None = None) -> int:
         action="append",
         help="Additional data file to bundle (relative to the project root)",
     )
+    parser.add_argument(
+        "--onefile",
+        action="store_true",
+        help="Build a single-file executable instead of a portable folder",
+    )
 
     args = parser.parse_args(argv)
 
@@ -125,7 +256,13 @@ def main(argv: List[str] | None = None) -> int:
         parser.error("At least one of GUI or CLI builds must be enabled")
 
     try:
-        build_targets(targets, include_gui=include_gui, include_cli=include_cli, data_files=data_files)
+        build_targets(
+            targets,
+            include_gui=include_gui,
+            include_cli=include_cli,
+            onefile=args.onefile,
+            data_files=data_files,
+        )
     except BuildError as exc:
         print(exc, file=sys.stderr)
         return 1

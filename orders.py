@@ -57,6 +57,11 @@ try:
 except Exception:
     REPORTLAB_OK = False
 
+    def stringWidth(text, font_name, font_size):
+        """Approximate text width when ReportLab is unavailable."""
+
+        return len(str(text)) * float(font_size) * 0.6
+
 from en1090 import EN1090_NOTE_TEXT, should_require_en1090
 
 from opticutter import (
