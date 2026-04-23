@@ -1,8 +1,8 @@
 {
-  "source_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2026/20260030 - CIAW Huldenberg schuilhuisje/CAD/3D Soldiworks Files/V4",
-  "dest_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2026/20260030 - CIAW Huldenberg schuilhuisje/CAD/Bestellingen",
-  "project_number": "20260030",
-  "project_name": "Huldenberg",
+  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/Kanal/83 - Lot10b - Central - Bibliotheek + leeszaal/Bibliotheek en leeszaal/cad - wandrek",
+  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/Kanal/83 - Lot10b - Central - Bibliotheek + leeszaal/Bibliotheek en leeszaal/export",
+  "project_number": "83",
+  "project_name": "Rek steunpalen",
   "file_extensions": [
     {
       "key": "pdf",
@@ -48,7 +48,7 @@
   ],
   "zip_per_production": true,
   "combine_pdf_per_production": false,
-  "copy_finish_exports": false,
+  "copy_finish_exports": true,
   "zip_finish_exports": true,
   "export_processed_bom": true,
   "export_related_bom_files": true,
@@ -75,11 +75,11 @@
   "en1090_preferences": {
     "cutting": false,
     "dummy part": false,
-    "lasercutting": true,
+    "lasercutting": false,
     "sheetmetal": true,
     "sheetmetal 4m": true,
     "spare part": false,
-    "tube laser": true,
+    "tube laser": false,
     "tube laser l": true,
     "onbekend": false,
     "assembly": false,
