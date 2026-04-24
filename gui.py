@@ -38,6 +38,11 @@ from app_paths import (
     runtime_asset_dir,
     to_runtime_relative_path,
 )
+from order_presets_db import (
+    ORDER_PRESETS_DB_FILE,
+    OrderPresetRule,
+    OrderPresetsDB,
+)
 from bom import read_csv_flex, load_bom
 from bom_custom_tab import BOMCustomTab
 from manual_order_tab import ManualOrderTab
@@ -98,6 +103,7 @@ RUNTIME_DATA_FILES = [
     "suppliers_db.json",
     "delivery_addresses_db.json",
     "app_settings.json",
+    "order_presets.json",
 ]
 SUPPLIERS_TEMPLATE_FILE = "suppliers_template.csv"
 
@@ -2129,6 +2135,649 @@ def start_gui():
                 if self.on_change:
                     self.on_change()
 
+    class PresetRulesManagerFrame(tk.Frame):
+        KIND_LABELS = {
+            "production": "Productie",
+            "finish": "Afwerking",
+            "opticutter": "Brutemateriaal",
+        }
+        KIND_VALUES = {
+            "Productie": "production",
+            "Afwerking": "finish",
+            "Brutemateriaal": "opticutter",
+        }
+        CLIENT_ALL_LABEL = "(alle opdrachtgevers)"
+        SUPPLIER_UNCHANGED_LABEL = "(ongewijzigd)"
+        DELIVERY_UNCHANGED_LABEL = "(ongewijzigd)"
+        DOC_TYPE_UNCHANGED_LABEL = "(ongewijzigd)"
+        EN1090_UNCHANGED_LABEL = "(ongewijzigd)"
+
+        def __init__(
+            self,
+            master,
+            db,
+            clients_db,
+            suppliers_db,
+            delivery_db,
+            on_change=None,
+        ):
+            super().__init__(master)
+            self.configure(padx=12, pady=12)
+            self.db = db
+            self.clients_db = clients_db
+            self.suppliers_db = suppliers_db
+            self.delivery_db = delivery_db
+            self.on_change = on_change
+
+            intro = tk.Label(
+                self,
+                text=(
+                    "Presetregels vullen leveranciers- en bestelbonvelden automatisch in "
+                    "op basis van opdrachtgever en productie/afwerking. "
+                    "Ze blijven altijd handmatig aanpasbaar."
+                ),
+                justify="left",
+                anchor="w",
+                wraplength=760,
+            )
+            intro.pack(fill="x", padx=8, pady=(0, 8))
+
+            list_area = tk.Frame(self)
+            list_area.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+
+            cols = (
+                "Naam",
+                "Klant",
+                "Type",
+                "Selecties",
+                "Acties",
+                "Prioriteit",
+                "Auto",
+                "Actief",
+            )
+            self.tree = ttk.Treeview(list_area, columns=cols, show="headings", selectmode="browse")
+            widths = {
+                "Naam": 180,
+                "Klant": 160,
+                "Type": 110,
+                "Selecties": 240,
+                "Acties": 340,
+                "Prioriteit": 80,
+                "Auto": 70,
+                "Actief": 70,
+            }
+            for col in cols:
+                anchor = "center" if col in {"Prioriteit", "Auto", "Actief"} else "w"
+                self.tree.heading(col, text=col, anchor=anchor)
+                self.tree.column(col, width=widths.get(col, 140), anchor=anchor)
+            tree_scroll = ttk.Scrollbar(list_area, orient="vertical", command=self.tree.yview)
+            self.tree.configure(yscrollcommand=tree_scroll.set)
+            self.tree.pack(side="left", fill="both", expand=True)
+            tree_scroll.pack(side="left", fill="y")
+            self.tree.bind("<Double-Button-1>", lambda _e: self.edit_sel())
+            self.tree.bind("<<TreeviewSelect>>", lambda _e: self._seed_preview_from_selection())
+
+            btns = tk.Frame(self)
+            btns.pack(fill="x", padx=8, pady=(0, 4))
+            tk.Button(btns, text="Toevoegen", command=self.add_rule).pack(side="left", padx=4)
+            tk.Button(btns, text="Bewerken", command=self.edit_sel).pack(side="left", padx=4)
+            tk.Button(btns, text="Verwijderen", command=self.remove_sel).pack(side="left", padx=4)
+            tk.Button(btns, text="Aan/uit", command=self.toggle_sel).pack(side="left", padx=4)
+
+            preview = tk.LabelFrame(self, text="Preset preview / test", labelanchor="n")
+            preview.pack(fill="x", padx=8, pady=(4, 0))
+            preview.columnconfigure(1, weight=1)
+            preview.columnconfigure(3, weight=1)
+
+            client_values = [self.CLIENT_ALL_LABEL]
+            client_values.extend(
+                self.clients_db.display_name(client)
+                for client in self.clients_db.clients_sorted()
+            )
+            self.preview_client_var = tk.StringVar(value=self.CLIENT_ALL_LABEL)
+            self.preview_kind_var = tk.StringVar(value="Productie")
+            self.preview_identifier_var = tk.StringVar()
+            self.preview_auto_only_var = tk.IntVar(value=0)
+            self.preview_result_var = tk.StringVar(
+                value="Kies een context en klik op 'Test presetmatch'."
+            )
+
+            tk.Label(preview, text="Opdrachtgever:").grid(
+                row=0, column=0, sticky="w", padx=6, pady=(6, 2)
+            )
+            self.preview_client_combo = ttk.Combobox(
+                preview,
+                textvariable=self.preview_client_var,
+                values=client_values,
+                state="readonly",
+                width=32,
+            )
+            self.preview_client_combo.grid(row=0, column=1, sticky="ew", padx=6, pady=(6, 2))
+
+            tk.Label(preview, text="Type selectie:").grid(
+                row=0, column=2, sticky="w", padx=6, pady=(6, 2)
+            )
+            self.preview_kind_combo = ttk.Combobox(
+                preview,
+                textvariable=self.preview_kind_var,
+                values=list(self.KIND_VALUES.keys()),
+                state="readonly",
+                width=18,
+            )
+            self.preview_kind_combo.grid(row=0, column=3, sticky="w", padx=6, pady=(6, 2))
+
+            tk.Label(preview, text="Selectie:").grid(
+                row=1, column=0, sticky="w", padx=6, pady=2
+            )
+            self.preview_identifier_entry = tk.Entry(
+                preview,
+                textvariable=self.preview_identifier_var,
+                width=36,
+            )
+            self.preview_identifier_entry.grid(row=1, column=1, sticky="ew", padx=6, pady=2)
+            tk.Label(
+                preview,
+                text="Voorbeeld: Laser cutting, Tube laser cutting, Poedercoaten",
+                anchor="w",
+                justify="left",
+            ).grid(row=2, column=1, columnspan=3, sticky="w", padx=6, pady=(0, 6))
+
+            preview_actions = tk.Frame(preview)
+            preview_actions.grid(row=1, column=2, columnspan=2, sticky="w", padx=6, pady=2)
+            tk.Checkbutton(
+                preview_actions,
+                text="Alleen auto-regels",
+                variable=self.preview_auto_only_var,
+            ).pack(side="left")
+            tk.Button(
+                preview_actions,
+                text="Test presetmatch",
+                command=self._run_preview,
+            ).pack(side="left", padx=(12, 0))
+
+            tk.Label(
+                preview,
+                textvariable=self.preview_result_var,
+                anchor="w",
+                justify="left",
+                wraplength=760,
+            ).grid(row=3, column=0, columnspan=4, sticky="ew", padx=6, pady=(2, 8))
+
+            self.refresh()
+            self.after_idle(self._seed_preview_from_selection)
+
+        def refresh_data(self) -> None:
+            self.refresh()
+
+        def refresh(self) -> None:
+            for item in self.tree.get_children():
+                self.tree.delete(item)
+            for idx, rule in enumerate(self.db.rules_sorted()):
+                tag = "odd" if idx % 2 == 0 else "even"
+                kind_label = self.KIND_LABELS.get(rule.selection_kind, rule.selection_kind)
+                client_label = rule.client or self.CLIENT_ALL_LABEL
+                values = (
+                    rule.name,
+                    client_label,
+                    kind_label,
+                    rule.selection_summary(),
+                    rule.action_summary(),
+                    str(rule.priority),
+                    "Ja" if rule.auto_apply else "Nee",
+                    "Ja" if rule.enabled else "Nee",
+                )
+                self.tree.insert("", "end", iid=rule.name, values=values, tags=(tag,))
+            self.tree.tag_configure("odd", background=TREE_ODD_BG)
+            self.tree.tag_configure("even", background=TREE_EVEN_BG)
+            if hasattr(self, "preview_client_combo"):
+                client_values = [self.CLIENT_ALL_LABEL]
+                client_values.extend(
+                    self.clients_db.display_name(client)
+                    for client in self.clients_db.clients_sorted()
+                )
+                current = self.preview_client_var.get().strip()
+                self.preview_client_combo.configure(values=client_values)
+                if current not in client_values:
+                    self.preview_client_var.set(self.CLIENT_ALL_LABEL)
+
+        def _selected_rule_name(self):
+            selection = self.tree.selection()
+            if not selection:
+                return None
+            return self.tree.item(selection[0], "values")[0]
+
+        def _selected_rule(self):
+            name = self._selected_rule_name()
+            if not name:
+                return None
+            return self.db.get(name)
+
+        def _save_and_refresh(self) -> None:
+            self.db.save(ORDER_PRESETS_DB_FILE)
+            self.refresh()
+            if self.on_change:
+                self.on_change()
+
+        def add_rule(self):
+            dlg = self._EditDialog(
+                self,
+                None,
+                self.clients_db,
+                self.suppliers_db,
+                self.delivery_db,
+                title="Nieuwe presetregel",
+            )
+            self.wait_window(dlg)
+            if dlg.result is not None:
+                self.db.upsert(dlg.result)
+                self._save_and_refresh()
+
+        def edit_sel(self):
+            rule = self._selected_rule()
+            if rule is None:
+                return
+            dlg = self._EditDialog(
+                self,
+                rule,
+                self.clients_db,
+                self.suppliers_db,
+                self.delivery_db,
+                title="Presetregel bewerken",
+            )
+            self.wait_window(dlg)
+            if dlg.result is not None:
+                self.db.upsert(dlg.result, old_name=rule.name)
+                self._save_and_refresh()
+
+        def remove_sel(self):
+            name = self._selected_rule_name()
+            if not name:
+                return
+            if not messagebox.askyesno(
+                "Bevestigen",
+                f"Verwijder presetregel '{name}'?",
+                parent=self,
+            ):
+                return
+            if self.db.remove(name):
+                self._save_and_refresh()
+
+        def toggle_sel(self):
+            name = self._selected_rule_name()
+            if not name:
+                return
+            if self.db.toggle_enabled(name):
+                self._save_and_refresh()
+
+        def _preview_context(self) -> Dict[str, str]:
+            client_value = self.preview_client_var.get().strip()
+            if client_value == self.CLIENT_ALL_LABEL:
+                client_name = ""
+            else:
+                client_name = strip_favorite_marker(client_value).strip()
+            return {
+                "client": client_name,
+                "selection_kind": self.KIND_VALUES.get(
+                    self.preview_kind_var.get().strip(),
+                    "production",
+                ),
+                "identifier": self.preview_identifier_var.get().strip(),
+            }
+
+        def _run_preview(self) -> None:
+            context = self._preview_context()
+            if not context["identifier"]:
+                self.preview_result_var.set(
+                    "Geef een productie, afwerking of brutemateriaal op om de presetregels te testen."
+                )
+                return
+            try:
+                evaluation = self.db.evaluate(
+                    context,
+                    auto_apply_only=bool(self.preview_auto_only_var.get()),
+                )
+            except Exception as exc:
+                self.preview_result_var.set(f"Kon preset preview niet berekenen: {exc}")
+                return
+
+            header = (
+                f"Context: opdrachtgever={context['client'] or '(alle)'} | "
+                f"type={self.KIND_LABELS.get(context['selection_kind'], context['selection_kind'])} | "
+                f"selectie={context['identifier']}"
+            )
+            matched = ", ".join(evaluation.matched_rule_names) or "(geen)"
+            applied = ", ".join(evaluation.applied_rule_names) or "(geen)"
+            actions: List[str] = []
+            if evaluation.supplier:
+                actions.append(f"leverancier={evaluation.supplier}")
+            if evaluation.doc_type:
+                actions.append(f"documenttype={evaluation.doc_type}")
+            if evaluation.delivery:
+                actions.append(f"leveradres={evaluation.delivery}")
+            if evaluation.remark:
+                actions.append(f"opmerking={evaluation.remark}")
+            if evaluation.en1090 is not None:
+                actions.append(f"EN1090={'aan' if evaluation.en1090 else 'uit'}")
+            action_text = ", ".join(actions) or "(geen)"
+            self.preview_result_var.set(
+                f"{header}\nGematchte regels: {matched}\nToegepaste regels: {applied}\nInvulling: {action_text}"
+            )
+
+        def _seed_preview_from_selection(self) -> None:
+            rule = self._selected_rule()
+            if rule is None:
+                return
+            if rule.client:
+                for client in self.clients_db.clients_sorted():
+                    display = self.clients_db.display_name(client)
+                    if strip_favorite_marker(display).strip().lower() == rule.client.strip().lower():
+                        self.preview_client_var.set(display)
+                        break
+                else:
+                    self.preview_client_var.set(rule.client)
+            else:
+                self.preview_client_var.set(self.CLIENT_ALL_LABEL)
+            self.preview_kind_var.set(
+                self.KIND_LABELS.get(rule.selection_kind, "Productie")
+            )
+            self.preview_identifier_var.set(rule.identifiers[0] if rule.identifiers else "")
+            self._run_preview()
+
+        class _EditDialog(tk.Toplevel):
+            DOC_TYPE_OPTIONS = (
+                "(ongewijzigd)",
+                "Geen",
+                "Bestelbon",
+                "Standaard bon",
+                "Offerteaanvraag",
+            )
+            EN1090_OPTIONS = (
+                "(ongewijzigd)",
+                "Aan",
+                "Uit",
+            )
+
+            def __init__(
+                self,
+                master,
+                rule,
+                clients_db,
+                suppliers_db,
+                delivery_db,
+                *,
+                title="Presetregel",
+            ):
+                super().__init__(master)
+                self.title(title)
+                self.result = None
+                self.clients_db = clients_db
+                self.suppliers_db = suppliers_db
+                self.delivery_db = delivery_db
+
+                rule = OrderPresetRule.from_any(rule) if rule is not None else OrderPresetRule(name="")
+                self.columnconfigure(1, weight=1)
+
+                self._client_display_to_value = {
+                    PresetRulesManagerFrame.CLIENT_ALL_LABEL: ""
+                }
+                self._supplier_display_to_value = {
+                    PresetRulesManagerFrame.SUPPLIER_UNCHANGED_LABEL: ""
+                }
+                self._delivery_display_to_value = {
+                    PresetRulesManagerFrame.DELIVERY_UNCHANGED_LABEL: ""
+                }
+
+                client_values = [PresetRulesManagerFrame.CLIENT_ALL_LABEL]
+                for client in self.clients_db.clients_sorted():
+                    display = self.clients_db.display_name(client)
+                    client_values.append(display)
+                    self._client_display_to_value[display] = strip_favorite_marker(display).strip()
+
+                supplier_values = [PresetRulesManagerFrame.SUPPLIER_UNCHANGED_LABEL]
+                for supplier in self.suppliers_db.suppliers_sorted():
+                    display = self.suppliers_db.display_name(supplier)
+                    supplier_values.append(display)
+                    self._supplier_display_to_value[display] = supplier.supplier
+
+                delivery_values = [PresetRulesManagerFrame.DELIVERY_UNCHANGED_LABEL]
+                delivery_values.extend(
+                    [
+                        "Geen",
+                        "Klantadres",
+                        "Bestelling wordt opgehaald",
+                        "Leveradres wordt nog meegedeeld",
+                    ]
+                )
+                for delivery in self.delivery_db.addresses_sorted():
+                    display = self.delivery_db.display_name(delivery)
+                    if display not in self._delivery_display_to_value:
+                        delivery_values.append(display)
+                        self._delivery_display_to_value[display] = strip_favorite_marker(display).strip()
+                self._delivery_display_to_value["Geen"] = "Geen"
+                self._delivery_display_to_value["Klantadres"] = "Klantadres"
+                self._delivery_display_to_value["Bestelling wordt opgehaald"] = "Bestelling wordt opgehaald"
+                self._delivery_display_to_value["Leveradres wordt nog meegedeeld"] = "Leveradres wordt nog meegedeeld"
+
+                def _display_for_value(mapping, value, fallback):
+                    clean = _to_str(value).strip()
+                    if not clean:
+                        return fallback
+                    for display, raw_value in mapping.items():
+                        if _to_str(raw_value).strip().lower() == clean.lower():
+                            return display
+                    return clean
+
+                self.name_var = tk.StringVar(value=rule.name)
+                self.enabled_var = tk.IntVar(value=1 if rule.enabled else 0)
+                self.auto_apply_var = tk.IntVar(value=1 if rule.auto_apply else 0)
+                self.priority_var = tk.StringVar(value=str(rule.priority))
+                self.client_var = tk.StringVar(
+                    value=_display_for_value(
+                        self._client_display_to_value,
+                        rule.client,
+                        PresetRulesManagerFrame.CLIENT_ALL_LABEL,
+                    )
+                )
+                self.kind_var = tk.StringVar(
+                    value=PresetRulesManagerFrame.KIND_LABELS.get(
+                        rule.selection_kind, "Productie"
+                    )
+                )
+                self.supplier_var = tk.StringVar(
+                    value=_display_for_value(
+                        self._supplier_display_to_value,
+                        rule.supplier,
+                        PresetRulesManagerFrame.SUPPLIER_UNCHANGED_LABEL,
+                    )
+                )
+                self.doc_type_var = tk.StringVar(
+                    value=rule.doc_type or PresetRulesManagerFrame.DOC_TYPE_UNCHANGED_LABEL
+                )
+                self.delivery_var = tk.StringVar(
+                    value=_display_for_value(
+                        self._delivery_display_to_value,
+                        rule.delivery,
+                        PresetRulesManagerFrame.DELIVERY_UNCHANGED_LABEL,
+                    )
+                )
+                self.remark_var = tk.StringVar(value=rule.remark or "")
+                if rule.en1090 is None:
+                    en1090_text = PresetRulesManagerFrame.EN1090_UNCHANGED_LABEL
+                else:
+                    en1090_text = "Aan" if rule.en1090 else "Uit"
+                self.en1090_var = tk.StringVar(value=en1090_text)
+
+                tk.Label(self, text="Naam:").grid(row=0, column=0, sticky="e", padx=4, pady=2)
+                name_entry = tk.Entry(self, textvariable=self.name_var, width=42)
+                name_entry.grid(row=0, column=1, sticky="ew", padx=4, pady=2)
+
+                flag_row = tk.Frame(self)
+                flag_row.grid(row=1, column=0, columnspan=2, sticky="w", padx=4, pady=(4, 2))
+                tk.Checkbutton(flag_row, text="Actief", variable=self.enabled_var).pack(side="left")
+                tk.Checkbutton(
+                    flag_row,
+                    text="Automatisch toepassen bij openen",
+                    variable=self.auto_apply_var,
+                ).pack(side="left", padx=(12, 0))
+
+                tk.Label(self, text="Prioriteit:").grid(row=2, column=0, sticky="e", padx=4, pady=2)
+                tk.Entry(self, textvariable=self.priority_var, width=10).grid(
+                    row=2, column=1, sticky="w", padx=4, pady=2
+                )
+
+                tk.Label(self, text="Opdrachtgever:").grid(row=3, column=0, sticky="e", padx=4, pady=2)
+                ttk.Combobox(
+                    self,
+                    textvariable=self.client_var,
+                    values=client_values,
+                    state="readonly",
+                    width=40,
+                ).grid(row=3, column=1, sticky="ew", padx=4, pady=2)
+
+                tk.Label(self, text="Type selectie:").grid(row=4, column=0, sticky="e", padx=4, pady=2)
+                ttk.Combobox(
+                    self,
+                    textvariable=self.kind_var,
+                    values=list(PresetRulesManagerFrame.KIND_VALUES.keys()),
+                    state="readonly",
+                    width=18,
+                ).grid(row=4, column=1, sticky="w", padx=4, pady=2)
+
+                tk.Label(self, text="Selecties:").grid(row=5, column=0, sticky="ne", padx=4, pady=2)
+                self.identifiers_text = tk.Text(self, width=42, height=4, wrap="word")
+                self.identifiers_text.grid(row=5, column=1, sticky="ew", padx=4, pady=2)
+                self.identifiers_text.insert("1.0", "\n".join(rule.identifiers))
+                tk.Label(
+                    self,
+                    text="Meerdere waarden gescheiden door komma of nieuwe regel.",
+                    anchor="w",
+                    justify="left",
+                ).grid(row=6, column=1, sticky="w", padx=4, pady=(0, 6))
+
+                tk.Label(self, text="Leverancier:").grid(row=7, column=0, sticky="e", padx=4, pady=2)
+                ttk.Combobox(
+                    self,
+                    textvariable=self.supplier_var,
+                    values=supplier_values,
+                    state="readonly",
+                    width=40,
+                ).grid(row=7, column=1, sticky="ew", padx=4, pady=2)
+
+                tk.Label(self, text="Documenttype:").grid(row=8, column=0, sticky="e", padx=4, pady=2)
+                ttk.Combobox(
+                    self,
+                    textvariable=self.doc_type_var,
+                    values=self.DOC_TYPE_OPTIONS,
+                    state="readonly",
+                    width=24,
+                ).grid(row=8, column=1, sticky="w", padx=4, pady=2)
+
+                tk.Label(self, text="Leveradres:").grid(row=9, column=0, sticky="e", padx=4, pady=2)
+                ttk.Combobox(
+                    self,
+                    textvariable=self.delivery_var,
+                    values=delivery_values,
+                    state="readonly",
+                    width=40,
+                ).grid(row=9, column=1, sticky="ew", padx=4, pady=2)
+
+                tk.Label(self, text="EN 1090:").grid(row=10, column=0, sticky="e", padx=4, pady=2)
+                ttk.Combobox(
+                    self,
+                    textvariable=self.en1090_var,
+                    values=self.EN1090_OPTIONS,
+                    state="readonly",
+                    width=16,
+                ).grid(row=10, column=1, sticky="w", padx=4, pady=2)
+
+                tk.Label(self, text="Opmerking:").grid(row=11, column=0, sticky="e", padx=4, pady=2)
+                tk.Entry(self, textvariable=self.remark_var, width=42).grid(
+                    row=11, column=1, sticky="ew", padx=4, pady=2
+                )
+
+                btn = tk.Frame(self)
+                btn.grid(row=12, column=0, columnspan=2, pady=8)
+                tk.Button(btn, text="Opslaan", command=self._ok).pack(side="left", padx=4)
+                tk.Button(btn, text="Annuleer", command=self.destroy).pack(side="left", padx=4)
+
+                self.transient(master)
+                _place_window_near_parent(self, master)
+                self.grab_set()
+                self.after_idle(name_entry.focus_set)
+
+            def _ok(self):
+                name = self.name_var.get().strip()
+                if not name:
+                    messagebox.showwarning(
+                        "Let op",
+                        "Geef de presetregel een naam.",
+                        parent=self,
+                    )
+                    return
+
+                try:
+                    priority = int(self.priority_var.get().strip())
+                except Exception:
+                    messagebox.showwarning(
+                        "Let op",
+                        "Prioriteit moet een getal zijn.",
+                        parent=self,
+                    )
+                    return
+
+                client = self._client_display_to_value.get(self.client_var.get(), "")
+                selection_kind = PresetRulesManagerFrame.KIND_VALUES.get(
+                    self.kind_var.get(),
+                    "production",
+                )
+                identifiers_raw = self.identifiers_text.get("1.0", "end").strip()
+                supplier = self._supplier_display_to_value.get(self.supplier_var.get(), "")
+                doc_type = self.doc_type_var.get().strip()
+                if doc_type == PresetRulesManagerFrame.DOC_TYPE_UNCHANGED_LABEL:
+                    doc_type = ""
+                delivery = self._delivery_display_to_value.get(self.delivery_var.get(), "")
+                if delivery == PresetRulesManagerFrame.DELIVERY_UNCHANGED_LABEL:
+                    delivery = ""
+                remark = self.remark_var.get().strip()
+
+                en1090_text = self.en1090_var.get().strip()
+                if en1090_text == "Aan":
+                    en1090_value = True
+                elif en1090_text == "Uit":
+                    en1090_value = False
+                else:
+                    en1090_value = None
+
+                if not any((supplier, doc_type, delivery, remark, en1090_value is not None)):
+                    messagebox.showwarning(
+                        "Let op",
+                        "Geef minstens één invulactie op.",
+                        parent=self,
+                    )
+                    return
+
+                try:
+                    self.result = OrderPresetRule.from_any(
+                        {
+                            "name": name,
+                            "enabled": bool(self.enabled_var.get()),
+                            "priority": priority,
+                            "auto_apply": bool(self.auto_apply_var.get()),
+                            "client": client,
+                            "selection_kind": selection_kind,
+                            "identifiers": identifiers_raw,
+                            "supplier": supplier,
+                            "doc_type": doc_type,
+                            "delivery": delivery,
+                            "remark": remark,
+                            "en1090": en1090_value,
+                        }
+                    )
+                except Exception as exc:
+                    messagebox.showerror("Fout", str(exc), parent=self)
+                    return
+                self.destroy()
+
     @dataclass
     class SupplierSelectionState:
         selections: Dict[str, str]
@@ -2228,6 +2877,8 @@ def start_gui():
             project_name_var: tk.StringVar,
             clients_db: Optional["ClientsDB"] = None,
             client_var: Optional[tk.StringVar] = None,
+            presets_db=None,
+            on_manage_presets=None,
             opticutter_details: Dict[str, "OpticutterOrderComputation"] | None = None,
             initial_state: Optional["SupplierSelectionState"] = None,
             en1090_enabled: bool = True,
@@ -2243,6 +2894,8 @@ def start_gui():
             self.project_name_var = project_name_var
             self.clients_db = clients_db
             self.client_var = client_var
+            self.presets_db = presets_db
+            self.on_manage_presets = on_manage_presets
             self.opticutter_details = opticutter_details or {}
             self._en1090_enabled = bool(en1090_enabled)
             self._preview_supplier: Optional[Supplier] = None
@@ -2264,6 +2917,8 @@ def start_gui():
             self._group_sync_in_progress = False
             self._en1090_getter = en1090_getter
             self._en1090_setter = en1090_setter
+            self._last_preset_status = ""
+            self._preset_state_by_key: Dict[str, Dict[str, object]] = {}
             self.finish_entries = finishes
             self._row_widget_maps: List[Dict[str, tk.Misc]] = []
             self._row_widgets_by_key: Dict[str, Dict[str, tk.Misc]] = {}
@@ -2581,6 +3236,16 @@ def start_gui():
                 text="Nieuw leveradres",
                 command=self._add_delivery_address,
             ).pack(side="left", padx=(12, 0))
+            tk.Button(
+                export_toggle_row,
+                text="Invullen volgens preset",
+                command=self._apply_presets_from_button,
+            ).pack(side="left", padx=(12, 0))
+            tk.Button(
+                export_toggle_row,
+                text="Beheer presetregels",
+                command=self._open_preset_manager,
+            ).pack(side="left", padx=(6, 0))
 
             delivery_opts = self._delivery_options()
 
@@ -3081,6 +3746,227 @@ def start_gui():
                 if dcombo is not None:
                     dcombo.set(display_name)
 
+        def _open_preset_manager(self) -> None:
+            callback = getattr(self, "on_manage_presets", None)
+            if callable(callback):
+                callback()
+
+        @staticmethod
+        def _clean_display_value(value: object) -> str:
+            return strip_favorite_marker(_to_str(value)).strip()
+
+        def _store_preset_state(self, sel_key: str, evaluation) -> None:
+            preset_state_by_key = getattr(self, "_preset_state_by_key", None)
+            if not isinstance(preset_state_by_key, dict):
+                preset_state_by_key = {}
+                setattr(self, "_preset_state_by_key", preset_state_by_key)
+            applied_rule_names = [
+                _to_str(name).strip()
+                for name in getattr(evaluation, "applied_rule_names", [])
+                if _to_str(name).strip()
+            ]
+            if not applied_rule_names:
+                preset_state_by_key.pop(sel_key, None)
+                return
+
+            field_names: List[str] = []
+            if _to_str(getattr(evaluation, "supplier", "")).strip():
+                field_names.append("leverancier")
+            if _to_str(getattr(evaluation, "doc_type", "")).strip():
+                field_names.append("documenttype")
+            if _to_str(getattr(evaluation, "delivery", "")).strip():
+                field_names.append("leveradres")
+            if _to_str(getattr(evaluation, "remark", "")).strip():
+                field_names.append("opmerking")
+            if getattr(evaluation, "en1090", None) is not None:
+                field_names.append("EN1090")
+
+            preset_state_by_key[sel_key] = {
+                "applied_rule_names": applied_rule_names,
+                "field_names": field_names,
+            }
+
+        def _preset_indicator_suffix(self, sel_key: str) -> str:
+            preset_state_by_key = getattr(self, "_preset_state_by_key", {})
+            if sel_key not in preset_state_by_key:
+                return ""
+            return " [Preset]"
+
+        def _preset_status_message(self, sel_key: str) -> str:
+            preset_state_by_key = getattr(self, "_preset_state_by_key", {})
+            state = preset_state_by_key.get(sel_key)
+            if not state:
+                return ""
+            base_label = self._base_row_label(sel_key)
+            applied_rule_names = state.get("applied_rule_names") or []
+            field_names = state.get("field_names") or []
+            rules_text = ", ".join(
+                _to_str(name).strip()
+                for name in applied_rule_names
+                if _to_str(name).strip()
+            )
+            fields_text = ", ".join(
+                _to_str(name).strip()
+                for name in field_names
+                if _to_str(name).strip()
+            )
+            if rules_text and fields_text:
+                return f"{base_label}: ingevuld via presetregel(s) {rules_text} ({fields_text})."
+            if rules_text:
+                return f"{base_label}: ingevuld via presetregel(s) {rules_text}."
+            return f"{base_label}: preset toegepast."
+
+        def _find_supplier_display_for_name(self, supplier_name: str) -> str:
+            clean = self._clean_display_value(supplier_name)
+            if not clean:
+                return ""
+            for display, raw_name in getattr(self, "_disp_to_name", {}).items():
+                if _to_str(raw_name).strip().lower() == clean.lower():
+                    return display
+            return clean
+
+        def _find_delivery_display_for_name(self, delivery_name: str) -> str:
+            clean = self._clean_display_value(delivery_name)
+            if not clean:
+                return ""
+            options = []
+            delivery_options = getattr(self, "_delivery_options", None)
+            if callable(delivery_options):
+                try:
+                    options = list(delivery_options())
+                except Exception:
+                    options = []
+            for option in options:
+                if self._clean_display_value(option).lower() == clean.lower():
+                    return option
+            return clean
+
+        def _preset_context_for_row(self, sel_key: str) -> Dict[str, str]:
+            parser = getattr(
+                self,
+                "_parse_selection_key",
+                SupplierSelectionFrame._parse_selection_key,
+            )
+            kind, identifier = parser(sel_key)
+            client_name = ""
+            client = self._resolve_current_client()
+            if client is not None:
+                client_name = _to_str(getattr(client, "name", "")).strip()
+            elif getattr(self, "client_var", None) is not None:
+                try:
+                    client_name = self._clean_display_value(self.client_var.get())
+                except Exception:
+                    client_name = ""
+            return {
+                "client": client_name,
+                "selection_kind": kind,
+                "identifier": _to_str(identifier).strip(),
+            }
+
+        def _apply_preset_evaluation_to_row(self, sel_key: str, evaluation) -> bool:
+            changed = False
+
+            supplier_name = _to_str(getattr(evaluation, "supplier", "")).strip()
+            if supplier_name:
+                combo = self.combo_by_key.get(sel_key)
+                if combo is not None:
+                    display_value = self._find_supplier_display_for_name(supplier_name)
+                    if combo.get().strip() != display_value:
+                        self._set_combo_value(combo, display_value)
+                        changed = True
+
+            doc_type = _to_str(getattr(evaluation, "doc_type", "")).strip()
+            if doc_type:
+                doc_var = self.doc_vars.get(sel_key)
+                if doc_var is not None and doc_var.get().strip() != doc_type:
+                    doc_var.set(doc_type)
+                    changed = True
+
+            delivery = _to_str(getattr(evaluation, "delivery", "")).strip()
+            if delivery:
+                dvar = self.delivery_vars.get(sel_key)
+                if dvar is not None:
+                    display_value = self._find_delivery_display_for_name(delivery)
+                    if dvar.get().strip() != display_value:
+                        dvar.set(display_value)
+                        dcombo = self.delivery_combos.get(sel_key)
+                        if dcombo is not None:
+                            dcombo.set(display_value)
+                        changed = True
+
+            remark = _to_str(getattr(evaluation, "remark", "")).strip()
+            if remark:
+                remark_var = self.remark_vars.get(sel_key)
+                if remark_var is not None and remark_var.get().strip() != remark:
+                    remark_var.set(remark)
+                    changed = True
+
+            en1090_value = getattr(evaluation, "en1090", None)
+            if en1090_value is not None:
+                en1090_var = self.en1090_vars.get(sel_key)
+                if en1090_var is not None and bool(en1090_var.get()) != bool(en1090_value):
+                    en1090_var.set(1 if en1090_value else 0)
+                    changed = True
+
+            if doc_type:
+                try:
+                    self._on_doc_type_change(sel_key)
+                except Exception:
+                    pass
+
+            return changed
+
+        def _apply_presets(self, *, auto_apply_only: bool, status_when_idle: bool) -> int:
+            presets_db = getattr(self, "presets_db", None)
+            if presets_db is None:
+                if status_when_idle:
+                    self.update_status("Geen presetregels beschikbaar.")
+                return 0
+
+            changed_rows = 0
+            applied_rule_names: set[str] = set()
+
+            for sel_key, _combo in self.rows:
+                context = self._preset_context_for_row(sel_key)
+                try:
+                    evaluation = presets_db.evaluate(
+                        context,
+                        auto_apply_only=bool(auto_apply_only),
+                    )
+                except Exception:
+                    continue
+                if not evaluation.has_changes():
+                    preset_state_by_key = getattr(self, "_preset_state_by_key", None)
+                    if isinstance(preset_state_by_key, dict):
+                        preset_state_by_key.pop(sel_key, None)
+                    continue
+                self._store_preset_state(sel_key, evaluation)
+                applied_rule_names.update(
+                    name for name in getattr(evaluation, "applied_rule_names", []) if name
+                )
+                if self._apply_preset_evaluation_to_row(sel_key, evaluation):
+                    changed_rows += 1
+
+            sync_grouped_rows = getattr(self, "_sync_grouped_rows", None)
+            if callable(sync_grouped_rows):
+                sync_grouped_rows()
+            self._update_preview_from_any_combo()
+
+            if status_when_idle or changed_rows:
+                if changed_rows:
+                    message = (
+                        f"{changed_rows} rij(en) ingevuld via "
+                        f"{len(applied_rule_names) or changed_rows} presetregel(s)."
+                    )
+                else:
+                    message = "Geen passende presetregels gevonden."
+                self._last_preset_status = message
+                self.update_status(message)
+            return changed_rows
+
+        def _apply_presets_from_button(self) -> None:
+            self._apply_presets(auto_apply_only=False, status_when_idle=True)
+
         def serialize_state(self) -> "SupplierSelectionState":
             selections: Dict[str, str] = {}
             for sel_key, combo in self.rows:
@@ -3345,6 +4231,9 @@ def start_gui():
             self.db.defaults_by_production.clear()
             self.db.defaults_by_finish.clear()
             self.db.save()
+            preset_state_by_key = getattr(self, "_preset_state_by_key", None)
+            if isinstance(preset_state_by_key, dict):
+                preset_state_by_key.clear()
 
             set_combo_value = getattr(
                 type(self), "_set_combo_value", SupplierSelectionFrame._set_combo_value
@@ -3369,6 +4258,9 @@ def start_gui():
         def _on_focus_key(self, sel_key: str):
             self._active_key = sel_key
             SupplierSelectionFrame._get_type_filter_map(self).pop(sel_key, None)
+            preset_message = self._preset_status_message(sel_key)
+            if preset_message:
+                self.update_status(preset_message)
 
         def _set_all_exports(self, enabled: bool) -> None:
             value = 1 if enabled else 0
@@ -3534,6 +4426,8 @@ def start_gui():
 
         def _apply_group_visuals(self, group_links) -> None:
             base_bg = getattr(self, "_rows_background", None) or self.cget("bg")
+            preset_fg = "#2E7D32"
+            preset_state_by_key = getattr(self, "_preset_state_by_key", {})
             for sel_key, _combo in self.rows:
                 widgets = self._row_widgets_by_key.get(sel_key, {})
                 row_label = widgets.get("label")
@@ -3547,10 +4441,15 @@ def start_gui():
                 accent = _to_str(spec.get("accent")).strip()
                 grouped = bool(spec.get("grouped"))
                 is_root = bool(spec.get("is_root"))
+                base_text = _to_str(spec.get("text")).strip() or self._base_row_label(sel_key)
+                label_text = f"{base_text}{self._preset_indicator_suffix(sel_key)}"
+                label_fg = accent if accent else (
+                    preset_fg if sel_key in preset_state_by_key else default_fg
+                )
                 try:
                     row_label.configure(
-                        text=_to_str(spec.get("text")).strip() or self._base_row_label(sel_key),
-                        fg=accent if accent else default_fg,
+                        text=label_text,
+                        fg=label_fg,
                         font=("TkDefaultFont", 10, "bold") if grouped and is_root else default_font,
                         background=base_bg,
                     )
@@ -3844,6 +4743,10 @@ def start_gui():
             refresh_group_options = getattr(self, "_refresh_group_options", None)
             if callable(refresh_group_options):
                 refresh_group_options()
+            if initial:
+                apply_presets = getattr(self, "_apply_presets", None)
+                if callable(apply_presets):
+                    apply_presets(auto_apply_only=True, status_when_idle=False)
 
         def _on_combo_change(self, _evt=None):
             for sel_key, combo in self.rows:
@@ -5021,6 +5924,7 @@ def start_gui():
             self.db = SuppliersDB.load(SUPPLIERS_DB_FILE)
             self.client_db = ClientsDB.load(CLIENTS_DB_FILE)
             self.delivery_db = DeliveryAddressesDB.load(DELIVERY_DB_FILE)
+            self.order_presets_db = OrderPresetsDB.load(ORDER_PRESETS_DB_FILE)
 
             self.settings = AppSettings.load()
             self._suspend_save = False
@@ -5667,6 +6571,16 @@ def start_gui():
             )
             self.suppliers_frame.configure(padx=12, pady=12)
             self.nb.add(self.suppliers_frame, text="Leverancier beheer")
+            self.preset_rules_frame = PresetRulesManagerFrame(
+                self.nb,
+                self.order_presets_db,
+                self.client_db,
+                self.db,
+                self.delivery_db,
+                on_change=self._on_preset_rules_change,
+            )
+            self.preset_rules_frame.configure(padx=12, pady=12)
+            self.nb.add(self.preset_rules_frame, text="Presetregels")
 
             self.settings_frame = SettingsFrame(self.nb, self)
             self.settings_frame.configure(padx=12, pady=12)
@@ -6317,6 +7231,22 @@ def start_gui():
             if manual_tab is not None:
                 try:
                     manual_tab.refresh_data()
+                except Exception:
+                    pass
+            presets_tab = getattr(self, "preset_rules_frame", None)
+            if presets_tab is not None:
+                try:
+                    presets_tab.refresh_data()
+                except Exception:
+                    pass
+
+        def _on_preset_rules_change(self):
+            self.status_var.set("Presetregels bijgewerkt.")
+            sel = getattr(self, "sel_frame", None)
+            if sel is not None:
+                try:
+                    if sel.winfo_exists():
+                        sel.presets_db = self.order_presets_db
                 except Exception:
                     pass
 
@@ -7595,6 +8525,8 @@ def start_gui():
                     self.project_name_var,
                     clients_db=self.client_db,
                     client_var=self.client_var,
+                    presets_db=self.order_presets_db,
+                    on_manage_presets=lambda: self.nb.select(self.preset_rules_frame),
                     opticutter_details=opticutter_details,
                     initial_state=previous_state,
                     en1090_enabled=bool(self.en1090_enabled_var.get()),
@@ -9418,6 +10350,8 @@ def start_gui():
                     self.project_name_var,
                     clients_db=self.client_db,
                     client_var=self.client_var,
+                    presets_db=self.order_presets_db,
+                    on_manage_presets=lambda: self.nb.select(self.preset_rules_frame),
                     opticutter_details=opticutter_details,
                     initial_state=previous_state,
                     en1090_enabled=bool(self.en1090_enabled_var.get()),

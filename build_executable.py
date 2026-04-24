@@ -15,6 +15,7 @@ from typing import Iterable, List
 
 from app_settings import AppSettings
 from app_paths import APP_NAME, APP_VERSION
+from order_presets_db import OrderPresetsDB
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 BUILD_DIR = PROJECT_ROOT / "build" / "pyinstaller"
@@ -28,6 +29,7 @@ DEFAULT_DATA_FILES = [
     "suppliers_db.json",
     "delivery_addresses_db.json",
     "app_settings.json",
+    "order_presets.json",
     "suppliers_template.csv",
 ]
 
@@ -107,6 +109,12 @@ def _prepare_build_data_file(filename: str) -> Path:
         with open(clean_settings_path, "w", encoding="utf-8") as fh:
             json.dump(clean_settings, fh, indent=2, ensure_ascii=False)
         return clean_settings_path
+    if filename == "order_presets.json":
+        DATA_FILE_DIR.mkdir(parents=True, exist_ok=True)
+        clean_presets_path = DATA_FILE_DIR / filename
+        with open(clean_presets_path, "w", encoding="utf-8") as fh:
+            json.dump(OrderPresetsDB().to_dict(), fh, indent=2, ensure_ascii=False)
+        return clean_presets_path
     return PROJECT_ROOT / filename
 
 

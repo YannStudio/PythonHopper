@@ -202,6 +202,36 @@ def test_app_resolves_client_address_delivery_choice():
     assert delivery.address == "Kerkstraat 1, Gent"
 
 
+def test_preset_status_message_and_indicator_are_exposed_per_row():
+    class DummySel:
+        _base_row_label = SupplierSelectionFrame._base_row_label
+        _preset_indicator_suffix = SupplierSelectionFrame._preset_indicator_suffix
+        _preset_status_message = SupplierSelectionFrame._preset_status_message
+
+        def __init__(self):
+            self.row_meta = {
+                "production::Laser cutting": {
+                    "base_display": "Laser cutting",
+                    "display": "Laser cutting",
+                    "identifier": "Laser cutting",
+                }
+            }
+            self._preset_state_by_key = {
+                "production::Laser cutting": {
+                    "applied_rule_names": ["Klant X laser"],
+                    "field_names": ["leverancier", "documenttype"],
+                }
+            }
+
+    sel = DummySel()
+
+    assert sel._preset_indicator_suffix("production::Laser cutting") == " [Preset]"
+    message = sel._preset_status_message("production::Laser cutting")
+    assert "Laser cutting" in message
+    assert "Klant X laser" in message
+    assert "leverancier" in message
+
+
 def test_supplier_selection_frame_uses_scrollable_rows_canvas():
     source = pathlib.Path("gui.py").read_text(encoding="utf-8")
     mod = ast.parse(source)
