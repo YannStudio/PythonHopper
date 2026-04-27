@@ -57,17 +57,16 @@
       "client": "Tecno Art bvba",
       "selection_kind": "production",
       "identifiers": [
-        "Sheetmetal",
-        "Sheetmetal +4m"
+        "Sheetmetal"
       ],
-      "supplier": "SPCM",
+      "supplier": "Productora",
       "doc_type": "Bestelbon",
-      "delivery": "Klantadres",
+      "delivery": "Tecno Art bvba",
       "remark": "",
-      "en1090": null
+      "en1090": true
     },
     {
-      "name": "Tecno Art - Cutting",
+      "name": "Tecno Art - Interne productie - Cutting",
       "enabled": true,
       "priority": 100,
       "auto_apply": true,
@@ -76,11 +75,11 @@
       "identifiers": [
         "Cutting"
       ],
-      "supplier": "Kloeckner nv",
-      "doc_type": "Bestelbon",
-      "delivery": "Klantadres",
+      "supplier": "",
+      "doc_type": "Standaard bon",
+      "delivery": "Geen",
       "remark": "",
-      "en1090": null
+      "en1090": false
     },
     {
       "name": "Tecno Art - Roof",
@@ -108,9 +107,9 @@
       "identifiers": [
         "Mount material"
       ],
-      "supplier": "Mapeco",
+      "supplier": "Elcee Belux",
       "doc_type": "Bestelbon",
-      "delivery": "Klantadres",
+      "delivery": "Tecno Art bvba",
       "remark": "",
       "en1090": null
     },
@@ -125,7 +124,7 @@
         "Spare part"
       ],
       "supplier": "",
-      "doc_type": "Bestelbon",
+      "doc_type": "Standaard bon",
       "delivery": "Klantadres",
       "remark": "Controleer leverancier per onderdeel",
       "en1090": null
@@ -139,10 +138,11 @@
       "selection_kind": "production",
       "identifiers": [
         "Assembly",
-        "Weld assembly"
+        "Weld assembly",
+        "Cutting"
       ],
       "supplier": "",
-      "doc_type": "Geen",
+      "doc_type": "Standaard bon",
       "delivery": "",
       "remark": "Interne productie",
       "en1090": null
@@ -190,7 +190,7 @@
       "identifiers": [
         "Finish-Powder coating-RAL 9005"
       ],
-      "supplier": "Kolo nv",
+      "supplier": "Van Gils Coating - Beringen/Maasmechelen",
       "doc_type": "Bestelbon",
       "delivery": "Klantadres",
       "remark": "",
@@ -207,58 +207,10 @@
         "Cutting"
       ],
       "supplier": "MCB",
-      "doc_type": "Standaard bon",
-      "delivery": "Klantadres",
+      "doc_type": "Bestelbon",
+      "delivery": "Tecno Art bvba",
       "remark": "",
-      "en1090": null
-    },
-    {
-      "name": "Tecno Art - Brutemateriaal Groendak",
-      "enabled": true,
-      "priority": 100,
-      "auto_apply": true,
-      "client": "Tecno Art bvba",
-      "selection_kind": "opticutter",
-      "identifiers": [
-        "Groendak"
-      ],
-      "supplier": "Dirk Maris nv",
-      "doc_type": "Standaard bon",
-      "delivery": "Klantadres",
-      "remark": "",
-      "en1090": null
-    },
-    {
-      "name": "Tecno Art - Brutemateriaal Lasercutting",
-      "enabled": true,
-      "priority": 100,
-      "auto_apply": true,
-      "client": "Tecno Art bvba",
-      "selection_kind": "opticutter",
-      "identifiers": [
-        "Lasercutting"
-      ],
-      "supplier": "Productora",
-      "doc_type": "Standaard bon",
-      "delivery": "Klantadres",
-      "remark": "",
-      "en1090": null
-    },
-    {
-      "name": "Tecno Art - Brutemateriaal Mount material",
-      "enabled": true,
-      "priority": 100,
-      "auto_apply": true,
-      "client": "Tecno Art bvba",
-      "selection_kind": "opticutter",
-      "identifiers": [
-        "Mount material"
-      ],
-      "supplier": "Elcee Belux",
-      "doc_type": "Standaard bon",
-      "delivery": "Klantadres",
-      "remark": "",
-      "en1090": null
+      "en1090": true
     },
     {
       "name": "Tecno Art - Brutemateriaal Roof",
@@ -277,23 +229,7 @@
       "en1090": null
     },
     {
-      "name": "Tecno Art - Brutemateriaal Sheetmetal",
-      "enabled": true,
-      "priority": 100,
-      "auto_apply": true,
-      "client": "Tecno Art bvba",
-      "selection_kind": "opticutter",
-      "identifiers": [
-        "Sheetmetal"
-      ],
-      "supplier": "Productora",
-      "doc_type": "Standaard bon",
-      "delivery": "Klantadres",
-      "remark": "",
-      "en1090": null
-    },
-    {
-      "name": "Tecno Art - Brutemateriaal Sheetmetal +4m",
+      "name": "Tecno Art - Sheetmetal +4m",
       "enabled": true,
       "priority": 100,
       "auto_apply": true,
@@ -303,10 +239,10 @@
         "Sheetmetal +4m"
       ],
       "supplier": "Meeuwsen bv",
-      "doc_type": "Standaard bon",
-      "delivery": "Klantadres",
+      "doc_type": "Bestelbon",
+      "delivery": "Tecno Art bvba",
       "remark": "",
-      "en1090": null
+      "en1090": true
     },
     {
       "name": "Tecno Art - Brutemateriaal Tube laser",
@@ -318,27 +254,27 @@
       "identifiers": [
         "Tube laser"
       ],
-      "supplier": "Productora",
+      "supplier": "",
       "doc_type": "Standaard bon",
       "delivery": "Klantadres",
       "remark": "",
-      "en1090": null
+      "en1090": true
     },
     {
-      "name": "Tecno Art - Brutemateriaal Tube laser L",
+      "name": "Tecno Art - Tube laser L",
       "enabled": true,
       "priority": 100,
       "auto_apply": true,
       "client": "Tecno Art bvba",
-      "selection_kind": "opticutter",
+      "selection_kind": "production",
       "identifiers": [
         "Tube laser L"
       ],
       "supplier": "Saey",
-      "doc_type": "Standaard bon",
-      "delivery": "Klantadres",
+      "doc_type": "Bestelbon",
+      "delivery": "Tecno Art bvba",
       "remark": "",
-      "en1090": null
+      "en1090": true
     }
   ]
 }
