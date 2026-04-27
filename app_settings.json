@@ -1,8 +1,8 @@
 {
-  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/Kanal/83 - Lot10b - Central - Bibliotheek + leeszaal/Bibliotheek en leeszaal/cad - wandrek",
-  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/Kanal/83 - Lot10b - Central - Bibliotheek + leeszaal/Bibliotheek en leeszaal/export",
-  "project_number": "83",
-  "project_name": "Rek steunpalen",
+  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/HYE/01.Projecten/260316-Berendrecht/cad",
+  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/HYE/01.Projecten/260316-Berendrecht/export",
+  "project_number": "SLBES-V00405-ASB-D3-MW-TE-780",
+  "project_name": "Kabelsleep",
   "file_extensions": [
     {
       "key": "pdf",
@@ -46,10 +46,10 @@
       "enabled": true
     }
   ],
-  "zip_per_production": true,
+  "zip_per_production": false,
   "combine_pdf_per_production": false,
   "copy_finish_exports": true,
-  "zip_finish_exports": true,
+  "zip_finish_exports": false,
   "export_processed_bom": true,
   "export_related_bom_files": true,
   "export_date_prefix": false,
@@ -76,7 +76,7 @@
     "cutting": false,
     "dummy part": false,
     "lasercutting": false,
-    "sheetmetal": true,
+    "sheetmetal": false,
     "sheetmetal 4m": true,
     "spare part": false,
     "tube laser": false,
