@@ -2196,6 +2196,8 @@ def start_gui():
                 "Actief",
             )
             self.tree = ttk.Treeview(list_area, columns=cols, show="headings", selectmode="browse")
+            list_area.rowconfigure(0, weight=1)
+            list_area.columnconfigure(0, weight=1)
             widths = {
                 "Naam": 180,
                 "Klant": 160,
@@ -2210,10 +2212,15 @@ def start_gui():
                 anchor = "center" if col in {"Prioriteit", "Auto", "Actief"} else "w"
                 self.tree.heading(col, text=col, anchor=anchor)
                 self.tree.column(col, width=widths.get(col, 140), anchor=anchor)
-            tree_scroll = ttk.Scrollbar(list_area, orient="vertical", command=self.tree.yview)
-            self.tree.configure(yscrollcommand=tree_scroll.set)
-            self.tree.pack(side="left", fill="both", expand=True)
-            tree_scroll.pack(side="left", fill="y")
+            tree_y_scroll = ttk.Scrollbar(list_area, orient="vertical", command=self.tree.yview)
+            tree_x_scroll = ttk.Scrollbar(list_area, orient="horizontal", command=self.tree.xview)
+            self.tree.configure(
+                yscrollcommand=tree_y_scroll.set,
+                xscrollcommand=tree_x_scroll.set,
+            )
+            self.tree.grid(row=0, column=0, sticky="nsew")
+            tree_y_scroll.grid(row=0, column=1, sticky="ns")
+            tree_x_scroll.grid(row=1, column=0, sticky="ew")
             self.tree.bind("<Double-Button-1>", lambda _e: self.edit_sel())
             self.tree.bind("<<TreeviewSelect>>", lambda _e: self._seed_preview_from_selection())
 
