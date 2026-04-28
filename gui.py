@@ -374,6 +374,78 @@ def start_gui():
                     pass
                 self._tipwindow = None
 
+    class _HelpTooltip:
+        """Show a short help tooltip for any widget."""
+
+        def __init__(self, widget: "tk.Widget", text: str, *, delay_ms: int = 350):
+            self.widget = widget
+            self.text = text
+            self.delay_ms = delay_ms
+            self._tipwindow: Optional["tk.Toplevel"] = None
+            self._after_id: Optional[str] = None
+            widget.bind("<Enter>", self._schedule_show, add="+")
+            widget.bind("<Leave>", self._hide, add="+")
+            widget.bind("<Destroy>", self._hide, add="+")
+
+        def _schedule_show(self, _event=None) -> None:
+            self._cancel_scheduled()
+            if not self.text:
+                return
+            try:
+                if not self.widget.winfo_viewable():
+                    return
+                self._after_id = self.widget.after(self.delay_ms, self._show)
+            except tk.TclError:
+                self._after_id = None
+
+        def _show(self) -> None:
+            self._after_id = None
+            if self._tipwindow is not None:
+                return
+            try:
+                x = self.widget.winfo_pointerx() + 12
+                y = self.widget.winfo_pointery() + 12
+            except tk.TclError:
+                return
+            tip = tk.Toplevel(self.widget)
+            tip.wm_overrideredirect(True)
+            try:
+                tip.wm_attributes("-topmost", True)
+            except tk.TclError:
+                pass
+            label = tk.Label(
+                tip,
+                text=self.text,
+                background="#ffffe0",
+                foreground="#444444",
+                relief="solid",
+                borderwidth=1,
+                justify="left",
+                padx=6,
+                pady=4,
+                wraplength=360,
+            )
+            label.pack()
+            tip.wm_geometry(f"+{x}+{y}")
+            self._tipwindow = tip
+
+        def _cancel_scheduled(self) -> None:
+            if self._after_id is not None:
+                try:
+                    self.widget.after_cancel(self._after_id)
+                except tk.TclError:
+                    pass
+                self._after_id = None
+
+        def _hide(self, _event=None) -> None:
+            self._cancel_scheduled()
+            if self._tipwindow is not None:
+                try:
+                    self._tipwindow.destroy()
+                except tk.TclError:
+                    pass
+                self._tipwindow = None
+
     class _TreeTooltipManager:
         """Attach tooltips to individual Treeview cells."""
 
@@ -2147,6 +2219,8 @@ def start_gui():
             "Brutemateriaal": "opticutter",
         }
         CLIENT_ALL_LABEL = "(alle opdrachtgevers)"
+        FILTER_ALL_LABEL = "(alle klanten)"
+        FILTER_GLOBAL_LABEL = "(algemene regels)"
         SUPPLIER_UNCHANGED_LABEL = "(ongewijzigd)"
         DELIVERY_UNCHANGED_LABEL = "(ongewijzigd)"
         DOC_TYPE_UNCHANGED_LABEL = "(ongewijzigd)"
@@ -2182,6 +2256,26 @@ def start_gui():
             )
             intro.pack(fill="x", padx=8, pady=(0, 8))
 
+            filter_row = tk.Frame(self)
+            filter_row.pack(fill="x", padx=8, pady=(0, 8))
+            tk.Label(filter_row, text="Klantfilter:").pack(side="left")
+            self.filter_client_var = tk.StringVar(value=self.FILTER_ALL_LABEL)
+            self._filter_display_to_value: Dict[str, Optional[str]] = {}
+            self.filter_client_combo = ttk.Combobox(
+                filter_row,
+                textvariable=self.filter_client_var,
+                state="readonly",
+                width=34,
+            )
+            self.filter_client_combo.pack(side="left", padx=(6, 8))
+            self.filter_client_combo.bind("<<ComboboxSelected>>", lambda _e: self.refresh())
+            _HelpTooltip(
+                self.filter_client_combo,
+                "Filter de lijst per opdrachtgever. Algemene regels staan apart onder '(algemene regels)'.",
+            )
+            self.filter_count_var = tk.StringVar()
+            tk.Label(filter_row, textvariable=self.filter_count_var, anchor="w").pack(side="left")
+
             list_area = tk.Frame(self)
             list_area.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
@@ -2191,8 +2285,6 @@ def start_gui():
                 "Type",
                 "Selecties",
                 "Acties",
-                "Prioriteit",
-                "Auto",
                 "Actief",
             )
             self.tree = ttk.Treeview(list_area, columns=cols, show="headings", selectmode="browse")
@@ -2204,12 +2296,10 @@ def start_gui():
                 "Type": 110,
                 "Selecties": 240,
                 "Acties": 340,
-                "Prioriteit": 80,
-                "Auto": 70,
                 "Actief": 70,
             }
             for col in cols:
-                anchor = "center" if col in {"Prioriteit", "Auto", "Actief"} else "w"
+                anchor = "center" if col == "Actief" else "w"
                 self.tree.heading(col, text=col, anchor=anchor)
                 self.tree.column(col, width=widths.get(col, 140), anchor=anchor)
             tree_y_scroll = ttk.Scrollbar(list_area, orient="vertical", command=self.tree.yview)
@@ -2221,15 +2311,30 @@ def start_gui():
             self.tree.grid(row=0, column=0, sticky="nsew")
             tree_y_scroll.grid(row=0, column=1, sticky="ns")
             tree_x_scroll.grid(row=1, column=0, sticky="ew")
+            self.tree_tooltips = _TreeTooltipManager(self.tree)
             self.tree.bind("<Double-Button-1>", lambda _e: self.edit_sel())
             self.tree.bind("<<TreeviewSelect>>", lambda _e: self._seed_preview_from_selection())
 
             btns = tk.Frame(self)
             btns.pack(fill="x", padx=8, pady=(0, 4))
-            tk.Button(btns, text="Toevoegen", command=self.add_rule).pack(side="left", padx=4)
-            tk.Button(btns, text="Bewerken", command=self.edit_sel).pack(side="left", padx=4)
-            tk.Button(btns, text="Verwijderen", command=self.remove_sel).pack(side="left", padx=4)
-            tk.Button(btns, text="Aan/uit", command=self.toggle_sel).pack(side="left", padx=4)
+            add_btn = tk.Button(btns, text="Toevoegen", command=self.add_rule)
+            add_btn.pack(side="left", padx=4)
+            _HelpTooltip(add_btn, "Maak een nieuwe presetregel.")
+            edit_btn = tk.Button(btns, text="Bewerken", command=self.edit_sel)
+            edit_btn.pack(side="left", padx=4)
+            _HelpTooltip(edit_btn, "Open de geselecteerde regel om velden aan te passen.")
+            duplicate_btn = tk.Button(btns, text="Dupliceren", command=self.duplicate_sel)
+            duplicate_btn.pack(side="left", padx=4)
+            _HelpTooltip(
+                duplicate_btn,
+                "Maak een kopie van de geselecteerde regel. Handig als alleen selectie of leverancier verschilt.",
+            )
+            remove_btn = tk.Button(btns, text="Verwijderen", command=self.remove_sel)
+            remove_btn.pack(side="left", padx=4)
+            _HelpTooltip(remove_btn, "Verwijder de geselecteerde presetregel.")
+            toggle_btn = tk.Button(btns, text="Actief wisselen", command=self.toggle_sel)
+            toggle_btn.pack(side="left", padx=4)
+            _HelpTooltip(toggle_btn, "Zet de geselecteerde regel tijdelijk actief of inactief.")
 
             preview = tk.LabelFrame(self, text="Preset preview / test", labelanchor="n")
             preview.pack(fill="x", padx=8, pady=(4, 0))
@@ -2260,6 +2365,7 @@ def start_gui():
                 width=32,
             )
             self.preview_client_combo.grid(row=0, column=1, sticky="ew", padx=6, pady=(6, 2))
+            _HelpTooltip(self.preview_client_combo, "Kies de opdrachtgever om een presetmatch te testen.")
 
             tk.Label(preview, text="Type selectie:").grid(
                 row=0, column=2, sticky="w", padx=6, pady=(6, 2)
@@ -2272,6 +2378,7 @@ def start_gui():
                 width=18,
             )
             self.preview_kind_combo.grid(row=0, column=3, sticky="w", padx=6, pady=(6, 2))
+            _HelpTooltip(self.preview_kind_combo, "Kies of je een productie-, afwerkings- of brutemateriaalregel wil testen.")
 
             tk.Label(preview, text="Selectie:").grid(
                 row=1, column=0, sticky="w", padx=6, pady=2
@@ -2282,6 +2389,7 @@ def start_gui():
                 width=36,
             )
             self.preview_identifier_entry.grid(row=1, column=1, sticky="ew", padx=6, pady=2)
+            _HelpTooltip(self.preview_identifier_entry, "Vul exact de selectie in, bijvoorbeeld Cutting of Finish-Galvanised.")
             tk.Label(
                 preview,
                 text="Voorbeeld: Laser cutting, Tube laser cutting, Poedercoaten",
@@ -2296,11 +2404,13 @@ def start_gui():
                 text="Alleen auto-regels",
                 variable=self.preview_auto_only_var,
             ).pack(side="left")
-            tk.Button(
+            preview_test_btn = tk.Button(
                 preview_actions,
                 text="Test presetmatch",
                 command=self._run_preview,
-            ).pack(side="left", padx=(12, 0))
+            )
+            preview_test_btn.pack(side="left", padx=(12, 0))
+            _HelpTooltip(preview_test_btn, "Toon welke regels matchen en welke velden ingevuld worden.")
 
             tk.Label(
                 preview,
@@ -2316,24 +2426,72 @@ def start_gui():
         def refresh_data(self) -> None:
             self.refresh()
 
+        @staticmethod
+        def _key(value: object) -> str:
+            return _to_str(value).strip().casefold()
+
+        def _refresh_client_filter_options(self) -> None:
+            current = self.filter_client_var.get().strip()
+            mapping: Dict[str, Optional[str]] = {
+                self.FILTER_ALL_LABEL: None,
+                self.FILTER_GLOBAL_LABEL: "",
+            }
+            values = [self.FILTER_ALL_LABEL, self.FILTER_GLOBAL_LABEL]
+            for client in self.clients_db.clients_sorted():
+                display = self.clients_db.display_name(client)
+                values.append(display)
+                mapping[display] = strip_favorite_marker(display).strip()
+            self._filter_display_to_value = mapping
+            self.filter_client_combo.configure(values=values)
+            if current not in mapping:
+                self.filter_client_var.set(self.FILTER_ALL_LABEL)
+
+        def _current_filter_client(self) -> Optional[str]:
+            value = self.filter_client_var.get().strip()
+            return self._filter_display_to_value.get(value, None)
+
+        def _rule_visible_for_filter(self, rule: OrderPresetRule) -> bool:
+            filter_client = self._current_filter_client()
+            if filter_client is None:
+                return True
+            return self._key(rule.client) == self._key(filter_client)
+
+        def _default_client_for_new_rule(self) -> str:
+            filter_client = self._current_filter_client()
+            return filter_client or ""
+
         def refresh(self) -> None:
+            self._refresh_client_filter_options()
             for item in self.tree.get_children():
                 self.tree.delete(item)
-            for idx, rule in enumerate(self.db.rules_sorted()):
+            tooltip_manager = getattr(self, "tree_tooltips", None)
+            if tooltip_manager is not None:
+                tooltip_manager.clear()
+            visible_rules = [
+                rule for rule in self.db.rules_sorted() if self._rule_visible_for_filter(rule)
+            ]
+            for idx, rule in enumerate(visible_rules):
                 tag = "odd" if idx % 2 == 0 else "even"
                 kind_label = self.KIND_LABELS.get(rule.selection_kind, rule.selection_kind)
                 client_label = rule.client or self.CLIENT_ALL_LABEL
+                selection_text = rule.selection_summary()
+                action_text = rule.action_summary()
                 values = (
                     rule.name,
                     client_label,
                     kind_label,
-                    rule.selection_summary(),
-                    rule.action_summary(),
-                    str(rule.priority),
-                    "Ja" if rule.auto_apply else "Nee",
+                    selection_text,
+                    action_text,
                     "Ja" if rule.enabled else "Nee",
                 )
                 self.tree.insert("", "end", iid=rule.name, values=values, tags=(tag,))
+                if tooltip_manager is not None:
+                    tooltip_manager.set(rule.name, "#1", rule.name)
+                    tooltip_manager.set(rule.name, "#4", selection_text)
+                    tooltip_manager.set(rule.name, "#5", action_text)
+            total = len(self.db.rules)
+            visible = len(visible_rules)
+            self.filter_count_var.set(f"{visible} van {total} regel(s)")
             self.tree.tag_configure("odd", background=TREE_ODD_BG)
             self.tree.tag_configure("even", background=TREE_EVEN_BG)
             if hasattr(self, "preview_client_combo"):
@@ -2365,14 +2523,100 @@ def start_gui():
             if self.on_change:
                 self.on_change()
 
+        def _rule_action_fields(self, rule: OrderPresetRule) -> set[str]:
+            fields: set[str] = set()
+            if _to_str(rule.supplier).strip():
+                fields.add("leverancier")
+            if _to_str(rule.doc_type).strip():
+                fields.add("documenttype")
+            if _to_str(rule.delivery).strip():
+                fields.add("leveradres")
+            if _to_str(rule.remark).strip():
+                fields.add("opmerking")
+            if rule.en1090 is not None:
+                fields.add("EN1090")
+            return fields
+
+        def _rules_overlap(self, left: OrderPresetRule, right: OrderPresetRule) -> bool:
+            if left.selection_kind != right.selection_kind:
+                return False
+            if left.client and right.client and self._key(left.client) != self._key(right.client):
+                return False
+            if not left.identifiers or not right.identifiers:
+                return True
+            left_ids = {self._key(identifier) for identifier in left.identifiers}
+            right_ids = {self._key(identifier) for identifier in right.identifiers}
+            return bool(left_ids & right_ids)
+
+        def _conflict_messages_for_rule(
+            self,
+            rule: OrderPresetRule,
+            *,
+            old_name: Optional[str] = None,
+        ) -> List[str]:
+            if not rule.enabled:
+                return []
+            fields = self._rule_action_fields(rule)
+            if not fields:
+                return []
+            messages: List[str] = []
+            old_key = self._key(old_name)
+            for other in self.db.rules:
+                if old_key and self._key(other.name) == old_key:
+                    continue
+                if not other.enabled:
+                    continue
+                overlap_fields = fields & self._rule_action_fields(other)
+                if not overlap_fields:
+                    continue
+                if not self._rules_overlap(rule, other):
+                    continue
+                field_text = ", ".join(sorted(overlap_fields))
+                messages.append(f"{other.name} ({field_text})")
+            return messages
+
+        def _confirm_rule_conflicts(
+            self,
+            rule: OrderPresetRule,
+            *,
+            old_name: Optional[str] = None,
+            parent=None,
+        ) -> bool:
+            conflicts = self._conflict_messages_for_rule(rule, old_name=old_name)
+            if not conflicts:
+                return True
+            shown = conflicts[:6]
+            extra = len(conflicts) - len(shown)
+            lines = "\n".join(f"- {message}" for message in shown)
+            if extra > 0:
+                lines = f"{lines}\n- ... en {extra} andere"
+            return messagebox.askyesno(
+                "Overlappende presetregels",
+                (
+                    "Deze regel overlapt met bestaande actieve regels die dezelfde velden invullen.\n\n"
+                    f"{lines}\n\n"
+                    "Toch opslaan?"
+                ),
+                parent=parent or self,
+            )
+
         def add_rule(self):
+            initial_rule = OrderPresetRule(
+                name="",
+                client=self._default_client_for_new_rule(),
+            )
             dlg = self._EditDialog(
                 self,
-                None,
+                initial_rule,
                 self.clients_db,
                 self.suppliers_db,
                 self.delivery_db,
                 title="Nieuwe presetregel",
+                conflict_checker=lambda rule, _old_name=None, parent=None: self._confirm_rule_conflicts(
+                    rule,
+                    old_name=None,
+                    parent=parent,
+                ),
             )
             self.wait_window(dlg)
             if dlg.result is not None:
@@ -2390,11 +2634,54 @@ def start_gui():
                 self.suppliers_db,
                 self.delivery_db,
                 title="Presetregel bewerken",
+                conflict_checker=lambda candidate, _old_name=rule.name, parent=None: self._confirm_rule_conflicts(
+                    candidate,
+                    old_name=_old_name,
+                    parent=parent,
+                ),
             )
             self.wait_window(dlg)
             if dlg.result is not None:
                 self.db.upsert(dlg.result, old_name=rule.name)
                 self._save_and_refresh()
+
+        def _duplicate_name(self, name: str) -> str:
+            base = f"{name} kopie"
+            candidate = base
+            index = 2
+            while self.db.get(candidate) is not None:
+                candidate = f"{base} {index}"
+                index += 1
+            return candidate
+
+        def duplicate_sel(self):
+            rule = self._selected_rule()
+            if rule is None:
+                return
+            duplicate = OrderPresetRule.from_any(rule)
+            duplicate.name = self._duplicate_name(rule.name)
+            dlg = self._EditDialog(
+                self,
+                duplicate,
+                self.clients_db,
+                self.suppliers_db,
+                self.delivery_db,
+                title="Presetregel dupliceren",
+                conflict_checker=lambda candidate, _old_name=None, parent=None: self._confirm_rule_conflicts(
+                    candidate,
+                    old_name=None,
+                    parent=parent,
+                ),
+            )
+            self.wait_window(dlg)
+            if dlg.result is not None:
+                self.db.upsert(dlg.result)
+                self._save_and_refresh()
+                try:
+                    self.tree.selection_set(dlg.result.name)
+                    self.tree.see(dlg.result.name)
+                except tk.TclError:
+                    pass
 
         def remove_sel(self):
             name = self._selected_rule_name()
@@ -2513,6 +2800,7 @@ def start_gui():
                 delivery_db,
                 *,
                 title="Presetregel",
+                conflict_checker=None,
             ):
                 super().__init__(master)
                 self.title(title)
@@ -2520,9 +2808,10 @@ def start_gui():
                 self.clients_db = clients_db
                 self.suppliers_db = suppliers_db
                 self.delivery_db = delivery_db
+                self.conflict_checker = conflict_checker
 
                 rule = OrderPresetRule.from_any(rule) if rule is not None else OrderPresetRule(name="")
-                self.columnconfigure(1, weight=1)
+                self.columnconfigure(0, weight=1)
 
                 self._client_display_to_value = {
                     PresetRulesManagerFrame.CLIENT_ALL_LABEL: ""
@@ -2614,98 +2903,199 @@ def start_gui():
                     en1090_text = "Aan" if rule.en1090 else "Uit"
                 self.en1090_var = tk.StringVar(value=en1090_text)
 
-                tk.Label(self, text="Naam:").grid(row=0, column=0, sticky="e", padx=4, pady=2)
-                name_entry = tk.Entry(self, textvariable=self.name_var, width=42)
+                form = tk.Frame(self)
+                form.grid(row=0, column=0, sticky="nsew", padx=10, pady=8)
+                form.columnconfigure(1, weight=1)
+
+                tk.Label(form, text="Naam:").grid(row=0, column=0, sticky="e", padx=4, pady=2)
+                name_entry = tk.Entry(form, textvariable=self.name_var, width=42)
                 name_entry.grid(row=0, column=1, sticky="ew", padx=4, pady=2)
-
-                flag_row = tk.Frame(self)
-                flag_row.grid(row=1, column=0, columnspan=2, sticky="w", padx=4, pady=(4, 2))
-                tk.Checkbutton(flag_row, text="Actief", variable=self.enabled_var).pack(side="left")
-                tk.Checkbutton(
-                    flag_row,
-                    text="Automatisch toepassen bij openen",
-                    variable=self.auto_apply_var,
-                ).pack(side="left", padx=(12, 0))
-
-                tk.Label(self, text="Prioriteit:").grid(row=2, column=0, sticky="e", padx=4, pady=2)
-                tk.Entry(self, textvariable=self.priority_var, width=10).grid(
-                    row=2, column=1, sticky="w", padx=4, pady=2
+                _HelpTooltip(
+                    name_entry,
+                    "Herkenbare naam voor deze regel. Bijvoorbeeld: Tecno Art - Tube laser.",
                 )
 
-                tk.Label(self, text="Opdrachtgever:").grid(row=3, column=0, sticky="e", padx=4, pady=2)
-                ttk.Combobox(
-                    self,
+                enabled_check = tk.Checkbutton(form, text="Actief", variable=self.enabled_var)
+                enabled_check.grid(row=1, column=1, sticky="w", padx=4, pady=(2, 6))
+                _HelpTooltip(enabled_check, "Uitgeschakelde regels blijven bewaard, maar worden niet toegepast.")
+
+                when_frame = tk.LabelFrame(form, text="Wanneer toepassen?")
+                when_frame.grid(row=2, column=0, columnspan=2, sticky="ew", padx=0, pady=(2, 8))
+                when_frame.columnconfigure(1, weight=1)
+
+                tk.Label(when_frame, text="Opdrachtgever:").grid(row=0, column=0, sticky="e", padx=4, pady=2)
+                client_combo = ttk.Combobox(
+                    when_frame,
                     textvariable=self.client_var,
                     values=client_values,
                     state="readonly",
                     width=40,
-                ).grid(row=3, column=1, sticky="ew", padx=4, pady=2)
+                )
+                client_combo.grid(row=0, column=1, sticky="ew", padx=4, pady=2)
+                _HelpTooltip(
+                    client_combo,
+                    "Beperk de regel tot een opdrachtgever. Kies '(alle opdrachtgevers)' voor een algemene regel.",
+                )
 
-                tk.Label(self, text="Type selectie:").grid(row=4, column=0, sticky="e", padx=4, pady=2)
-                ttk.Combobox(
-                    self,
+                tk.Label(when_frame, text="Type selectie:").grid(row=1, column=0, sticky="e", padx=4, pady=2)
+                kind_combo = ttk.Combobox(
+                    when_frame,
                     textvariable=self.kind_var,
                     values=list(PresetRulesManagerFrame.KIND_VALUES.keys()),
                     state="readonly",
                     width=18,
-                ).grid(row=4, column=1, sticky="w", padx=4, pady=2)
+                )
+                kind_combo.grid(row=1, column=1, sticky="w", padx=4, pady=2)
+                _HelpTooltip(
+                    kind_combo,
+                    "Productie matcht de BOM-kolom Production. Afwerking matcht Finish-sleutels. Brutemateriaal matcht de Opticutter-brutemateriaalrij.",
+                )
 
-                tk.Label(self, text="Selecties:").grid(row=5, column=0, sticky="ne", padx=4, pady=2)
-                self.identifiers_text = tk.Text(self, width=42, height=4, wrap="word")
-                self.identifiers_text.grid(row=5, column=1, sticky="ew", padx=4, pady=2)
+                tk.Label(when_frame, text="Selecties:").grid(row=2, column=0, sticky="ne", padx=4, pady=2)
+                self.identifiers_text = tk.Text(
+                    when_frame,
+                    width=42,
+                    height=4,
+                    wrap="word",
+                    font=tkfont.nametofont("TkDefaultFont"),
+                )
+                self.identifiers_text.grid(row=2, column=1, sticky="ew", padx=4, pady=2)
                 self.identifiers_text.insert("1.0", "\n".join(rule.identifiers))
-                tk.Label(
-                    self,
-                    text="Meerdere waarden gescheiden door komma of nieuwe regel.",
+                _HelpTooltip(
+                    self.identifiers_text,
+                    "Exacte selectie(s) waarop de regel moet matchen. Gebruik dezelfde tekst als in de bestelbonrij, bijvoorbeeld Cutting of Finish-Galvanised.",
+                )
+                selection_help = tk.Label(
+                    when_frame,
+                    text="Meerdere waarden gescheiden door komma of nieuwe regel. Beweeg over velden voor uitleg.",
                     anchor="w",
                     justify="left",
-                ).grid(row=6, column=1, sticky="w", padx=4, pady=(0, 6))
+                )
+                selection_help.grid(row=3, column=1, sticky="w", padx=4, pady=(0, 6))
+                _HelpTooltip(
+                    selection_help,
+                    "Voor Productie en Brutemateriaal gebruik je bv. Cutting, Tube laser of Roof. Voor Afwerking gebruik je de Finish-... sleutel uit de afwerkingsrij.",
+                )
 
-                tk.Label(self, text="Leverancier:").grid(row=7, column=0, sticky="e", padx=4, pady=2)
-                ttk.Combobox(
-                    self,
+                what_frame = tk.LabelFrame(form, text="Wat invullen?")
+                what_frame.grid(row=3, column=0, columnspan=2, sticky="ew", padx=0, pady=(0, 8))
+                what_frame.columnconfigure(1, weight=1)
+
+                tk.Label(what_frame, text="Leverancier:").grid(row=0, column=0, sticky="e", padx=4, pady=2)
+                supplier_combo = ttk.Combobox(
+                    what_frame,
                     textvariable=self.supplier_var,
                     values=supplier_values,
                     state="readonly",
                     width=40,
-                ).grid(row=7, column=1, sticky="ew", padx=4, pady=2)
+                )
+                supplier_combo.grid(row=0, column=1, sticky="ew", padx=4, pady=2)
+                _HelpTooltip(
+                    supplier_combo,
+                    "Laat op '(ongewijzigd)' als deze regel geen leverancier moet invullen.",
+                )
 
-                tk.Label(self, text="Documenttype:").grid(row=8, column=0, sticky="e", padx=4, pady=2)
-                ttk.Combobox(
-                    self,
+                tk.Label(what_frame, text="Documenttype:").grid(row=1, column=0, sticky="e", padx=4, pady=2)
+                doc_combo = ttk.Combobox(
+                    what_frame,
                     textvariable=self.doc_type_var,
                     values=self.DOC_TYPE_OPTIONS,
                     state="readonly",
                     width=24,
-                ).grid(row=8, column=1, sticky="w", padx=4, pady=2)
+                )
+                doc_combo.grid(row=1, column=1, sticky="w", padx=4, pady=2)
+                _HelpTooltip(
+                    doc_combo,
+                    "Kies welk documenttype automatisch wordt gezet. '(ongewijzigd)' laat de bestaande keuze staan.",
+                )
 
-                tk.Label(self, text="Leveradres:").grid(row=9, column=0, sticky="e", padx=4, pady=2)
-                ttk.Combobox(
-                    self,
+                tk.Label(what_frame, text="Leveradres:").grid(row=2, column=0, sticky="e", padx=4, pady=2)
+                delivery_combo = ttk.Combobox(
+                    what_frame,
                     textvariable=self.delivery_var,
                     values=delivery_values,
                     state="readonly",
                     width=40,
-                ).grid(row=9, column=1, sticky="ew", padx=4, pady=2)
+                )
+                delivery_combo.grid(row=2, column=1, sticky="ew", padx=4, pady=2)
+                _HelpTooltip(
+                    delivery_combo,
+                    "Klantadres gebruikt het adres van de gekozen opdrachtgever. Een specifiek leveradres kan ook gekozen worden.",
+                )
 
-                tk.Label(self, text="EN 1090:").grid(row=10, column=0, sticky="e", padx=4, pady=2)
-                ttk.Combobox(
-                    self,
+                tk.Label(what_frame, text="EN 1090:").grid(row=3, column=0, sticky="e", padx=4, pady=2)
+                en1090_combo = ttk.Combobox(
+                    what_frame,
                     textvariable=self.en1090_var,
                     values=self.EN1090_OPTIONS,
                     state="readonly",
                     width=16,
-                ).grid(row=10, column=1, sticky="w", padx=4, pady=2)
-
-                tk.Label(self, text="Opmerking:").grid(row=11, column=0, sticky="e", padx=4, pady=2)
-                tk.Entry(self, textvariable=self.remark_var, width=42).grid(
-                    row=11, column=1, sticky="ew", padx=4, pady=2
+                )
+                en1090_combo.grid(row=3, column=1, sticky="w", padx=4, pady=2)
+                _HelpTooltip(
+                    en1090_combo,
+                    "Aan of Uit vult de EN1090-keuze op de bestelbonrij in. '(ongewijzigd)' past dit veld niet aan.",
                 )
 
-                btn = tk.Frame(self)
-                btn.grid(row=12, column=0, columnspan=2, pady=8)
-                tk.Button(btn, text="Opslaan", command=self._ok).pack(side="left", padx=4)
-                tk.Button(btn, text="Annuleer", command=self.destroy).pack(side="left", padx=4)
+                tk.Label(what_frame, text="Opmerking:").grid(row=4, column=0, sticky="e", padx=4, pady=2)
+                remark_entry = tk.Entry(what_frame, textvariable=self.remark_var, width=42)
+                remark_entry.grid(row=4, column=1, sticky="ew", padx=4, pady=2)
+                _HelpTooltip(
+                    remark_entry,
+                    "Optionele opmerking die op de bestelbonrij wordt ingevuld.",
+                )
+
+                advanced_toggle = tk.Button(form)
+                advanced_toggle.grid(row=4, column=1, sticky="w", padx=4, pady=(0, 4))
+                advanced_frame = tk.LabelFrame(form, text="Geavanceerd")
+                advanced_frame.columnconfigure(1, weight=1)
+                show_advanced = tk.IntVar(
+                    value=1 if rule.priority != 100 or not rule.auto_apply else 0
+                )
+
+                tk.Label(advanced_frame, text="Prioriteit:").grid(row=0, column=0, sticky="e", padx=4, pady=2)
+                priority_entry = tk.Entry(advanced_frame, textvariable=self.priority_var, width=10)
+                priority_entry.grid(row=0, column=1, sticky="w", padx=4, pady=2)
+                _HelpTooltip(
+                    priority_entry,
+                    "Meestal 100 laten staan. Een hogere prioriteit wint wanneer meerdere regels dezelfde selectie matchen.",
+                )
+                auto_check = tk.Checkbutton(
+                    advanced_frame,
+                    text="Automatisch toepassen bij openen",
+                    variable=self.auto_apply_var,
+                )
+                auto_check.grid(row=1, column=1, sticky="w", padx=4, pady=2)
+                _HelpTooltip(
+                    auto_check,
+                    "Aan: de regel vult de bestelbonvelden automatisch in zodra de keuzelijst opent.",
+                )
+
+                def _sync_advanced() -> None:
+                    if show_advanced.get():
+                        advanced_frame.grid(row=5, column=0, columnspan=2, sticky="ew", padx=0, pady=(0, 8))
+                        advanced_toggle.configure(text="Geavanceerd verbergen")
+                    else:
+                        advanced_frame.grid_remove()
+                        advanced_toggle.configure(text="Geavanceerd tonen")
+
+                def _toggle_advanced() -> None:
+                    show_advanced.set(0 if show_advanced.get() else 1)
+                    _sync_advanced()
+
+                advanced_toggle.configure(command=_toggle_advanced)
+                _HelpTooltip(
+                    advanced_toggle,
+                    "Toon prioriteit en automatisch toepassen. Deze velden hoef je meestal niet te wijzigen.",
+                )
+                _sync_advanced()
+
+                btn = tk.Frame(form)
+                btn.grid(row=6, column=0, columnspan=2, pady=8)
+                save_btn = tk.Button(btn, text="Opslaan", command=self._ok)
+                save_btn.pack(side="left", padx=4)
+                cancel_btn = tk.Button(btn, text="Annuleer", command=self.destroy)
+                cancel_btn.pack(side="left", padx=4)
 
                 self.transient(master)
                 _place_window_near_parent(self, master)
@@ -2783,6 +3173,14 @@ def start_gui():
                 except Exception as exc:
                     messagebox.showerror("Fout", str(exc), parent=self)
                     return
+
+                if callable(self.conflict_checker):
+                    try:
+                        if not self.conflict_checker(self.result, parent=self):
+                            return
+                    except Exception as exc:
+                        messagebox.showerror("Fout", str(exc), parent=self)
+                        return
                 self.destroy()
 
     @dataclass
