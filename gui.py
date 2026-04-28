@@ -2275,6 +2275,18 @@ def start_gui():
             )
             self.filter_count_var = tk.StringVar()
             tk.Label(filter_row, textvariable=self.filter_count_var, anchor="w").pack(side="left")
+            self.advanced_view_var = tk.IntVar(value=0)
+            advanced_view_check = tk.Checkbutton(
+                filter_row,
+                text="Geavanceerde weergave",
+                variable=self.advanced_view_var,
+                command=self.refresh,
+            )
+            advanced_view_check.pack(side="right")
+            _HelpTooltip(
+                advanced_view_check,
+                "Toon ook prioriteit en automatisch toepassen. Normaal hoef je deze kolommen niet te gebruiken.",
+            )
 
             list_area = tk.Frame(self)
             list_area.pack(fill="both", expand=True, padx=8, pady=(0, 8))
@@ -2285,23 +2297,32 @@ def start_gui():
                 "Type",
                 "Selecties",
                 "Acties",
+                "Status",
+                "Prioriteit",
+                "Auto",
                 "Actief",
             )
-            self.tree = ttk.Treeview(list_area, columns=cols, show="headings", selectmode="browse")
-            list_area.rowconfigure(0, weight=1)
-            list_area.columnconfigure(0, weight=1)
-            widths = {
-                "Naam": 180,
+            self._tree_columns = cols
+            self._tree_widths = {
+                "Naam": 210,
                 "Klant": 160,
                 "Type": 110,
                 "Selecties": 240,
-                "Acties": 340,
+                "Acties": 380,
+                "Status": 120,
+                "Prioriteit": 80,
+                "Auto": 60,
                 "Actief": 70,
             }
+            self._advanced_tree_columns = {"Prioriteit", "Auto"}
+            self.tree = ttk.Treeview(list_area, columns=cols, show="headings", selectmode="browse")
+            list_area.rowconfigure(0, weight=1)
+            list_area.columnconfigure(0, weight=1)
             for col in cols:
-                anchor = "center" if col == "Actief" else "w"
+                anchor = "center" if col in {"Status", "Prioriteit", "Auto", "Actief"} else "w"
                 self.tree.heading(col, text=col, anchor=anchor)
-                self.tree.column(col, width=widths.get(col, 140), anchor=anchor)
+                self.tree.column(col, width=self._tree_widths.get(col, 140), anchor=anchor)
+            self._configure_tree_columns()
             tree_y_scroll = ttk.Scrollbar(list_area, orient="vertical", command=self.tree.yview)
             tree_x_scroll = ttk.Scrollbar(list_area, orient="horizontal", command=self.tree.xview)
             self.tree.configure(
@@ -2313,7 +2334,7 @@ def start_gui():
             tree_x_scroll.grid(row=1, column=0, sticky="ew")
             self.tree_tooltips = _TreeTooltipManager(self.tree)
             self.tree.bind("<Double-Button-1>", lambda _e: self.edit_sel())
-            self.tree.bind("<<TreeviewSelect>>", lambda _e: self._seed_preview_from_selection())
+            self.tree.bind("<<TreeviewSelect>>", lambda _e: self._on_tree_selection_changed())
 
             btns = tk.Frame(self)
             btns.pack(fill="x", padx=8, pady=(0, 4))
@@ -2335,6 +2356,33 @@ def start_gui():
             toggle_btn = tk.Button(btns, text="Actief wisselen", command=self.toggle_sel)
             toggle_btn.pack(side="left", padx=4)
             _HelpTooltip(toggle_btn, "Zet de geselecteerde regel tijdelijk actief of inactief.")
+            check_btn = tk.Button(btns, text="Controleer regels", command=self.check_rules)
+            check_btn.pack(side="left", padx=4)
+            _HelpTooltip(
+                check_btn,
+                "Controleer alle presetregels op overlap, ontbrekende leveranciers en ontbrekende invulacties.",
+            )
+            copy_client_btn = tk.Button(
+                btns,
+                text="Kopieer naar klant",
+                command=self.copy_client_rules,
+            )
+            copy_client_btn.pack(side="left", padx=4)
+            _HelpTooltip(
+                copy_client_btn,
+                "Kopieer alle regels van een opdrachtgever naar een andere opdrachtgever.",
+            )
+
+            detail = tk.LabelFrame(self, text="Regeldetails", labelanchor="n")
+            detail.pack(fill="x", padx=8, pady=(4, 8))
+            self.detail_var = tk.StringVar(value="Selecteer een presetregel voor details.")
+            tk.Label(
+                detail,
+                textvariable=self.detail_var,
+                anchor="w",
+                justify="left",
+                wraplength=980,
+            ).pack(fill="x", padx=6, pady=6)
 
             preview = tk.LabelFrame(self, text="Preset preview / test", labelanchor="n")
             preview.pack(fill="x", padx=8, pady=(4, 0))
@@ -2460,8 +2508,146 @@ def start_gui():
             filter_client = self._current_filter_client()
             return filter_client or ""
 
+        def _configure_tree_columns(self) -> None:
+            if not hasattr(self, "tree"):
+                return
+            advanced = bool(self.advanced_view_var.get()) if hasattr(self, "advanced_view_var") else False
+            for col in self._tree_columns:
+                anchor = "center" if col in {"Status", "Prioriteit", "Auto", "Actief"} else "w"
+                if col in self._advanced_tree_columns and not advanced:
+                    self.tree.heading(col, text="", anchor=anchor)
+                    self.tree.column(
+                        col,
+                        width=0,
+                        minwidth=0,
+                        stretch=False,
+                        anchor=anchor,
+                    )
+                    continue
+                self.tree.heading(col, text=col, anchor=anchor)
+                self.tree.column(
+                    col,
+                    width=self._tree_widths.get(col, 140),
+                    minwidth=35,
+                    stretch=col not in {"Status", "Prioriteit", "Auto", "Actief"},
+                    anchor=anchor,
+                )
+
+        def _selection_suggestions_by_kind(self) -> Dict[str, List[str]]:
+            suggestions: Dict[str, set[str]] = {
+                "production": set(),
+                "finish": set(),
+                "opticutter": set(),
+            }
+            display_values: Dict[str, str] = {}
+            for rule in self.db.rules:
+                kind = rule.selection_kind or "production"
+                if kind not in suggestions:
+                    suggestions[kind] = set()
+                for identifier in rule.identifiers:
+                    text = _to_str(identifier).strip()
+                    if not text:
+                        continue
+                    key = self._key(text)
+                    suggestions[kind].add(key)
+                    display_values.setdefault(f"{kind}:{key}", text)
+            return {
+                kind: sorted(
+                    (display_values.get(f"{kind}:{key}", key) for key in keys),
+                    key=lambda value: value.casefold(),
+                )
+                for kind, keys in suggestions.items()
+            }
+
+        def _known_supplier_names(self) -> set[str]:
+            return {
+                self._key(supplier.supplier)
+                for supplier in self.suppliers_db.suppliers
+                if _to_str(supplier.supplier).strip()
+            }
+
+        def _known_delivery_values(self) -> set[str]:
+            values = {
+                self._key("Geen"),
+                self._key("Klantadres"),
+                self._key("Bestelling wordt opgehaald"),
+                self._key("Leveradres wordt nog meegedeeld"),
+            }
+            for delivery in self.delivery_db.addresses:
+                name = _to_str(delivery.name).strip()
+                if name:
+                    values.add(self._key(name))
+                display = _to_str(self.delivery_db.display_name(delivery)).strip()
+                if display:
+                    values.add(self._key(strip_favorite_marker(display).strip()))
+            for client in self.clients_db.clients:
+                name = _to_str(client.name).strip()
+                if name:
+                    values.add(self._key(name))
+            return values
+
+        def _unknown_supplier(self, rule: OrderPresetRule) -> bool:
+            supplier = _to_str(rule.supplier).strip()
+            return bool(supplier and self._key(supplier) not in self._known_supplier_names())
+
+        def _unknown_delivery(self, rule: OrderPresetRule) -> bool:
+            delivery = _to_str(rule.delivery).strip()
+            return bool(delivery and self._key(delivery) not in self._known_delivery_values())
+
+        def _rule_status_issues(
+            self,
+            rule: OrderPresetRule,
+            *,
+            old_name: Optional[str] = None,
+        ) -> List[str]:
+            if not rule.enabled:
+                return ["Uitgeschakeld"]
+
+            issues: List[str] = []
+            if not self._rule_action_fields(rule):
+                issues.append("Geen invulactie")
+            if self._unknown_supplier(rule):
+                issues.append(f"Leverancier niet in lijst: {rule.supplier}")
+            if self._unknown_delivery(rule):
+                issues.append(f"Leveradres niet in lijst: {rule.delivery}")
+
+            conflicts = self._conflict_messages_for_rule(rule, old_name=old_name or rule.name)
+            if conflicts:
+                issues.append(f"Overlap met {len(conflicts)} regel(s)")
+            return issues
+
+        def _rule_status_text(self, rule: OrderPresetRule) -> str:
+            issues = self._rule_status_issues(rule, old_name=rule.name)
+            if not issues:
+                return "OK"
+            if "Uitgeschakeld" in issues:
+                return "Uit"
+            for issue, label in (
+                ("Overlap", "Overlap"),
+                ("Leverancier", "Leverancier?"),
+                ("Leveradres", "Leveradres?"),
+                ("Geen invulactie", "Geen actie"),
+            ):
+                if any(text.startswith(issue) for text in issues):
+                    return label
+            return "Controleer"
+
+        def _rule_status_detail(self, rule: OrderPresetRule) -> str:
+            issues = self._rule_status_issues(rule, old_name=rule.name)
+            if not issues:
+                return "OK: geen directe problemen gevonden."
+            lines = list(issues)
+            conflicts = self._conflict_messages_for_rule(rule, old_name=rule.name)
+            if conflicts:
+                shown = conflicts[:5]
+                lines.extend(f"Overlap: {message}" for message in shown)
+                if len(conflicts) > len(shown):
+                    lines.append(f"Overlap: ... en {len(conflicts) - len(shown)} andere")
+            return "\n".join(lines)
+
         def refresh(self) -> None:
             self._refresh_client_filter_options()
+            self._configure_tree_columns()
             for item in self.tree.get_children():
                 self.tree.delete(item)
             tooltip_manager = getattr(self, "tree_tooltips", None)
@@ -2476,12 +2662,16 @@ def start_gui():
                 client_label = rule.client or self.CLIENT_ALL_LABEL
                 selection_text = rule.selection_summary()
                 action_text = rule.action_summary()
+                status_text = self._rule_status_text(rule)
                 values = (
                     rule.name,
                     client_label,
                     kind_label,
                     selection_text,
                     action_text,
+                    status_text,
+                    str(rule.priority),
+                    "Ja" if rule.auto_apply else "Nee",
                     "Ja" if rule.enabled else "Nee",
                 )
                 self.tree.insert("", "end", iid=rule.name, values=values, tags=(tag,))
@@ -2489,6 +2679,7 @@ def start_gui():
                     tooltip_manager.set(rule.name, "#1", rule.name)
                     tooltip_manager.set(rule.name, "#4", selection_text)
                     tooltip_manager.set(rule.name, "#5", action_text)
+                    tooltip_manager.set(rule.name, "#6", self._rule_status_detail(rule))
             total = len(self.db.rules)
             visible = len(visible_rules)
             self.filter_count_var.set(f"{visible} van {total} regel(s)")
@@ -2504,6 +2695,7 @@ def start_gui():
                 self.preview_client_combo.configure(values=client_values)
                 if current not in client_values:
                     self.preview_client_var.set(self.CLIENT_ALL_LABEL)
+            self._update_detail_panel()
 
         def _selected_rule_name(self):
             selection = self.tree.selection()
@@ -2516,6 +2708,37 @@ def start_gui():
             if not name:
                 return None
             return self.db.get(name)
+
+        def _on_tree_selection_changed(self) -> None:
+            self._seed_preview_from_selection()
+            self._update_detail_panel()
+
+        def _update_detail_panel(self) -> None:
+            if not hasattr(self, "detail_var"):
+                return
+            rule = self._selected_rule()
+            if rule is None:
+                self.detail_var.set("Selecteer een presetregel voor details.")
+                return
+
+            client = rule.client or self.CLIENT_ALL_LABEL
+            kind = self.KIND_LABELS.get(rule.selection_kind, rule.selection_kind)
+            selection = rule.selection_summary()
+            actions = rule.action_summary() or "(geen invulactie)"
+            status = self._rule_status_detail(rule).replace("\n", "; ")
+            details = [
+                f"Wanneer: opdrachtgever={client}, type={kind}, selectie={selection}",
+                f"Invullen: {actions}",
+                f"Status: {status}",
+            ]
+            if bool(self.advanced_view_var.get()):
+                details.append(
+                    "Geavanceerd: "
+                    f"prioriteit={rule.priority}, "
+                    f"auto={'ja' if rule.auto_apply else 'nee'}, "
+                    f"actief={'ja' if rule.enabled else 'nee'}"
+                )
+            self.detail_var.set("\n".join(details))
 
         def _save_and_refresh(self) -> None:
             self.db.save(ORDER_PRESETS_DB_FILE)
@@ -2612,6 +2835,7 @@ def start_gui():
                 self.suppliers_db,
                 self.delivery_db,
                 title="Nieuwe presetregel",
+                selection_suggestions=self._selection_suggestions_by_kind(),
                 conflict_checker=lambda rule, _old_name=None, parent=None: self._confirm_rule_conflicts(
                     rule,
                     old_name=None,
@@ -2634,6 +2858,7 @@ def start_gui():
                 self.suppliers_db,
                 self.delivery_db,
                 title="Presetregel bewerken",
+                selection_suggestions=self._selection_suggestions_by_kind(),
                 conflict_checker=lambda candidate, _old_name=rule.name, parent=None: self._confirm_rule_conflicts(
                     candidate,
                     old_name=_old_name,
@@ -2667,6 +2892,7 @@ def start_gui():
                 self.suppliers_db,
                 self.delivery_db,
                 title="Presetregel dupliceren",
+                selection_suggestions=self._selection_suggestions_by_kind(),
                 conflict_checker=lambda candidate, _old_name=None, parent=None: self._confirm_rule_conflicts(
                     candidate,
                     old_name=None,
@@ -2702,6 +2928,237 @@ def start_gui():
                 return
             if self.db.toggle_enabled(name):
                 self._save_and_refresh()
+
+        def check_rules(self) -> None:
+            issue_lines: List[str] = []
+            first_problem_name: Optional[str] = None
+            seen_names: set[str] = set()
+
+            for rule in self.db.rules_sorted():
+                name_key = self._key(rule.name)
+                issues = [
+                    issue
+                    for issue in self._rule_status_issues(rule, old_name=rule.name)
+                    if issue != "Uitgeschakeld"
+                ]
+                if name_key in seen_names:
+                    issues.append("Dubbele naam")
+                seen_names.add(name_key)
+
+                if not issues:
+                    continue
+                if first_problem_name is None:
+                    first_problem_name = rule.name
+                issue_lines.append(f"{rule.name}: {', '.join(issues)}")
+
+            if not issue_lines:
+                messagebox.showinfo(
+                    "Presetregels controleren",
+                    "Geen problemen gevonden in de presetregels.",
+                    parent=self,
+                )
+                return
+
+            if first_problem_name:
+                try:
+                    self.tree.selection_set(first_problem_name)
+                    self.tree.see(first_problem_name)
+                except tk.TclError:
+                    pass
+
+            shown = issue_lines[:14]
+            extra = len(issue_lines) - len(shown)
+            message = "\n".join(f"- {line}" for line in shown)
+            if extra > 0:
+                message = f"{message}\n- ... en {extra} andere"
+            messagebox.showwarning(
+                "Presetregels controleren",
+                f"Controleer deze presetregels:\n\n{message}",
+                parent=self,
+            )
+
+        def _client_choice_values(
+            self,
+            *,
+            include_global: bool = False,
+        ) -> Tuple[List[str], Dict[str, str]]:
+            values: List[str] = []
+            mapping: Dict[str, str] = {}
+            if include_global:
+                values.append(self.FILTER_GLOBAL_LABEL)
+                mapping[self.FILTER_GLOBAL_LABEL] = ""
+            for client in self.clients_db.clients_sorted():
+                display = self.clients_db.display_name(client)
+                clean = strip_favorite_marker(display).strip()
+                values.append(display)
+                mapping[display] = clean
+            return values, mapping
+
+        def _client_display_for_value(self, value: str, *, include_global: bool = False) -> str:
+            clean_value = _to_str(value).strip()
+            if not clean_value:
+                return self.FILTER_GLOBAL_LABEL if include_global else ""
+            clean_key = self._key(clean_value)
+            for client in self.clients_db.clients_sorted():
+                display = self.clients_db.display_name(client)
+                display_value = strip_favorite_marker(display).strip()
+                if self._key(display_value) == clean_key:
+                    return display
+            return clean_value
+
+        def _target_client_default(self, source: str, values: List[str], mapping: Dict[str, str]) -> str:
+            source_key = self._key(source)
+            for display in values:
+                if self._key(mapping.get(display, "")) != source_key:
+                    return display
+            return values[0] if values else ""
+
+        def _rule_copy_signature(self, rule: OrderPresetRule) -> Tuple[str, Tuple[str, ...]]:
+            return (
+                rule.selection_kind,
+                tuple(self._key(identifier) for identifier in rule.identifiers),
+            )
+
+        def _copy_rule_name(self, rule: OrderPresetRule, target: str) -> str:
+            target_label = _to_str(target).strip() or "Algemeen"
+            base = _to_str(rule.name).strip() or "Presetregel"
+            if self._key(base).startswith(self._key(target_label)):
+                return base
+            return f"{target_label} - {base}"
+
+        def copy_client_rules(self) -> None:
+            source_values, source_mapping = self._client_choice_values(include_global=True)
+            target_values, target_mapping = self._client_choice_values(include_global=False)
+            if not target_values:
+                messagebox.showwarning(
+                    "Kopieer naar klant",
+                    "Er zijn nog geen opdrachtgevers om regels naartoe te kopieren.",
+                    parent=self,
+                )
+                return
+
+            selected_rule = self._selected_rule()
+            source_client = self._current_filter_client()
+            if source_client is None and selected_rule is not None:
+                source_client = selected_rule.client
+            source_default = self._client_display_for_value(
+                source_client or "",
+                include_global=True,
+            )
+            if source_default not in source_mapping:
+                source_default = source_values[0] if source_values else ""
+
+            result: Dict[str, object] = {}
+            dialog = tk.Toplevel(self)
+            dialog.title("Presetregels kopieren")
+            dialog.columnconfigure(1, weight=1)
+
+            source_var = tk.StringVar(value=source_default)
+            target_default = self._target_client_default(
+                source_mapping.get(source_default, ""),
+                target_values,
+                target_mapping,
+            )
+            target_var = tk.StringVar(value=target_default)
+            skip_existing_var = tk.IntVar(value=1)
+
+            tk.Label(dialog, text="Van klant:").grid(row=0, column=0, sticky="e", padx=8, pady=(10, 4))
+            source_combo = ttk.Combobox(
+                dialog,
+                textvariable=source_var,
+                values=source_values,
+                state="readonly",
+                width=42,
+            )
+            source_combo.grid(row=0, column=1, sticky="ew", padx=8, pady=(10, 4))
+
+            tk.Label(dialog, text="Naar klant:").grid(row=1, column=0, sticky="e", padx=8, pady=4)
+            target_combo = ttk.Combobox(
+                dialog,
+                textvariable=target_var,
+                values=target_values,
+                state="readonly",
+                width=42,
+            )
+            target_combo.grid(row=1, column=1, sticky="ew", padx=8, pady=4)
+
+            tk.Checkbutton(
+                dialog,
+                text="Bestaande doelregels met dezelfde selectie overslaan",
+                variable=skip_existing_var,
+            ).grid(row=2, column=1, sticky="w", padx=8, pady=(2, 8))
+
+            def _ok() -> None:
+                source = source_mapping.get(source_var.get(), "")
+                target = target_mapping.get(target_var.get(), "")
+                if self._key(source) == self._key(target):
+                    messagebox.showwarning(
+                        "Kopieer naar klant",
+                        "Kies twee verschillende opdrachtgevers.",
+                        parent=dialog,
+                    )
+                    return
+                result["source"] = source
+                result["target"] = target
+                result["skip_existing"] = bool(skip_existing_var.get())
+                dialog.destroy()
+
+            buttons = tk.Frame(dialog)
+            buttons.grid(row=3, column=0, columnspan=2, pady=(2, 10))
+            tk.Button(buttons, text="Kopieren", command=_ok).pack(side="left", padx=4)
+            tk.Button(buttons, text="Annuleer", command=dialog.destroy).pack(side="left", padx=4)
+
+            dialog.transient(self)
+            _place_window_near_parent(dialog, self)
+            dialog.grab_set()
+            self.wait_window(dialog)
+
+            if not result:
+                return
+
+            source = _to_str(result.get("source")).strip()
+            target = _to_str(result.get("target")).strip()
+            skip_existing = bool(result.get("skip_existing"))
+            source_rules = [
+                rule
+                for rule in self.db.rules_sorted()
+                if self._key(rule.client) == self._key(source)
+            ]
+            if not source_rules:
+                messagebox.showinfo(
+                    "Kopieer naar klant",
+                    "Geen presetregels gevonden voor de gekozen bronklant.",
+                    parent=self,
+                )
+                return
+
+            existing_signatures = {
+                self._rule_copy_signature(rule)
+                for rule in self.db.rules
+                if self._key(rule.client) == self._key(target)
+            }
+            copied = 0
+            skipped = 0
+            for rule in source_rules:
+                signature = self._rule_copy_signature(rule)
+                if skip_existing and signature in existing_signatures:
+                    skipped += 1
+                    continue
+                clone = OrderPresetRule.from_any(rule)
+                clone.client = target
+                clone.name = self._duplicate_name(self._copy_rule_name(rule, target))
+                self.db.upsert(clone)
+                existing_signatures.add(signature)
+                copied += 1
+
+            if copied:
+                self.filter_client_var.set(self._client_display_for_value(target, include_global=True))
+                self._save_and_refresh()
+            messagebox.showinfo(
+                "Kopieer naar klant",
+                f"Gekopieerd: {copied}\nOvergeslagen: {skipped}",
+                parent=self,
+            )
 
         def _preview_context(self) -> Dict[str, str]:
             client_value = self.preview_client_var.get().strip()
@@ -2800,6 +3257,7 @@ def start_gui():
                 delivery_db,
                 *,
                 title="Presetregel",
+                selection_suggestions=None,
                 conflict_checker=None,
             ):
                 super().__init__(master)
@@ -2809,6 +3267,10 @@ def start_gui():
                 self.suppliers_db = suppliers_db
                 self.delivery_db = delivery_db
                 self.conflict_checker = conflict_checker
+                self.selection_suggestions = {
+                    kind: list(values or [])
+                    for kind, values in (selection_suggestions or {}).items()
+                }
 
                 rule = OrderPresetRule.from_any(rule) if rule is not None else OrderPresetRule(name="")
                 self.columnconfigure(0, weight=1)
@@ -2950,8 +3412,36 @@ def start_gui():
                     kind_combo,
                     "Productie matcht de BOM-kolom Production. Afwerking matcht Finish-sleutels. Brutemateriaal matcht de Opticutter-brutemateriaalrij.",
                 )
+                kind_combo.bind("<<ComboboxSelected>>", lambda _e: self._refresh_selection_suggestions())
 
-                tk.Label(when_frame, text="Selecties:").grid(row=2, column=0, sticky="ne", padx=4, pady=2)
+                tk.Label(when_frame, text="Bestaande selectie:").grid(row=2, column=0, sticky="e", padx=4, pady=2)
+                suggestion_row = tk.Frame(when_frame)
+                suggestion_row.grid(row=2, column=1, sticky="ew", padx=4, pady=2)
+                suggestion_row.columnconfigure(0, weight=1)
+                self.selection_suggestion_var = tk.StringVar()
+                self.selection_suggestion_combo = ttk.Combobox(
+                    suggestion_row,
+                    textvariable=self.selection_suggestion_var,
+                    state="readonly",
+                    width=34,
+                )
+                self.selection_suggestion_combo.grid(row=0, column=0, sticky="ew")
+                suggestion_add_btn = tk.Button(
+                    suggestion_row,
+                    text="Toevoegen",
+                    command=self._append_selection_suggestion,
+                )
+                suggestion_add_btn.grid(row=0, column=1, padx=(6, 0))
+                _HelpTooltip(
+                    self.selection_suggestion_combo,
+                    "Kies een selectie die al in andere presetregels gebruikt wordt.",
+                )
+                _HelpTooltip(
+                    suggestion_add_btn,
+                    "Voeg de gekozen waarde toe aan de selecties van deze regel.",
+                )
+
+                tk.Label(when_frame, text="Selecties:").grid(row=3, column=0, sticky="ne", padx=4, pady=2)
                 self.identifiers_text = tk.Text(
                     when_frame,
                     width=42,
@@ -2959,7 +3449,7 @@ def start_gui():
                     wrap="word",
                     font=tkfont.nametofont("TkDefaultFont"),
                 )
-                self.identifiers_text.grid(row=2, column=1, sticky="ew", padx=4, pady=2)
+                self.identifiers_text.grid(row=3, column=1, sticky="ew", padx=4, pady=2)
                 self.identifiers_text.insert("1.0", "\n".join(rule.identifiers))
                 _HelpTooltip(
                     self.identifiers_text,
@@ -2971,11 +3461,12 @@ def start_gui():
                     anchor="w",
                     justify="left",
                 )
-                selection_help.grid(row=3, column=1, sticky="w", padx=4, pady=(0, 6))
+                selection_help.grid(row=4, column=1, sticky="w", padx=4, pady=(0, 6))
                 _HelpTooltip(
                     selection_help,
                     "Voor Productie en Brutemateriaal gebruik je bv. Cutting, Tube laser of Roof. Voor Afwerking gebruik je de Finish-... sleutel uit de afwerkingsrij.",
                 )
+                self._refresh_selection_suggestions()
 
                 what_frame = tk.LabelFrame(form, text="Wat invullen?")
                 what_frame.grid(row=3, column=0, columnspan=2, sticky="ew", padx=0, pady=(0, 8))
@@ -3101,6 +3592,38 @@ def start_gui():
                 _place_window_near_parent(self, master)
                 self.grab_set()
                 self.after_idle(name_entry.focus_set)
+
+            def _current_selection_kind(self) -> str:
+                return PresetRulesManagerFrame.KIND_VALUES.get(
+                    self.kind_var.get(),
+                    "production",
+                )
+
+            def _refresh_selection_suggestions(self) -> None:
+                combo = getattr(self, "selection_suggestion_combo", None)
+                if combo is None:
+                    return
+                values = self.selection_suggestions.get(self._current_selection_kind(), [])
+                combo.configure(values=values)
+                current = self.selection_suggestion_var.get().strip()
+                if current not in values:
+                    self.selection_suggestion_var.set("")
+
+            def _append_selection_suggestion(self) -> None:
+                value = self.selection_suggestion_var.get().strip()
+                if not value:
+                    return
+                raw = self.identifiers_text.get("1.0", "end").strip()
+                existing = {
+                    _to_str(part).strip().casefold()
+                    for part in re.split(r"[\r\n,;]+", raw)
+                    if _to_str(part).strip()
+                }
+                if value.casefold() in existing:
+                    return
+                if raw:
+                    self.identifiers_text.insert("end", "\n")
+                self.identifiers_text.insert("end", value)
 
             def _ok(self):
                 name = self.name_var.get().strip()
