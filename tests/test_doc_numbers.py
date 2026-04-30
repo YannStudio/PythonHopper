@@ -1,5 +1,4 @@
 import datetime
-import os
 import zipfile
 
 import openpyxl
@@ -65,7 +64,7 @@ def test_doc_number_in_name_and_header(tmp_path):
     reader = PdfReader(pdf_path)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
     lines = text.splitlines()
-    assert f"Nummer: BB-123/45" in text
+    assert "Nummer: BB-123/45" in text
     assert f"Datum: {today}" in text
     assert "BB-123" not in lines[0]
 
@@ -216,7 +215,7 @@ def test_offerte_prefix_in_output(tmp_path):
     reader = PdfReader(pdf_path)
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
     lines = text.splitlines()
-    assert f"Nummer: OFF-42" in text
+    assert "Nummer: OFF-42" in text
     assert f"Datum: {today}" in text
     assert "OFF-42" not in lines[0]
 

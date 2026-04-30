@@ -1,5 +1,4 @@
 """Test supplier filtering functionality."""
-import pytest
 from models import Supplier
 from suppliers_db import SuppliersDB
 

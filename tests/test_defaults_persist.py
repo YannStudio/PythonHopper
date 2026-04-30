@@ -1,4 +1,3 @@
-import os
 import pandas as pd
 from models import Supplier
 from suppliers_db import SuppliersDB

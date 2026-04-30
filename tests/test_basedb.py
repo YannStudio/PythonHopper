@@ -4,7 +4,6 @@ import json
 import os
 import tempfile
 from dataclasses import dataclass, asdict
-from pathlib import Path
 from typing import Any, Dict, List
 
 import pytest

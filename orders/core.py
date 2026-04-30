@@ -12,14 +12,11 @@ import math
 import datetime
 from collections import defaultdict
 from dataclasses import dataclass
-from html import escape
-from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 import pandas as pd
 
-from app_paths import resolve_runtime_path
-from helpers import _to_str, _num_to_2dec, _material_nowrap
+from helpers import _to_str
 from models import color_to_rgb, normalize_rgb_color, Supplier, DeliveryAddress
 from suppliers_db import SuppliersDB
 from opticutter import parse_length_to_mm

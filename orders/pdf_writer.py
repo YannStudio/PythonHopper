@@ -1,18 +1,15 @@
 """PDF generation functions for orders and packing lists."""
 
 import os
-import sys
 import datetime
 import io
-import tempfile
 from typing import Dict, List, Optional
 
-import pandas as pd
 
 from app_paths import resolve_runtime_path
 from helpers import _to_str, _num_to_2dec, _material_nowrap
 from models import Supplier, DeliveryAddress
-from en1090 import EN1090_NOTE_TEXT, should_require_en1090
+from en1090 import EN1090_NOTE_TEXT
 
 from . import core
 
@@ -36,7 +33,6 @@ try:
 except Exception:
     REPORTLAB_OK = False
 
-import step_previews
 
 
 def generate_pdf_order_platypus(
@@ -618,6 +614,29 @@ def generate_pdf_order_platypus(
             if note_text == EN1090_NOTE_TEXT:
                 en1090_note_html = f"<b>{en1090_note_html}</b>"
             story.append(Paragraph(en1090_note_html, small_style))
+
+    # Add a brief explanatory note for raw material (brutemateriaal) orders
+    # Only include when a supplier is present and the production/supplier indicates
+    # that the supplier will perform cutting/laser work (heuristic).
+    if is_raw_material_order and supplier is not None:
+        prod_lower = _to_str(production).strip().lower() if production else ""
+        supp_prod_type = (_to_str(supplier.product_type).strip().lower() if getattr(supplier, 'product_type', None) else "")
+
+        keywords = ("tube", "laser", "cut", "snij", "snijden", "metal processing")
+        def _has_kw(text: str) -> bool:
+            return any(k in text for k in keywords if k)
+
+        show_bruto_note = _has_kw(prod_lower) or _has_kw(supp_prod_type)
+
+        if show_bruto_note:
+            story.append(Spacer(0, 12))
+            prod_part = f" (productie: {escape(_to_str(production))})" if production else ""
+            bruto_note = (
+                f"Deze bruto materiaalbon is aanvullende productie-informatie voor snijwerk{prod_part}. "
+                "De bon geeft aan hoeveel bruto profielmateriaal nodig is om de snedes uit te voeren. "
+                "Alleen ter ondersteuning van productie; vervangt geen order of factuur."
+            )
+            story.append(Paragraph(bruto_note, small_style))
 
     include_footer_note = doc_type_text_lower.startswith("bestelbon")
     if include_footer_note:

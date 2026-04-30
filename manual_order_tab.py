@@ -1336,7 +1336,7 @@ class ManualOrderTab(tk.Frame):
                 pass
         
         # Remove grid row tracking
-        grid_row = self._row_grid_indices.pop(row_idx, None)
+        self._row_grid_indices.pop(row_idx, None)
         
         # Ensure at least one empty row exists
         if len(self.rows) == 0:

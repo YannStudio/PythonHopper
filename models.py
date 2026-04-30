@@ -278,16 +278,16 @@ class Client:
                     return None
             if isinstance(val, (list, tuple)) and len(val) == 4:
                 try:
-                    l, t, r, b = [int(float(x)) for x in val]
-                    return {"left": l, "top": t, "right": r, "bottom": b}
+                    left, t, r, b = [int(float(x)) for x in val]
+                    return {"left": left, "top": t, "right": r, "bottom": b}
                 except Exception:
                     return None
             if isinstance(val, str):
                 parts = [p.strip() for p in val.replace(";", ",").split(",") if p.strip()]
                 if len(parts) == 4:
                     try:
-                        l, t, r, b = [int(float(x)) for x in parts]
-                        return {"left": l, "top": t, "right": r, "bottom": b}
+                        left, t, r, b = [int(float(x)) for x in parts]
+                        return {"left": left, "top": t, "right": r, "bottom": b}
                     except Exception:
                         return None
             return None

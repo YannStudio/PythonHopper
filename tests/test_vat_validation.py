@@ -1,4 +1,3 @@
-import cli
 from cli import build_parser, cli_suppliers, cli_clients
 from suppliers_db import SuppliersDB
 from clients_db import ClientsDB

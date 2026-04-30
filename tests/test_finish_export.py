@@ -3,7 +3,6 @@ import zipfile
 
 import pandas as pd
 import pytest
-import zipfile
 
 import cli
 import orders

@@ -68,7 +68,6 @@ from opticutter import (
     OpticutterAnalysis,
     OpticutterExportContext,
     OpticutterProductionExport,
-    OpticutterSelection,
     parse_length_to_mm,
     prepare_opticutter_export,
 )
@@ -77,7 +76,6 @@ import step_previews
 from helpers import (
     _to_str,
     _num_to_2dec,
-    _pn_wrap_25,
     _material_nowrap,
     _build_file_index,
 )
@@ -1907,6 +1905,7 @@ def generate_pdf_order_platypus(
     total_weight_kg: float | None = None,
     en1090_required: bool = False,
     en1090_note: Optional[str] = None,
+    include_bruto_note: bool = False,
     column_layout: Optional[List[Dict[str, object]]] = None,
     sections: Optional[List[OrderDocumentSection]] = None,
 ) -> None:
@@ -1981,6 +1980,10 @@ def generate_pdf_order_platypus(
     primary_section = normalized_sections[0]
     production_text = _to_str(production).strip()
     label_kind_clean = (_to_str(label_kind) or "productie").strip() or "productie"
+    # Per-section layout flags
+    column_layout = [dict(col) for col in column_layout] if column_layout else []
+    custom_layout = bool(column_layout)
+    is_raw_material_order = label_kind_clean.lower().startswith("brutemateriaal")
     if not multiple_sections:
         if not production_text:
             production_text = _to_str(primary_section.context_label).strip()
@@ -2497,359 +2500,35 @@ def generate_pdf_order_platypus(
                 en1090_note_html = f"<b>{en1090_note_html}</b>"
             story.append(Paragraph(en1090_note_html, small_style))
 
+    # Optional brief explanatory note for bruto materiaal (controlled by GUI checkbox).
+    # Show only when checkbox enabled AND a supplier is present AND the
+    # production or supplier product_type indicates tube laser work.
+    if include_bruto_note and supplier is not None:
+        prod_lower = _to_str(production).strip().lower() if production else ""
+        supp_prod_type = (
+            _to_str(getattr(supplier, "product_type", "")).strip().lower()
+        )
+
+        tube_keywords = ("tube", "tube laser", "tube laser cutting", "tube-laser")
+
+        def _has_tube_kw(text: str) -> bool:
+            return any(k in text for k in tube_keywords if k)
+
+        if _has_tube_kw(prod_lower) or _has_tube_kw(supp_prod_type):
+            story.append(Spacer(0, 12))
+            bruto_note = (
+                "Deze bruto materiaalbon is aanvullende productie-informatie voor snijwerk. "
+                "De bon geeft aan hoeveel bruto profielmateriaal nodig is om de snedes uit te voeren. "
+                "Alleen ter ondersteuning van productie; vervangt geen order of factuur."
+            )
+            story.append(Paragraph(bruto_note, small_style))
+
     include_footer_note = doc_type_text_lower.startswith("bestelbon")
     if include_footer_note:
         if footer_note is None:
             note = DEFAULT_FOOTER_NOTE
         else:
             note = _to_str(footer_note)
-    else:
-        note = ""
-    if note:
-        story.append(Spacer(0, 8))
-        story.append(Paragraph(note, small_style))
-
-    doc.build(story)
-
-
-def generate_pdf_order_platypus(
-    path: str,
-    company_info: Dict[str, object],
-    supplier: Supplier | None,
-    production: str,
-    items: List[Dict[str, object]],
-    doc_type: str = "Bestelbon",
-    doc_number: str | None = None,
-    footer_note: Optional[str] = None,
-    delivery: DeliveryAddress | None = None,
-    project_number: str | None = None,
-    project_name: str | None = None,
-    label_kind: str = "productie",
-    order_remark: str | None = None,
-    total_weight_kg: float | None = None,
-    en1090_required: bool = False,
-    en1090_note: Optional[str] = None,
-    column_layout: Optional[List[Dict[str, object]]] = None,
-    sections: Optional[List[OrderDocumentSection]] = None,
-) -> None:
-    """Generate a PDF order using ReportLab if available."""
-
-    if not REPORTLAB_OK:
-        return
-
-    normalized_sections = _normalize_order_sections(
-        production,
-        items,
-        label_kind,
-        total_weight_kg,
-        column_layout,
-        sections,
-    )
-    multiple_sections = len(normalized_sections) > 1
-
-    margin = 18 * mm
-    doc = SimpleDocTemplate(
-        path,
-        pagesize=A4,
-        leftMargin=margin,
-        rightMargin=margin,
-        topMargin=20 * mm,
-        bottomMargin=20 * mm,
-    )
-    width, _ = A4
-    palette = _order_palette(company_info)
-    styles = getSampleStyleSheet()
-    title_style = styles["Heading1"]
-    title_style.textColor = colors.HexColor(palette["accent"])
-    title_style.fontName = "Helvetica-Bold"
-    title_style.fontSize = 20
-    title_style.leading = 22
-    title_style.spaceAfter = 1
-    text_style = styles["Normal"]
-    text_style.fontSize = 10
-    text_style.leading = 12.2
-    text_style.textColor = colors.HexColor(ORDER_TEXT_COLOR)
-    meta_style = ParagraphStyle("meta-grouped", parent=text_style, leading=12.4)
-    delivery_style = ParagraphStyle(
-        "delivery-grouped",
-        parent=text_style,
-        fontSize=9.2,
-        leading=11.2,
-        textColor=colors.HexColor(ORDER_TEXT_COLOR),
-    )
-    small_style = ParagraphStyle(
-        "small-grouped",
-        parent=text_style,
-        fontSize=8.4,
-        leading=10.3,
-        textColor=colors.HexColor(ORDER_MUTED_TEXT_COLOR),
-    )
-    section_title_style = ParagraphStyle(
-        "sectiontitle-grouped",
-        parent=text_style,
-        fontName="Helvetica-Bold",
-        fontSize=11.2,
-        leading=13.2,
-        textColor=colors.HexColor(ORDER_TEXT_COLOR),
-    )
-
-    doc_type_text = (_to_str(doc_type).strip() or "Bestelbon")
-    doc_type_text_lower = doc_type_text.lower()
-    doc_type_text_slug = re.sub(r"[^0-9a-z]+", "", doc_type_text_lower)
-    is_standaard_doc = doc_type_text_lower.startswith("standaard")
-    primary_section = normalized_sections[0]
-    production_text = _to_str(production).strip()
-    label_kind_clean = (_to_str(label_kind) or "productie").strip() or "productie"
-    if not multiple_sections:
-        if not production_text:
-            production_text = _to_str(primary_section.context_label).strip()
-        label_kind_clean = (
-            (_to_str(primary_section.context_kind) or label_kind_clean).strip()
-            or label_kind_clean
-        )
-    order_remark_text = _to_str(order_remark) if order_remark is not None else ""
-    order_remark_has_content = bool(order_remark_text.strip())
-    place_remark_in_delivery_block = _should_place_remark_in_delivery_block(
-        order_remark_has_content=order_remark_has_content,
-        doc_type_text_slug=doc_type_text_slug,
-        is_standaard_doc=is_standaard_doc,
-        delivery=delivery,
-    )
-
-    today = datetime.date.today().strftime("%Y-%m-%d")
-    label_title = label_kind_clean[0].upper() + label_kind_clean[1:]
-    group_summary = _order_group_summary_text(normalized_sections)
-
-    company_lines = _order_company_lines(company_info)
-
-    logo_flowable = None
-    logo_path_info = company_info.get("logo_path") if company_info else None
-    if logo_path_info:
-        logo_path = resolve_runtime_path(str(logo_path_info))
-        if logo_path and logo_path.exists():
-            try:
-                from PIL import Image as PILImage  # type: ignore
-            except Exception:
-                PILImage = None  # type: ignore
-            if PILImage is not None:
-                try:
-                    with PILImage.open(logo_path) as src_logo:  # type: ignore[union-attr]
-                        logo_img = src_logo.convert("RGBA")
-                        crop_box = _normalize_crop_box(
-                            company_info.get("logo_crop"),
-                            logo_img.width,
-                            logo_img.height,
-                        )
-                        if crop_box:
-                            logo_img = logo_img.crop(crop_box)
-                        if logo_img.width > 0 and logo_img.height > 0:
-                            buffer = io.BytesIO()
-                            logo_img.save(buffer, format="PNG")
-                            buffer.seek(0)
-                            aspect = (
-                                logo_img.width / logo_img.height
-                                if logo_img.height
-                                else 1.0
-                            )
-                            max_width = 38 * mm
-                            max_height = 18 * mm
-                            width_pt = max_width
-                            height_pt = width_pt / aspect if aspect else max_height
-                            if height_pt > max_height:
-                                height_pt = max_height
-                                width_pt = height_pt * aspect
-                            logo_flowable = RLImage(
-                                buffer, width=width_pt, height=height_pt
-                            )
-                            logo_flowable.hAlign = "LEFT"
-                except Exception:
-                    logo_flowable = None
-
-    supp_lines: List[str] = []
-    if supplier is not None and not is_standaard_doc:
-        addr_parts = []
-        if supplier.adres_1:
-            addr_parts.append(supplier.adres_1)
-        if supplier.adres_2:
-            addr_parts.append(supplier.adres_2)
-        pc_gem = " ".join(x for x in [supplier.postcode, supplier.gemeente] if x)
-        if pc_gem:
-            addr_parts.append(pc_gem)
-        if supplier.land:
-            addr_parts.append(supplier.land)
-        full_addr = ", ".join(addr_parts)
-
-        supp_lines = [f"<b>Besteld bij:</b> {supplier.supplier}"]
-        if full_addr:
-            supp_lines.append(full_addr)
-        supp_lines.append(f"BTW: {supplier.btw or ''}")
-        if supplier.contact_sales:
-            supp_lines.append(f"Contact sales: {supplier.contact_sales}")
-        if supplier.sales_email:
-            supp_lines.append(f"E-mail: {supplier.sales_email}")
-        if supplier.phone:
-            supp_lines.append(f"Tel: {supplier.phone}")
-
-    doc_html_lines: List[str] = []
-    if doc_number:
-        doc_html_lines.append(f"<b>Nummer:</b> {escape(_to_str(doc_number))}")
-    doc_html_lines.append(f"<b>Datum:</b> {escape(today)}")
-    if multiple_sections:
-        if group_summary:
-            doc_html_lines.append(
-                f"<b>Gecombineerde bon voor:</b> {escape(group_summary)}"
-            )
-    elif production_text:
-        doc_html_lines.append(
-            f"<b>{escape(label_title)}:</b> {escape(production_text)}"
-        )
-    if project_number:
-        doc_html_lines.append(
-            f"<b>Projectnummer:</b> {escape(_to_str(project_number))}"
-        )
-    if project_name:
-        doc_html_lines.append(
-            f"<b>Projectnaam:</b> {escape(_to_str(project_name))}"
-        )
-    if order_remark_has_content and not place_remark_in_delivery_block:
-        doc_html_lines.append(
-            f"<b>Opmerking:</b> {escape(order_remark_text)}"
-        )
-
-    client_block = Paragraph("<br/>".join(company_lines), text_style)
-    doc_block = (
-        Paragraph("<br/>".join(doc_html_lines), meta_style)
-        if doc_html_lines
-        else Paragraph("", meta_style)
-    )
-
-    supplier_block_parts: List[object] = []
-    if supp_lines:
-        supplier_block_parts.append(Paragraph("<br/>".join(supp_lines), text_style))
-
-    delivery_html: str | None = None
-    include_delivery_block = not is_standaard_doc and (
-        delivery is not None or place_remark_in_delivery_block
-    )
-    if include_delivery_block:
-        delivery_text_parts: List[str] = []
-        if delivery:
-            if _to_str(delivery.name).strip():
-                delivery_text_parts.append(escape(_to_str(delivery.name).strip()))
-            address_text = ", ".join(
-                line.strip()
-                for line in _to_str(delivery.address).splitlines()
-                if line.strip()
-            )
-            if address_text:
-                delivery_text_parts.append(escape(address_text))
-            if _to_str(delivery.remarks).strip():
-                delivery_text_parts.append(escape(_to_str(delivery.remarks).strip()))
-        delivery_sections: List[str] = []
-        if delivery_text_parts:
-            delivery_sections.append(
-                f"<b>Leveradres:</b> {' | '.join(delivery_text_parts)}"
-            )
-        if place_remark_in_delivery_block:
-            remark_lines = order_remark_text.splitlines()
-            if not remark_lines:
-                remark_lines = [order_remark_text]
-            delivery_sections.append(
-                "<b>Opmerking:</b><br/>"
-                + "<br/>".join(escape(line) for line in remark_lines if line.strip())
-            )
-        if delivery_sections:
-            delivery_html = "<br/>".join(delivery_sections)
-
-    left_block_parts: List[object] = [doc_block]
-    if supplier_block_parts:
-        left_block_parts.append(Spacer(0, 8))
-        left_block_parts.extend(supplier_block_parts)
-    left_block: object = left_block_parts
-
-    story: List[object] = []
-    title = (
-        doc_type_text
-        if multiple_sections or not production_text
-        else f"{doc_type_text} {label_kind_clean}: {production_text}"
-    )
-    story.append(Paragraph(title, title_style))
-    title_rule = Table([[""]], colWidths=[width - 2 * margin], rowHeights=[2])
-    title_rule.setStyle(
-        TableStyle(
-            [
-                ("LINEBELOW", (0, 0), (-1, -1), 0.55, colors.HexColor(ORDER_RULE_COLOR)),
-                ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                ("TOPPADDING", (0, 0), (-1, -1), 0),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-            ]
-        )
-    )
-    story.append(title_rule)
-    story.append(Spacer(0, 9))
-
-    left_col_width = (width - 2 * margin) * 0.58
-    right_col_width = (width - 2 * margin) - left_col_width
-    right_block_parts: List[object] = []
-    if logo_flowable is not None:
-        logo_flowable.hAlign = "LEFT"
-        right_block_parts.append(logo_flowable)
-        right_block_parts.append(Spacer(0, 6))
-    right_block_parts.append(client_block)
-    right_block: object = right_block_parts
-
-    header_tbl = LongTable(
-        [[left_block, right_block]],
-        colWidths=[left_col_width, right_col_width],
-    )
-    header_tbl.setStyle(
-        TableStyle(
-            [
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                ("TOPPADDING", (0, 0), (-1, -1), 0),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-            ]
-        )
-    )
-    story.append(header_tbl)
-    if delivery_html:
-        story.append(Spacer(0, 6))
-        story.append(Paragraph(delivery_html, delivery_style))
-        story.append(Spacer(0, 12))
-    else:
-        story.append(Spacer(0, 10))
-
-    usable_w = width - 2 * margin
-    next_item_number = 1
-    for idx, section in enumerate(normalized_sections):
-        if idx > 0:
-            story.append(Spacer(0, 12))
-        _build_order_pdf_section_story(
-            section,
-            story=story,
-            usable_w=usable_w,
-            palette=palette,
-            section_title_style=section_title_style,
-            show_title=multiple_sections,
-            start_item_number=next_item_number,
-        )
-        next_item_number += len(section.items)
-
-    if en1090_required:
-        note_text = EN1090_NOTE_TEXT if en1090_note is None else _to_str(en1090_note)
-        if note_text:
-            story.append(Spacer(0, 12))
-            en1090_note_html = note_text.replace("\n", "<br/>")
-            if note_text == EN1090_NOTE_TEXT:
-                en1090_note_html = f"<b>{en1090_note_html}</b>"
-            story.append(Paragraph(en1090_note_html, small_style))
-
-    include_footer_note = doc_type_text_lower.startswith("bestelbon")
-    if include_footer_note:
-        note = DEFAULT_FOOTER_NOTE if footer_note is None else _to_str(footer_note)
     else:
         note = ""
     if note:
@@ -3164,204 +2843,7 @@ def write_order_excel(
                     cell.alignment = Alignment(horizontal="left", wrap_text=True)
 
 
-def write_order_excel(
-    path: str,
-    items: List[Dict[str, object]],
-    company_info: Dict[str, str] | None = None,
-    supplier: Supplier | None = None,
-    delivery: DeliveryAddress | None = None,
-    doc_type: str = "Bestelbon",
-    doc_number: str | None = None,
-    project_number: str | None = None,
-    project_name: str | None = None,
-    context_label: str | None = None,
-    context_kind: str = "productie",
-    order_remark: str | None = None,
-    total_weight_kg: float | None = None,
-    en1090_required: bool = False,
-    en1090_note: Optional[str] = None,
-    column_layout: Optional[List[Dict[str, object]]] = None,
-    sections: Optional[List[OrderDocumentSection]] = None,
-) -> None:
-    """Write order information to an Excel file with header info."""
 
-    if Alignment is None or not hasattr(pd, "ExcelWriter"):
-        return
-
-    normalized_sections = _normalize_order_sections(
-        context_label,
-        items,
-        context_kind,
-        total_weight_kg,
-        column_layout,
-        sections,
-    )
-    multiple_sections = len(normalized_sections) > 1
-    primary_section = normalized_sections[0]
-
-    context_kind_clean = (_to_str(context_kind) or "productie").strip() or "productie"
-    context_label_text = _to_str(context_label).strip()
-    if not multiple_sections:
-        if not context_label_text:
-            context_label_text = _to_str(primary_section.context_label).strip()
-        context_kind_clean = (
-            (_to_str(primary_section.context_kind) or context_kind_clean).strip()
-            or context_kind_clean
-        )
-
-    note_text = EN1090_NOTE_TEXT if en1090_note is None else _to_str(en1090_note)
-    doc_type_text = (_to_str(doc_type).strip() or "Bestelbon")
-    doc_type_text_lower = doc_type_text.lower()
-    doc_type_text_slug = re.sub(r"[^0-9a-z]+", "", doc_type_text_lower)
-    is_standaard_doc = doc_type_text_lower.startswith("standaard")
-    order_remark_text = _to_str(order_remark) if order_remark is not None else ""
-    order_remark_has_content = bool(order_remark_text.strip())
-    place_remark_in_delivery_block = _should_place_remark_in_delivery_block(
-        order_remark_has_content=order_remark_has_content,
-        doc_type_text_slug=doc_type_text_slug,
-        is_standaard_doc=is_standaard_doc,
-        delivery=delivery,
-    )
-
-    header_lines: List[Tuple[str, str]] = []
-    today = datetime.date.today().strftime("%Y-%m-%d")
-    if doc_number:
-        header_lines.append(("Nummer", str(doc_number)))
-    header_lines.append(("Datum", today))
-    group_summary = _order_group_summary_text(normalized_sections)
-    if multiple_sections:
-        if group_summary:
-            header_lines.append(("Gecombineerde bon voor", group_summary))
-    elif context_label_text:
-        header_lines.append((context_kind_clean.capitalize(), context_label_text))
-    if project_number:
-        header_lines.append(("Projectnummer", project_number))
-    if project_name:
-        header_lines.append(("Projectnaam", project_name))
-    if order_remark_has_content and not place_remark_in_delivery_block:
-        header_lines.append(("Opmerking", order_remark_text))
-    header_lines.append(("", ""))
-    if company_info:
-        header_lines.extend(
-            [
-                ("Bedrijf", company_info.get("name", "")),
-                ("Adres", company_info.get("address", "")),
-                ("BTW", company_info.get("vat", "")),
-                ("E-mail", company_info.get("email", "")),
-                ("Website", company_info.get("website", "")),
-                ("", ""),
-            ]
-        )
-
-    supplier_name = _to_str(supplier.supplier).strip() if supplier else ""
-    include_supplier_block = supplier is not None and (
-        not is_standaard_doc or bool(supplier_name)
-    )
-    if include_supplier_block:
-        addr_parts = []
-        if supplier.adres_1:
-            addr_parts.append(supplier.adres_1)
-        if supplier.adres_2:
-            addr_parts.append(supplier.adres_2)
-        pc_gem = " ".join(x for x in [supplier.postcode, supplier.gemeente] if x)
-        if pc_gem:
-            addr_parts.append(pc_gem)
-        if supplier.land:
-            addr_parts.append(supplier.land)
-        full_addr = ", ".join(addr_parts)
-        header_lines.extend(
-            [
-                ("Leverancier", supplier.supplier),
-                ("Adres", full_addr),
-                ("BTW", supplier.btw or ""),
-                ("E-mail", supplier.sales_email or ""),
-                ("Tel", supplier.phone or ""),
-                ("", ""),
-            ]
-        )
-
-    include_delivery_block = False
-    if delivery is not None:
-        delivery_has_content = any(
-            _to_str(value).strip()
-            for value in (delivery.name, delivery.address, delivery.remarks)
-        )
-        include_delivery_block = (
-            not is_standaard_doc
-            or delivery_has_content
-            or place_remark_in_delivery_block
-        )
-    elif place_remark_in_delivery_block and not is_standaard_doc:
-        include_delivery_block = True
-    if include_delivery_block:
-        if delivery:
-            header_lines.extend(
-                [
-                    ("Leveradres", ""),
-                    ("", delivery.name),
-                    ("Adres", delivery.address or ""),
-                    ("Opmerking", delivery.remarks or ""),
-                ]
-            )
-        if place_remark_in_delivery_block and order_remark_has_content:
-            header_lines.append(("Opmerking", order_remark_text))
-        header_lines.append(("", ""))
-
-    with pd.ExcelWriter(path, engine="openpyxl") as writer:
-        pd.DataFrame().to_excel(writer, index=False)
-        ws = writer.sheets[list(writer.sheets.keys())[0]]
-
-        for r, (label, value) in enumerate(header_lines, start=1):
-            ws.cell(row=r, column=1, value=label)
-            ws.cell(row=r, column=2, value=value)
-
-        current_startrow = len(header_lines)
-        for idx, section in enumerate(normalized_sections):
-            df, left_cols, wrap_cols = _build_order_excel_section_data(section)
-            if multiple_sections:
-                title_row = current_startrow + 1
-                cell = ws.cell(
-                    row=title_row,
-                    column=1,
-                    value=_format_order_section_title(
-                        section.context_kind,
-                        section.context_label,
-                    ),
-                )
-                if Font is not None:
-                    cell.font = Font(bold=True)
-                cell.alignment = Alignment(horizontal="left", wrap_text=True)
-                current_startrow += 1
-
-            df.to_excel(writer, index=False, startrow=current_startrow)
-
-            for col_idx, col_name in enumerate(df.columns, start=1):
-                align = Alignment(
-                    horizontal="left" if col_name in left_cols else "right",
-                    wrap_text=col_name in wrap_cols,
-                )
-                if (
-                    col_name in {"PartNumber", "Profiel"}
-                    and get_column_letter is not None
-                ):
-                    column_letter = get_column_letter(col_idx)
-                    ws.column_dimensions[column_letter].width = 25
-                for row_idx in range(
-                    current_startrow + 1,
-                    current_startrow + len(df) + 2,
-                ):
-                    ws.cell(row=row_idx, column=col_idx).alignment = align
-
-            current_startrow += len(df) + 1
-            if multiple_sections and idx < len(normalized_sections) - 1:
-                current_startrow += 1
-
-        if en1090_required and note_text:
-            note_row = ws.max_row + 2
-            cell = ws.cell(row=note_row, column=1, value=note_text)
-            if Font is not None:
-                cell.font = Font(bold=True)
-            cell.alignment = Alignment(horizontal="left", wrap_text=True)
 
 
 def pick_supplier_for_production(

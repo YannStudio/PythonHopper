@@ -1,6 +1,5 @@
 import csv
 
-import csv
 
 import pandas as pd
 

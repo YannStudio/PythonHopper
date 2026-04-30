@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from helpers import _to_str, _num_to_2dec
+from helpers import _to_str
 from models import Supplier, DeliveryAddress
 from en1090 import EN1090_NOTE_TEXT
 

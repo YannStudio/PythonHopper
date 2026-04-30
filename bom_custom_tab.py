@@ -59,7 +59,7 @@ import re
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -69,17 +69,18 @@ import pandas as pd
 try:
     from pandastable import Table, TableModel
 except ModuleNotFoundError as exc:  # pragma: no cover - afhankelijk van installatie
+    _PANDASTABLE_IMPORT_ERROR: Optional[BaseException] = exc
+
     class _TableStub:
         def __init__(self, *args, **kwargs) -> None:
-            raise RuntimeError(_PANDASTABLE_ERROR) from exc
+            raise RuntimeError(_PANDASTABLE_ERROR) from _PANDASTABLE_IMPORT_ERROR
 
     class _TableModelStub:
         def __init__(self, *args, **kwargs) -> None:
-            raise RuntimeError(_PANDASTABLE_ERROR) from exc
+            raise RuntimeError(_PANDASTABLE_ERROR) from _PANDASTABLE_IMPORT_ERROR
 
     Table = _TableStub  # type: ignore[assignment]
     TableModel = _TableModelStub  # type: ignore[assignment]
-    _PANDASTABLE_IMPORT_ERROR: Optional[BaseException] = exc
     _PANDASTABLE_AVAILABLE = False
 else:
     _PANDASTABLE_IMPORT_ERROR = None

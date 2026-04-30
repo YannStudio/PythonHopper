@@ -11,7 +11,7 @@ from collections import defaultdict, OrderedDict
 from dataclasses import dataclass, field
 from copy import deepcopy
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional, Tuple, TYPE_CHECKING
+from typing import Dict, Iterable, List, Optional, Tuple, TYPE_CHECKING
 
 import pandas as pd
 
@@ -57,7 +57,6 @@ from orders import (
     ORDER_TABLE_GRID_COLOR,
     ORDER_TABLE_OUTLINE_COLOR,
     ORDER_TEXT_COLOR,
-    combine_pdfs_per_production,
     combine_pdfs_from_source,
     find_related_bom_exports,
     make_bom_export_filename,
@@ -74,7 +73,6 @@ from orders import (
     _WINDOWS_MAX_PATH,
     _fit_filename_within_path,
     _normalize_crop_box,
-    _sanitize_component,
     build_document_export_basename,
     format_document_number_for_display,
     write_order_excel,
@@ -82,9 +80,6 @@ from orders import (
 )
 from en1090 import EN1090_NOTE_TEXT, default_en1090_enabled, normalize_en1090_key
 from opticutter import (
-    DEFAULT_KERF_MM,
-    LONG_STOCK_LENGTH_MM,
-    STOCK_LENGTH_MM,
     StockScenarioResult,
     analyse_profiles,
     parse_length_to_mm,
@@ -109,25 +104,25 @@ SUPPLIERS_TEMPLATE_FILE = "suppliers_template.csv"
 
 
 def _norm(text: str) -> str:
-    return (
-        unicodedata.normalize("NFKD", text)
-        .encode("ASCII", "ignore")
-        .decode("ASCII")
-        .lower()
-    )
+                    try:
+                        bundle = create_export_bundle(
+                            self.dest_folder,
+                            project_number or None,
+                            project_name or None,
+                            latest_symlink="latest" if self.bundle_latest_var.get() else False,
+                            dry_run=bool(self.bundle_dry_run_var.get()),
+                        )
+                    except Exception as exc:
+                        def on_error():
+                            messagebox.showerror(
+                                "Fout",
+                                f"Kon bundelmap niet maken:\n{exc}",
+                                parent=self,
+                            )
+                            self.status_var.set("Bundelmap maken mislukt.")
 
-
-def sort_supplier_options(
-    options: List[str],
-    suppliers: List[Supplier],
-    disp_to_name: Dict[str, str],
-) -> List[str]:
-    """Return options sorted with favorites first and then alphabetically.
-
-    Parameters
-    ----------
-    options: list of display strings
-    suppliers: list of Supplier objects from the DB
+                        self.after(0, on_error)
+                        return
     disp_to_name: mapping from display string to supplier name
     """
 
@@ -1022,12 +1017,10 @@ def start_gui():
                     logo_box_w = max(96, int(right_col_w))
                     logo_box_h = 72
                     logo_img = load_logo_image(apply_crop=True)
-                    logo_present = False
                     logo_render_h = 0
                     if logo_img is not None and ImageTk is not None:
                         logo_photo = make_logo_photo(logo_img, (logo_box_w, logo_box_h))
                         if logo_photo is not None:
-                            logo_present = True
                             logo_render_h = logo_photo.height()
                             preview_canvas.preview_images.append(logo_photo)  # type: ignore[attr-defined]
                             preview_canvas.create_image(
@@ -4174,6 +4167,13 @@ def start_gui():
                 text="Beheer presetregels",
                 command=self._open_preset_manager,
             ).pack(side="left", padx=(6, 0))
+            # Option to include brutomateriaal note on generated PDFs
+            self.include_bruto_note_var = tk.BooleanVar(value=True)
+            tk.Checkbutton(
+                export_toggle_row,
+                text="Voeg bruto materiaal-opmerking toe",
+                variable=self.include_bruto_note_var,
+            ).pack(side="left", padx=(12, 0))
 
             delivery_opts = self._delivery_options()
 
@@ -5917,7 +5917,9 @@ def start_gui():
                     addr_lbl = tk.Label(card, text=addr_line, justify="left", anchor="w")
                     addr_lbl.pack(anchor="w", padx=4, pady=(0, 4))
                     widgets.append(addr_lbl)
-                handler = lambda _e, o=opt, key=sel_key: self._on_card_click(o, key)
+                def handler(_e, o=opt, key=sel_key):
+                    self._on_card_click(o, key)
+
                 card.bind("<Button-1>", handler)
                 for w in widgets:
                     w.bind("<Button-1>", handler)
@@ -8118,6 +8120,7 @@ def start_gui():
                     total_weight_kg=total_weight if isinstance(total_weight, (int, float)) else None,
                     en1090_required=False,
                     en1090_note=None,
+                    include_bruto_note=getattr(self, "include_bruto_note_var", None) and bool(self.include_bruto_note_var.get()),
                     column_layout=column_layout or None,
                 )
             except Exception as exc:
@@ -10443,11 +10446,13 @@ def start_gui():
             from tkinter import messagebox
             if not self._ensure_bom_loaded():
                 return
-            if not self.source_folder:
-                messagebox.showwarning("Let op", "Selecteer een bronmap."); return
+                if not self.source_folder:
+                    messagebox.showwarning("Let op", "Selecteer een bronmap.")
+                    return
             exts = self._selected_exts()
             if not exts:
-                messagebox.showwarning("Let op", "Selecteer minstens één bestandstype."); return
+                messagebox.showwarning("Let op", "Selecteer minstens één bestandstype.")
+                return
             self.status_var.set("Bezig met controleren...")
             self.update_idletasks()
             idx = _build_file_index(self.source_folder, exts)
@@ -10495,7 +10500,8 @@ def start_gui():
                 return
             exts = self._selected_exts()
             if not exts or not self.source_folder or not self.dest_folder:
-                messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies."); return
+                messagebox.showwarning("Let op", "Selecteer bron, bestemming en extensies.")
+                return
             custom_prefix_text = self.export_name_custom_prefix_text.get().strip()
             custom_prefix_enabled = bool(
                 self.export_name_custom_prefix_enabled_var.get()
@@ -10649,7 +10655,7 @@ def start_gui():
                         )
                         _export_bom_workbook(bom_df_snapshot, bundle_dest, bom_filename)
                         bom_written = True
-                    except Exception as exc:
+                    except Exception:
                         def on_error():
                             messagebox.showerror(
                                 "Fout",
@@ -10671,7 +10677,7 @@ def start_gui():
                             dst = os.path.join(bundle_dest, transformed)
                             shutil.copy2(src_file, dst)
                             related_copied += 1
-                    except Exception as exc:
+                    except Exception:
                         def on_error():
                             messagebox.showerror(
                                 "Fout",
@@ -11014,7 +11020,7 @@ def start_gui():
                             latest_symlink="latest" if self.bundle_latest_var.get() else False,
                             dry_run=bool(self.bundle_dry_run_var.get()),
                         )
-                    except Exception as exc:
+                    except Exception:
                         def on_error():
                             messagebox.showerror(
                                 "Fout",
