@@ -104,25 +104,25 @@ SUPPLIERS_TEMPLATE_FILE = "suppliers_template.csv"
 
 
 def _norm(text: str) -> str:
-                    try:
-                        bundle = create_export_bundle(
-                            self.dest_folder,
-                            project_number or None,
-                            project_name or None,
-                            latest_symlink="latest" if self.bundle_latest_var.get() else False,
-                            dry_run=bool(self.bundle_dry_run_var.get()),
-                        )
-                    except Exception as exc:
-                        def on_error():
-                            messagebox.showerror(
-                                "Fout",
-                                f"Kon bundelmap niet maken:\n{exc}",
-                                parent=self,
-                            )
-                            self.status_var.set("Bundelmap maken mislukt.")
+    return (
+        unicodedata.normalize("NFKD", text)
+        .encode("ASCII", "ignore")
+        .decode("ASCII")
+        .lower()
+    )
 
-                        self.after(0, on_error)
-                        return
+
+def sort_supplier_options(
+    options: List[str],
+    suppliers: List[Supplier],
+    disp_to_name: Dict[str, str],
+) -> List[str]:
+    """Return options sorted with favorites first and then alphabetically.
+
+    Parameters
+    ----------
+    options: list of display strings
+    suppliers: list of Supplier objects from the DB
     disp_to_name: mapping from display string to supplier name
     """
 
