@@ -16,6 +16,7 @@ import tempfile
 import hashlib
 import math
 from collections import defaultdict
+from decimal import Decimal, InvalidOperation
 from html import escape
 from pathlib import Path
 from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -328,6 +329,113 @@ class OrderDocumentJob:
     order_remark: str | None
     sections: List[OrderDocumentSection] = field(default_factory=list)
     en1090_required: bool = False
+
+
+_PRICE_UNIT_KEY = "Eenheidsprijs"
+_PRICE_TOTAL_KEY = "Totaalprijs"
+
+
+def _clean_price_text(value: object) -> str:
+    text = _to_str(value).strip()
+    if not text:
+        return ""
+    return text.replace(",", ".")
+
+
+def _price_decimal(value: object) -> Decimal | None:
+    text = _clean_price_text(value)
+    if not text:
+        return None
+    try:
+        return Decimal(text)
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _format_price_decimal(value: Decimal | None) -> str:
+    if value is None:
+        return ""
+    rounded = value.quantize(Decimal("0.01"))
+    return f"{rounded:.2f}"
+
+
+def _pricing_has_values(pricing: Mapping[str, object] | None) -> bool:
+    return bool(
+        pricing
+        and (
+            _clean_price_text(pricing.get("unit_price"))
+            or _clean_price_text(pricing.get("total_price"))
+        )
+    )
+
+
+def _default_priced_column_layout(context_kind: str) -> List[Dict[str, object]]:
+    context_kind_clean = (_to_str(context_kind) or "productie").strip().lower()
+    is_raw = context_kind_clean.startswith("brutemateriaal")
+    if is_raw:
+        columns = [
+            {"key": "Profiel", "label": "Profiel", "width": 20, "justify": "left", "wrap": True, "weight": 2.0},
+            {"key": "Materiaal", "label": "Materiaal", "width": 18, "justify": "left", "wrap": True, "weight": 1.6},
+            {"key": "Lengte", "label": "Lengte", "width": 10, "justify": "right", "numeric": True, "weight": 0.9},
+            {"key": "St.", "label": "St.", "width": 8, "justify": "right", "numeric": True, "integer": True, "weight": 0.7},
+            {"key": "kg", "label": "kg", "width": 10, "justify": "right", "numeric": True, "total_weight": True, "weight": 0.8},
+        ]
+    else:
+        columns = [
+            {"key": "PartNumber", "label": "PartNumber", "width": 22, "justify": "left", "wrap": True, "weight": 1.8},
+            {"key": "Description", "label": "Omschrijving", "width": 32, "justify": "left", "wrap": True, "weight": 2.4},
+            {"key": "Materiaal", "label": "Materiaal", "width": 16, "justify": "left", "wrap": False, "weight": 1.2},
+            {"key": "Aantal", "label": "St.", "width": 8, "justify": "right", "numeric": True, "integer": True, "weight": 0.7},
+            {"key": "Oppervlakte", "label": "m2", "width": 10, "justify": "right", "numeric": True, "weight": 0.8},
+            {"key": "Gewicht", "label": "kg", "width": 10, "justify": "right", "numeric": True, "total_weight": True, "weight": 0.8},
+        ]
+    columns.extend(
+        [
+            {"key": _PRICE_UNIT_KEY, "label": "Prijs/st.", "width": 12, "justify": "right", "numeric": True, "weight": 0.9},
+            {"key": _PRICE_TOTAL_KEY, "label": "Totaalprijs", "width": 14, "justify": "right", "numeric": True, "weight": 1.0},
+        ]
+    )
+    return columns
+
+
+def _apply_order_pricing(
+    items: List[Dict[str, object]],
+    pricing: Mapping[str, object] | None,
+    *,
+    context_kind: str,
+) -> tuple[List[Dict[str, object]], Optional[List[Dict[str, object]]]]:
+    if not _pricing_has_values(pricing):
+        return items, None
+
+    unit_price_text = _clean_price_text(pricing.get("unit_price"))
+    total_price_text = _clean_price_text(pricing.get("total_price"))
+    unit_price = _price_decimal(unit_price_text)
+    priced_items = [dict(item) for item in items]
+    is_raw = (_to_str(context_kind).strip().lower()).startswith("brutemateriaal")
+    qty_key = "St." if is_raw else "Aantal"
+
+    if unit_price_text:
+        for item in priced_items:
+            item[_PRICE_UNIT_KEY] = unit_price_text
+            qty = _price_decimal(item.get(qty_key))
+            if unit_price is not None and qty is not None:
+                item[_PRICE_TOTAL_KEY] = _format_price_decimal(unit_price * qty)
+            else:
+                item.setdefault(_PRICE_TOTAL_KEY, "")
+
+    if total_price_text:
+        total_row = {key: "" for key in (priced_items[0].keys() if priced_items else [])}
+        if is_raw:
+            total_row["Profiel"] = "Totaal aangeboden"
+        else:
+            total_row["Description"] = "Totaal aangeboden"
+        total_row[_PRICE_TOTAL_KEY] = total_price_text
+        priced_items.append(total_row)
+
+    for item in priced_items:
+        item.setdefault(_PRICE_UNIT_KEY, "")
+        item.setdefault(_PRICE_TOTAL_KEY, "")
+    return priced_items, _default_priced_column_layout(context_kind)
 
 
 _INVALID_PATH_CHARS = set('<>:"/\\|?*')
@@ -2221,6 +2329,46 @@ def generate_pdf_order_platypus(
     else:
         story.append(Spacer(0, 10))
 
+    if multiple_sections:
+        next_item_number = 1
+        for index, section in enumerate(normalized_sections):
+            _build_order_pdf_section_story(
+                section,
+                story=story,
+                usable_w=width - 2 * margin,
+                palette=palette,
+                section_title_style=section_title_style,
+                show_title=True,
+                start_item_number=next_item_number,
+            )
+            next_item_number += len(section.items)
+            if index < len(normalized_sections) - 1:
+                story.append(Spacer(0, 10))
+
+        if en1090_required:
+            note_text = EN1090_NOTE_TEXT if en1090_note is None else _to_str(en1090_note)
+            if note_text:
+                story.append(Spacer(0, 12))
+                en1090_note_html = note_text.replace("\n", "<br/>")
+                if note_text == EN1090_NOTE_TEXT:
+                    en1090_note_html = f"<b>{en1090_note_html}</b>"
+                story.append(Paragraph(en1090_note_html, small_style))
+
+        include_footer_note = doc_type_text_lower.startswith("bestelbon")
+        if include_footer_note:
+            if footer_note is None:
+                note = DEFAULT_FOOTER_NOTE
+            else:
+                note = _to_str(footer_note)
+        else:
+            note = ""
+        if note:
+            story.append(Spacer(0, 8))
+            story.append(Paragraph(note, small_style))
+
+        doc.build(story)
+        return
+
     # Headers and data
     if custom_layout:
         head = []
@@ -2634,13 +2782,29 @@ def write_order_excel(
     en1090_required: bool = False,
     en1090_note: Optional[str] = None,
     column_layout: Optional[List[Dict[str, object]]] = None,
+    sections: Optional[List[OrderDocumentSection]] = None,
 ) -> None:
     """Write order information to an Excel file with header info."""
     context_kind_clean = (_to_str(context_kind) or "productie").strip() or "productie"
     is_raw_material_order = context_kind_clean.lower().startswith("brutemateriaal")
+    excel_sections = (
+        _normalize_order_sections(
+            items,
+            context_label or "",
+            context_kind_clean,
+            total_weight_kg,
+            column_layout,
+            sections,
+        )
+        if sections
+        else []
+    )
     column_layout = [dict(col) for col in column_layout] if column_layout else []
     custom_layout = bool(column_layout)
-    if custom_layout:
+    df_columns: List[str] = []
+    if excel_sections:
+        df = pd.DataFrame()
+    elif custom_layout:
         headers: List[str] = []
         for column in column_layout:
             header = _to_str(column.get("label") or column.get("key") or "").strip()
@@ -2688,7 +2852,7 @@ def write_order_excel(
 
     note_text = EN1090_NOTE_TEXT if en1090_note is None else _to_str(en1090_note)
 
-    append_note_to_df = en1090_required and note_text and (
+    append_note_to_df = (not excel_sections) and en1090_required and note_text and (
         Alignment is None or not hasattr(pd, "ExcelWriter")
     )
     if append_note_to_df:
@@ -2718,6 +2882,10 @@ def write_order_excel(
     if doc_number:
         header_lines.append(("Nummer", str(doc_number)))
     header_lines.append(("Datum", today))
+    if excel_sections and len(excel_sections) > 1:
+        group_summary = _order_group_summary_text(excel_sections)
+        if group_summary:
+            header_lines.append(("Gecombineerde bon voor", group_summary))
     if context_label:
         header_lines.append((context_kind_clean.capitalize(), context_label))
     if project_number:
@@ -2734,9 +2902,12 @@ def write_order_excel(
                 ("Adres", company_info.get("address", "")),
                 ("BTW", company_info.get("vat", "")),
                 ("E-mail", company_info.get("email", "")),
-                ("", ""),
             ]
         )
+        website = _to_str(company_info.get("website")).strip()
+        if website:
+            header_lines.append(("Website", website))
+        header_lines.append(("", ""))
     supplier_name = _to_str(supplier.supplier).strip() if supplier else ""
     include_supplier_block = supplier is not None and (
         not is_standaard_doc or bool(supplier_name)
@@ -2793,11 +2964,58 @@ def write_order_excel(
     startrow = len(header_lines)
     if Alignment is not None and hasattr(pd, "ExcelWriter"):
         with pd.ExcelWriter(path, engine="openpyxl") as writer:
-            df.to_excel(writer, index=False, startrow=startrow)
+            if excel_sections:
+                pd.DataFrame().to_excel(
+                    writer,
+                    index=False,
+                    header=False,
+                    sheet_name="Bestelbon",
+                )
+            else:
+                df.to_excel(writer, index=False, startrow=startrow, sheet_name="Bestelbon")
             ws = writer.sheets[list(writer.sheets.keys())[0]]
             for r, (label, value) in enumerate(header_lines, start=1):
                 ws.cell(row=r, column=1, value=label)
                 ws.cell(row=r, column=2, value=value)
+
+            if excel_sections:
+                row_cursor = startrow + 1
+                for section in excel_sections:
+                    title = _format_order_section_title(
+                        section.context_kind,
+                        section.context_label,
+                    )
+                    title_cell = ws.cell(row=row_cursor, column=1, value=title)
+                    if Font is not None:
+                        title_cell.font = Font(bold=True)
+                    row_cursor += 1
+
+                    section_df, left_cols, wrap_cols = _build_order_excel_section_data(section)
+                    section_df.to_excel(
+                        writer,
+                        index=False,
+                        startrow=row_cursor - 1,
+                        sheet_name="Bestelbon",
+                    )
+                    for col_idx, col_name in enumerate(section_df.columns, start=1):
+                        align = Alignment(
+                            horizontal="left" if col_name in left_cols else "right",
+                            wrap_text=col_name in wrap_cols,
+                        )
+                        if col_name in {"PartNumber", "Profiel"} and get_column_letter is not None:
+                            ws.column_dimensions[get_column_letter(col_idx)].width = 25
+                        for row in range(row_cursor + 1, row_cursor + len(section_df) + 2):
+                            ws.cell(row=row, column=col_idx).alignment = align
+                    row_cursor += len(section_df) + 3
+
+                if en1090_required and note_text:
+                    note_row = row_cursor + 1
+                    cell = ws.cell(row=note_row, column=1, value=note_text)
+                    if Font is not None:
+                        cell.font = Font(bold=True)
+                    if Alignment is not None:
+                        cell.alignment = Alignment(horizontal="left", wrap_text=True)
+                return
 
             if custom_layout:
                 left_cols = {
@@ -2978,6 +3196,9 @@ def copy_per_production_and_orders(
     opticutter_doc_num_map: Dict[str, str] | None = None,
     opticutter_delivery_map: Dict[str, DeliveryAddress | None] | None = None,
     opticutter_remarks_map: Dict[str, str] | None = None,
+    pricing_map: Mapping[str, Mapping[str, object]] | None = None,
+    finish_pricing_map: Mapping[str, Mapping[str, object]] | None = None,
+    opticutter_pricing_map: Mapping[str, Mapping[str, object]] | None = None,
     production_export_filter: Mapping[str, bool] | None = None,
     finish_export_filter: Mapping[str, bool] | None = None,
     opticutter_export_filter: Mapping[str, bool] | None = None,
@@ -3086,6 +3307,9 @@ def copy_per_production_and_orders(
         for key, value in (opticutter_remarks_map or {}).items()
         if _to_str(value).strip()
     }
+    pricing_map = pricing_map or {}
+    finish_pricing_map = finish_pricing_map or {}
+    opticutter_pricing_map = opticutter_pricing_map or {}
     remarks_clean: Dict[str, str] = {}
     for key, value in (remarks_map or {}).items():
         text = _to_str(value).strip()
@@ -3392,6 +3616,11 @@ def copy_per_production_and_orders(
 
         delivery = delivery_map.get(prod)
         order_remark = (remarks_map.get(prod, "") if remarks_map else "").strip()
+        items, column_layout = _apply_order_pricing(
+            items,
+            pricing_map.get(prod),
+            context_kind="Productie",
+        )
         order_candidates.append(
             OrderDocumentCandidate(
                 selection_key=make_production_selection_key(prod),
@@ -3406,6 +3635,7 @@ def copy_per_production_and_orders(
                 doc_num_display=doc_num_display,
                 order_remark=order_remark or None,
                 items=items,
+                column_layout=column_layout,
                 en1090_required=en1090_required,
             )
         )
@@ -3552,6 +3782,11 @@ def copy_per_production_and_orders(
             )
             if should_generate_opticutter_order:
                 should_write_order_overview = False
+                opticutter_order_items, opticutter_column_layout = _apply_order_pricing(
+                    opticutter_order_items,
+                    opticutter_pricing_map.get(prod),
+                    context_kind="Brutemateriaal",
+                )
 
                 opticutter_document_base = build_document_export_basename(
                     opticutter_doc_type,
@@ -3600,6 +3835,7 @@ def copy_per_production_and_orders(
                     total_weight_kg=opticutter_total_weight,
                     en1090_required=opticutter_en1090,
                     en1090_note=en1090_note_text,
+                    column_layout=opticutter_column_layout,
                 )
 
                 opticutter_pdf_requested = f"{opticutter_document_base}.pdf"
@@ -3631,6 +3867,7 @@ def copy_per_production_and_orders(
                         total_weight_kg=opticutter_total_weight,
                         en1090_required=opticutter_en1090,
                         en1090_note=en1090_note_text,
+                        column_layout=opticutter_column_layout,
                     )
                 except Exception as exc:
                     print(
@@ -3806,6 +4043,11 @@ def copy_per_production_and_orders(
             finish_remark = (
                 finish_remarks_map.get(finish_key, "") if finish_remarks_map else ""
             ).strip()
+            items, column_layout = _apply_order_pricing(
+                items,
+                finish_pricing_map.get(finish_key),
+                context_kind="Afwerking",
+            )
             order_candidates.append(
                 OrderDocumentCandidate(
                     selection_key=make_finish_selection_key(finish_key),
@@ -3820,6 +4062,7 @@ def copy_per_production_and_orders(
                     doc_num_display=doc_num_display,
                     order_remark=finish_remark or None,
                     items=items,
+                    column_layout=column_layout,
                 )
             )
             continue

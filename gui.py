@@ -78,6 +78,13 @@ from orders import (
     write_order_excel,
     generate_pdf_order_platypus,
 )
+from export_session_log import (
+    EXPORT_SESSION_LOG_FILENAME,
+    build_export_session_log,
+    convert_offers_to_orders,
+    load_export_session_log,
+    write_export_session_log,
+)
 from en1090 import EN1090_NOTE_TEXT, default_en1090_enabled, normalize_en1090_key
 from opticutter import (
     StockScenarioResult,
@@ -3709,7 +3716,44 @@ def start_gui():
         deliveries: Dict[str, str]
         exports: Dict[str, bool] = field(default_factory=dict)
         en1090: Dict[str, bool] = field(default_factory=dict)
+        pricing: Dict[str, Dict[str, str]] = field(default_factory=dict)
         remember: bool = True
+
+        @classmethod
+        def from_mapping(cls, data: Mapping[str, object]) -> "SupplierSelectionState":
+            def _dict(name: str) -> Dict[str, object]:
+                value = data.get(name, {}) if isinstance(data, Mapping) else {}
+                return dict(value) if isinstance(value, Mapping) else {}
+
+            pricing_raw = _dict("pricing")
+            pricing: Dict[str, Dict[str, str]] = {}
+            for key, value in pricing_raw.items():
+                if not isinstance(value, Mapping):
+                    continue
+                unit_price = _to_str(value.get("unit_price")).strip()
+                total_price = _to_str(value.get("total_price")).strip()
+                quote_ref = _to_str(value.get("quote_ref")).strip()
+                note = _to_str(value.get("note")).strip()
+                if any((unit_price, total_price, quote_ref, note)):
+                    pricing[_to_str(key)] = {
+                        "unit_price": unit_price,
+                        "total_price": total_price,
+                        "quote_ref": quote_ref,
+                        "note": note,
+                    }
+
+            return cls(
+                selections={_to_str(k): _to_str(v) for k, v in _dict("selections").items()},
+                groups={_to_str(k): _to_str(v) for k, v in _dict("groups").items()},
+                doc_types={_to_str(k): _to_str(v) for k, v in _dict("doc_types").items()},
+                doc_numbers={_to_str(k): _to_str(v) for k, v in _dict("doc_numbers").items()},
+                remarks={_to_str(k): _to_str(v) for k, v in _dict("remarks").items()},
+                deliveries={_to_str(k): _to_str(v) for k, v in _dict("deliveries").items()},
+                exports={_to_str(k): bool(v) for k, v in _dict("exports").items()},
+                en1090={_to_str(k): bool(v) for k, v in _dict("en1090").items()},
+                pricing=pricing,
+                remember=bool(data.get("remember", True)) if isinstance(data, Mapping) else True,
+            )
 
     class SupplierSelectionFrame(tk.Frame):
         """Per productie: type-to-filter of dropdown; rechts detailkaart (klik = selecteer).
@@ -3827,6 +3871,8 @@ def start_gui():
             self.doc_vars: Dict[str, tk.StringVar] = {}
             self.doc_num_vars: Dict[str, tk.StringVar] = {}
             self.remark_vars: Dict[str, tk.StringVar] = {}
+            self.price_unit_vars: Dict[str, tk.StringVar] = {}
+            self.price_total_vars: Dict[str, tk.StringVar] = {}
             self.delivery_vars: Dict[str, tk.StringVar] = {}
             self.group_combos: Dict[str, ttk.Combobox] = {}
             self.group_value_to_display: Dict[str, Dict[str, str]] = {}
@@ -4167,6 +4213,11 @@ def start_gui():
                 text="Beheer presetregels",
                 command=self._open_preset_manager,
             ).pack(side="left", padx=(6, 0))
+            tk.Button(
+                export_toggle_row,
+                text="Exportlog laden",
+                command=self._load_export_log_from_file,
+            ).pack(side="left", padx=(6, 0))
             # Option to include brutomateriaal note on generated PDFs
             self.include_bruto_note_var = tk.BooleanVar(value=True)
             tk.Checkbutton(
@@ -4220,6 +4271,8 @@ def start_gui():
                     None,
                 ),
                 ("doc_entry", "Nr.", 12, None),
+                ("unit_price_entry", "Prijs/st.", 12, None),
+                ("total_price_entry", "Totaalprijs", 12, None),
                 ("remark_entry", "Opmerking", 24, None),
                 ("delivery_combo", "Leveradres", 50, None),
             ]
@@ -4378,6 +4431,22 @@ def start_gui():
                 self.doc_num_vars[sel_key] = doc_num_var
                 doc_entry = tk.Entry(row, textvariable=doc_num_var, width=12)
 
+                unit_price_var = tk.StringVar()
+                self.price_unit_vars[sel_key] = unit_price_var
+                unit_price_entry = tk.Entry(row, textvariable=unit_price_var, width=12)
+                _HelpTooltip(
+                    unit_price_entry,
+                    "Eenheidsprijs uit de offerte. Wordt bewaard in de exportlog en op de bon getoond.",
+                )
+
+                total_price_var = tk.StringVar()
+                self.price_total_vars[sel_key] = total_price_var
+                total_price_entry = tk.Entry(row, textvariable=total_price_var, width=12)
+                _HelpTooltip(
+                    total_price_entry,
+                    "Totaalprijs voor deze bon/selectie. Handig wanneer de leverancier een globale prijs aanbiedt.",
+                )
+
                 remark_var = tk.StringVar()
                 self.remark_vars[sel_key] = remark_var
                 remark_entry = tk.Entry(row, textvariable=remark_var, width=24)
@@ -4412,6 +4481,8 @@ def start_gui():
                     var,
                     doc_var,
                     doc_num_var,
+                    unit_price_var,
+                    total_price_var,
                     remark_var,
                     dvar,
                     export_var,
@@ -4429,6 +4500,8 @@ def start_gui():
                     "doc_combo": doc_combo,
                     "en1090_widget": en1090_frame,
                     "doc_entry": doc_entry,
+                    "unit_price_entry": unit_price_entry,
+                    "total_price_entry": total_price_entry,
                     "remark_entry": remark_entry,
                     "delivery_combo": dcombo,
                     "label_default_fg": row_label.cget("fg"),
@@ -4446,6 +4519,8 @@ def start_gui():
                         "doc_combo": doc_combo,
                         "en1090_widget": en1090_widget,
                         "doc_entry": doc_entry,
+                        "unit_price_entry": unit_price_entry,
+                        "total_price_entry": total_price_entry,
                         "remark_entry": remark_entry,
                         "delivery_combo": dcombo,
                     }
@@ -4895,6 +4970,111 @@ def start_gui():
         def _apply_presets_from_button(self) -> None:
             self._apply_presets(auto_apply_only=False, status_when_idle=True)
 
+        def _state_selection_keys(self, state_dict: Mapping[str, object]) -> set[str]:
+            keys: set[str] = set()
+            for name in (
+                "selections",
+                "groups",
+                "doc_types",
+                "doc_numbers",
+                "remarks",
+                "deliveries",
+                "exports",
+                "en1090",
+                "pricing",
+            ):
+                value = state_dict.get(name, {}) if isinstance(state_dict, Mapping) else {}
+                if isinstance(value, Mapping):
+                    keys.update(_to_str(key) for key in value.keys() if _to_str(key).strip())
+            return keys
+
+        def _load_export_log_from_file(self) -> None:
+            parent_app = getattr(self.master, "master", None)
+            initial_dir = _to_str(getattr(parent_app, "dest_folder", "")).strip()
+            if not initial_dir or not os.path.isdir(initial_dir):
+                initial_dir = os.getcwd()
+            path = filedialog.askopenfilename(
+                parent=self,
+                title="Exportlog laden",
+                initialdir=initial_dir,
+                filetypes=[
+                    ("Filehopper exportlog", EXPORT_SESSION_LOG_FILENAME),
+                    ("JSON", "*.json"),
+                    ("Alle bestanden", "*.*"),
+                ],
+            )
+            if not path:
+                return
+
+            try:
+                payload = load_export_session_log(path)
+            except Exception as exc:
+                messagebox.showerror(
+                    "Exportlog laden",
+                    f"Kon exportlog niet laden:\n{exc}",
+                    parent=self,
+                )
+                return
+
+            state_dict = dict(payload.get("order_state", {}) or {})
+            doc_types = state_dict.get("doc_types", {})
+            offer_count = 0
+            if isinstance(doc_types, Mapping):
+                offer_count = sum(
+                    1
+                    for value in doc_types.values()
+                    if _to_str(value).strip().lower().startswith("offerte")
+                )
+            converted = False
+            if offer_count:
+                answer = messagebox.askyesnocancel(
+                    "Offerte omzetten",
+                    (
+                        f"Deze exportlog bevat {offer_count} offertebon(nen).\n\n"
+                        "Ja: omzetten naar Bestelbon en OFF-nummers leegmaken.\n"
+                        "Nee: documenttypes behouden.\n"
+                        "Annuleer: niets inladen."
+                    ),
+                    parent=self,
+                )
+                if answer is None:
+                    return
+                if answer:
+                    state_dict = convert_offers_to_orders(state_dict)
+                    converted = True
+
+            current_keys = {key for key, _combo in self.rows}
+            incoming_keys = self._state_selection_keys(state_dict)
+            matched = len(incoming_keys & current_keys)
+            missing = len(incoming_keys - current_keys)
+            try:
+                self.apply_state(SupplierSelectionState.from_mapping(state_dict))
+            except Exception as exc:
+                messagebox.showerror(
+                    "Exportlog laden",
+                    f"Kon exportlog niet toepassen:\n{exc}",
+                    parent=self,
+                )
+                return
+
+            self._update_preview_from_any_combo()
+            if parent_app is not None:
+                try:
+                    parent_app._last_supplier_selection_state = self.serialize_state()
+                except Exception:
+                    pass
+            project = payload.get("project", {}) if isinstance(payload, Mapping) else {}
+            project_label = ""
+            if isinstance(project, Mapping):
+                project_number = _to_str(project.get("number")).strip()
+                project_name = _to_str(project.get("name")).strip()
+                project_label = " - ".join(part for part in (project_number, project_name) if part)
+            suffix = " Offertes omgezet naar bestelbonnen." if converted else ""
+            self.update_status(
+                f"Exportlog geladen{f' voor {project_label}' if project_label else ''}: "
+                f"{matched} regel(s) toegepast, {missing} niet gevonden.{suffix}"
+            )
+
         def serialize_state(self) -> "SupplierSelectionState":
             selections: Dict[str, str] = {}
             for sel_key, combo in self.rows:
@@ -4915,6 +5095,19 @@ def start_gui():
                 key: var.get() for key, var in self.delivery_vars.items()
             }
             en1090 = {key: bool(var.get()) for key, var in self.en1090_vars.items()}
+            pricing: Dict[str, Dict[str, str]] = {}
+            all_price_keys = set(self.price_unit_vars) | set(self.price_total_vars)
+            for key in all_price_keys:
+                unit_price = self.price_unit_vars.get(key)
+                total_price = self.price_total_vars.get(key)
+                entry = {
+                    "unit_price": unit_price.get().strip() if unit_price else "",
+                    "total_price": total_price.get().strip() if total_price else "",
+                    "quote_ref": "",
+                    "note": "",
+                }
+                if any(entry.values()):
+                    pricing[key] = entry
 
             remember = bool(self.remember_var.get()) if hasattr(self, "remember_var") else True
 
@@ -4927,6 +5120,7 @@ def start_gui():
                 remarks=remarks,
                 deliveries=deliveries,
                 en1090=en1090,
+                pricing=pricing,
                 remember=remember,
             )
 
@@ -4976,6 +5170,16 @@ def start_gui():
                         var.set(1 if enabled else 0)
                     except tk.TclError:
                         pass
+
+            for sel_key, price_info in getattr(state, "pricing", {}).items():
+                if not isinstance(price_info, Mapping):
+                    continue
+                unit_var = self.price_unit_vars.get(sel_key)
+                if unit_var is not None:
+                    unit_var.set(_to_str(price_info.get("unit_price")).strip())
+                total_var = self.price_total_vars.get(sel_key)
+                if total_var is not None:
+                    total_var.set(_to_str(price_info.get("total_price")).strip())
 
             if hasattr(self, "remember_var"):
                 try:
@@ -5482,6 +5686,14 @@ def start_gui():
             if doc_entry is not None:
                 doc_entry.configure(state="disabled" if grouped else "normal")
 
+            unit_price_entry = widgets.get("unit_price_entry")
+            if unit_price_entry is not None:
+                unit_price_entry.configure(state="disabled" if grouped else "normal")
+
+            total_price_entry = widgets.get("total_price_entry")
+            if total_price_entry is not None:
+                total_price_entry.configure(state="disabled" if grouped else "normal")
+
             remark_entry = widgets.get("remark_entry")
             if remark_entry is not None:
                 remark_entry.configure(state="disabled" if grouped else "normal")
@@ -5508,7 +5720,13 @@ def start_gui():
             if follower_combo is not None and master_combo is not None:
                 self._set_combo_value(follower_combo, master_combo.get())
 
-            for source_map in (self.doc_vars, self.doc_num_vars, self.remark_vars):
+            for source_map in (
+                self.doc_vars,
+                self.doc_num_vars,
+                self.price_unit_vars,
+                self.price_total_vars,
+                self.remark_vars,
+            ):
                 follower_var = source_map.get(follower_key)
                 master_var = source_map.get(master_key)
                 if follower_var is not None and master_var is not None:
@@ -9034,16 +9252,23 @@ def start_gui():
                     self, "opticutter_last_analysis", None
                 )
 
+                export_state_snapshot: Optional[SupplierSelectionState] = None
                 if sel_frame is not None:
                     try:
                         if sel_frame.winfo_exists():
-                            self._last_supplier_selection_state = sel_frame.serialize_state()
+                            export_state_snapshot = sel_frame.serialize_state()
+                            self._last_supplier_selection_state = export_state_snapshot
                     except Exception:
                         pass
+                if export_state_snapshot is None:
+                    export_state_snapshot = getattr(self, "_last_supplier_selection_state", None)
 
                 prod_override_map: Dict[str, str] = {}
                 finish_override_map: Dict[str, str] = {}
                 opticutter_override_map: Dict[str, str] = {}
+                production_pricing_map: Dict[str, Dict[str, str]] = {}
+                finish_pricing_map: Dict[str, Dict[str, str]] = {}
+                opticutter_pricing_map: Dict[str, Dict[str, str]] = {}
                 export_flags = export_flags or {}
                 prod_export_filter: Dict[str, bool] = {}
                 finish_export_filter: Dict[str, bool] = {}
@@ -9066,6 +9291,28 @@ def start_gui():
                     else:
                         target = prod_export_filter
                     target[identifier] = bool(enabled)
+
+                pricing_map_raw = (
+                    getattr(export_state_snapshot, "pricing", {}) if export_state_snapshot else {}
+                )
+                for key, value in pricing_map_raw.items():
+                    if not isinstance(value, Mapping):
+                        continue
+                    clean_value = {
+                        "unit_price": _to_str(value.get("unit_price")).strip(),
+                        "total_price": _to_str(value.get("total_price")).strip(),
+                        "quote_ref": _to_str(value.get("quote_ref")).strip(),
+                        "note": _to_str(value.get("note")).strip(),
+                    }
+                    if not any(clean_value.values()):
+                        continue
+                    kind, identifier = parse_selection_key(key)
+                    if kind == "finish":
+                        finish_pricing_map[identifier] = clean_value
+                    elif kind == "opticutter":
+                        opticutter_pricing_map[identifier] = clean_value
+                    else:
+                        production_pricing_map[identifier] = clean_value
 
                 doc_type_map: Dict[str, str] = {}
                 finish_doc_type_map: Dict[str, str] = {}
@@ -9136,6 +9383,8 @@ def start_gui():
                 custom_suffix_enabled = bool(
                     self.export_name_custom_suffix_enabled_var.get()
                 )
+                client_name_snapshot = _to_str(getattr(client, "name", "") if client else "").strip()
+                bom_source_path_snapshot = _to_str(getattr(self, "bom_source_path", "")).strip()
 
                 def update_status(message: str) -> None:
                     def apply() -> None:
@@ -9293,6 +9542,9 @@ def start_gui():
                             opticutter_doc_num_map=opticutter_doc_num_map,
                             opticutter_delivery_map=opticutter_delivery_map,
                             opticutter_remarks_map=opticutter_remarks_map,
+                            pricing_map=production_pricing_map or None,
+                            finish_pricing_map=finish_pricing_map or None,
+                            opticutter_pricing_map=opticutter_pricing_map or None,
                             production_export_filter=(
                                 prod_export_filter if prod_export_filter else None
                             ),
@@ -9309,6 +9561,25 @@ def start_gui():
                             en1090_note=self.en1090_note_var.get(),
                             document_status_messages=document_status_lines,
                         )
+                        if export_state_snapshot is not None:
+                            try:
+                                log_payload = build_export_session_log(
+                                    project_number=project_number,
+                                    project_name=project_name,
+                                    client_name=client_name_snapshot,
+                                    bom_source_path=bom_source_path_snapshot,
+                                    bom_df=current_bom,
+                                    state=export_state_snapshot,
+                                    app_version=APP_VERSION,
+                                )
+                                write_export_session_log(bundle_dest, log_payload)
+                                document_status_lines.append(
+                                    f"Exportlog opgeslagen: {EXPORT_SESSION_LOG_FILENAME}"
+                                )
+                            except Exception as log_exc:
+                                document_status_lines.append(
+                                    f"Exportlog niet opgeslagen: {log_exc}"
+                                )
                     except Exception as exc:
                         error_message = str(exc)
 
@@ -10655,7 +10926,7 @@ def start_gui():
                         )
                         _export_bom_workbook(bom_df_snapshot, bundle_dest, bom_filename)
                         bom_written = True
-                    except Exception:
+                    except Exception as exc:
                         def on_error():
                             messagebox.showerror(
                                 "Fout",
@@ -10869,16 +11140,23 @@ def start_gui():
                     self, "opticutter_last_analysis", None
                 )
 
+                export_state_snapshot: Optional[SupplierSelectionState] = None
                 if sel_frame is not None:
                     try:
                         if sel_frame.winfo_exists():
-                            self._last_supplier_selection_state = sel_frame.serialize_state()
+                            export_state_snapshot = sel_frame.serialize_state()
+                            self._last_supplier_selection_state = export_state_snapshot
                     except Exception:
                         pass
+                if export_state_snapshot is None:
+                    export_state_snapshot = getattr(self, "_last_supplier_selection_state", None)
 
                 prod_override_map: Dict[str, str] = {}
                 finish_override_map: Dict[str, str] = {}
                 opticutter_override_map: Dict[str, str] = {}
+                production_pricing_map: Dict[str, Dict[str, str]] = {}
+                finish_pricing_map: Dict[str, Dict[str, str]] = {}
+                opticutter_pricing_map: Dict[str, Dict[str, str]] = {}
                 export_flags = export_flags or {}
                 prod_export_filter: Dict[str, bool] = {}
                 finish_export_filter: Dict[str, bool] = {}
@@ -10901,6 +11179,28 @@ def start_gui():
                     else:
                         target = prod_export_filter
                     target[identifier] = bool(enabled)
+
+                pricing_map_raw = (
+                    getattr(export_state_snapshot, "pricing", {}) if export_state_snapshot else {}
+                )
+                for key, value in pricing_map_raw.items():
+                    if not isinstance(value, Mapping):
+                        continue
+                    clean_value = {
+                        "unit_price": _to_str(value.get("unit_price")).strip(),
+                        "total_price": _to_str(value.get("total_price")).strip(),
+                        "quote_ref": _to_str(value.get("quote_ref")).strip(),
+                        "note": _to_str(value.get("note")).strip(),
+                    }
+                    if not any(clean_value.values()):
+                        continue
+                    kind, identifier = parse_selection_key(key)
+                    if kind == "finish":
+                        finish_pricing_map[identifier] = clean_value
+                    elif kind == "opticutter":
+                        opticutter_pricing_map[identifier] = clean_value
+                    else:
+                        production_pricing_map[identifier] = clean_value
 
                 doc_type_map: Dict[str, str] = {}
                 finish_doc_type_map: Dict[str, str] = {}
@@ -10971,6 +11271,8 @@ def start_gui():
                 custom_suffix_enabled = bool(
                     self.export_name_custom_suffix_enabled_var.get()
                 )
+                client_name_snapshot = _to_str(getattr(client, "name", "") if client else "").strip()
+                bom_source_path_snapshot = _to_str(getattr(self, "bom_source_path", "")).strip()
 
                 def update_status(message: str) -> None:
                     def apply() -> None:
@@ -11128,6 +11430,9 @@ def start_gui():
                             opticutter_doc_num_map=opticutter_doc_num_map,
                             opticutter_delivery_map=opticutter_delivery_map,
                             opticutter_remarks_map=opticutter_remarks_map,
+                            pricing_map=production_pricing_map or None,
+                            finish_pricing_map=finish_pricing_map or None,
+                            opticutter_pricing_map=opticutter_pricing_map or None,
                             production_export_filter=(
                                 prod_export_filter if prod_export_filter else None
                             ),
@@ -11144,6 +11449,25 @@ def start_gui():
                             en1090_note=self.en1090_note_var.get(),
                             document_status_messages=document_status_lines,
                         )
+                        if export_state_snapshot is not None:
+                            try:
+                                log_payload = build_export_session_log(
+                                    project_number=project_number,
+                                    project_name=project_name,
+                                    client_name=client_name_snapshot,
+                                    bom_source_path=bom_source_path_snapshot,
+                                    bom_df=current_bom,
+                                    state=export_state_snapshot,
+                                    app_version=APP_VERSION,
+                                )
+                                write_export_session_log(bundle_dest, log_payload)
+                                document_status_lines.append(
+                                    f"Exportlog opgeslagen: {EXPORT_SESSION_LOG_FILENAME}"
+                                )
+                            except Exception as log_exc:
+                                document_status_lines.append(
+                                    f"Exportlog niet opgeslagen: {log_exc}"
+                                )
                     except Exception as exc:
                         error_message = str(exc)
 
