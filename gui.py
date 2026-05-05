@@ -11,7 +11,7 @@ from collections import defaultdict, OrderedDict
 from dataclasses import dataclass, field
 from copy import deepcopy
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple, TYPE_CHECKING
+from typing import Dict, Iterable, List, Mapping, Optional, Tuple, TYPE_CHECKING
 
 import pandas as pd
 
@@ -74,6 +74,7 @@ from orders import (
     _fit_filename_within_path,
     _normalize_crop_box,
     build_document_export_basename,
+    build_order_pricing_item_key,
     format_document_number_for_display,
     write_order_excel,
     generate_pdf_order_platypus,
@@ -3707,6 +3708,39 @@ def start_gui():
                         return
                 self.destroy()
 
+    def _clean_supplier_pricing_value(value: object) -> Dict[str, object]:
+        if not isinstance(value, Mapping):
+            return {}
+        cleaned: Dict[str, object] = {
+            "unit_price": _to_str(value.get("unit_price")).strip(),
+            "total_price": _to_str(value.get("total_price")).strip(),
+            "quote_ref": _to_str(value.get("quote_ref")).strip(),
+            "note": _to_str(value.get("note")).strip(),
+        }
+        line_items: Dict[str, Dict[str, str]] = {}
+        raw_items = value.get("items")
+        if isinstance(raw_items, Mapping):
+            for raw_key, raw_item in raw_items.items():
+                item_key = _to_str(raw_key).strip()
+                if not item_key or not isinstance(raw_item, Mapping):
+                    continue
+                item_entry = {
+                    "unit_price": _to_str(raw_item.get("unit_price")).strip(),
+                    "total_price": _to_str(raw_item.get("total_price")).strip(),
+                    "quote_ref": _to_str(raw_item.get("quote_ref")).strip(),
+                    "note": _to_str(raw_item.get("note")).strip(),
+                }
+                if any(item_entry.values()):
+                    line_items[item_key] = item_entry
+        if line_items:
+            cleaned["items"] = line_items
+        if any(
+            _to_str(cleaned.get(name)).strip()
+            for name in ("unit_price", "total_price", "quote_ref", "note")
+        ) or line_items:
+            return cleaned
+        return {}
+
     @dataclass
     class SupplierSelectionState:
         selections: Dict[str, str]
@@ -3717,7 +3751,7 @@ def start_gui():
         deliveries: Dict[str, str]
         exports: Dict[str, bool] = field(default_factory=dict)
         en1090: Dict[str, bool] = field(default_factory=dict)
-        pricing: Dict[str, Dict[str, str]] = field(default_factory=dict)
+        pricing: Dict[str, Dict[str, object]] = field(default_factory=dict)
         remember: bool = True
 
         @classmethod
@@ -3727,21 +3761,11 @@ def start_gui():
                 return dict(value) if isinstance(value, Mapping) else {}
 
             pricing_raw = _dict("pricing")
-            pricing: Dict[str, Dict[str, str]] = {}
+            pricing: Dict[str, Dict[str, object]] = {}
             for key, value in pricing_raw.items():
-                if not isinstance(value, Mapping):
-                    continue
-                unit_price = _to_str(value.get("unit_price")).strip()
-                total_price = _to_str(value.get("total_price")).strip()
-                quote_ref = _to_str(value.get("quote_ref")).strip()
-                note = _to_str(value.get("note")).strip()
-                if any((unit_price, total_price, quote_ref, note)):
-                    pricing[_to_str(key)] = {
-                        "unit_price": unit_price,
-                        "total_price": total_price,
-                        "quote_ref": quote_ref,
-                        "note": note,
-                    }
+                clean_value = _clean_supplier_pricing_value(value)
+                if clean_value:
+                    pricing[_to_str(key)] = clean_value
 
             return cls(
                 selections={_to_str(k): _to_str(v) for k, v in _dict("selections").items()},
@@ -3846,6 +3870,7 @@ def start_gui():
             presets_db=None,
             on_manage_presets=None,
             opticutter_details: Dict[str, "OpticutterOrderComputation"] | None = None,
+            selection_items: Optional[Dict[str, List[Dict[str, object]]]] = None,
             initial_state: Optional["SupplierSelectionState"] = None,
             en1090_enabled: bool = True,
             en1090_getter=None,
@@ -3863,6 +3888,7 @@ def start_gui():
             self.presets_db = presets_db
             self.on_manage_presets = on_manage_presets
             self.opticutter_details = opticutter_details or {}
+            self.selection_items = selection_items or {}
             self._en1090_enabled = bool(en1090_enabled)
             self._preview_supplier: Optional[Supplier] = None
             self._active_key: Optional[str] = None  # laatst gefocuste rij
@@ -3874,6 +3900,7 @@ def start_gui():
             self.remark_vars: Dict[str, tk.StringVar] = {}
             self.price_unit_vars: Dict[str, tk.StringVar] = {}
             self.price_total_vars: Dict[str, tk.StringVar] = {}
+            self.line_pricing: Dict[str, Dict[str, Dict[str, str]]] = {}
             self.delivery_vars: Dict[str, tk.StringVar] = {}
             self.group_combos: Dict[str, ttk.Combobox] = {}
             self.group_value_to_display: Dict[str, Dict[str, str]] = {}
@@ -4279,6 +4306,7 @@ def start_gui():
                 ("doc_entry", "Nr.", 12, None),
                 ("unit_price_entry", "Prijs/st.", 12, None),
                 ("total_price_entry", "Totaalprijs", 12, None),
+                ("line_price_button", "Regelprijzen", 10, None),
                 ("remark_entry", "Opmerking", 24, None),
                 ("delivery_combo", "Leveradres", 50, None),
             ]
@@ -4453,6 +4481,19 @@ def start_gui():
                     "Totaalprijs voor deze bon/selectie. Handig wanneer de leverancier een globale prijs aanbiedt.",
                 )
 
+                line_price_button = tk.Button(
+                    row,
+                    text="Regels",
+                    width=8,
+                    command=lambda key=sel_key: self._open_line_pricing_dialog(key),
+                )
+                _HelpTooltip(
+                    line_price_button,
+                    "Vul prijzen per onderdeel of brutomateriaalregel in. Deze waarden worden in de exportlog bewaard.",
+                )
+                if not self._selection_items_for_key(sel_key):
+                    line_price_button.configure(state="disabled")
+
                 remark_var = tk.StringVar()
                 self.remark_vars[sel_key] = remark_var
                 remark_entry = tk.Entry(row, textvariable=remark_var, width=24)
@@ -4508,6 +4549,7 @@ def start_gui():
                     "doc_entry": doc_entry,
                     "unit_price_entry": unit_price_entry,
                     "total_price_entry": total_price_entry,
+                    "line_price_button": line_price_button,
                     "remark_entry": remark_entry,
                     "delivery_combo": dcombo,
                     "label_default_fg": row_label.cget("fg"),
@@ -4527,6 +4569,7 @@ def start_gui():
                         "doc_entry": doc_entry,
                         "unit_price_entry": unit_price_entry,
                         "total_price_entry": total_price_entry,
+                        "line_price_button": line_price_button,
                         "remark_entry": remark_entry,
                         "delivery_combo": dcombo,
                     }
@@ -4754,6 +4797,229 @@ def start_gui():
                     dvar.set(display_name)
                 if dcombo is not None:
                     dcombo.set(display_name)
+
+        def _line_pricing_count(self, sel_key: str) -> int:
+            return sum(
+                1
+                for value in self.line_pricing.get(sel_key, {}).values()
+                if isinstance(value, Mapping)
+                and (
+                    _to_str(value.get("unit_price")).strip()
+                    or _to_str(value.get("total_price")).strip()
+                )
+            )
+
+        def _refresh_line_price_button(self, sel_key: str) -> None:
+            widgets = self._row_widgets_by_key.get(sel_key, {})
+            button = widgets.get("line_price_button")
+            if button is None:
+                return
+            count = self._line_pricing_count(sel_key)
+            text = f"Regels ({count})" if count else "Regels"
+            try:
+                button.configure(text=text)
+            except tk.TclError:
+                pass
+
+        def _selection_items_for_key(self, sel_key: str) -> List[Dict[str, object]]:
+            items = [
+                dict(item)
+                for item in (self.selection_items.get(sel_key) or [])
+                if isinstance(item, Mapping)
+            ]
+            if items:
+                return items
+
+            kind, identifier = self._parse_selection_key(sel_key)
+            if kind != "opticutter":
+                return []
+            comp = (self.opticutter_details or {}).get(identifier)
+            raw_items = getattr(comp, "raw_items", None)
+            if not raw_items:
+                return []
+            derived: List[Dict[str, object]] = []
+            for raw_item in raw_items:
+                if not isinstance(raw_item, Mapping):
+                    continue
+                item = dict(raw_item)
+                key = build_order_pricing_item_key(
+                    item,
+                    context_kind="Brutemateriaal",
+                )
+                profile = _to_str(item.get("Profiel")).strip()
+                material = _to_str(item.get("Materiaal")).strip()
+                length = _to_str(item.get("Lengte")).strip()
+                label = " - ".join(part for part in (profile, material, length) if part)
+                item["key"] = key
+                item["label"] = label or key
+                item["quantity"] = _to_str(item.get("St.")).strip()
+                derived.append(item)
+            return derived
+
+        def _open_line_pricing_dialog(self, sel_key: str) -> None:
+            items = self._selection_items_for_key(sel_key)
+            if not items:
+                messagebox.showinfo(
+                    "Regelprijzen",
+                    "Voor deze selectie zijn geen orderregels beschikbaar.",
+                    parent=self,
+                )
+                return
+
+            win = tk.Toplevel(self)
+            win.title(f"Regelprijzen - {self._base_row_label(sel_key)}")
+            win.transient(self)
+            win.grid_columnconfigure(0, weight=1)
+            win.grid_rowconfigure(1, weight=1)
+
+            tk.Label(
+                win,
+                text=(
+                    "Vul alleen de prijzen in die je van de leverancier hebt gekregen. "
+                    "Lege velden blijven leeg; een bonbrede prijs blijft als fallback gelden."
+                ),
+                anchor="w",
+                justify="left",
+                wraplength=760,
+            ).grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 6))
+
+            container = tk.Frame(win)
+            container.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 8))
+            container.grid_columnconfigure(0, weight=1)
+            container.grid_rowconfigure(0, weight=1)
+
+            canvas = tk.Canvas(container, highlightthickness=0, borderwidth=0)
+            canvas.grid(row=0, column=0, sticky="nsew")
+            scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+            scrollbar.grid(row=0, column=1, sticky="ns")
+            canvas.configure(yscrollcommand=scrollbar.set)
+
+            inner = tk.Frame(canvas)
+            inner_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+            def _update_scroll_region(_event=None) -> None:
+                try:
+                    canvas.configure(scrollregion=canvas.bbox("all"))
+                except tk.TclError:
+                    pass
+
+            def _resize_inner(event) -> None:
+                try:
+                    canvas.itemconfigure(inner_id, width=event.width)
+                except tk.TclError:
+                    pass
+
+            inner.bind("<Configure>", _update_scroll_region)
+            canvas.bind("<Configure>", _resize_inner)
+
+            for col, weight in ((0, 1), (1, 0), (2, 0), (3, 0)):
+                inner.grid_columnconfigure(col, weight=weight)
+
+            header_font = ("TkDefaultFont", 10, "bold")
+            headers = ("Onderdeel", "St.", "Prijs/st.", "Totaalprijs")
+            for col, text in enumerate(headers):
+                tk.Label(inner, text=text, font=header_font, anchor="w").grid(
+                    row=0,
+                    column=col,
+                    sticky="ew",
+                    padx=(0, 8),
+                    pady=(0, 4),
+                )
+
+            existing = self.line_pricing.get(sel_key, {})
+            vars_by_key: Dict[str, Tuple[tk.StringVar, tk.StringVar]] = {}
+            default_font = tkfont.nametofont("TkDefaultFont")
+            for row_index, item in enumerate(items, start=1):
+                item_key = _to_str(item.get("key")).strip()
+                if not item_key:
+                    continue
+                label_text = _to_str(item.get("label")).strip()
+                if not label_text:
+                    part_number = _to_str(item.get("PartNumber")).strip()
+                    description = _to_str(item.get("Description")).strip()
+                    label_text = " - ".join(
+                        part for part in (part_number, description) if part
+                    )
+                label_text = label_text or item_key
+                quantity = _to_str(
+                    item.get("quantity")
+                    or item.get("Aantal")
+                    or item.get("St.")
+                    or ""
+                ).strip()
+                price_info = existing.get(item_key, {})
+                if not isinstance(price_info, Mapping):
+                    price_info = {}
+                unit_var = tk.StringVar(
+                    value=_to_str(price_info.get("unit_price")).strip()
+                )
+                total_var = tk.StringVar(
+                    value=_to_str(price_info.get("total_price")).strip()
+                )
+                vars_by_key[item_key] = (unit_var, total_var)
+
+                label = tk.Label(
+                    inner,
+                    text=label_text,
+                    anchor="w",
+                    justify="left",
+                    wraplength=420,
+                )
+                label.grid(row=row_index, column=0, sticky="ew", padx=(0, 8), pady=2)
+                tk.Label(inner, text=quantity, anchor="e", width=8).grid(
+                    row=row_index,
+                    column=1,
+                    sticky="ew",
+                    padx=(0, 8),
+                    pady=2,
+                )
+                unit_entry = tk.Entry(
+                    inner,
+                    textvariable=unit_var,
+                    width=14,
+                    font=default_font,
+                )
+                unit_entry.grid(row=row_index, column=2, sticky="ew", padx=(0, 8), pady=2)
+                total_entry = tk.Entry(
+                    inner,
+                    textvariable=total_var,
+                    width=14,
+                    font=default_font,
+                )
+                total_entry.grid(row=row_index, column=3, sticky="ew", pady=2)
+
+            btns = tk.Frame(win)
+            btns.grid(row=2, column=0, sticky="e", padx=12, pady=(0, 12))
+
+            def _save() -> None:
+                new_values: Dict[str, Dict[str, str]] = {}
+                for item_key, (unit_var, total_var) in vars_by_key.items():
+                    old = existing.get(item_key, {})
+                    if not isinstance(old, Mapping):
+                        old = {}
+                    entry = {
+                        "unit_price": unit_var.get().strip(),
+                        "total_price": total_var.get().strip(),
+                        "quote_ref": _to_str(old.get("quote_ref")).strip(),
+                        "note": _to_str(old.get("note")).strip(),
+                    }
+                    if any(entry.values()):
+                        new_values[item_key] = entry
+                if new_values:
+                    self.line_pricing[sel_key] = new_values
+                else:
+                    self.line_pricing.pop(sel_key, None)
+                self._refresh_line_price_button(sel_key)
+                sync_grouped_rows = getattr(self, "_sync_grouped_rows", None)
+                if callable(sync_grouped_rows):
+                    sync_grouped_rows()
+                win.destroy()
+
+            tk.Button(btns, text="Opslaan", command=_save).pack(side="left", padx=(0, 6))
+            tk.Button(btns, text="Annuleer", command=win.destroy).pack(side="left")
+            _place_window_near_parent(win, self)
+            win.grab_set()
+            win.focus_set()
 
         def _open_preset_manager(self) -> None:
             callback = getattr(self, "on_manage_presets", None)
@@ -5126,18 +5392,25 @@ def start_gui():
                 key: var.get() for key, var in self.delivery_vars.items()
             }
             en1090 = {key: bool(var.get()) for key, var in self.en1090_vars.items()}
-            pricing: Dict[str, Dict[str, str]] = {}
-            all_price_keys = set(self.price_unit_vars) | set(self.price_total_vars)
+            pricing: Dict[str, Dict[str, object]] = {}
+            all_price_keys = (
+                set(self.price_unit_vars)
+                | set(self.price_total_vars)
+                | set(self.line_pricing)
+            )
             for key in all_price_keys:
                 unit_price = self.price_unit_vars.get(key)
                 total_price = self.price_total_vars.get(key)
-                entry = {
+                entry: Dict[str, object] = {
                     "unit_price": unit_price.get().strip() if unit_price else "",
                     "total_price": total_price.get().strip() if total_price else "",
                     "quote_ref": "",
                     "note": "",
                 }
-                if any(entry.values()):
+                line_items = self.line_pricing.get(key, {})
+                if line_items:
+                    entry["items"] = deepcopy(line_items)
+                if _clean_supplier_pricing_value(entry):
                     pricing[key] = entry
 
             remember = bool(self.remember_var.get()) if hasattr(self, "remember_var") else True
@@ -5211,6 +5484,17 @@ def start_gui():
                 total_var = self.price_total_vars.get(sel_key)
                 if total_var is not None:
                     total_var.set(_to_str(price_info.get("total_price")).strip())
+                items = _clean_supplier_pricing_value(price_info).get("items")
+                if isinstance(items, Mapping) and items:
+                    self.line_pricing[sel_key] = {
+                        _to_str(item_key): dict(item_value)
+                        for item_key, item_value in items.items()
+                        if _to_str(item_key).strip()
+                        and isinstance(item_value, Mapping)
+                    }
+                else:
+                    self.line_pricing.pop(sel_key, None)
+                self._refresh_line_price_button(sel_key)
 
             if hasattr(self, "remember_var"):
                 try:
@@ -5725,6 +6009,12 @@ def start_gui():
             if total_price_entry is not None:
                 total_price_entry.configure(state="disabled" if grouped else "normal")
 
+            line_price_button = widgets.get("line_price_button")
+            if line_price_button is not None:
+                has_items = bool(self._selection_items_for_key(sel_key))
+                state = "normal" if has_items and not grouped else "disabled"
+                line_price_button.configure(state=state)
+
             remark_entry = widgets.get("remark_entry")
             if remark_entry is not None:
                 remark_entry.configure(state="disabled" if grouped else "normal")
@@ -5762,6 +6052,13 @@ def start_gui():
                 master_var = source_map.get(master_key)
                 if follower_var is not None and master_var is not None:
                     follower_var.set(master_var.get())
+
+            master_line_pricing = self.line_pricing.get(master_key)
+            if master_line_pricing:
+                self.line_pricing[follower_key] = deepcopy(master_line_pricing)
+            else:
+                self.line_pricing.pop(follower_key, None)
+            self._refresh_line_price_button(follower_key)
 
             follower_delivery = self.delivery_combos.get(follower_key)
             master_delivery = self.delivery_combos.get(master_key)
@@ -9135,6 +9432,58 @@ def start_gui():
                 entry["key"]: _to_str(entry.get("label")) or entry["key"]
                 for entry in finish_entries
             }
+            selection_items: Dict[str, List[Dict[str, object]]] = defaultdict(list)
+            selection_item_keys: Dict[str, set[str]] = defaultdict(set)
+
+            def _append_order_line_item(
+                sel_key: str,
+                row: Mapping[str, object],
+                *,
+                context_kind: str,
+            ) -> None:
+                item = {
+                    "PartNumber": row.get("PartNumber", ""),
+                    "Description": row.get("Description", ""),
+                    "Materiaal": row.get("Materiaal", ""),
+                    "Aantal": row.get("Aantal", ""),
+                    "Oppervlakte": row.get("Oppervlakte", ""),
+                    "Gewicht": row.get("Gewicht", ""),
+                }
+                item_key = build_order_pricing_item_key(
+                    item,
+                    context_kind=context_kind,
+                )
+                if not item_key or item_key in selection_item_keys[sel_key]:
+                    return
+                part_number = _to_str(item.get("PartNumber")).strip()
+                description = _to_str(item.get("Description")).strip()
+                material = _to_str(item.get("Materiaal")).strip()
+                label = " - ".join(
+                    part for part in (part_number, description, material) if part
+                )
+                item["key"] = item_key
+                item["label"] = label or item_key
+                item["quantity"] = _to_str(item.get("Aantal")).strip()
+                selection_item_keys[sel_key].add(item_key)
+                selection_items[sel_key].append(item)
+
+            for _, row in bom_df.iterrows():
+                prod = _to_str(row.get("Production")).strip() or "_Onbekend"
+                _append_order_line_item(
+                    make_production_selection_key(prod),
+                    row,
+                    context_kind="Productie",
+                )
+                finish_text = _to_str(row.get("Finish")).strip()
+                if finish_text:
+                    meta = describe_finish_combo(row.get("Finish"), row.get("RAL color"))
+                    finish_key = meta.get("key", "")
+                    if finish_key:
+                        _append_order_line_item(
+                            make_finish_selection_key(finish_key),
+                            row,
+                            context_kind="Afwerking",
+                        )
 
             self._refresh_opticutter_table()
             opticutter_analysis = getattr(self, "opticutter_last_analysis", None)
@@ -9213,6 +9562,7 @@ def start_gui():
                 "prods": prods,
                 "finish_entries": finish_entries,
                 "finish_label_lookup": finish_label_lookup,
+                "selection_items": dict(selection_items),
                 "opticutter_details": opticutter_details,
                 "opticutter_notice_message": opticutter_notice_message,
             }
@@ -9234,6 +9584,7 @@ def start_gui():
             prods = list(payload.get("prods") or [])
             finish_entries = list(payload.get("finish_entries") or [])
             finish_label_lookup = dict(payload.get("finish_label_lookup") or {})
+            selection_items = dict(payload.get("selection_items") or {})
             opticutter_details = dict(payload.get("opticutter_details") or {})
             opticutter_notice_message = _to_str(
                 payload.get("opticutter_notice_message")
@@ -9297,9 +9648,9 @@ def start_gui():
                 prod_override_map: Dict[str, str] = {}
                 finish_override_map: Dict[str, str] = {}
                 opticutter_override_map: Dict[str, str] = {}
-                production_pricing_map: Dict[str, Dict[str, str]] = {}
-                finish_pricing_map: Dict[str, Dict[str, str]] = {}
-                opticutter_pricing_map: Dict[str, Dict[str, str]] = {}
+                production_pricing_map: Dict[str, Dict[str, object]] = {}
+                finish_pricing_map: Dict[str, Dict[str, object]] = {}
+                opticutter_pricing_map: Dict[str, Dict[str, object]] = {}
                 export_flags = export_flags or {}
                 prod_export_filter: Dict[str, bool] = {}
                 finish_export_filter: Dict[str, bool] = {}
@@ -9329,13 +9680,8 @@ def start_gui():
                 for key, value in pricing_map_raw.items():
                     if not isinstance(value, Mapping):
                         continue
-                    clean_value = {
-                        "unit_price": _to_str(value.get("unit_price")).strip(),
-                        "total_price": _to_str(value.get("total_price")).strip(),
-                        "quote_ref": _to_str(value.get("quote_ref")).strip(),
-                        "note": _to_str(value.get("note")).strip(),
-                    }
-                    if not any(clean_value.values()):
+                    clean_value = _clean_supplier_pricing_value(value)
+                    if not clean_value:
                         continue
                     kind, identifier = parse_selection_key(key)
                     if kind == "finish":
@@ -9761,6 +10107,7 @@ def start_gui():
                     presets_db=self.order_presets_db,
                     on_manage_presets=lambda: self.nb.select(self.preset_rules_frame),
                     opticutter_details=opticutter_details,
+                    selection_items=selection_items,
                     initial_state=previous_state,
                     en1090_enabled=bool(self.en1090_enabled_var.get()),
                     en1090_getter=self._get_en1090_preference,
@@ -11185,9 +11532,9 @@ def start_gui():
                 prod_override_map: Dict[str, str] = {}
                 finish_override_map: Dict[str, str] = {}
                 opticutter_override_map: Dict[str, str] = {}
-                production_pricing_map: Dict[str, Dict[str, str]] = {}
-                finish_pricing_map: Dict[str, Dict[str, str]] = {}
-                opticutter_pricing_map: Dict[str, Dict[str, str]] = {}
+                production_pricing_map: Dict[str, Dict[str, object]] = {}
+                finish_pricing_map: Dict[str, Dict[str, object]] = {}
+                opticutter_pricing_map: Dict[str, Dict[str, object]] = {}
                 export_flags = export_flags or {}
                 prod_export_filter: Dict[str, bool] = {}
                 finish_export_filter: Dict[str, bool] = {}
@@ -11217,13 +11564,8 @@ def start_gui():
                 for key, value in pricing_map_raw.items():
                     if not isinstance(value, Mapping):
                         continue
-                    clean_value = {
-                        "unit_price": _to_str(value.get("unit_price")).strip(),
-                        "total_price": _to_str(value.get("total_price")).strip(),
-                        "quote_ref": _to_str(value.get("quote_ref")).strip(),
-                        "note": _to_str(value.get("note")).strip(),
-                    }
-                    if not any(clean_value.values()):
+                    clean_value = _clean_supplier_pricing_value(value)
+                    if not clean_value:
                         continue
                     kind, identifier = parse_selection_key(key)
                     if kind == "finish":

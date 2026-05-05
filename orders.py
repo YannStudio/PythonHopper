@@ -333,6 +333,37 @@ class OrderDocumentJob:
 
 _PRICE_UNIT_KEY = "Eenheidsprijs"
 _PRICE_TOTAL_KEY = "Totaalprijs"
+_LINE_PRICE_KEY = "_line_price_key"
+
+
+def build_order_pricing_item_key(
+    item: Mapping[str, object],
+    *,
+    context_kind: str,
+) -> str:
+    """Return a stable key for storing/reloading line pricing."""
+
+    context_kind_clean = (_to_str(context_kind) or "productie").strip().lower()
+    is_raw = context_kind_clean.startswith("brutemateriaal")
+    if is_raw:
+        parts = [
+            _to_str(item.get("Profiel")).strip(),
+            _to_str(item.get("Materiaal")).strip(),
+            _to_str(item.get("Lengte")).strip(),
+        ]
+        if any(parts):
+            return "raw|" + "|".join(parts)
+
+    part_number = _to_str(item.get("PartNumber")).strip()
+    if part_number:
+        return f"part|{part_number}"
+
+    parts = [
+        _to_str(item.get("Description")).strip(),
+        _to_str(item.get("Materiaal")).strip(),
+        _to_str(item.get("Aantal") or item.get("St.")).strip(),
+    ]
+    return "item|" + "|".join(parts)
 
 
 def _clean_price_text(value: object) -> str:
@@ -359,14 +390,84 @@ def _format_price_decimal(value: Decimal | None) -> str:
     return f"{rounded:.2f}"
 
 
+def _clean_line_pricing_items(
+    pricing: Mapping[str, object] | None,
+) -> Dict[str, Dict[str, str]]:
+    if not isinstance(pricing, Mapping):
+        return {}
+    raw_items = pricing.get("items")
+    if not isinstance(raw_items, Mapping):
+        return {}
+
+    cleaned: Dict[str, Dict[str, str]] = {}
+    for raw_key, raw_value in raw_items.items():
+        key = _to_str(raw_key).strip()
+        if not key or not isinstance(raw_value, Mapping):
+            continue
+        entry = {
+            "unit_price": _clean_price_text(raw_value.get("unit_price")),
+            "total_price": _clean_price_text(raw_value.get("total_price")),
+            "quote_ref": _to_str(raw_value.get("quote_ref")).strip(),
+            "note": _to_str(raw_value.get("note")).strip(),
+        }
+        if any(entry.values()):
+            cleaned[key] = entry
+    return cleaned
+
+
 def _pricing_has_values(pricing: Mapping[str, object] | None) -> bool:
-    return bool(
-        pricing
-        and (
-            _clean_price_text(pricing.get("unit_price"))
-            or _clean_price_text(pricing.get("total_price"))
+    if not pricing:
+        return False
+    if _clean_price_text(pricing.get("unit_price")) or _clean_price_text(
+        pricing.get("total_price")
+    ):
+        return True
+    return bool(_clean_line_pricing_items(pricing))
+
+
+def _line_pricing_for_item(
+    item: Mapping[str, object],
+    line_pricing: Mapping[str, Mapping[str, str]],
+    *,
+    context_kind: str,
+) -> Mapping[str, str] | None:
+    if not line_pricing:
+        return None
+    key = _to_str(item.get(_LINE_PRICE_KEY)).strip()
+    if not key:
+        key = build_order_pricing_item_key(item, context_kind=context_kind)
+    candidates = [key]
+
+    context_kind_clean = (_to_str(context_kind) or "productie").strip().lower()
+    if context_kind_clean.startswith("brutemateriaal"):
+        raw_plain = "|".join(
+            [
+                _to_str(item.get("Profiel")).strip(),
+                _to_str(item.get("Materiaal")).strip(),
+                _to_str(item.get("Lengte")).strip(),
+            ]
         )
-    )
+        candidates.append(raw_plain)
+    else:
+        part_number = _to_str(item.get("PartNumber")).strip()
+        if part_number:
+            candidates.append(part_number)
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        value = line_pricing.get(candidate)
+        if value is not None:
+            return value
+
+    lowered = {stored_key.lower(): value for stored_key, value in line_pricing.items()}
+    for candidate in candidates:
+        if not candidate:
+            continue
+        value = lowered.get(candidate.lower())
+        if value is not None:
+            return value
+    return None
 
 
 def _default_priced_column_layout(context_kind: str) -> List[Dict[str, object]]:
@@ -409,19 +510,36 @@ def _apply_order_pricing(
 
     unit_price_text = _clean_price_text(pricing.get("unit_price"))
     total_price_text = _clean_price_text(pricing.get("total_price"))
-    unit_price = _price_decimal(unit_price_text)
+    line_pricing = _clean_line_pricing_items(pricing)
     priced_items = [dict(item) for item in items]
     is_raw = (_to_str(context_kind).strip().lower()).startswith("brutemateriaal")
     qty_key = "St." if is_raw else "Aantal"
 
-    if unit_price_text:
-        for item in priced_items:
-            item[_PRICE_UNIT_KEY] = unit_price_text
+    for item in priced_items:
+        line_info = _line_pricing_for_item(
+            item,
+            line_pricing,
+            context_kind=context_kind,
+        )
+        line_unit_text = (
+            _clean_price_text(line_info.get("unit_price")) if line_info else ""
+        )
+        line_total_text = (
+            _clean_price_text(line_info.get("total_price")) if line_info else ""
+        )
+        effective_unit_text = line_unit_text or unit_price_text
+        effective_unit = _price_decimal(effective_unit_text)
+        if effective_unit_text:
+            item[_PRICE_UNIT_KEY] = effective_unit_text
             qty = _price_decimal(item.get(qty_key))
-            if unit_price is not None and qty is not None:
-                item[_PRICE_TOTAL_KEY] = _format_price_decimal(unit_price * qty)
+            if line_total_text:
+                item[_PRICE_TOTAL_KEY] = line_total_text
+            elif effective_unit is not None and qty is not None:
+                item[_PRICE_TOTAL_KEY] = _format_price_decimal(effective_unit * qty)
             else:
                 item.setdefault(_PRICE_TOTAL_KEY, "")
+        elif line_total_text:
+            item[_PRICE_TOTAL_KEY] = line_total_text
 
     if total_price_text:
         total_row = {key: "" for key in (priced_items[0].keys() if priced_items else [])}
@@ -3603,16 +3721,19 @@ def copy_per_production_and_orders(
 
         items = []
         for row in rows:
-            items.append(
-                {
-                    "PartNumber": row.get("PartNumber", ""),
-                    "Description": row.get("Description", ""),
-                    "Materiaal": row.get("Materiaal", ""),
-                    "Aantal": _parse_qty(row.get("Aantal", "")),
-                    "Oppervlakte": row.get("Oppervlakte", ""),
-                    "Gewicht": row.get("Gewicht", ""),
-                }
+            item = {
+                "PartNumber": row.get("PartNumber", ""),
+                "Description": row.get("Description", ""),
+                "Materiaal": row.get("Materiaal", ""),
+                "Aantal": _parse_qty(row.get("Aantal", "")),
+                "Oppervlakte": row.get("Oppervlakte", ""),
+                "Gewicht": row.get("Gewicht", ""),
+            }
+            item[_LINE_PRICE_KEY] = build_order_pricing_item_key(
+                item,
+                context_kind="Productie",
             )
+            items.append(item)
 
         delivery = delivery_map.get(prod)
         order_remark = (remarks_map.get(prod, "") if remarks_map else "").strip()
@@ -4026,16 +4147,19 @@ def copy_per_production_and_orders(
 
             items = []
             for row in rows:
-                items.append(
-                    {
-                        "PartNumber": row.get("PartNumber", ""),
-                        "Description": row.get("Description", ""),
-                        "Materiaal": row.get("Materiaal", ""),
-                        "Aantal": _parse_qty(row.get("Aantal", "")),
-                        "Oppervlakte": row.get("Oppervlakte", ""),
-                        "Gewicht": row.get("Gewicht", ""),
-                    }
+                item = {
+                    "PartNumber": row.get("PartNumber", ""),
+                    "Description": row.get("Description", ""),
+                    "Materiaal": row.get("Materiaal", ""),
+                    "Aantal": _parse_qty(row.get("Aantal", "")),
+                    "Oppervlakte": row.get("Oppervlakte", ""),
+                    "Gewicht": row.get("Gewicht", ""),
+                }
+                item[_LINE_PRICE_KEY] = build_order_pricing_item_key(
+                    item,
+                    context_kind="Afwerking",
                 )
+                items.append(item)
 
             label = _to_str(info.get("label")) or finish_key
             filename_component = info.get("filename_component") or finish_key

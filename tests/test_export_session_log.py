@@ -22,6 +22,12 @@ def test_export_session_log_roundtrip(tmp_path):
             "production::Cutting": {
                 "unit_price": "12.50",
                 "total_price": "",
+                "items": {
+                    "part|A": {
+                        "unit_price": "12.50",
+                        "total_price": "25.00",
+                    }
+                },
             }
         },
         "remember": False,
@@ -52,6 +58,12 @@ def test_export_session_log_roundtrip(tmp_path):
     assert loaded["project"]["number"] == "20250165"
     assert loaded["order_state"]["selections"]["production::Cutting"] == "MCB"
     assert loaded["order_state"]["pricing"]["production::Cutting"]["unit_price"] == "12.50"
+    assert (
+        loaded["order_state"]["pricing"]["production::Cutting"]["items"]["part|A"][
+            "total_price"
+        ]
+        == "25.00"
+    )
     assert loaded["bom"]["row_count"] == 1
     assert loaded["bom"]["sha256"]
 
@@ -117,3 +129,26 @@ def test_apply_order_pricing_adds_unit_and_total_columns():
     assert items[0]["Totaalprijs"] == "37.50"
     assert items[-1]["Description"] == "Totaal aangeboden"
     assert items[-1]["Totaalprijs"] == "40"
+
+
+def test_apply_order_pricing_uses_line_prices_before_fallback():
+    items, layout = _apply_order_pricing(
+        [
+            {"PartNumber": "A", "Description": "Plaat", "Aantal": 2},
+            {"PartNumber": "B", "Description": "Buis", "Aantal": 3},
+        ],
+        {
+            "unit_price": "10",
+            "items": {
+                "part|A": {"unit_price": "12,50", "total_price": ""},
+                "part|B": {"unit_price": "", "total_price": "99"},
+            },
+        },
+        context_kind="Productie",
+    )
+
+    assert layout is not None
+    assert items[0]["Eenheidsprijs"] == "12.50"
+    assert items[0]["Totaalprijs"] == "25.00"
+    assert items[1]["Eenheidsprijs"] == "10"
+    assert items[1]["Totaalprijs"] == "99"
