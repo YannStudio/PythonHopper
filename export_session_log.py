@@ -157,6 +157,29 @@ def write_export_session_log(export_dir: str | os.PathLike[str], payload: Mappin
     return str(path)
 
 
+def find_export_session_logs(
+    root_dir: str | os.PathLike[str],
+    *,
+    limit: int = 20,
+) -> list[str]:
+    """Return export session logs below ``root_dir``, newest first."""
+
+    root = Path(root_dir)
+    if not root.exists() or not root.is_dir():
+        return []
+    matches: list[tuple[float, str]] = []
+    for path in root.rglob(EXPORT_SESSION_LOG_FILENAME):
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        matches.append((mtime, str(path)))
+    matches.sort(key=lambda item: (item[0], item[1].lower()), reverse=True)
+    if limit <= 0:
+        return [path for _mtime, path in matches]
+    return [path for _mtime, path in matches[:limit]]
+
+
 def load_export_session_log(path: str | os.PathLike[str]) -> Dict[str, Any]:
     with open(path, "r", encoding="utf-8") as handle:
         data = json.load(handle)

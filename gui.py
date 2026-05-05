@@ -82,6 +82,7 @@ from export_session_log import (
     EXPORT_SESSION_LOG_FILENAME,
     build_export_session_log,
     convert_offers_to_orders,
+    find_export_session_logs,
     load_export_session_log,
     write_export_session_log,
 )
@@ -4218,6 +4219,11 @@ def start_gui():
                 text="Exportlog laden",
                 command=self._load_export_log_from_file,
             ).pack(side="left", padx=(6, 0))
+            tk.Button(
+                export_toggle_row,
+                text="Laatste exportlog",
+                command=self._load_latest_export_log,
+            ).pack(side="left", padx=(6, 0))
             # Option to include brutomateriaal note on generated PDFs
             self.include_bruto_note_var = tk.BooleanVar(value=True)
             tk.Checkbutton(
@@ -5006,6 +5012,30 @@ def start_gui():
             if not path:
                 return
 
+            self._load_export_log_path(path)
+
+        def _load_latest_export_log(self) -> None:
+            parent_app = getattr(self.master, "master", None)
+            root_dir = _to_str(getattr(parent_app, "dest_folder", "")).strip()
+            if not root_dir or not os.path.isdir(root_dir):
+                messagebox.showwarning(
+                    "Laatste exportlog",
+                    "Selecteer eerst een geldige exportbestemming.",
+                    parent=self,
+                )
+                return
+            logs = find_export_session_logs(root_dir, limit=1)
+            if not logs:
+                messagebox.showinfo(
+                    "Laatste exportlog",
+                    f"Geen {EXPORT_SESSION_LOG_FILENAME} gevonden onder:\n{root_dir}",
+                    parent=self,
+                )
+                return
+            self._load_export_log_path(logs[0])
+
+        def _load_export_log_path(self, path: str) -> None:
+            parent_app = getattr(self.master, "master", None)
             try:
                 payload = load_export_session_log(path)
             except Exception as exc:
@@ -5072,7 +5102,8 @@ def start_gui():
             suffix = " Offertes omgezet naar bestelbonnen." if converted else ""
             self.update_status(
                 f"Exportlog geladen{f' voor {project_label}' if project_label else ''}: "
-                f"{matched} regel(s) toegepast, {missing} niet gevonden.{suffix}"
+                f"{matched} regel(s) toegepast, {missing} niet gevonden.{suffix} "
+                f"Bron: {os.path.basename(os.path.dirname(path)) or os.path.basename(path)}"
             )
 
         def serialize_state(self) -> "SupplierSelectionState":

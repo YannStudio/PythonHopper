@@ -6,6 +6,7 @@ from export_session_log import (
     EXPORT_SESSION_LOG_FILENAME,
     build_export_session_log,
     convert_offers_to_orders,
+    find_export_session_logs,
     load_export_session_log,
     write_export_session_log,
 )
@@ -84,6 +85,24 @@ def test_export_session_log_rejects_unknown_schema(tmp_path):
         assert "Niet-ondersteunde" in str(exc)
     else:
         raise AssertionError("Expected ValueError for unsupported schema")
+
+
+def test_find_export_session_logs_newest_first(tmp_path):
+    older_dir = tmp_path / "2026-01-01_project"
+    newer_dir = tmp_path / "2026-01-02_project"
+    older_dir.mkdir()
+    newer_dir.mkdir()
+    older = older_dir / EXPORT_SESSION_LOG_FILENAME
+    newer = newer_dir / EXPORT_SESSION_LOG_FILENAME
+    older.write_text("{}", encoding="utf-8")
+    newer.write_text("{}", encoding="utf-8")
+    older.touch()
+    newer.touch()
+
+    logs = find_export_session_logs(tmp_path)
+
+    assert logs[0] == str(newer)
+    assert str(older) in logs
 
 
 def test_apply_order_pricing_adds_unit_and_total_columns():
