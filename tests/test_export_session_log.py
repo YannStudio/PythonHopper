@@ -7,7 +7,9 @@ from export_session_log import (
     build_export_session_log,
     convert_offers_to_orders,
     find_export_session_logs,
+    format_export_log_compatibility_message,
     load_export_session_log,
+    summarize_export_log_compatibility,
     write_export_session_log,
 )
 from orders import _apply_order_pricing
@@ -152,3 +154,33 @@ def test_apply_order_pricing_uses_line_prices_before_fallback():
     assert items[0]["Totaalprijs"] == "25.00"
     assert items[1]["Eenheidsprijs"] == "10"
     assert items[1]["Totaalprijs"] == "99"
+
+
+def test_export_log_compatibility_detects_bom_and_selection_differences():
+    original_bom = pd.DataFrame(
+        [{"PartNumber": "A", "Production": "Cutting", "Aantal": 2}]
+    )
+    current_bom = pd.DataFrame(
+        [{"PartNumber": "B", "Production": "Roof", "Aantal": 1}]
+    )
+    payload = build_export_session_log(
+        project_number="20250165",
+        project_name="Piva",
+        client_name="Tecno Art bvba",
+        bom_source_path="C:/tmp/bom.xlsx",
+        bom_df=original_bom,
+        state={"selections": {"production::Cutting": "MCB"}},
+    )
+
+    summary = summarize_export_log_compatibility(
+        payload,
+        {"production::Roof"},
+        current_bom_df=current_bom,
+    )
+    message = format_export_log_compatibility_message(summary)
+
+    assert summary["bom_changed"] is True
+    assert summary["missing_keys"] == ["production::Cutting"]
+    assert summary["new_keys"] == ["production::Roof"]
+    assert "Productie: Cutting" in message
+    assert "Productie: Roof" in message

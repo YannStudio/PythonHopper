@@ -37,17 +37,30 @@ Op de bestelbonpagina zijn twee acties voorzien:
 
 Als het logbestand `Offerteaanvraag` bevat, vraagt Filehopper of die moeten worden omgezet naar `Bestelbon`. Bij die omzetting worden `OFF-...` documentnummers leeggemaakt, zodat er geen offertenummer als bestelbonnummer meegaat.
 
+Voor het toepassen controleert Filehopper de exportlog tegen de huidige bestelbonpagina:
+
+- BOM-fingerprint gewijzigd.
+- Regels uit de exportlog die niet meer bestaan.
+- Nieuwe regels in de huidige BOM die geen exportlogwaarden hebben.
+
+Bij verschillen toont Filehopper eerst een controledialoog. De gevonden regels kunnen nog altijd worden toegepast; ontbrekende en nieuwe regels blijven handmatig aanpasbaar.
+
 ## Prijzen
 
-De eerste implementatie bewaart prijzen per selectie/bon:
+De exportlog bewaart prijzen per selectie/bon:
 
 - `unit_price`: eenheidsprijs.
 - `total_price`: globale totaalprijs voor die selectie/bon.
 
-Als prijzen ingevuld zijn, voegt de documentgenerator prijsvelden toe aan Excel en PDF. Zonder prijzen blijft de bestaande layout behouden.
+Daarnaast kan `items` lijnprijzen per orderregel bevatten. Voor producties en afwerkingen gebruikt Filehopper een stabiele sleutel op basis van PartNumber; voor brutemateriaal op basis van profiel, materiaal en lengte.
+
+Als prijzen ingevuld zijn, voegt de documentgenerator prijsvelden toe aan Excel en PDF. Zonder prijzen blijft de bestaande layout behouden. Lijnprijzen hebben voorrang op de bonbrede eenheidsprijs; een bonbrede totaalprijs blijft als aparte totaalregel zichtbaar.
+
+## Status In De UI
+
+Na het laden van een exportlog krijgen toegepaste regels een `[Log]`-markering op de bestelbonpagina. Bij focus op zo'n rij toont de statusbalk uit welke exportlog de waarden kwamen en of offertes werden omgezet naar bestelbonnen.
 
 ## Volgende uitbreidingen
 
-- Lijnprijzen per PartNumber of profielregel.
-- Validatiedialoog bij BOM-wijzigingen met overzicht van niet-gematchte en nieuwe regels.
-- Duidelijke visuele status op de bestelbonpagina wanneer een regel uit een exportlog komt.
+- Fijnere merge-opties per veld wanneer een exportlog slechts gedeeltelijk mag worden toegepast.
+- Optionele rapportage in de exportlog van effectief gegenereerde documentpaden.

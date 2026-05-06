@@ -84,7 +84,9 @@ from export_session_log import (
     build_export_session_log,
     convert_offers_to_orders,
     find_export_session_logs,
+    format_export_log_compatibility_message,
     load_export_session_log,
+    summarize_export_log_compatibility,
     write_export_session_log,
 )
 from en1090 import EN1090_NOTE_TEXT, default_en1090_enabled, normalize_en1090_key
@@ -3914,6 +3916,7 @@ def start_gui():
             self._en1090_setter = en1090_setter
             self._last_preset_status = ""
             self._preset_state_by_key: Dict[str, Dict[str, object]] = {}
+            self._export_log_state_by_key: Dict[str, Dict[str, object]] = {}
             self.finish_entries = finishes
             self._row_widget_maps: List[Dict[str, tk.Misc]] = []
             self._row_widgets_by_key: Dict[str, Dict[str, tk.Misc]] = {}
@@ -5067,6 +5070,30 @@ def start_gui():
                 return ""
             return " [Preset]"
 
+        def _export_log_indicator_suffix(self, sel_key: str) -> str:
+            export_log_state_by_key = getattr(self, "_export_log_state_by_key", {})
+            if sel_key not in export_log_state_by_key:
+                return ""
+            return " [Log]"
+
+        def _store_export_log_state(
+            self,
+            applied_keys: Iterable[str],
+            *,
+            source_label: str,
+            converted: bool,
+        ) -> None:
+            state_by_key: Dict[str, Dict[str, object]] = {}
+            for key in applied_keys:
+                clean_key = _to_str(key).strip()
+                if not clean_key:
+                    continue
+                state_by_key[clean_key] = {
+                    "source": source_label,
+                    "converted": bool(converted),
+                }
+            self._export_log_state_by_key = state_by_key
+
         def _preset_status_message(self, sel_key: str) -> str:
             preset_state_by_key = getattr(self, "_preset_state_by_key", {})
             state = preset_state_by_key.get(sel_key)
@@ -5090,6 +5117,21 @@ def start_gui():
             if rules_text:
                 return f"{base_label}: ingevuld via presetregel(s) {rules_text}."
             return f"{base_label}: preset toegepast."
+
+        def _export_log_status_message(self, sel_key: str) -> str:
+            export_log_state_by_key = getattr(self, "_export_log_state_by_key", {})
+            state = export_log_state_by_key.get(sel_key)
+            if not state:
+                return ""
+            base_label = self._base_row_label(sel_key)
+            source = _to_str(state.get("source")).strip()
+            converted = bool(state.get("converted"))
+            message = f"{base_label}: waarden geladen uit exportlog"
+            if source:
+                message += f" ({source})"
+            if converted:
+                message += "; offerteaanvragen omgezet naar bestelbonnen"
+            return message + "."
 
         def _find_supplier_display_for_name(self, supplier_name: str) -> str:
             clean = self._clean_display_value(supplier_name)
@@ -5340,8 +5382,38 @@ def start_gui():
                     converted = True
 
             current_keys = {key for key, _combo in self.rows}
-            incoming_keys = self._state_selection_keys(state_dict)
-            matched = len(incoming_keys & current_keys)
+            payload_for_review = dict(payload)
+            payload_for_review["order_state"] = state_dict
+            try:
+                compatibility = summarize_export_log_compatibility(
+                    payload_for_review,
+                    current_keys,
+                    current_bom_df=getattr(parent_app, "bom_df", None),
+                )
+            except Exception:
+                compatibility = {
+                    "incoming_keys": sorted(self._state_selection_keys(state_dict)),
+                    "matched_keys": [],
+                    "missing_keys": [],
+                    "new_keys": [],
+                    "bom_changed": False,
+                }
+            review_message = format_export_log_compatibility_message(compatibility)
+            if review_message:
+                proceed = messagebox.askyesno(
+                    "Exportlog controle",
+                    (
+                        f"{review_message}\n\n"
+                        "Wil je de gevonden waarden toch toepassen op de huidige bestelbonpagina?"
+                    ),
+                    parent=self,
+                )
+                if not proceed:
+                    return
+
+            incoming_keys = set(compatibility.get("incoming_keys", [])) or self._state_selection_keys(state_dict)
+            applied_keys = incoming_keys & current_keys
+            matched = len(applied_keys)
             missing = len(incoming_keys - current_keys)
             try:
                 self.apply_state(SupplierSelectionState.from_mapping(state_dict))
@@ -5353,7 +5425,16 @@ def start_gui():
                 )
                 return
 
+            source_label = os.path.basename(os.path.dirname(path)) or os.path.basename(path)
+            self._store_export_log_state(
+                applied_keys,
+                source_label=source_label,
+                converted=converted,
+            )
             self._update_preview_from_any_combo()
+            sync_grouped_rows = getattr(self, "_sync_grouped_rows", None)
+            if callable(sync_grouped_rows):
+                sync_grouped_rows()
             if parent_app is not None:
                 try:
                     parent_app._last_supplier_selection_state = self.serialize_state()
@@ -5369,7 +5450,7 @@ def start_gui():
             self.update_status(
                 f"Exportlog geladen{f' voor {project_label}' if project_label else ''}: "
                 f"{matched} regel(s) toegepast, {missing} niet gevonden.{suffix} "
-                f"Bron: {os.path.basename(os.path.dirname(path)) or os.path.basename(path)}"
+                f"Bron: {source_label}"
             )
 
         def serialize_state(self) -> "SupplierSelectionState":
@@ -5681,6 +5762,9 @@ def start_gui():
             preset_state_by_key = getattr(self, "_preset_state_by_key", None)
             if isinstance(preset_state_by_key, dict):
                 preset_state_by_key.clear()
+            export_log_state_by_key = getattr(self, "_export_log_state_by_key", None)
+            if isinstance(export_log_state_by_key, dict):
+                export_log_state_by_key.clear()
 
             set_combo_value = getattr(
                 type(self), "_set_combo_value", SupplierSelectionFrame._set_combo_value
@@ -5705,9 +5789,16 @@ def start_gui():
         def _on_focus_key(self, sel_key: str):
             self._active_key = sel_key
             SupplierSelectionFrame._get_type_filter_map(self).pop(sel_key, None)
-            preset_message = self._preset_status_message(sel_key)
-            if preset_message:
-                self.update_status(preset_message)
+            messages = [
+                message
+                for message in (
+                    self._preset_status_message(sel_key),
+                    self._export_log_status_message(sel_key),
+                )
+                if message
+            ]
+            if messages:
+                self.update_status(" ".join(messages))
 
         def _set_all_exports(self, enabled: bool) -> None:
             value = 1 if enabled else 0
@@ -5874,7 +5965,9 @@ def start_gui():
         def _apply_group_visuals(self, group_links) -> None:
             base_bg = getattr(self, "_rows_background", None) or self.cget("bg")
             preset_fg = "#2E7D32"
+            export_log_fg = "#1565C0"
             preset_state_by_key = getattr(self, "_preset_state_by_key", {})
+            export_log_state_by_key = getattr(self, "_export_log_state_by_key", {})
             for sel_key, _combo in self.rows:
                 widgets = self._row_widgets_by_key.get(sel_key, {})
                 row_label = widgets.get("label")
@@ -5889,9 +5982,15 @@ def start_gui():
                 grouped = bool(spec.get("grouped"))
                 is_root = bool(spec.get("is_root"))
                 base_text = _to_str(spec.get("text")).strip() or self._base_row_label(sel_key)
-                label_text = f"{base_text}{self._preset_indicator_suffix(sel_key)}"
+                label_text = (
+                    f"{base_text}"
+                    f"{self._preset_indicator_suffix(sel_key)}"
+                    f"{self._export_log_indicator_suffix(sel_key)}"
+                )
                 label_fg = accent if accent else (
-                    preset_fg if sel_key in preset_state_by_key else default_fg
+                    preset_fg if sel_key in preset_state_by_key else (
+                        export_log_fg if sel_key in export_log_state_by_key else default_fg
+                    )
                 )
                 try:
                     row_label.configure(

@@ -5,7 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, Mapping, MutableMapping
+from typing import Any, Dict, Iterable, Mapping, MutableMapping
 
 
 EXPORT_SESSION_LOG_FILENAME = "Filehopper-exportlog.json"
@@ -60,6 +60,19 @@ def normalize_state_dict(value: Any) -> Dict[str, Any]:
     return state
 
 
+def state_selection_keys(state: Any) -> set[str]:
+    """Return all selection keys referenced by a normalized or raw order state."""
+
+    normalized = normalize_state_dict(state)
+    keys: set[str] = set()
+    for name in _STATE_KEYS:
+        value = normalized.get(name, {})
+        if not isinstance(value, Mapping):
+            continue
+        keys.update(_to_str(key).strip() for key in value.keys() if _to_str(key).strip())
+    return keys
+
+
 def convert_offers_to_orders(state: Mapping[str, Any]) -> Dict[str, Any]:
     """Convert Offerteaanvraag document types to Bestelbon and clear OFF numbers."""
 
@@ -74,6 +87,124 @@ def convert_offers_to_orders(state: Mapping[str, Any]) -> Dict[str, Any]:
     converted["doc_types"] = doc_types
     converted["doc_numbers"] = doc_numbers
     return converted
+
+
+def _format_selection_key(key: str) -> str:
+    prefix, sep, identifier = key.partition("::")
+    if not sep:
+        return key
+    labels = {
+        "production": "Productie",
+        "finish": "Afwerking",
+        "opticutter": "Brutemateriaal",
+    }
+    label = labels.get(prefix, prefix or "Selectie")
+    return f"{label}: {identifier}"
+
+
+def summarize_export_log_compatibility(
+    payload: Mapping[str, Any],
+    current_selection_keys: Iterable[str],
+    *,
+    current_bom_df: Any = None,
+) -> Dict[str, Any]:
+    """Compare an exportlog against the currently visible order rows and BOM."""
+
+    state = payload.get("order_state", {}) if isinstance(payload, Mapping) else {}
+    incoming_keys = state_selection_keys(state)
+    current_keys = {
+        _to_str(key).strip()
+        for key in current_selection_keys
+        if _to_str(key).strip()
+    }
+    matched = incoming_keys & current_keys
+    missing = incoming_keys - current_keys
+    new = current_keys - incoming_keys
+
+    log_bom = payload.get("bom", {}) if isinstance(payload, Mapping) else {}
+    current_bom = _bom_fingerprint(current_bom_df) if current_bom_df is not None else {}
+    bom_changed = False
+    if isinstance(log_bom, Mapping) and current_bom:
+        log_sha = _to_str(log_bom.get("sha256")).strip()
+        current_sha = _to_str(current_bom.get("sha256")).strip()
+        if log_sha and current_sha:
+            bom_changed = log_sha != current_sha
+        else:
+            try:
+                bom_changed = int(log_bom.get("row_count", -1)) != int(
+                    current_bom.get("row_count", -1)
+                )
+            except Exception:
+                bom_changed = False
+
+    return {
+        "incoming_keys": sorted(incoming_keys, key=str.lower),
+        "current_keys": sorted(current_keys, key=str.lower),
+        "matched_keys": sorted(matched, key=str.lower),
+        "missing_keys": sorted(missing, key=str.lower),
+        "new_keys": sorted(new, key=str.lower),
+        "bom_changed": bom_changed,
+        "log_bom": dict(log_bom) if isinstance(log_bom, Mapping) else {},
+        "current_bom": current_bom,
+    }
+
+
+def format_export_log_compatibility_message(
+    summary: Mapping[str, Any],
+    *,
+    max_items: int = 8,
+) -> str:
+    """Return a concise Dutch review message for compatibility differences."""
+
+    lines: list[str] = []
+    log_bom = summary.get("log_bom", {})
+    current_bom = summary.get("current_bom", {})
+    if summary.get("bom_changed"):
+        log_rows = (
+            _to_str(log_bom.get("row_count")).strip()
+            if isinstance(log_bom, Mapping)
+            else ""
+        )
+        current_rows = (
+            _to_str(current_bom.get("row_count")).strip()
+            if isinstance(current_bom, Mapping)
+            else ""
+        )
+        if log_rows or current_rows:
+            lines.append(
+                "De huidige BOM lijkt te verschillen van de BOM in de exportlog "
+                f"(log: {log_rows or '?'} rijen, huidig: {current_rows or '?'} rijen)."
+            )
+        else:
+            lines.append("De huidige BOM lijkt te verschillen van de BOM in de exportlog.")
+
+    def _append_key_block(title: str, keys: object) -> None:
+        if not isinstance(keys, list) or not keys:
+            return
+        lines.append(f"{title} ({len(keys)}):")
+        shown = keys[:max_items]
+        lines.extend(f"- {_format_selection_key(_to_str(key))}" for key in shown)
+        remaining = len(keys) - len(shown)
+        if remaining > 0:
+            lines.append(f"- ... en {remaining} meer")
+
+    _append_key_block(
+        "Regels uit de exportlog die niet op deze bestelbonpagina staan",
+        summary.get("missing_keys"),
+    )
+    _append_key_block(
+        "Nieuwe regels op deze bestelbonpagina zonder exportlogwaarden",
+        summary.get("new_keys"),
+    )
+
+    if not lines:
+        return ""
+
+    matched_count = len(summary.get("matched_keys", []) or [])
+    incoming_count = len(summary.get("incoming_keys", []) or [])
+    if incoming_count:
+        lines.append(f"Gevonden matches: {matched_count} van {incoming_count} exportlogregel(s).")
+    return "\n".join(lines)
 
 
 def _bom_fingerprint(bom_df: Any) -> Dict[str, Any]:
