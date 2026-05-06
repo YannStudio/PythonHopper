@@ -52,6 +52,21 @@ def test_export_session_log_roundtrip(tmp_path):
         bom_df=bom,
         state=state,
         app_version="test",
+        generated_documents=[
+            {
+                "path": "Cutting/Bestelbon_BB-100_Cutting.pdf",
+                "kind": "order",
+                "format": "pdf",
+                "selection_key": "production::Cutting",
+                "selection_keys": ["production::Cutting"],
+                "doc_type": "Bestelbon",
+                "doc_number": "BB-100",
+                "supplier": "MCB",
+            },
+            {"path": ""},
+        ],
+        status_messages=["Bestelbon opgeslagen.", "Bestelbon opgeslagen.", ""],
+        path_limit_warnings=["pad ingekort"],
     )
     path = write_export_session_log(tmp_path, payload)
 
@@ -68,6 +83,20 @@ def test_export_session_log_roundtrip(tmp_path):
     )
     assert loaded["bom"]["row_count"] == 1
     assert loaded["bom"]["sha256"]
+    assert loaded["export"]["generated_documents"] == [
+        {
+            "path": "Cutting/Bestelbon_BB-100_Cutting.pdf",
+            "kind": "order",
+            "format": "pdf",
+            "selection_key": "production::Cutting",
+            "doc_type": "Bestelbon",
+            "doc_number": "BB-100",
+            "supplier": "MCB",
+            "selection_keys": ["production::Cutting"],
+        }
+    ]
+    assert loaded["export"]["status_messages"] == ["Bestelbon opgeslagen."]
+    assert loaded["export"]["path_limit_warnings"] == ["pad ingekort"]
 
 
 def test_convert_offers_to_orders_clears_off_numbers():

@@ -21,6 +21,7 @@ Het logbestand bevat:
 - `project`: projectnummer, projectnaam en opdrachtgever.
 - `bom`: bronpad, bestandsnaam, rijtelling en fingerprint van relevante BOM-data.
 - `order_state`: de bestelbonstate per selectiekey.
+- `export`: overzicht van de export zelf, met gegenereerde documenten, statusregels en eventuele padlimiet-waarschuwingen.
 
 Selectiekeys volgen de bestaande keys:
 
@@ -60,7 +61,11 @@ Als prijzen ingevuld zijn, voegt de documentgenerator prijsvelden toe aan Excel 
 
 Na het laden van een exportlog krijgen toegepaste regels een `[Log]`-markering op de bestelbonpagina. Bij focus op zo'n rij toont de statusbalk uit welke exportlog de waarden kwamen en of offertes werden omgezet naar bestelbonnen.
 
+## Exportoverzicht
+
+`export.generated_documents` bevat de documenten die Filehopper tijdens de export heeft aangemaakt, met relatieve paden binnen de bundelmap. Orderdocumenten bevatten waar mogelijk ook selectiekey, context, documenttype, documentnummer en leverancier. Daardoor blijft achteraf zichtbaar welke PDF/XLSX-bestanden bij de opgeslagen bestelboninstellingen hoorden.
+
 ## Volgende uitbreidingen
 
 - Fijnere merge-opties per veld wanneer een exportlog slechts gedeeltelijk mag worden toegepast.
-- Optionele rapportage in de exportlog van effectief gegenereerde documentpaden.
+- Mogelijkheid om vanuit de exportlog snel het vorige exportdocument te openen.

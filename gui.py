@@ -9949,6 +9949,7 @@ def start_gui():
                     update_status("KopiÃ«ren & bestelbonnen maken...")
                     path_limit_messages: List[str] = []
                     document_status_lines: List[str] = []
+                    generated_document_records: List[Dict[str, object]] = []
                     try:
                         if opticutter_choices_snapshot is None:
                             opticutter_choices_snapshot = dict(
@@ -10036,6 +10037,7 @@ def start_gui():
                             en1090_enabled=bool(self.en1090_enabled_var.get()),
                             en1090_note=self.en1090_note_var.get(),
                             document_status_messages=document_status_lines,
+                            generated_documents=generated_document_records,
                         )
                         if export_state_snapshot is not None:
                             try:
@@ -10047,6 +10049,9 @@ def start_gui():
                                     bom_df=current_bom,
                                     state=export_state_snapshot,
                                     app_version=APP_VERSION,
+                                    generated_documents=generated_document_records,
+                                    status_messages=document_status_lines,
+                                    path_limit_warnings=path_limit_messages,
                                 )
                                 write_export_session_log(bundle_dest, log_payload)
                                 document_status_lines.append(
@@ -11833,6 +11838,7 @@ def start_gui():
                     update_status("Kopiëren & bestelbonnen maken...")
                     path_limit_messages: List[str] = []
                     document_status_lines: List[str] = []
+                    generated_document_records: List[Dict[str, object]] = []
                     try:
                         if opticutter_choices_snapshot is None:
                             opticutter_choices_snapshot = dict(
@@ -11920,6 +11926,7 @@ def start_gui():
                             en1090_enabled=bool(self.en1090_enabled_var.get()),
                             en1090_note=self.en1090_note_var.get(),
                             document_status_messages=document_status_lines,
+                            generated_documents=generated_document_records,
                         )
                         if export_state_snapshot is not None:
                             try:
@@ -11931,6 +11938,9 @@ def start_gui():
                                     bom_df=current_bom,
                                     state=export_state_snapshot,
                                     app_version=APP_VERSION,
+                                    generated_documents=generated_document_records,
+                                    status_messages=document_status_lines,
+                                    path_limit_warnings=path_limit_messages,
                                 )
                                 write_export_session_log(bundle_dest, log_payload)
                                 document_status_lines.append(

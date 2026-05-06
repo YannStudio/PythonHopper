@@ -290,6 +290,7 @@ class OrderDocumentSection:
     context_label: str
     context_kind: str
     items: List[Dict[str, object]]
+    selection_key: str = ""
     total_weight_kg: float | None = None
     column_layout: Optional[List[Dict[str, object]]] = None
 
@@ -1249,6 +1250,7 @@ def _build_grouped_document_jobs(
                         context_label=member.context_label,
                         context_kind=member.context_kind,
                         items=list(member.items),
+                        selection_key=member.selection_key,
                         total_weight_kg=member.total_weight_kg,
                         column_layout=(
                             [dict(col) for col in member.column_layout]
@@ -1576,6 +1578,7 @@ def _normalize_order_sections(
                         context_label=_to_str(section.context_label),
                         context_kind=_to_str(section.context_kind) or "productie",
                         items=list(section.items or []),
+                        selection_key=_to_str(section.selection_key),
                         total_weight_kg=section.total_weight_kg,
                         column_layout=(
                             [dict(col) for col in section.column_layout]
@@ -1590,6 +1593,7 @@ def _normalize_order_sections(
                     context_label=_to_str(section.get("context_label")),
                     context_kind=_to_str(section.get("context_kind")) or "productie",
                     items=list(section.get("items") or []),
+                    selection_key=_to_str(section.get("selection_key")),
                     total_weight_kg=section.get("total_weight_kg"),
                     column_layout=(
                         [dict(col) for col in section.get("column_layout")]
@@ -1606,6 +1610,7 @@ def _normalize_order_sections(
             context_label=_to_str(production),
             context_kind=_to_str(label_kind) or "productie",
             items=list(items or []),
+            selection_key="",
             total_weight_kg=total_weight_kg,
             column_layout=[dict(col) for col in column_layout] if column_layout else None,
         )
@@ -3324,6 +3329,7 @@ def copy_per_production_and_orders(
     en1090_overrides: Mapping[str, bool] | None = None,
     en1090_note: Optional[str] = None,
     document_status_messages: List[str] | None = None,
+    generated_documents: List[Dict[str, object]] | None = None,
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
 
@@ -3400,6 +3406,10 @@ def copy_per_production_and_orders(
     The returned ``chosen`` mapping uses selection keys produced by
     :func:`make_production_selection_key` for productions and
     :func:`make_finish_selection_key` for finish selections.
+
+    When ``generated_documents`` is provided, Filehopper appends relative paths
+    and document metadata for generated PDF/XLSX files so callers can store a
+    traceable export log.
     """
     en1090_active = bool(en1090_enabled)
     en1090_note_text = (
@@ -3601,6 +3611,51 @@ def copy_per_production_and_orders(
         if relative.startswith(".."):
             return os.path.abspath(path)
         return relative
+
+    def _append_generated_document(
+        path: str,
+        *,
+        kind: str,
+        file_format: str,
+        selection_key: str = "",
+        selection_keys: Sequence[str] | None = None,
+        context_kind: str = "",
+        context_label: str = "",
+        doc_type: str = "",
+        doc_number: str = "",
+        supplier: str = "",
+    ) -> None:
+        if generated_documents is None:
+            return
+        clean_path = _to_str(path).strip()
+        if not clean_path:
+            return
+        record: Dict[str, object] = {
+            "path": _report_export_path(clean_path),
+            "kind": _to_str(kind).strip(),
+            "format": _to_str(file_format).strip(),
+        }
+        optional_values = {
+            "selection_key": selection_key,
+            "context_kind": context_kind,
+            "context_label": context_label,
+            "doc_type": doc_type,
+            "doc_number": doc_number,
+            "supplier": supplier,
+        }
+        for key, value in optional_values.items():
+            text = _to_str(value).strip()
+            if text:
+                record[key] = text
+        clean_selection_keys = [
+            _to_str(key).strip()
+            for key in (selection_keys or [])
+            if _to_str(key).strip()
+        ]
+        if clean_selection_keys:
+            record["selection_keys"] = clean_selection_keys
+        if record not in generated_documents:
+            generated_documents.append(record)
 
     footer_note_text = (
         DEFAULT_FOOTER_NOTE
@@ -3822,6 +3877,14 @@ def copy_per_production_and_orders(
                 settings_df.to_excel(writer, sheet_name="Instellingen", index=False)
                 if not order_df.empty:
                     order_df.to_excel(writer, sheet_name="Bestelling", index=False)
+            _append_generated_document(
+                opticutter_path,
+                kind="opticutter_workbook",
+                file_format="xlsx",
+                selection_key=make_opticutter_selection_key(prod),
+                context_kind="Brutemateriaal",
+                context_label=prod,
+            )
 
             order_overview_path: str | None = None
             should_write_order_overview = not order_df.empty
@@ -3958,6 +4021,17 @@ def copy_per_production_and_orders(
                     en1090_note=en1090_note_text,
                     column_layout=opticutter_column_layout,
                 )
+                _append_generated_document(
+                    opticutter_excel_path,
+                    kind="order",
+                    file_format="xlsx",
+                    selection_key=opticutter_sel_key,
+                    context_kind="Brutemateriaal",
+                    context_label=prod,
+                    doc_type=opticutter_doc_type,
+                    doc_number=opticutter_doc_num_display or "",
+                    supplier=opticutter_supplier_name,
+                )
 
                 opticutter_pdf_requested = f"{opticutter_document_base}.pdf"
                 opticutter_pdf_filename = _fit_filename_within_path(
@@ -3990,6 +4064,17 @@ def copy_per_production_and_orders(
                         en1090_note=en1090_note_text,
                         column_layout=opticutter_column_layout,
                     )
+                    _append_generated_document(
+                        opticutter_pdf_path,
+                        kind="order",
+                        file_format="pdf",
+                        selection_key=opticutter_sel_key,
+                        context_kind="Brutemateriaal",
+                        context_label=prod,
+                        doc_type=opticutter_doc_type,
+                        doc_number=opticutter_doc_num_display or "",
+                        supplier=opticutter_supplier_name,
+                    )
                 except Exception as exc:
                     print(
                         f"[WAARSCHUWING] PDF brutemateriaal mislukt voor {prod}: {exc}",
@@ -3998,6 +4083,14 @@ def copy_per_production_and_orders(
 
             if should_write_order_overview and order_overview_path:
                 order_df.to_excel(order_overview_path, index=False)
+                _append_generated_document(
+                    order_overview_path,
+                    kind="opticutter_order_overview",
+                    file_format="xlsx",
+                    selection_key=make_opticutter_selection_key(prod),
+                    context_kind="Brutemateriaal",
+                    context_label=prod,
+                )
 
         packlist_items = step_entries.get(prod, [])
         if packlist_items and REPORTLAB_OK:
@@ -4026,6 +4119,15 @@ def copy_per_production_and_orders(
                                 doc_date=today,
                             ) and os.path.exists(packlist_path):
                                 os.unlink(packlist_path)
+                            elif os.path.exists(packlist_path):
+                                _append_generated_document(
+                                    packlist_path,
+                                    kind="packlist",
+                                    file_format="pdf",
+                                    selection_key=make_production_selection_key(prod),
+                                    context_kind="Productie",
+                                    context_label=prod,
+                                )
                         except Exception as exc:
                             print(
                                 f"[WAARSCHUWING] Paklijst mislukt voor {prod}: {exc}",
@@ -4271,6 +4373,23 @@ def copy_per_production_and_orders(
                 en1090_note=en1090_note_text,
                 sections=job.sections,
             )
+            section_keys = [
+                _to_str(section.selection_key).strip()
+                for section in job.sections
+                if _to_str(section.selection_key).strip()
+            ]
+            _append_generated_document(
+                excel_path,
+                kind="order",
+                file_format="xlsx",
+                selection_key=section_keys[0] if section_keys else "",
+                selection_keys=section_keys,
+                context_kind=context_kind,
+                context_label=context_label,
+                doc_type=job.doc_type,
+                doc_number=job.doc_num_display or "",
+                supplier=supplier_name_clean,
+            )
 
             pdf_requested = f"{document_base}.pdf"
             pdf_filename = _fit_filename_within_path(job.target_dir, pdf_requested)
@@ -4300,6 +4419,18 @@ def copy_per_production_and_orders(
                     en1090_required=job.en1090_required,
                     en1090_note=en1090_note_text,
                     sections=job.sections,
+                )
+                _append_generated_document(
+                    pdf_path,
+                    kind="order",
+                    file_format="pdf",
+                    selection_key=section_keys[0] if section_keys else "",
+                    selection_keys=section_keys,
+                    context_kind=context_kind,
+                    context_label=context_label,
+                    doc_type=job.doc_type,
+                    doc_number=job.doc_num_display or "",
+                    supplier=supplier_name_clean,
                 )
             except Exception as exc:
                 pdf_created = False
@@ -4331,8 +4462,15 @@ def copy_per_production_and_orders(
                 ].copy()
             else:
                 bom_export_df = bom_df
-            _export_bom_workbook(
+            bom_export_path = _export_bom_workbook(
                 bom_export_df, dest, bom_filename
+            )
+            _append_generated_document(
+                bom_export_path,
+                kind="bom",
+                file_format="xlsx",
+                context_kind="BOM",
+                context_label=_to_str(project_name or project_number).strip(),
             )
         except Exception as exc:  # pragma: no cover - unexpected
             raise RuntimeError(f"Kon BOM-export niet opslaan: {exc}") from exc
@@ -4340,7 +4478,15 @@ def copy_per_production_and_orders(
     if export_bom and export_related_files and bom_source_path:
         for src_file in find_related_bom_exports(bom_source_path, file_index):
             transformed = _transform_export_name(os.path.basename(src_file))
-            shutil.copy2(src_file, os.path.join(dest, transformed))
+            target_path = os.path.join(dest, transformed)
+            shutil.copy2(src_file, target_path)
+            _append_generated_document(
+                target_path,
+                kind="related_bom_file",
+                file_format=os.path.splitext(target_path)[1].lstrip(".").lower(),
+                context_kind="BOM",
+                context_label=_to_str(project_name or project_number).strip(),
+            )
             count_copied += 1
 
     db.save(SUPPLIERS_DB_FILE)

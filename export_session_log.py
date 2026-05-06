@@ -4,6 +4,7 @@ import datetime as _dt
 import hashlib
 import json
 import os
+from collections.abc import Iterable as IterableABC
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, MutableMapping
 
@@ -38,6 +39,64 @@ def _clean_mapping(value: Any) -> Dict[str, Any]:
             continue
         cleaned[key] = raw_value
     return cleaned
+
+
+def _clean_string_list(values: Any) -> list[str]:
+    if not isinstance(values, IterableABC) or isinstance(values, (str, bytes, Mapping)):
+        return []
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = _to_str(value).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        cleaned.append(text)
+    return cleaned
+
+
+def _clean_generated_documents(values: Any) -> list[Dict[str, Any]]:
+    if not isinstance(values, IterableABC) or isinstance(values, (str, bytes, Mapping)):
+        return []
+    cleaned: list[Dict[str, Any]] = []
+    for value in values:
+        if not isinstance(value, Mapping):
+            continue
+        path = _to_str(value.get("path")).strip()
+        if not path:
+            continue
+        record: Dict[str, Any] = {"path": path}
+        for key in (
+            "kind",
+            "format",
+            "selection_key",
+            "context_kind",
+            "context_label",
+            "doc_type",
+            "doc_number",
+            "supplier",
+        ):
+            text = _to_str(value.get(key)).strip()
+            if text:
+                record[key] = text
+        selection_keys = _clean_string_list(value.get("selection_keys"))
+        if selection_keys:
+            record["selection_keys"] = selection_keys
+        cleaned.append(record)
+    return cleaned
+
+
+def normalize_export_info(value: Any) -> Dict[str, Any]:
+    source = value if isinstance(value, Mapping) else {}
+    return {
+        "generated_documents": _clean_generated_documents(
+            source.get("generated_documents", [])
+        ),
+        "status_messages": _clean_string_list(source.get("status_messages", [])),
+        "path_limit_warnings": _clean_string_list(
+            source.get("path_limit_warnings", [])
+        ),
+    }
 
 
 def normalize_state_dict(value: Any) -> Dict[str, Any]:
@@ -257,6 +316,9 @@ def build_export_session_log(
     bom_df: Any = None,
     state: Any = None,
     app_version: str = "",
+    generated_documents: Any = None,
+    status_messages: Any = None,
+    path_limit_warnings: Any = None,
 ) -> Dict[str, Any]:
     source_path = _to_str(bom_source_path).strip()
     return {
@@ -277,6 +339,13 @@ def build_export_session_log(
             **_bom_fingerprint(bom_df),
         },
         "order_state": normalize_state_dict(state or {}),
+        "export": normalize_export_info(
+            {
+                "generated_documents": generated_documents,
+                "status_messages": status_messages,
+                "path_limit_warnings": path_limit_warnings,
+            }
+        ),
     }
 
 
@@ -321,4 +390,5 @@ def load_export_session_log(path: str | os.PathLike[str]) -> Dict[str, Any]:
         raise ValueError(f"Niet-ondersteunde exportlog versie: {version!r}.")
     state = data.get("order_state", {})
     data["order_state"] = normalize_state_dict(state)
+    data["export"] = normalize_export_info(data.get("export", {}))
     return dict(data)
