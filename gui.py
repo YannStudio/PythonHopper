@@ -10,6 +10,7 @@ import unicodedata
 from collections import defaultdict, OrderedDict
 from dataclasses import dataclass, field
 from copy import deepcopy
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Tuple, TYPE_CHECKING
 
@@ -3746,6 +3747,47 @@ def start_gui():
             return cleaned
         return {}
 
+    def _parse_supplier_decimal(value: object) -> Optional[Decimal]:
+        text = _to_str(value).strip()
+        if not text:
+            return None
+        text = (
+            text.replace("\u00a0", "")
+            .replace(" ", "")
+            .replace("€", "")
+            .replace("%", "")
+        )
+        if "," in text and "." in text:
+            if text.rfind(",") > text.rfind("."):
+                text = text.replace(".", "").replace(",", ".")
+            else:
+                text = text.replace(",", "")
+        else:
+            text = text.replace(",", ".")
+        try:
+            return Decimal(text)
+        except (InvalidOperation, ValueError):
+            return None
+
+    def _format_supplier_decimal(value: Decimal) -> str:
+        rounded = value.quantize(Decimal("0.01"))
+        return f"{rounded:.2f}"
+
+    def _format_supplier_quantity(value: Decimal) -> str:
+        rounded = value.quantize(Decimal("0.001"))
+        if rounded == rounded.to_integral_value():
+            return str(int(rounded))
+        return f"{rounded:.3f}".rstrip("0").rstrip(".")
+
+    def _clean_supplier_vat_rate(value: object, default: str = "21") -> str:
+        rate = _parse_supplier_decimal(value)
+        if rate is None or rate < 0 or rate > 100:
+            return default
+        rounded = rate.quantize(Decimal("0.01"))
+        if rounded == rounded.to_integral_value():
+            return str(int(rounded))
+        return f"{rounded:.2f}".rstrip("0").rstrip(".")
+
     @dataclass
     class SupplierSelectionState:
         selections: Dict[str, str]
@@ -3756,6 +3798,7 @@ def start_gui():
         deliveries: Dict[str, str]
         exports: Dict[str, bool] = field(default_factory=dict)
         en1090: Dict[str, bool] = field(default_factory=dict)
+        vat_rates: Dict[str, str] = field(default_factory=dict)
         pricing: Dict[str, Dict[str, object]] = field(default_factory=dict)
         remember: bool = True
 
@@ -3781,6 +3824,10 @@ def start_gui():
                 deliveries={_to_str(k): _to_str(v) for k, v in _dict("deliveries").items()},
                 exports={_to_str(k): bool(v) for k, v in _dict("exports").items()},
                 en1090={_to_str(k): bool(v) for k, v in _dict("en1090").items()},
+                vat_rates={
+                    _to_str(k): _clean_supplier_vat_rate(v)
+                    for k, v in _dict("vat_rates").items()
+                },
                 pricing=pricing,
                 remember=bool(data.get("remember", True)) if isinstance(data, Mapping) else True,
             )
@@ -3905,6 +3952,7 @@ def start_gui():
             self.remark_vars: Dict[str, tk.StringVar] = {}
             self.price_unit_vars: Dict[str, tk.StringVar] = {}
             self.price_total_vars: Dict[str, tk.StringVar] = {}
+            self.vat_vars: Dict[str, tk.StringVar] = {}
             self.line_pricing: Dict[str, Dict[str, Dict[str, str]]] = {}
             self.delivery_vars: Dict[str, tk.StringVar] = {}
             self.group_combos: Dict[str, ttk.Combobox] = {}
@@ -3922,6 +3970,8 @@ def start_gui():
             self._export_log_state_by_key: Dict[str, Dict[str, object]] = {}
             self._loaded_export_log_path = ""
             self._loaded_export_log_export_info: Dict[str, object] = {}
+            self._price_link_in_progress: set[str] = set()
+            self._price_auto_fields: Dict[str, str] = {}
             self.finish_entries = finishes
             self._row_widget_maps: List[Dict[str, tk.Misc]] = []
             self._row_widgets_by_key: Dict[str, Dict[str, tk.Misc]] = {}
@@ -4325,6 +4375,7 @@ def start_gui():
                 ("doc_entry", "Nr.", 12, None),
                 ("unit_price_entry", "Prijs/st.", 12, None),
                 ("total_price_entry", "Totaalprijs", 12, None),
+                ("vat_combo", "BTW %", 7, None),
                 ("line_price_button", "Regelprijzen", 10, None),
                 ("remark_entry", "Opmerking", 24, None),
                 ("delivery_combo", "Leveradres", 50, None),
@@ -4489,7 +4540,7 @@ def start_gui():
                 unit_price_entry = tk.Entry(row, textvariable=unit_price_var, width=12)
                 _HelpTooltip(
                     unit_price_entry,
-                    "Eenheidsprijs uit de offerte. Wordt bewaard in de exportlog en op de bon getoond.",
+                    "Eenheidsprijs excl. BTW uit de offerte. Als je dit invult, wordt de totaalprijs automatisch berekend.",
                 )
 
                 total_price_var = tk.StringVar()
@@ -4497,7 +4548,21 @@ def start_gui():
                 total_price_entry = tk.Entry(row, textvariable=total_price_var, width=12)
                 _HelpTooltip(
                     total_price_entry,
-                    "Totaalprijs voor deze bon/selectie. Handig wanneer de leverancier een globale prijs aanbiedt.",
+                    "Totaalprijs excl. BTW voor deze bon/selectie. Als je dit invult, wordt de prijs/st. automatisch berekend.",
+                )
+
+                vat_var = tk.StringVar(value="21")
+                self.vat_vars[sel_key] = vat_var
+                vat_combo = ttk.Combobox(
+                    row,
+                    textvariable=vat_var,
+                    values=("0", "6", "12", "21"),
+                    state="normal",
+                    width=7,
+                )
+                _HelpTooltip(
+                    vat_combo,
+                    "BTW-percentage voor deze bon. Standaard 21%; pas dit aan voor 0%, 6% of 12% indien nodig.",
                 )
 
                 line_price_button = tk.Button(
@@ -4549,12 +4614,21 @@ def start_gui():
                     doc_num_var,
                     unit_price_var,
                     total_price_var,
+                    vat_var,
                     remark_var,
                     dvar,
                     export_var,
                     en1090_var,
                 ):
                     trace_var.trace_add("write", lambda *_args: self._sync_grouped_rows())
+                unit_price_var.trace_add(
+                    "write",
+                    lambda *_args, key=sel_key: self._on_price_field_change(key, "unit"),
+                )
+                total_price_var.trace_add(
+                    "write",
+                    lambda *_args, key=sel_key: self._on_price_field_change(key, "total"),
+                )
 
                 row_widgets = {
                     "row": row,
@@ -4568,6 +4642,7 @@ def start_gui():
                     "doc_entry": doc_entry,
                     "unit_price_entry": unit_price_entry,
                     "total_price_entry": total_price_entry,
+                    "vat_combo": vat_combo,
                     "line_price_button": line_price_button,
                     "remark_entry": remark_entry,
                     "delivery_combo": dcombo,
@@ -4588,6 +4663,7 @@ def start_gui():
                         "doc_entry": doc_entry,
                         "unit_price_entry": unit_price_entry,
                         "total_price_entry": total_price_entry,
+                        "vat_combo": vat_combo,
                         "line_price_button": line_price_button,
                         "remark_entry": remark_entry,
                         "delivery_combo": dcombo,
@@ -4875,6 +4951,86 @@ def start_gui():
                 derived.append(item)
             return derived
 
+        def _pricing_quantity_for_key(self, sel_key: str) -> Optional[Decimal]:
+            total = Decimal("0")
+            seen_any = False
+            for item in self._selection_items_for_key(sel_key):
+                qty = _parse_supplier_decimal(
+                    item.get("quantity")
+                    or item.get("Aantal")
+                    or item.get("St.")
+                    or ""
+                )
+                if qty is None:
+                    continue
+                total += qty
+                seen_any = True
+            if not seen_any or total == 0:
+                return None
+            return total
+
+        def _on_price_field_change(
+            self,
+            sel_key: str,
+            source: str,
+            *,
+            force: bool = True,
+        ) -> None:
+            if sel_key in self._price_link_in_progress:
+                return
+            source = "total" if source == "total" else "unit"
+            if self._price_auto_fields.get(sel_key) == source:
+                self._price_auto_fields.pop(sel_key, None)
+
+            quantity = self._pricing_quantity_for_key(sel_key)
+            if quantity is None:
+                return
+
+            unit_var = self.price_unit_vars.get(sel_key)
+            total_var = self.price_total_vars.get(sel_key)
+            if unit_var is None or total_var is None:
+                return
+
+            source_var = unit_var if source == "unit" else total_var
+            target = "total" if source == "unit" else "unit"
+            target_var = total_var if target == "total" else unit_var
+            source_text = source_var.get().strip()
+            target_text = target_var.get().strip()
+            target_is_auto = self._price_auto_fields.get(sel_key) == target
+
+            if not source_text:
+                if target_is_auto and target_text:
+                    self._price_link_in_progress.add(sel_key)
+                    try:
+                        target_var.set("")
+                    finally:
+                        self._price_link_in_progress.discard(sel_key)
+                    self._price_auto_fields.pop(sel_key, None)
+                return
+
+            source_value = _parse_supplier_decimal(source_text)
+            if source_value is None:
+                return
+            if target_text and not target_is_auto and not force:
+                return
+
+            if source == "unit":
+                calculated = source_value * quantity
+            else:
+                calculated = source_value / quantity
+            calculated_text = _format_supplier_decimal(calculated)
+
+            if target_text == calculated_text:
+                self._price_auto_fields[sel_key] = target
+                return
+
+            self._price_link_in_progress.add(sel_key)
+            try:
+                target_var.set(calculated_text)
+            finally:
+                self._price_link_in_progress.discard(sel_key)
+            self._price_auto_fields[sel_key] = target
+
         def _open_line_pricing_dialog(self, sel_key: str) -> None:
             items = self._selection_items_for_key(sel_key)
             if not items:
@@ -4947,6 +5103,69 @@ def start_gui():
 
             existing = self.line_pricing.get(sel_key, {})
             vars_by_key: Dict[str, Tuple[tk.StringVar, tk.StringVar]] = {}
+            line_auto_fields: Dict[str, str] = {}
+            line_link_in_progress: set[str] = set()
+
+            def _on_line_price_change(
+                item_key: str,
+                source: str,
+                quantity_text: str,
+                *,
+                force: bool = True,
+            ) -> None:
+                if item_key in line_link_in_progress:
+                    return
+                source = "total" if source == "total" else "unit"
+                if line_auto_fields.get(item_key) == source:
+                    line_auto_fields.pop(item_key, None)
+
+                quantity_value = _parse_supplier_decimal(quantity_text)
+                if quantity_value is None or quantity_value == 0:
+                    return
+                pair = vars_by_key.get(item_key)
+                if pair is None:
+                    return
+                unit_var, total_var = pair
+                source_var = unit_var if source == "unit" else total_var
+                target = "total" if source == "unit" else "unit"
+                target_var = total_var if target == "total" else unit_var
+                source_text = source_var.get().strip()
+                target_text = target_var.get().strip()
+                target_is_auto = line_auto_fields.get(item_key) == target
+
+                if not source_text:
+                    if target_is_auto and target_text:
+                        line_link_in_progress.add(item_key)
+                        try:
+                            target_var.set("")
+                        finally:
+                            line_link_in_progress.discard(item_key)
+                        line_auto_fields.pop(item_key, None)
+                    return
+
+                source_value = _parse_supplier_decimal(source_text)
+                if source_value is None:
+                    return
+                if target_text and not target_is_auto and not force:
+                    return
+
+                if source == "unit":
+                    calculated = source_value * quantity_value
+                else:
+                    calculated = source_value / quantity_value
+                calculated_text = _format_supplier_decimal(calculated)
+
+                if target_text == calculated_text:
+                    line_auto_fields[item_key] = target
+                    return
+
+                line_link_in_progress.add(item_key)
+                try:
+                    target_var.set(calculated_text)
+                finally:
+                    line_link_in_progress.discard(item_key)
+                line_auto_fields[item_key] = target
+
             default_font = tkfont.nametofont("TkDefaultFont")
             for row_index, item in enumerate(items, start=1):
                 item_key = _to_str(item.get("key")).strip()
@@ -5006,6 +5225,22 @@ def start_gui():
                     font=default_font,
                 )
                 total_entry.grid(row=row_index, column=3, sticky="ew", pady=2)
+                unit_var.trace_add(
+                    "write",
+                    lambda *_args, key=item_key, qty=quantity: _on_line_price_change(
+                        key, "unit", qty
+                    ),
+                )
+                total_var.trace_add(
+                    "write",
+                    lambda *_args, key=item_key, qty=quantity: _on_line_price_change(
+                        key, "total", qty
+                    ),
+                )
+                if unit_var.get().strip():
+                    _on_line_price_change(item_key, "unit", quantity, force=False)
+                elif total_var.get().strip():
+                    _on_line_price_change(item_key, "total", quantity, force=False)
 
             btns = tk.Frame(win)
             btns.grid(row=2, column=0, sticky="e", padx=12, pady=(0, 12))
@@ -5507,6 +5742,7 @@ def start_gui():
                 ("exports", "Export aan/uit", "Welke regels worden mee geexporteerd."),
                 ("en1090", "EN 1090", "EN 1090-vlaggen."),
                 ("pricing", "Prijzen", "Bonprijzen en regelprijzen."),
+                ("vat", "BTW", "BTW-percentages per bon."),
             ]
             vars_by_section: Dict[str, tk.BooleanVar] = {}
             rows_frame = tk.Frame(win)
@@ -5528,7 +5764,7 @@ def start_gui():
 
             def _only_pricing() -> None:
                 for section, var in vars_by_section.items():
-                    var.set(section == "pricing")
+                    var.set(section in {"pricing", "vat"})
 
             def _apply() -> None:
                 selected = {
@@ -5770,6 +6006,10 @@ def start_gui():
                 key: var.get() for key, var in self.delivery_vars.items()
             }
             en1090 = {key: bool(var.get()) for key, var in self.en1090_vars.items()}
+            vat_rates = {
+                key: _clean_supplier_vat_rate(var.get())
+                for key, var in self.vat_vars.items()
+            }
             pricing: Dict[str, Dict[str, object]] = {}
             all_price_keys = (
                 set(self.price_unit_vars)
@@ -5802,6 +6042,7 @@ def start_gui():
                 remarks=remarks,
                 deliveries=deliveries,
                 en1090=en1090,
+                vat_rates=vat_rates,
                 pricing=pricing,
                 remember=remember,
             )
@@ -5853,15 +6094,32 @@ def start_gui():
                     except tk.TclError:
                         pass
 
+            for sel_key, value in getattr(state, "vat_rates", {}).items():
+                var = self.vat_vars.get(sel_key)
+                if var is not None:
+                    try:
+                        var.set(_clean_supplier_vat_rate(value))
+                    except tk.TclError:
+                        pass
+
             for sel_key, price_info in getattr(state, "pricing", {}).items():
                 if not isinstance(price_info, Mapping):
                     continue
                 unit_var = self.price_unit_vars.get(sel_key)
-                if unit_var is not None:
-                    unit_var.set(_to_str(price_info.get("unit_price")).strip())
                 total_var = self.price_total_vars.get(sel_key)
-                if total_var is not None:
-                    total_var.set(_to_str(price_info.get("total_price")).strip())
+                self._price_link_in_progress.add(sel_key)
+                try:
+                    if unit_var is not None:
+                        unit_var.set(_to_str(price_info.get("unit_price")).strip())
+                    if total_var is not None:
+                        total_var.set(_to_str(price_info.get("total_price")).strip())
+                finally:
+                    self._price_link_in_progress.discard(sel_key)
+                self._price_auto_fields.pop(sel_key, None)
+                if unit_var is not None and unit_var.get().strip():
+                    self._on_price_field_change(sel_key, "unit", force=False)
+                elif total_var is not None and total_var.get().strip():
+                    self._on_price_field_change(sel_key, "total", force=False)
                 items = _clean_supplier_pricing_value(price_info).get("items")
                 if isinstance(items, Mapping) and items:
                     self.line_pricing[sel_key] = {
@@ -6413,6 +6671,10 @@ def start_gui():
             if total_price_entry is not None:
                 total_price_entry.configure(state="disabled" if grouped else "normal")
 
+            vat_combo = widgets.get("vat_combo")
+            if vat_combo is not None:
+                vat_combo.configure(state="disabled" if grouped else "normal")
+
             line_price_button = widgets.get("line_price_button")
             if line_price_button is not None:
                 has_items = bool(self._selection_items_for_key(sel_key))
@@ -6445,17 +6707,22 @@ def start_gui():
             if follower_combo is not None and master_combo is not None:
                 self._set_combo_value(follower_combo, master_combo.get())
 
-            for source_map in (
-                self.doc_vars,
-                self.doc_num_vars,
-                self.price_unit_vars,
-                self.price_total_vars,
-                self.remark_vars,
-            ):
-                follower_var = source_map.get(follower_key)
-                master_var = source_map.get(master_key)
-                if follower_var is not None and master_var is not None:
-                    follower_var.set(master_var.get())
+            self._price_link_in_progress.add(follower_key)
+            try:
+                for source_map in (
+                    self.doc_vars,
+                    self.doc_num_vars,
+                    self.price_unit_vars,
+                    self.price_total_vars,
+                    self.vat_vars,
+                    self.remark_vars,
+                ):
+                    follower_var = source_map.get(follower_key)
+                    master_var = source_map.get(master_key)
+                    if follower_var is not None and master_var is not None:
+                        follower_var.set(master_var.get())
+            finally:
+                self._price_link_in_progress.discard(follower_key)
 
             master_line_pricing = self.line_pricing.get(master_key)
             if master_line_pricing:
@@ -9857,7 +10124,22 @@ def start_gui():
                     item,
                     context_kind=context_kind,
                 )
-                if not item_key or item_key in selection_item_keys[sel_key]:
+                if not item_key:
+                    return
+                if item_key in selection_item_keys[sel_key]:
+                    qty_to_add = _parse_supplier_decimal(item.get("Aantal", ""))
+                    if qty_to_add is not None:
+                        for existing_item in selection_items[sel_key]:
+                            if _to_str(existing_item.get("key")).strip() != item_key:
+                                continue
+                            current_qty = _parse_supplier_decimal(
+                                existing_item.get("quantity")
+                            )
+                            if current_qty is not None:
+                                existing_item["quantity"] = _format_supplier_quantity(
+                                    current_qty + qty_to_add
+                                )
+                            break
                     return
                 part_number = _to_str(item.get("PartNumber")).strip()
                 description = _to_str(item.get("Description")).strip()
@@ -10055,6 +10337,9 @@ def start_gui():
                 production_pricing_map: Dict[str, Dict[str, object]] = {}
                 finish_pricing_map: Dict[str, Dict[str, object]] = {}
                 opticutter_pricing_map: Dict[str, Dict[str, object]] = {}
+                production_vat_rate_map: Dict[str, str] = {}
+                finish_vat_rate_map: Dict[str, str] = {}
+                opticutter_vat_rate_map: Dict[str, str] = {}
                 export_flags = export_flags or {}
                 prod_export_filter: Dict[str, bool] = {}
                 finish_export_filter: Dict[str, bool] = {}
@@ -10094,6 +10379,19 @@ def start_gui():
                         opticutter_pricing_map[identifier] = clean_value
                     else:
                         production_pricing_map[identifier] = clean_value
+
+                vat_rate_map_raw = (
+                    getattr(export_state_snapshot, "vat_rates", {}) if export_state_snapshot else {}
+                )
+                for key, value in vat_rate_map_raw.items():
+                    clean_rate = _clean_supplier_vat_rate(value)
+                    kind, identifier = parse_selection_key(key)
+                    if kind == "finish":
+                        finish_vat_rate_map[identifier] = clean_rate
+                    elif kind == "opticutter":
+                        opticutter_vat_rate_map[identifier] = clean_rate
+                    else:
+                        production_vat_rate_map[identifier] = clean_rate
 
                 doc_type_map: Dict[str, str] = {}
                 finish_doc_type_map: Dict[str, str] = {}
@@ -10327,6 +10625,9 @@ def start_gui():
                             pricing_map=production_pricing_map or None,
                             finish_pricing_map=finish_pricing_map or None,
                             opticutter_pricing_map=opticutter_pricing_map or None,
+                            vat_rate_map=production_vat_rate_map or None,
+                            finish_vat_rate_map=finish_vat_rate_map or None,
+                            opticutter_vat_rate_map=opticutter_vat_rate_map or None,
                             production_export_filter=(
                                 prod_export_filter if prod_export_filter else None
                             ),
@@ -11944,6 +12245,9 @@ def start_gui():
                 production_pricing_map: Dict[str, Dict[str, object]] = {}
                 finish_pricing_map: Dict[str, Dict[str, object]] = {}
                 opticutter_pricing_map: Dict[str, Dict[str, object]] = {}
+                production_vat_rate_map: Dict[str, str] = {}
+                finish_vat_rate_map: Dict[str, str] = {}
+                opticutter_vat_rate_map: Dict[str, str] = {}
                 export_flags = export_flags or {}
                 prod_export_filter: Dict[str, bool] = {}
                 finish_export_filter: Dict[str, bool] = {}
@@ -11983,6 +12287,19 @@ def start_gui():
                         opticutter_pricing_map[identifier] = clean_value
                     else:
                         production_pricing_map[identifier] = clean_value
+
+                vat_rate_map_raw = (
+                    getattr(export_state_snapshot, "vat_rates", {}) if export_state_snapshot else {}
+                )
+                for key, value in vat_rate_map_raw.items():
+                    clean_rate = _clean_supplier_vat_rate(value)
+                    kind, identifier = parse_selection_key(key)
+                    if kind == "finish":
+                        finish_vat_rate_map[identifier] = clean_rate
+                    elif kind == "opticutter":
+                        opticutter_vat_rate_map[identifier] = clean_rate
+                    else:
+                        production_vat_rate_map[identifier] = clean_rate
 
                 doc_type_map: Dict[str, str] = {}
                 finish_doc_type_map: Dict[str, str] = {}
@@ -12216,6 +12533,9 @@ def start_gui():
                             pricing_map=production_pricing_map or None,
                             finish_pricing_map=finish_pricing_map or None,
                             opticutter_pricing_map=opticutter_pricing_map or None,
+                            vat_rate_map=production_vat_rate_map or None,
+                            finish_vat_rate_map=finish_vat_rate_map or None,
+                            opticutter_vat_rate_map=opticutter_vat_rate_map or None,
                             production_export_filter=(
                                 prod_export_filter if prod_export_filter else None
                             ),

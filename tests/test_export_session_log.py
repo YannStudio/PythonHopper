@@ -23,6 +23,7 @@ def test_export_session_log_roundtrip(tmp_path):
         "selections": {"production::Cutting": "MCB"},
         "doc_types": {"production::Cutting": "Offerteaanvraag"},
         "doc_numbers": {"production::Cutting": "OFF-100"},
+        "vat_rates": {"production::Cutting": "21"},
         "pricing": {
             "production::Cutting": {
                 "unit_price": "12.50",
@@ -78,6 +79,7 @@ def test_export_session_log_roundtrip(tmp_path):
     assert loaded["project"]["number"] == "20250165"
     assert loaded["order_state"]["selections"]["production::Cutting"] == "MCB"
     assert loaded["order_state"]["pricing"]["production::Cutting"]["unit_price"] == "12.50"
+    assert loaded["order_state"]["vat_rates"]["production::Cutting"] == "21"
     assert (
         loaded["order_state"]["pricing"]["production::Cutting"]["items"]["part|A"][
             "total_price"
@@ -126,25 +128,29 @@ def test_merge_order_state_sections_keeps_unselected_current_values():
         "selections": {"production::Cutting": "Current Supplier"},
         "doc_types": {"production::Cutting": "Bestelbon"},
         "doc_numbers": {"production::Cutting": "BB-1"},
+        "vat_rates": {"production::Cutting": "21"},
         "pricing": {"production::Cutting": {"unit_price": "1"}},
     }
     incoming = {
         "selections": {"production::Cutting": "Log Supplier"},
         "doc_types": {"production::Cutting": "Offerteaanvraag"},
         "doc_numbers": {"production::Cutting": "OFF-2"},
+        "vat_rates": {"production::Cutting": "6"},
         "pricing": {"production::Cutting": {"unit_price": "5"}},
     }
 
-    merged = merge_order_state_sections(current, incoming, {"documents", "pricing"})
+    merged = merge_order_state_sections(current, incoming, {"documents", "pricing", "vat"})
 
-    assert state_keys_for_import_sections({"documents", "pricing"}) == {
+    assert state_keys_for_import_sections({"documents", "pricing", "vat"}) == {
         "doc_types",
         "doc_numbers",
         "pricing",
+        "vat_rates",
     }
     assert merged["selections"]["production::Cutting"] == "Current Supplier"
     assert merged["doc_types"]["production::Cutting"] == "Offerteaanvraag"
     assert merged["doc_numbers"]["production::Cutting"] == "OFF-2"
+    assert merged["vat_rates"]["production::Cutting"] == "6"
     assert merged["pricing"]["production::Cutting"]["unit_price"] == "5"
 
 
@@ -213,6 +219,23 @@ def test_apply_order_pricing_uses_line_prices_before_fallback():
     assert items[0]["Totaalprijs"] == "25.00"
     assert items[1]["Eenheidsprijs"] == "10"
     assert items[1]["Totaalprijs"] == "99"
+
+
+def test_apply_order_pricing_adds_vat_summary_rows():
+    items, layout = _apply_order_pricing(
+        [{"PartNumber": "A", "Description": "Plaat", "Aantal": 2}],
+        {"unit_price": "10"},
+        context_kind="Productie",
+        vat_rate="21",
+    )
+
+    assert layout is not None
+    assert items[-3]["Description"] == "Subtotaal excl. BTW"
+    assert items[-3]["Totaalprijs"] == "20.00"
+    assert items[-2]["Description"] == "BTW 21%"
+    assert items[-2]["Totaalprijs"] == "4.20"
+    assert items[-1]["Description"] == "Totaal incl. BTW"
+    assert items[-1]["Totaalprijs"] == "24.20"
 
 
 def test_export_log_compatibility_detects_bom_and_selection_differences():

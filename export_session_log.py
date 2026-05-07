@@ -22,6 +22,7 @@ _STATE_KEYS = (
     "deliveries",
     "exports",
     "en1090",
+    "vat_rates",
     "pricing",
 )
 
@@ -33,6 +34,7 @@ _IMPORT_SECTION_TO_STATE_KEYS = {
     "deliveries": ("deliveries",),
     "exports": ("exports",),
     "en1090": ("en1090",),
+    "vat": ("vat_rates",),
     "pricing": ("pricing",),
 }
 

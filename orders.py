@@ -391,6 +391,68 @@ def _format_price_decimal(value: Decimal | None) -> str:
     return f"{rounded:.2f}"
 
 
+def _clean_vat_rate_text(value: object) -> str:
+    text = _clean_price_text(value).replace("%", "").strip()
+    if not text:
+        return ""
+    rate = _price_decimal(text)
+    if rate is None or rate < 0 or rate > 100:
+        return ""
+    rounded = rate.quantize(Decimal("0.01"))
+    if rounded == rounded.to_integral_value():
+        return str(int(rounded))
+    return f"{rounded:.2f}".rstrip("0").rstrip(".")
+
+
+def _price_summary_label_key(is_raw: bool) -> str:
+    return "Profiel" if is_raw else "Description"
+
+
+def _blank_price_summary_row(
+    template_items: Sequence[Mapping[str, object]],
+    *,
+    is_raw: bool,
+    label: str,
+    total: Decimal,
+) -> Dict[str, object]:
+    keys = template_items[0].keys() if template_items else []
+    row = {key: "" for key in keys}
+    row[_price_summary_label_key(is_raw)] = label
+    row[_PRICE_UNIT_KEY] = ""
+    row[_PRICE_TOTAL_KEY] = _format_price_decimal(total)
+    return row
+
+
+def _pricing_subtotal(
+    items: Sequence[Mapping[str, object]],
+    *,
+    is_raw: bool,
+) -> tuple[Decimal | None, bool]:
+    label_key = _price_summary_label_key(is_raw)
+    line_sum = Decimal("0")
+    has_line_total = False
+    offered_total: Decimal | None = None
+    for item in items:
+        label = _to_str(item.get(label_key)).strip().lower()
+        total = _price_decimal(item.get(_PRICE_TOTAL_KEY))
+        if total is None:
+            continue
+        if label == "totaal aangeboden":
+            offered_total = total
+        elif label not in {
+            "subtotaal excl. btw",
+            "btw",
+            "totaal incl. btw",
+        } and not label.startswith("btw "):
+            line_sum += total
+            has_line_total = True
+    if offered_total is not None:
+        return offered_total, True
+    if has_line_total:
+        return line_sum, False
+    return None, False
+
+
 def _clean_line_pricing_items(
     pricing: Mapping[str, object] | None,
 ) -> Dict[str, Dict[str, str]]:
@@ -505,6 +567,7 @@ def _apply_order_pricing(
     pricing: Mapping[str, object] | None,
     *,
     context_kind: str,
+    vat_rate: object = "",
 ) -> tuple[List[Dict[str, object]], Optional[List[Dict[str, object]]]]:
     if not _pricing_has_values(pricing):
         return items, None
@@ -550,6 +613,38 @@ def _apply_order_pricing(
             total_row["Description"] = "Totaal aangeboden"
         total_row[_PRICE_TOTAL_KEY] = total_price_text
         priced_items.append(total_row)
+
+    vat_rate_text = _clean_vat_rate_text(vat_rate)
+    if vat_rate_text:
+        subtotal, has_offered_total = _pricing_subtotal(priced_items, is_raw=is_raw)
+        vat_decimal = _price_decimal(vat_rate_text)
+        if subtotal is not None and vat_decimal is not None:
+            if not has_offered_total:
+                priced_items.append(
+                    _blank_price_summary_row(
+                        priced_items,
+                        is_raw=is_raw,
+                        label="Subtotaal excl. BTW",
+                        total=subtotal,
+                    )
+                )
+            vat_amount = subtotal * vat_decimal / Decimal("100")
+            priced_items.append(
+                _blank_price_summary_row(
+                    priced_items,
+                    is_raw=is_raw,
+                    label=f"BTW {vat_rate_text}%",
+                    total=vat_amount,
+                )
+            )
+            priced_items.append(
+                _blank_price_summary_row(
+                    priced_items,
+                    is_raw=is_raw,
+                    label="Totaal incl. BTW",
+                    total=subtotal + vat_amount,
+                )
+            )
 
     for item in priced_items:
         item.setdefault(_PRICE_UNIT_KEY, "")
@@ -3322,6 +3417,9 @@ def copy_per_production_and_orders(
     pricing_map: Mapping[str, Mapping[str, object]] | None = None,
     finish_pricing_map: Mapping[str, Mapping[str, object]] | None = None,
     opticutter_pricing_map: Mapping[str, Mapping[str, object]] | None = None,
+    vat_rate_map: Mapping[str, object] | None = None,
+    finish_vat_rate_map: Mapping[str, object] | None = None,
+    opticutter_vat_rate_map: Mapping[str, object] | None = None,
     production_export_filter: Mapping[str, bool] | None = None,
     finish_export_filter: Mapping[str, bool] | None = None,
     opticutter_export_filter: Mapping[str, bool] | None = None,
@@ -3438,6 +3536,9 @@ def copy_per_production_and_orders(
     pricing_map = pricing_map or {}
     finish_pricing_map = finish_pricing_map or {}
     opticutter_pricing_map = opticutter_pricing_map or {}
+    vat_rate_map = vat_rate_map or {}
+    finish_vat_rate_map = finish_vat_rate_map or {}
+    opticutter_vat_rate_map = opticutter_vat_rate_map or {}
     remarks_clean: Dict[str, str] = {}
     for key, value in (remarks_map or {}).items():
         text = _to_str(value).strip()
@@ -3796,6 +3897,7 @@ def copy_per_production_and_orders(
             items,
             pricing_map.get(prod),
             context_kind="Productie",
+            vat_rate=vat_rate_map.get(prod, ""),
         )
         order_candidates.append(
             OrderDocumentCandidate(
@@ -3970,6 +4072,7 @@ def copy_per_production_and_orders(
                     opticutter_order_items,
                     opticutter_pricing_map.get(prod),
                     context_kind="Brutemateriaal",
+                    vat_rate=opticutter_vat_rate_map.get(prod, ""),
                 )
 
                 opticutter_document_base = build_document_export_basename(
@@ -4273,6 +4376,7 @@ def copy_per_production_and_orders(
                 items,
                 finish_pricing_map.get(finish_key),
                 context_kind="Afwerking",
+                vat_rate=finish_vat_rate_map.get(finish_key, ""),
             )
             order_candidates.append(
                 OrderDocumentCandidate(
