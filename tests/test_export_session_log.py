@@ -9,6 +9,7 @@ from export_session_log import (
     find_export_session_logs,
     format_export_log_compatibility_message,
     load_export_session_log,
+    resolve_export_document_path,
     summarize_export_log_compatibility,
     write_export_session_log,
 )
@@ -213,3 +214,13 @@ def test_export_log_compatibility_detects_bom_and_selection_differences():
     assert summary["new_keys"] == ["production::Roof"]
     assert "Productie: Cutting" in message
     assert "Productie: Roof" in message
+
+
+def test_resolve_export_document_path_stays_inside_export_dir(tmp_path):
+    log_path = tmp_path / "bundle" / EXPORT_SESSION_LOG_FILENAME
+    log_path.parent.mkdir()
+    inside = resolve_export_document_path(log_path, {"path": "Cutting/order.pdf"})
+    outside = resolve_export_document_path(log_path, {"path": "../outside.pdf"})
+
+    assert inside == str(log_path.parent / "Cutting" / "order.pdf")
+    assert outside == ""

@@ -99,6 +99,30 @@ def normalize_export_info(value: Any) -> Dict[str, Any]:
     }
 
 
+def resolve_export_document_path(
+    export_log_path: str | os.PathLike[str],
+    record: Mapping[str, Any],
+) -> str:
+    """Resolve a generated-document record path relative to its exportlog."""
+
+    if not isinstance(record, Mapping):
+        return ""
+    raw_path = _to_str(record.get("path")).strip()
+    if not raw_path:
+        return ""
+    candidate = Path(raw_path)
+    if candidate.is_absolute():
+        return str(candidate)
+
+    base_dir = Path(export_log_path).resolve().parent
+    resolved = (base_dir / raw_path).resolve()
+    try:
+        resolved.relative_to(base_dir)
+    except ValueError:
+        return ""
+    return str(resolved)
+
+
 def normalize_state_dict(value: Any) -> Dict[str, Any]:
     """Return a resilient plain-dict representation of a supplier selection state."""
 

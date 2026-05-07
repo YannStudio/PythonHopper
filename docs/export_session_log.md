@@ -35,6 +35,7 @@ Op de bestelbonpagina zijn twee acties voorzien:
 
 - `Exportlog laden`: kies handmatig een JSON-logbestand.
 - `Laatste exportlog`: zoekt de nieuwste `Filehopper-exportlog.json` onder de ingestelde exportbestemming.
+- `Vorige docs`: opent de exportmap of een document uit de laatst geladen exportlog.
 
 Als het logbestand `Offerteaanvraag` bevat, vraagt Filehopper of die moeten worden omgezet naar `Bestelbon`. Bij die omzetting worden `OFF-...` documentnummers leeggemaakt, zodat er geen offertenummer als bestelbonnummer meegaat.
 
@@ -65,7 +66,9 @@ Na het laden van een exportlog krijgen toegepaste regels een `[Log]`-markering o
 
 `export.generated_documents` bevat de documenten die Filehopper tijdens de export heeft aangemaakt, met relatieve paden binnen de bundelmap. Orderdocumenten bevatten waar mogelijk ook selectiekey, context, documenttype, documentnummer en leverancier. Daardoor blijft achteraf zichtbaar welke PDF/XLSX-bestanden bij de opgeslagen bestelboninstellingen hoorden.
 
+Na het laden van een exportlog kan `Vorige docs` deze lijst tonen. Dubbelklik op een rij of gebruik `Open document` om het vorige bestand rechtstreeks te openen.
+
 ## Volgende uitbreidingen
 
 - Fijnere merge-opties per veld wanneer een exportlog slechts gedeeltelijk mag worden toegepast.
-- Mogelijkheid om vanuit de exportlog snel het vorige exportdocument te openen.
+- Zoek/filter in de vorige-documentenlijst wanneer grote exports veel documenten bevatten.

@@ -86,6 +86,7 @@ from export_session_log import (
     find_export_session_logs,
     format_export_log_compatibility_message,
     load_export_session_log,
+    resolve_export_document_path,
     summarize_export_log_compatibility,
     write_export_session_log,
 )
@@ -3917,6 +3918,8 @@ def start_gui():
             self._last_preset_status = ""
             self._preset_state_by_key: Dict[str, Dict[str, object]] = {}
             self._export_log_state_by_key: Dict[str, Dict[str, object]] = {}
+            self._loaded_export_log_path = ""
+            self._loaded_export_log_export_info: Dict[str, object] = {}
             self.finish_entries = finishes
             self._row_widget_maps: List[Dict[str, tk.Misc]] = []
             self._row_widgets_by_key: Dict[str, Dict[str, tk.Misc]] = {}
@@ -4254,6 +4257,17 @@ def start_gui():
                 text="Laatste exportlog",
                 command=self._load_latest_export_log,
             ).pack(side="left", padx=(6, 0))
+            self.export_log_documents_button = tk.Button(
+                export_toggle_row,
+                text="Vorige docs",
+                command=self._open_loaded_export_documents_dialog,
+                state="disabled",
+            )
+            self.export_log_documents_button.pack(side="left", padx=(6, 0))
+            _HelpTooltip(
+                self.export_log_documents_button,
+                "Open de vorige exportmap of documenten uit de laatst geladen exportlog.",
+            )
             # Option to include brutomateriaal note on generated PDFs
             self.include_bruto_note_var = tk.BooleanVar(value=True)
             tk.Checkbutton(
@@ -5302,6 +5316,160 @@ def start_gui():
                     keys.update(_to_str(key) for key in value.keys() if _to_str(key).strip())
             return keys
 
+        def _open_filesystem_path(self, path: str, *, parent=None) -> None:
+            clean_path = _to_str(path).strip()
+            if not clean_path:
+                return
+            if not os.path.exists(clean_path):
+                messagebox.showwarning(
+                    "Niet gevonden",
+                    f"Kan dit pad niet vinden:\n{clean_path}",
+                    parent=parent or self,
+                )
+                return
+            try:
+                if sys.platform.startswith("win"):
+                    os.startfile(clean_path)
+                elif sys.platform == "darwin":
+                    subprocess.run(["open", clean_path], check=False)
+                else:
+                    subprocess.run(["xdg-open", clean_path], check=False)
+            except Exception as exc:
+                messagebox.showwarning(
+                    "Openen mislukt",
+                    f"Kon dit pad niet openen:\n{exc}",
+                    parent=parent or self,
+                )
+
+        def _open_loaded_export_documents_dialog(self) -> None:
+            log_path = _to_str(getattr(self, "_loaded_export_log_path", "")).strip()
+            if not log_path:
+                messagebox.showinfo(
+                    "Vorige documenten",
+                    "Laad eerst een exportlog.",
+                    parent=self,
+                )
+                return
+            export_dir = os.path.dirname(log_path)
+            export_info = getattr(self, "_loaded_export_log_export_info", {}) or {}
+            documents = export_info.get("generated_documents", [])
+            documents = [doc for doc in documents if isinstance(doc, Mapping)]
+            if not documents:
+                if messagebox.askyesno(
+                    "Vorige documenten",
+                    "Deze exportlog bevat geen documentlijst. Wil je de exportmap openen?",
+                    parent=self,
+                ):
+                    self._open_filesystem_path(export_dir, parent=self)
+                return
+
+            win = tk.Toplevel(self)
+            win.title("Vorige exportdocumenten")
+            win.transient(self)
+            win.geometry("980x460")
+            win.grid_columnconfigure(0, weight=1)
+            win.grid_rowconfigure(0, weight=1)
+
+            columns = ("type", "context", "document", "leverancier", "pad")
+            tree = ttk.Treeview(win, columns=columns, show="headings", selectmode="browse")
+            headings = {
+                "type": "Type",
+                "context": "Context",
+                "document": "Document",
+                "leverancier": "Leverancier",
+                "pad": "Pad",
+            }
+            widths = {
+                "type": 90,
+                "context": 180,
+                "document": 190,
+                "leverancier": 150,
+                "pad": 330,
+            }
+            for column in columns:
+                tree.heading(column, text=headings[column], anchor="w")
+                tree.column(column, width=widths[column], anchor="w", stretch=True)
+            tree.grid(row=0, column=0, sticky="nsew", padx=(12, 0), pady=12)
+            scroll = ttk.Scrollbar(win, orient="vertical", command=tree.yview)
+            scroll.grid(row=0, column=1, sticky="ns", pady=12)
+            tree.configure(yscrollcommand=scroll.set)
+
+            path_by_iid: Dict[str, str] = {}
+            for index, record in enumerate(documents):
+                resolved_path = resolve_export_document_path(log_path, record)
+                context = " - ".join(
+                    part
+                    for part in (
+                        _to_str(record.get("context_kind")).strip(),
+                        _to_str(record.get("context_label")).strip(),
+                    )
+                    if part
+                )
+                document_label = " ".join(
+                    part
+                    for part in (
+                        _to_str(record.get("doc_type")).strip(),
+                        _to_str(record.get("doc_number")).strip(),
+                    )
+                    if part
+                )
+                if not document_label:
+                    document_label = _to_str(record.get("kind")).strip()
+                iid = f"doc_{index}"
+                tree.insert(
+                    "",
+                    "end",
+                    iid=iid,
+                    values=(
+                        _to_str(record.get("format")).upper(),
+                        context,
+                        document_label,
+                        _to_str(record.get("supplier")).strip(),
+                        _to_str(record.get("path")).strip(),
+                    ),
+                )
+                path_by_iid[iid] = resolved_path
+
+            if documents:
+                first = tree.get_children()[0]
+                tree.selection_set(first)
+                tree.focus(first)
+
+            buttons = tk.Frame(win)
+            buttons.grid(row=1, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 12))
+            buttons.grid_columnconfigure(0, weight=1)
+
+            def _selected_path() -> str:
+                selected = tree.selection()
+                if not selected:
+                    return ""
+                return path_by_iid.get(selected[0], "")
+
+            def _open_selected() -> None:
+                self._open_filesystem_path(_selected_path(), parent=win)
+
+            def _open_selected_folder() -> None:
+                selected_path = _selected_path()
+                if selected_path:
+                    self._open_filesystem_path(os.path.dirname(selected_path), parent=win)
+
+            tree.bind("<Double-1>", lambda _event: _open_selected())
+            tk.Button(buttons, text="Open document", command=_open_selected).grid(
+                row=0, column=1, padx=(6, 0), sticky="e"
+            )
+            tk.Button(buttons, text="Open map", command=_open_selected_folder).grid(
+                row=0, column=2, padx=(6, 0), sticky="e"
+            )
+            tk.Button(
+                buttons,
+                text="Open exportmap",
+                command=lambda: self._open_filesystem_path(export_dir, parent=win),
+            ).grid(row=0, column=3, padx=(6, 0), sticky="e")
+            tk.Button(buttons, text="Sluiten", command=win.destroy).grid(
+                row=0, column=4, padx=(6, 0), sticky="e"
+            )
+            _place_window_near_parent(win, self)
+
         def _load_export_log_from_file(self) -> None:
             parent_app = getattr(self.master, "master", None)
             initial_dir = _to_str(getattr(parent_app, "dest_folder", "")).strip()
@@ -5431,6 +5599,14 @@ def start_gui():
                 source_label=source_label,
                 converted=converted,
             )
+            self._loaded_export_log_path = path
+            self._loaded_export_log_export_info = dict(payload.get("export", {}) or {})
+            docs_button = getattr(self, "export_log_documents_button", None)
+            if docs_button is not None:
+                try:
+                    docs_button.configure(state="normal")
+                except tk.TclError:
+                    pass
             self._update_preview_from_any_combo()
             sync_grouped_rows = getattr(self, "_sync_grouped_rows", None)
             if callable(sync_grouped_rows):
@@ -5765,6 +5941,14 @@ def start_gui():
             export_log_state_by_key = getattr(self, "_export_log_state_by_key", None)
             if isinstance(export_log_state_by_key, dict):
                 export_log_state_by_key.clear()
+            self._loaded_export_log_path = ""
+            self._loaded_export_log_export_info = {}
+            docs_button = getattr(self, "export_log_documents_button", None)
+            if docs_button is not None:
+                try:
+                    docs_button.configure(state="disabled")
+                except tk.TclError:
+                    pass
 
             set_combo_value = getattr(
                 type(self), "_set_combo_value", SupplierSelectionFrame._set_combo_value
