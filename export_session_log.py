@@ -4,6 +4,7 @@ import datetime as _dt
 import hashlib
 import json
 import os
+from copy import deepcopy
 from collections.abc import Iterable as IterableABC
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, MutableMapping
@@ -23,6 +24,17 @@ _STATE_KEYS = (
     "en1090",
     "pricing",
 )
+
+_IMPORT_SECTION_TO_STATE_KEYS = {
+    "suppliers": ("selections",),
+    "groups": ("groups",),
+    "documents": ("doc_types", "doc_numbers"),
+    "remarks": ("remarks",),
+    "deliveries": ("deliveries",),
+    "exports": ("exports",),
+    "en1090": ("en1090",),
+    "pricing": ("pricing",),
+}
 
 
 def _to_str(value: Any) -> str:
@@ -141,6 +153,37 @@ def normalize_state_dict(value: Any) -> Dict[str, Any]:
         state[key] = _clean_mapping(source.get(key, {}))
     state["remember"] = bool(source.get("remember", True))
     return state
+
+
+def state_keys_for_import_sections(sections: Iterable[str]) -> set[str]:
+    """Return normalized order-state keys covered by import section names."""
+
+    keys: set[str] = set()
+    for section in sections or []:
+        name = _to_str(section).strip()
+        if name in _STATE_KEYS:
+            keys.add(name)
+            continue
+        keys.update(_IMPORT_SECTION_TO_STATE_KEYS.get(name, ()))
+    return keys
+
+
+def merge_order_state_sections(
+    current_state: Any,
+    incoming_state: Any,
+    sections: Iterable[str],
+) -> Dict[str, Any]:
+    """Merge selected exportlog sections into the current order state."""
+
+    current = normalize_state_dict(current_state)
+    incoming = normalize_state_dict(incoming_state)
+    selected_keys = state_keys_for_import_sections(sections)
+    merged: Dict[str, Any] = {}
+    for key in _STATE_KEYS:
+        source = incoming if key in selected_keys else current
+        merged[key] = deepcopy(source.get(key, {}))
+    merged["remember"] = bool(current.get("remember", True))
+    return merged
 
 
 def state_selection_keys(state: Any) -> set[str]:

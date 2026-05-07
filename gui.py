@@ -86,7 +86,9 @@ from export_session_log import (
     find_export_session_logs,
     format_export_log_compatibility_message,
     load_export_session_log,
+    merge_order_state_sections,
     resolve_export_document_path,
+    state_keys_for_import_sections,
     summarize_export_log_compatibility,
     write_export_session_log,
 )
@@ -5470,6 +5472,101 @@ def start_gui():
             )
             _place_window_near_parent(win, self)
 
+        def _prompt_export_log_import_sections(self, *, converted: bool) -> Optional[set[str]]:
+            win = tk.Toplevel(self)
+            win.title("Exportlog toepassen")
+            win.transient(self)
+            win.resizable(False, False)
+
+            tk.Label(
+                win,
+                text=(
+                    "Kies welke waarden uit de exportlog de huidige "
+                    "bestelbonpagina mogen overschrijven."
+                ),
+                anchor="w",
+                justify="left",
+                wraplength=520,
+            ).grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 6))
+            if converted:
+                tk.Label(
+                    win,
+                    text="Offerteaanvragen zijn in de importwaarden omgezet naar Bestelbon.",
+                    anchor="w",
+                    justify="left",
+                    foreground="#7A4A00",
+                    wraplength=520,
+                ).grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 8))
+
+            options = [
+                ("suppliers", "Leveranciers", "Leverancierkeuze per selectie."),
+                ("groups", "Bonkoppelingen", "Welke selecties samen op een bon staan."),
+                ("documents", "Documenttype en nummers", "Bestelbon/offerte en documentnummers."),
+                ("deliveries", "Leveradressen", "Leveradreskeuzes."),
+                ("remarks", "Opmerkingen", "Opmerkingen op bonnen."),
+                ("exports", "Export aan/uit", "Welke regels worden mee geexporteerd."),
+                ("en1090", "EN 1090", "EN 1090-vlaggen."),
+                ("pricing", "Prijzen", "Bonprijzen en regelprijzen."),
+            ]
+            vars_by_section: Dict[str, tk.BooleanVar] = {}
+            rows_frame = tk.Frame(win)
+            rows_frame.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 8))
+            for index, (key, label, help_text) in enumerate(options):
+                var = tk.BooleanVar(value=True)
+                vars_by_section[key] = var
+                row = tk.Frame(rows_frame)
+                row.grid(row=index, column=0, sticky="ew", pady=2)
+                check = tk.Checkbutton(row, text=label, variable=var, anchor="w")
+                check.pack(side="left")
+                _HelpTooltip(check, help_text)
+
+            result: Dict[str, Optional[set[str]]] = {"sections": None}
+
+            def _set_all(value: bool) -> None:
+                for var in vars_by_section.values():
+                    var.set(bool(value))
+
+            def _only_pricing() -> None:
+                for section, var in vars_by_section.items():
+                    var.set(section == "pricing")
+
+            def _apply() -> None:
+                selected = {
+                    section
+                    for section, var in vars_by_section.items()
+                    if bool(var.get())
+                }
+                if not selected:
+                    messagebox.showwarning(
+                        "Exportlog toepassen",
+                        "Kies minstens een onderdeel om toe te passen.",
+                        parent=win,
+                    )
+                    return
+                result["sections"] = selected
+                win.destroy()
+
+            button_row = tk.Frame(win)
+            button_row.grid(row=3, column=0, sticky="ew", padx=12, pady=(0, 12))
+            button_row.grid_columnconfigure(0, weight=1)
+            tk.Button(button_row, text="Alles", command=lambda: _set_all(True)).grid(
+                row=0, column=0, sticky="w"
+            )
+            tk.Button(button_row, text="Alleen prijzen", command=_only_pricing).grid(
+                row=0, column=1, padx=(6, 0), sticky="e"
+            )
+            tk.Button(button_row, text="Toepassen", command=_apply).grid(
+                row=0, column=2, padx=(12, 0), sticky="e"
+            )
+            tk.Button(button_row, text="Annuleer", command=win.destroy).grid(
+                row=0, column=3, padx=(6, 0), sticky="e"
+            )
+            _place_window_near_parent(win, self)
+            win.grab_set()
+            win.focus_set()
+            self.wait_window(win)
+            return result["sections"]
+
         def _load_export_log_from_file(self) -> None:
             parent_app = getattr(self.master, "master", None)
             initial_dir = _to_str(getattr(parent_app, "dest_folder", "")).strip()
@@ -5579,12 +5676,36 @@ def start_gui():
                 if not proceed:
                     return
 
-            incoming_keys = set(compatibility.get("incoming_keys", [])) or self._state_selection_keys(state_dict)
+            selected_sections = self._prompt_export_log_import_sections(
+                converted=converted
+            )
+            if selected_sections is None:
+                self.update_status("Exportlog laden geannuleerd.")
+                return
+
+            current_state = self.serialize_state()
+            state_to_apply = merge_order_state_sections(
+                current_state,
+                state_dict,
+                selected_sections,
+            )
+            selected_state_keys = state_keys_for_import_sections(selected_sections)
+            selected_incoming_state = {
+                key: state_dict.get(key, {})
+                for key in selected_state_keys
+                if key in state_dict
+            }
+            incoming_keys = self._state_selection_keys(selected_incoming_state)
+            if not incoming_keys:
+                incoming_keys = (
+                    set(compatibility.get("incoming_keys", []))
+                    or self._state_selection_keys(state_dict)
+                )
             applied_keys = incoming_keys & current_keys
             matched = len(applied_keys)
             missing = len(incoming_keys - current_keys)
             try:
-                self.apply_state(SupplierSelectionState.from_mapping(state_dict))
+                self.apply_state(SupplierSelectionState.from_mapping(state_to_apply))
             except Exception as exc:
                 messagebox.showerror(
                     "Exportlog laden",

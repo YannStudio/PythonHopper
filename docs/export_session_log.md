@@ -47,6 +47,19 @@ Voor het toepassen controleert Filehopper de exportlog tegen de huidige bestelbo
 
 Bij verschillen toont Filehopper eerst een controledialoog. De gevonden regels kunnen nog altijd worden toegepast; ontbrekende en nieuwe regels blijven handmatig aanpasbaar.
 
+Daarna kies je welke delen van de exportlog je wilt toepassen:
+
+- Leveranciers.
+- Bonkoppelingen.
+- Documenttype en nummers.
+- Leveradressen.
+- Opmerkingen.
+- Export aan/uit.
+- EN 1090.
+- Prijzen.
+
+Niet-aangevinkte onderdelen blijven zoals ze op dat moment in de bestelbonpagina staan.
+
 ## Prijzen
 
 De exportlog bewaart prijzen per selectie/bon:
@@ -70,5 +83,4 @@ Na het laden van een exportlog kan `Vorige docs` deze lijst tonen. Dubbelklik op
 
 ## Volgende uitbreidingen
 
-- Fijnere merge-opties per veld wanneer een exportlog slechts gedeeltelijk mag worden toegepast.
 - Zoek/filter in de vorige-documentenlijst wanneer grote exports veel documenten bevatten.

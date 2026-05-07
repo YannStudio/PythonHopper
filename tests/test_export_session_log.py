@@ -9,7 +9,9 @@ from export_session_log import (
     find_export_session_logs,
     format_export_log_compatibility_message,
     load_export_session_log,
+    merge_order_state_sections,
     resolve_export_document_path,
+    state_keys_for_import_sections,
     summarize_export_log_compatibility,
     write_export_session_log,
 )
@@ -117,6 +119,33 @@ def test_convert_offers_to_orders_clears_off_numbers():
     assert converted["doc_types"]["production::Cutting"] == "Bestelbon"
     assert converted["doc_numbers"]["production::Cutting"] == ""
     assert converted["doc_numbers"]["production::Roof"] == "BB-456"
+
+
+def test_merge_order_state_sections_keeps_unselected_current_values():
+    current = {
+        "selections": {"production::Cutting": "Current Supplier"},
+        "doc_types": {"production::Cutting": "Bestelbon"},
+        "doc_numbers": {"production::Cutting": "BB-1"},
+        "pricing": {"production::Cutting": {"unit_price": "1"}},
+    }
+    incoming = {
+        "selections": {"production::Cutting": "Log Supplier"},
+        "doc_types": {"production::Cutting": "Offerteaanvraag"},
+        "doc_numbers": {"production::Cutting": "OFF-2"},
+        "pricing": {"production::Cutting": {"unit_price": "5"}},
+    }
+
+    merged = merge_order_state_sections(current, incoming, {"documents", "pricing"})
+
+    assert state_keys_for_import_sections({"documents", "pricing"}) == {
+        "doc_types",
+        "doc_numbers",
+        "pricing",
+    }
+    assert merged["selections"]["production::Cutting"] == "Current Supplier"
+    assert merged["doc_types"]["production::Cutting"] == "Offerteaanvraag"
+    assert merged["doc_numbers"]["production::Cutting"] == "OFF-2"
+    assert merged["pricing"]["production::Cutting"]["unit_price"] == "5"
 
 
 def test_export_session_log_rejects_unknown_schema(tmp_path):
