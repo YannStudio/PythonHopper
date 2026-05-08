@@ -371,7 +371,20 @@ def _clean_price_text(value: object) -> str:
     text = _to_str(value).strip()
     if not text:
         return ""
-    return text.replace(",", ".")
+    text = (
+        text.replace("\u00a0", "")
+        .replace(" ", "")
+        .replace("€", "")
+        .replace("%", "")
+    )
+    if "," in text and "." in text:
+        if text.rfind(",") > text.rfind("."):
+            text = text.replace(".", "").replace(",", ".")
+        else:
+            text = text.replace(",", "")
+    else:
+        text = text.replace(",", ".")
+    return text
 
 
 def _price_decimal(value: object) -> Decimal | None:

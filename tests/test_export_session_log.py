@@ -238,6 +238,20 @@ def test_apply_order_pricing_adds_vat_summary_rows():
     assert items[-1]["Totaalprijs"] == "24.20"
 
 
+def test_apply_order_pricing_accepts_european_price_formats():
+    items, layout = _apply_order_pricing(
+        [{"PartNumber": "A", "Description": "Plaat", "Aantal": 2}],
+        {"unit_price": "€ 1.234,50"},
+        context_kind="Productie",
+        vat_rate="21%",
+    )
+
+    assert layout is not None
+    assert items[0]["Eenheidsprijs"] == "1234.50"
+    assert items[0]["Totaalprijs"] == "2469.00"
+    assert items[-1]["Totaalprijs"] == "2987.49"
+
+
 def test_export_log_compatibility_detects_bom_and_selection_differences():
     original_bom = pd.DataFrame(
         [{"PartNumber": "A", "Production": "Cutting", "Aantal": 2}]

@@ -4003,8 +4003,15 @@ def start_gui():
                 command=self.selection_rows_canvas.yview,
             )
             self.selection_rows_scrollbar.grid(row=0, column=1, sticky="ns")
+            self.selection_rows_x_scrollbar = ttk.Scrollbar(
+                rows_scroll_container,
+                orient="horizontal",
+                command=self.selection_rows_canvas.xview,
+            )
+            self.selection_rows_x_scrollbar.grid(row=1, column=0, sticky="ew")
             self.selection_rows_canvas.configure(
-                yscrollcommand=self.selection_rows_scrollbar.set
+                yscrollcommand=self.selection_rows_scrollbar.set,
+                xscrollcommand=self.selection_rows_x_scrollbar.set,
             )
 
             left = tk.Frame(self.selection_rows_canvas)
@@ -4014,7 +4021,24 @@ def start_gui():
                 anchor="nw",
             )
 
+            def _sync_selection_rows_window_width(viewport_width: Optional[int] = None) -> None:
+                try:
+                    requested_width = left.winfo_reqwidth()
+                    canvas_width = (
+                        int(viewport_width)
+                        if viewport_width is not None
+                        else self.selection_rows_canvas.winfo_width()
+                    )
+                    width = max(requested_width, canvas_width)
+                    self.selection_rows_canvas.itemconfigure(
+                        self._selection_rows_window,
+                        width=width,
+                    )
+                except tk.TclError:
+                    return
+
             def _update_selection_scroll_region(_event=None) -> None:
+                _sync_selection_rows_window_width()
                 try:
                     bbox = self.selection_rows_canvas.bbox("all")
                 except tk.TclError:
@@ -4025,13 +4049,8 @@ def start_gui():
             left.bind("<Configure>", _update_selection_scroll_region)
 
             def _resize_selection_rows_content(event) -> None:
-                try:
-                    self.selection_rows_canvas.itemconfigure(
-                        self._selection_rows_window,
-                        width=event.width,
-                    )
-                except tk.TclError:
-                    return
+                _sync_selection_rows_window_width(event.width)
+                _update_selection_scroll_region()
 
             self.selection_rows_canvas.bind("<Configure>", _resize_selection_rows_content)
 
@@ -5546,6 +5565,7 @@ def start_gui():
                 "deliveries",
                 "exports",
                 "en1090",
+                "vat_rates",
                 "pricing",
             ):
                 value = state_dict.get(name, {}) if isinstance(state_dict, Mapping) else {}
