@@ -1,8 +1,8 @@
 {
-  "source_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2025/20250165 - Fietsenstalling Piva/CAD/3D Soldiworks Files/V1",
-  "dest_folder": "C:/Users/jeroe/Desktop",
-  "project_number": "20250165",
-  "project_name": "Piva",
+  "source_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2026/20260061 - Herstelling goot st Agnes/CAD/3D Soldiworks Files/V1",
+  "dest_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2026/20260061 - Herstelling goot st Agnes/CAD/Bestellingen",
+  "project_number": "20260061",
+  "project_name": "Herstelling goot st Agnes",
   "file_extensions": [
     {
       "key": "pdf",
@@ -43,7 +43,7 @@
       "patterns": [
         ".html"
       ],
-      "enabled": true
+      "enabled": false
     }
   ],
   "zip_per_production": false,

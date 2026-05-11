@@ -1478,11 +1478,28 @@ class ManualOrderTab(tk.Frame):
         if not column_layout:
             column_layout = [dict(col) for col in self.current_columns]
         if used_keys:
+            original_items = list(items)
             trimmed_items: List[Dict[str, object]] = []
             keep_keys = {col.get("key") for col in column_layout if col.get("key")}
-            for record in items:
+            for record in original_items:
                 trimmed_items.append({k: v for k, v in record.items() if k in keep_keys})
-            items = trimmed_items
+
+            # If trimming produced only empty records (user deselected the
+            # visible columns but data existed in the original columns),
+            # fall back to the original items so export still contains data.
+            def _record_has_content(rec: Dict[str, object]) -> bool:
+                if not rec:
+                    return False
+                for v in rec.values():
+                    if v is not None and str(v).strip() != "":
+                        return True
+                return False
+
+            if not any(_record_has_content(r) for r in trimmed_items) and any(_record_has_content(r) for r in original_items):
+                # Revert to original items
+                items = original_items
+            else:
+                items = trimmed_items
         remark = self.remark_text.get("1.0", "end").strip()
         export_payload = {
             "doc_type": self.doc_type_var.get().strip() or self.DOC_TYPE_OPTIONS[0],

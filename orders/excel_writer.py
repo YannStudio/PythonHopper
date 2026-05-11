@@ -308,7 +308,10 @@ def write_order_excel(
         header_lines.append(("", ""))
 
     startrow = len(header_lines)
-    if Alignment is not None and hasattr(pd, "ExcelWriter"):
+    # Try writing a proper Excel file using openpyxl (via pandas). If that
+    # fails (missing engine or other issue), fall back to a plain CSV so the
+    # user still gets data instead of an empty/absent file.
+    try:
         with pd.ExcelWriter(path, engine="openpyxl") as writer:
             df.to_excel(writer, index=False, startrow=startrow)
             ws = writer.sheets[list(writer.sheets.keys())[0]]
@@ -336,20 +339,24 @@ def write_order_excel(
                 else:
                     left_cols = {"PartNumber", "Description"}
                     wrap_cols = {"PartNumber", "Description"}
-            for col_idx, col_name in enumerate(df.columns, start=1):
-                align = Alignment(
-                    horizontal="left" if col_name in left_cols else "right",
-                    wrap_text=col_name in wrap_cols,
-                )
-                if (
-                    not custom_layout
-                    and col_name in {"PartNumber", "Profiel"}
-                    and get_column_letter is not None
-                ):
-                    column_letter = get_column_letter(col_idx)
-                    ws.column_dimensions[column_letter].width = 25
-                for row in range(startrow + 1, startrow + len(df) + 2):
-                    ws.cell(row=row, column=col_idx).alignment = align
+
+            # Apply cell alignment and optional width styling when openpyxl
+            # style helpers were imported successfully.
+            if Alignment is not None:
+                for col_idx, col_name in enumerate(df.columns, start=1):
+                    align = Alignment(
+                        horizontal="left" if col_name in left_cols else "right",
+                        wrap_text=col_name in wrap_cols,
+                    )
+                    if (
+                        not custom_layout
+                        and col_name in {"PartNumber", "Profiel"}
+                        and get_column_letter is not None
+                    ):
+                        column_letter = get_column_letter(col_idx)
+                        ws.column_dimensions[column_letter].width = 25
+                    for row in range(startrow + 1, startrow + len(df) + 2):
+                        ws.cell(row=row, column=col_idx).alignment = align
 
             if en1090_required and note_text and not append_note_to_df:
                 note_row = ws.max_row + 2
@@ -358,3 +365,13 @@ def write_order_excel(
                     cell.font = Font(bold=True)
                 if Alignment is not None:
                     cell.alignment = Alignment(horizontal="left", wrap_text=True)
+    except Exception:
+        # Best-effort fallback: write a CSV next to the requested path so the
+        # data isn't lost. If the user really needs an .xlsx they should
+        # ensure `openpyxl` is installed in the environment.
+        try:
+            csv_path = re.sub(r"\.xlsx?$", ".csv", path, flags=re.IGNORECASE)
+            df.to_csv(csv_path, index=False)
+        except Exception:
+            # As a last resort, try the simplest write which may still fail.
+            df.to_csv(path + ".csv", index=False)

@@ -1927,6 +1927,8 @@ def start_gui():
             self.tree.pack(fill="both", expand=True, padx=8, pady=8)
             # Bind double-click to edit
             self.tree.bind("<Double-Button-1>", lambda e: self.edit_sel())
+            # Bind Delete key to remove selected supplier when tree has focus
+            self.tree.bind("<Delete>", lambda e: self.remove_sel())
             
             btns = tk.Frame(self)
             btns.pack(fill="x")
@@ -1941,6 +1943,16 @@ def start_gui():
             ).pack(side="left", padx=4)
             fav_label = f"Favoriet {favorite_marker()}"
             tk.Button(btns, text=fav_label, command=self.toggle_fav_sel).pack(side="left", padx=4)
+            # If DB is empty, load the built-in example supplier template silently
+            if not self.db.suppliers:
+                try:
+                    template_path = bundle_root() / SUPPLIERS_TEMPLATE_FILE
+                    if template_path.exists():
+                        self._merge_suppliers_from_csv_path(template_path)
+                except Exception:
+                    # Fail silently; leave DB empty if loading template fails
+                    pass
+
             self.refresh()
 
         def suspend_search_filter(self) -> str:
