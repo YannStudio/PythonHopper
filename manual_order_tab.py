@@ -1516,6 +1516,22 @@ class ManualOrderTab(tk.Frame):
             "template": self.current_template_name,
             "column_layout": column_layout,
         }
+        # Dump payload to temp file for debugging when exports fail or
+        # produce empty files. This helps diagnosing cases where trimmed
+        # column selections remove all visible data.
+        try:
+            import json, tempfile, datetime, pathlib
+
+            fn = f"filehopper_manual_export_payload_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            tmp = pathlib.Path(tempfile.gettempdir()) / fn
+            try:
+                with tmp.open("w", encoding="utf-8") as f:
+                    json.dump(export_payload, f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
         self._on_export(export_payload)
 
     # Internal -------------------------------------------------------
