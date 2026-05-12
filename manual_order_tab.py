@@ -1516,17 +1516,46 @@ class ManualOrderTab(tk.Frame):
             "template": self.current_template_name,
             "column_layout": column_layout,
         }
-        # Dump payload to temp file for debugging when exports fail or
-        # produce empty files. This helps diagnosing cases where trimmed
-        # column selections remove all visible data.
+        # Dump payload to temp file and to project root for easier debugging
+        # when exports produce empty files. Also show a brief confirmation
+        # so the user can locate the debug file.
         try:
             import json, tempfile, datetime, pathlib
-
             fn = f"filehopper_manual_export_payload_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            # temp location
             tmp = pathlib.Path(tempfile.gettempdir()) / fn
             try:
                 with tmp.open("w", encoding="utf-8") as f:
                     json.dump(export_payload, f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+            # project/current working directory location (easier to find)
+            try:
+                proj = pathlib.Path.cwd()
+                proj_file = proj / "filehopper_manual_export_payload.json"
+                with proj_file.open("w", encoding="utf-8") as f:
+                    json.dump(export_payload, f, ensure_ascii=False, indent=2)
+                # Also append a short summary to a rotating debug log
+                try:
+                    log_file = proj / "filehopper_manual_export_payload_log.txt"
+                    with log_file.open("a", encoding="utf-8") as lf:
+                        lf.write(f"--- {datetime.datetime.now().isoformat()} ---\n")
+                        lf.write(f"template: {export_payload.get('template')}\n")
+                        lf.write(f"used_columns: {sorted(list(export_payload.get('column_layout') or [] ) )}\n")
+                        lf.write(f"items_count: {len(export_payload.get('items') or [])}\n")
+                        lf.write("\n")
+                except Exception:
+                    pass
+                try:
+                    from tkinter import messagebox
+
+                    messagebox.showinfo(
+                        "Debug payload opgeslagen",
+                        f"Export payload written to:\n{proj_file}\n(and temp: {tmp})",
+                        parent=self,
+                    )
+                except Exception:
+                    pass
             except Exception:
                 pass
         except Exception:
