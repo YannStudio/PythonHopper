@@ -223,6 +223,25 @@ class SearchableCombobox(ttk.Combobox):
         self._apply_filter(self._last_query, update_entry=False)
         self._sync_last_valid_value()
 
+    def commit_typed_value(self) -> bool:
+        """Commit typed search text to the best matching option if possible."""
+
+        current = self.get().strip()
+        if current in self._all_values:
+            self._last_valid_value = current
+            self._restore_values()
+            return True
+
+        resolved = self._resolve_query_to_value(current)
+        if resolved:
+            self.set(resolved)
+            self._last_valid_value = resolved
+            self._restore_values()
+            return True
+
+        self._ensure_valid_value()
+        return False
+
     # Internal -------------------------------------------------------
     def _store_all_values(self, values: List[str]) -> None:
         self._all_values = list(values)
@@ -260,7 +279,12 @@ class SearchableCombobox(ttk.Combobox):
             self.after_idle(_restore_entry)
 
     def _on_key_release(self, event: tk.Event) -> None:
-        if event.keysym in {"Up", "Down", "Return", "Escape", "Tab"}:
+        if event.keysym in {"Return", "KP_Enter"}:
+            self.commit_typed_value()
+            self._clear_text_selection()
+            self._unpost_dropdown()
+            return
+        if event.keysym in {"Up", "Down", "Escape", "Tab"}:
             if event.keysym == "Escape":
                 self._restore_values()
             return
@@ -291,7 +315,7 @@ class SearchableCombobox(ttk.Combobox):
 
     def _on_focus_out(self, _event: tk.Event) -> None:
         self._unpost_dropdown()
-        self._ensure_valid_value()
+        self.commit_typed_value()
 
     def _clear_text_selection(self) -> None:
         try:
@@ -314,7 +338,8 @@ class SearchableCombobox(ttk.Combobox):
 
     @staticmethod
     def _normalize_text(value: object) -> str:
-        text = str(value or "")
+        text = strip_favorite_marker(str(value or ""))
+        text = text.replace("(", " ").replace(")", " ")
         normalized = unicodedata.normalize("NFKD", text)
         normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
         normalized = normalized.casefold()
@@ -324,11 +349,44 @@ class SearchableCombobox(ttk.Combobox):
         tokens = self._normalize_text(query).split()
         if not tokens:
             return self._all_values
-        matches: List[str] = []
+
+        prefix_matches: List[str] = []
+        contains_matches: List[str] = []
         for option, normalized in self._normalized_values:
-            if all(token in normalized for token in tokens):
-                matches.append(option)
-        return matches
+            words = normalized.split()
+            if all(
+                normalized.startswith(token)
+                or any(word.startswith(token) for word in words)
+                for token in tokens
+            ):
+                prefix_matches.append(option)
+            elif all(token in normalized for token in tokens):
+                contains_matches.append(option)
+        return prefix_matches or contains_matches
+
+    def _is_empty_choice(self, option: str) -> bool:
+        normalized = self._normalize_text(option)
+        return normalized in {"geen", ""}
+
+    def _resolve_query_to_value(self, query: str) -> str:
+        normalized_query = self._normalize_text(query)
+        if not normalized_query:
+            return ""
+
+        for option, normalized in self._normalized_values:
+            if normalized == normalized_query:
+                return option
+
+        matches = self._filter_values(query)
+        if not matches:
+            return ""
+
+        non_empty_matches = [
+            option for option in matches if not self._is_empty_choice(option)
+        ]
+        if non_empty_matches:
+            return non_empty_matches[0]
+        return matches[0]
 
     def _sync_last_valid_value(self) -> None:
         current = self.get()
@@ -1459,6 +1517,10 @@ class ManualOrderTab(tk.Frame):
             self.dest_folder_var.set(p)
 
     def _handle_export(self) -> None:
+        commit_supplier = getattr(self.supplier_combo, "commit_typed_value", None)
+        if callable(commit_supplier):
+            commit_supplier()
+
         payload = self._collect_items()
         items: List[Dict[str, object]] = payload["items"]
         if not items:

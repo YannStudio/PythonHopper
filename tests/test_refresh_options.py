@@ -1,4 +1,5 @@
 import ast
+import datetime
 import pathlib
 import types
 from typing import List, Dict, Optional
@@ -87,6 +88,7 @@ def _load_gui_classes():
         "strip_favorite_marker": strip_favorite_marker,
         "FileExtensionSetting": FileExtensionSetting,
         "prepare_custom_bom_for_main": lambda df, _current: df,
+        "datetime": datetime,
     }
     exec(code, ns)
     return ns["SupplierSelectionFrame"], ns["App"]
@@ -366,3 +368,143 @@ def test_apply_custom_bom_recalculates_file_status_when_source_available():
     assert app.file_status_exts == [".pdf"]
     assert app.tree_refreshed is False
     assert "Bestandscontrole bijgewerkt." in app.status_var.get()
+
+
+def test_leaving_dirty_opticutter_tab_confirms_update():
+    class DummyNotebook:
+        def __init__(self):
+            self.selected = "main"
+
+        def select(self, *_args):
+            return self.selected
+
+    class DummyApp:
+        _handle_tab_changed = App._handle_tab_changed
+        _is_opticutter_tab = App._is_opticutter_tab
+        _handle_opticutter_tab_transition = App._handle_opticutter_tab_transition
+
+        def __init__(self):
+            self.nb = DummyNotebook()
+            self.opticutter_frame = "opticutter"
+            self._custom_bom_placeholder = None
+            self._last_selected_notebook_tab = "opticutter"
+            self._opticutter_dirty = True
+            self.confirmed = False
+
+        def _confirm_opticutter_update(self):
+            self.confirmed = True
+            self._opticutter_dirty = False
+            return True
+
+    app = DummyApp()
+    event = types.SimpleNamespace(widget=app.nb)
+
+    app._handle_tab_changed(event)
+
+    assert app.confirmed is True
+    assert app._opticutter_dirty is False
+    assert app._last_selected_notebook_tab == "main"
+
+
+def test_leaving_dirty_opticutter_tab_via_custom_placeholder_confirms_update():
+    class DummyNotebook:
+        def __init__(self):
+            self.selected = "placeholder"
+            self.selected_to = None
+
+        def select(self, tab=None):
+            if tab is not None:
+                self.selected_to = tab
+                self.selected = tab
+            return self.selected
+
+    class DummyApp:
+        _handle_tab_changed = App._handle_tab_changed
+        _is_opticutter_tab = App._is_opticutter_tab
+        _handle_opticutter_tab_transition = App._handle_opticutter_tab_transition
+
+        def __init__(self):
+            self.nb = DummyNotebook()
+            self.opticutter_frame = "opticutter"
+            self._custom_bom_placeholder = "placeholder"
+            self._last_selected_notebook_tab = "opticutter"
+            self._opticutter_dirty = True
+            self.confirmed = False
+
+        def _ensure_custom_bom_tab(self):
+            return "custom-tab"
+
+        def _confirm_opticutter_update(self):
+            self.confirmed = True
+            self._opticutter_dirty = False
+            return True
+
+    app = DummyApp()
+    event = types.SimpleNamespace(widget=app.nb)
+
+    app._handle_tab_changed(event)
+
+    assert app.confirmed is True
+    assert app.nb.selected_to == "custom-tab"
+    assert app._last_selected_notebook_tab == "custom-tab"
+
+
+def test_confirm_opticutter_update_sets_status_and_toast():
+    class DummyLabel:
+        def __init__(self):
+            self.configured = {}
+
+        def configure(self, **kwargs):
+            self.configured.update(kwargs)
+
+    class DummyApp:
+        _confirm_opticutter_update = App._confirm_opticutter_update
+        _format_opticutter_update_message = App._format_opticutter_update_message
+        _set_opticutter_update_status = App._set_opticutter_update_status
+
+        def __init__(self):
+            self._opticutter_dirty = True
+            self._opticutter_refresh_after_id = None
+            self.opticutter_last_analysis = types.SimpleNamespace(profiles=[1, 2, 3])
+            self.opticutter_update_status_var = DummyVar("")
+            self.opticutter_update_status_label = DummyLabel()
+            self.status_var = DummyVar("")
+            self.toasts = []
+
+        def _show_transient_toast(self, message):
+            self.toasts.append(message)
+
+    app = DummyApp()
+
+    assert app._confirm_opticutter_update() is True
+    assert app._opticutter_dirty is False
+    assert app.status_var.get() == "Opticutter bijgewerkt voor 3 profielen."
+    assert app.toasts == ["Opticutter bijgewerkt voor 3 profielen."]
+    assert app.opticutter_update_status_var.get().startswith("Laatst bijgewerkt ")
+    assert app.opticutter_update_status_label.configured["fg"] == "#2F855A"
+
+
+def test_opticutter_dirty_marker_updates_inline_status():
+    class DummyLabel:
+        def __init__(self):
+            self.configured = {}
+
+        def configure(self, **kwargs):
+            self.configured.update(kwargs)
+
+    class DummyApp:
+        _mark_opticutter_dirty = App._mark_opticutter_dirty
+        _set_opticutter_update_status = App._set_opticutter_update_status
+
+        def __init__(self):
+            self._opticutter_dirty = False
+            self.opticutter_update_status_var = DummyVar("")
+            self.opticutter_update_status_label = DummyLabel()
+
+    app = DummyApp()
+
+    app._mark_opticutter_dirty()
+
+    assert app._opticutter_dirty is True
+    assert app.opticutter_update_status_var.get() == "Wijzigingen actief"
+    assert app.opticutter_update_status_label.configured["fg"] == "#B7791F"

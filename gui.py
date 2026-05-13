@@ -8348,6 +8348,7 @@ def start_gui():
 
             self.nb = ttk.Notebook(tabs_container)
             self.nb.pack(fill="both", expand=True)
+            self._last_selected_notebook_tab = ""
             self.nb.bind("<<NotebookTabChanged>>", self._handle_tab_changed, add="+")
             self.custom_bom_tab: Optional[BOMCustomTab] = None
             self._custom_bom_placeholder = tk.Frame(
@@ -8439,12 +8440,27 @@ def start_gui():
             custom_entry.pack(side="right")
 
             self._opticutter_refresh_after_id: Optional[str] = None
+            self._opticutter_dirty = False
+            self._opticutter_toast_window = None
+            self._opticutter_toast_after_id = None
             self.opticutter_kerf_var.trace_add(
                 "write", self._on_opticutter_kerf_change
             )
             self.opticutter_custom_stock_var.trace_add(
                 "write", self._on_opticutter_custom_stock_change
             )
+
+            self.opticutter_update_status_var = tk.StringVar(
+                master=self.opticutter_frame,
+                value="Geen wijzigingen",
+            )
+            self.opticutter_update_status_label = tk.Label(
+                controls_frame,
+                textvariable=self.opticutter_update_status_var,
+                anchor="e",
+                fg="#6B7280",
+            )
+            self.opticutter_update_status_label.pack(anchor="e", pady=(8, 0))
 
             self.opticutter_info_var = tk.StringVar(
                 master=self.opticutter_frame,
@@ -9890,15 +9906,41 @@ def start_gui():
                 pass
 
         def _handle_tab_changed(self, event: "tk.Event") -> None:
-            placeholder = getattr(self, "_custom_bom_placeholder", None)
-            if not placeholder:
-                return
             if event.widget is not self.nb:
                 return
             selected = event.widget.select()
-            if selected and str(selected) == str(placeholder):
+            previous = getattr(self, "_last_selected_notebook_tab", "")
+            placeholder = getattr(self, "_custom_bom_placeholder", None)
+            if placeholder is not None and selected and str(selected) == str(placeholder):
+                self._handle_opticutter_tab_transition(previous, selected)
                 tab = self._ensure_custom_bom_tab()
                 self.nb.select(tab)
+                self._last_selected_notebook_tab = str(tab)
+                return
+
+            self._handle_opticutter_tab_transition(previous, selected)
+            self._last_selected_notebook_tab = str(selected or "")
+
+        def _is_opticutter_tab(self, tab_id: object) -> bool:
+            opticutter_frame = getattr(self, "opticutter_frame", None)
+            return bool(
+                tab_id
+                and opticutter_frame is not None
+                and str(tab_id) == str(opticutter_frame)
+            )
+
+        def _handle_opticutter_tab_transition(
+            self,
+            previous_tab: object,
+            selected_tab: object,
+        ) -> None:
+            if not self._is_opticutter_tab(previous_tab):
+                return
+            if self._is_opticutter_tab(selected_tab):
+                return
+            if not getattr(self, "_opticutter_dirty", False):
+                return
+            self._confirm_opticutter_update()
 
         def _ensure_custom_bom_tab(self) -> "BOMCustomTab":
             tab = getattr(self, "custom_bom_tab", None)
@@ -10921,10 +10963,146 @@ def start_gui():
                     pass
             self._opticutter_refresh_after_id = self.after(200, self._refresh_opticutter_table)
 
+        def _set_opticutter_update_status(
+            self,
+            message: str,
+            *,
+            color: str = "#6B7280",
+        ) -> None:
+            var = getattr(self, "opticutter_update_status_var", None)
+            if var is not None:
+                try:
+                    var.set(message)
+                except tk.TclError:
+                    pass
+            label = getattr(self, "opticutter_update_status_label", None)
+            if label is not None:
+                try:
+                    label.configure(fg=color)
+                except tk.TclError:
+                    pass
+
+        def _mark_opticutter_dirty(self) -> None:
+            self._opticutter_dirty = True
+            self._set_opticutter_update_status(
+                "Wijzigingen actief",
+                color="#B7791F",
+            )
+
+        def _format_opticutter_update_message(self) -> str:
+            analysis = getattr(self, "opticutter_last_analysis", None)
+            profiles = getattr(analysis, "profiles", None)
+            try:
+                profile_count = len(profiles or [])
+            except TypeError:
+                profile_count = 0
+            if profile_count == 1:
+                return "Opticutter bijgewerkt voor 1 profiel."
+            if profile_count > 1:
+                return f"Opticutter bijgewerkt voor {profile_count} profielen."
+            return "Opticutter bijgewerkt."
+
+        def _confirm_opticutter_update(self) -> bool:
+            if not getattr(self, "_opticutter_dirty", False):
+                return False
+
+            if getattr(self, "_opticutter_refresh_after_id", None) is not None:
+                try:
+                    self._refresh_opticutter_table()
+                except Exception:
+                    pass
+
+            self._opticutter_dirty = False
+            message = self._format_opticutter_update_message()
+            timestamp = datetime.datetime.now().strftime("%H:%M")
+            self._set_opticutter_update_status(
+                f"Laatst bijgewerkt {timestamp}",
+                color="#2F855A",
+            )
+            status_var = getattr(self, "status_var", None)
+            if status_var is not None:
+                try:
+                    status_var.set(message)
+                except tk.TclError:
+                    pass
+            self._show_transient_toast(message)
+            return True
+
+        def _show_transient_toast(
+            self,
+            message: str,
+            *,
+            duration_ms: int = 2600,
+        ) -> None:
+            previous = getattr(self, "_opticutter_toast_window", None)
+            if previous is not None:
+                try:
+                    previous.destroy()
+                except tk.TclError:
+                    pass
+                self._opticutter_toast_window = None
+            after_id = getattr(self, "_opticutter_toast_after_id", None)
+            if after_id is not None:
+                try:
+                    self.after_cancel(after_id)
+                except tk.TclError:
+                    pass
+                self._opticutter_toast_after_id = None
+
+            try:
+                toast = tk.Toplevel(self)
+                toast.overrideredirect(True)
+                toast.attributes("-topmost", True)
+                toast.configure(background="#1F5132")
+                container = tk.Frame(
+                    toast,
+                    background="#1F5132",
+                    padx=16,
+                    pady=10,
+                    highlightthickness=1,
+                    highlightbackground="#9AE6B4",
+                )
+                container.pack(fill="both", expand=True)
+                tk.Label(
+                    container,
+                    text=message,
+                    background="#1F5132",
+                    foreground="#F0FFF4",
+                    font=tkfont.nametofont("TkDefaultFont"),
+                ).pack()
+                toast.update_idletasks()
+                width = toast.winfo_reqwidth()
+                height = toast.winfo_reqheight()
+                root_x = self.winfo_rootx()
+                root_y = self.winfo_rooty()
+                root_width = max(self.winfo_width(), 320)
+                root_height = max(self.winfo_height(), 220)
+                x = root_x + root_width - width - 28
+                y = root_y + root_height - height - 32
+                toast.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+                self._opticutter_toast_window = toast
+
+                def _close_toast() -> None:
+                    current = getattr(self, "_opticutter_toast_window", None)
+                    self._opticutter_toast_window = None
+                    self._opticutter_toast_after_id = None
+                    if current is not None:
+                        try:
+                            current.destroy()
+                        except tk.TclError:
+                            pass
+
+                self._opticutter_toast_after_id = self.after(duration_ms, _close_toast)
+            except Exception:
+                self._opticutter_toast_window = None
+                self._opticutter_toast_after_id = None
+
         def _on_opticutter_kerf_change(self, *_args) -> None:
+            self._mark_opticutter_dirty()
             self._schedule_opticutter_refresh()
 
         def _on_opticutter_custom_stock_change(self, *_args) -> None:
+            self._mark_opticutter_dirty()
             self._schedule_opticutter_refresh()
 
         def _get_opticutter_kerf_mm(self) -> float:
@@ -11024,9 +11202,13 @@ def start_gui():
                 manual_value = f"manual:{length_mm}"
                 self.opticutter_profile_custom_lengths[key] = length_mm
                 self.opticutter_profile_selection_choice[key] = manual_value
+                self._mark_opticutter_dirty()
                 self._refresh_opticutter_table()
                 return
+            previous_choice = self.opticutter_profile_selection_choice.get(key)
             self.opticutter_profile_selection_choice[key] = canonical
+            if previous_choice != canonical:
+                self._mark_opticutter_dirty()
 
         def _update_opticutter_selection_rows(
             self,

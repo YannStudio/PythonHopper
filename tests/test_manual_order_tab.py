@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from manual_order_tab import _ensure_integer_quantity, ManualOrderTab
+from manual_order_tab import _ensure_integer_quantity, ManualOrderTab, SearchableCombobox
 
 
 @pytest.mark.parametrize(
@@ -124,3 +124,59 @@ def test_refresh_data_uses_searchable_supplier_choices():
         ["Geen", "Leverancier A", "Leverancier B"]
     ]
     assert tab.supplier_var.get() == "Leverancier B"
+
+
+def _make_searchable_combo(values, current=""):
+    combo = SearchableCombobox.__new__(SearchableCombobox)
+    combo._all_values = list(values)
+    combo._normalized_values = [
+        (value, SearchableCombobox._normalize_text(value))
+        for value in combo._all_values
+    ]
+    combo._last_query = ""
+    combo._last_valid_value = "Geen"
+    combo._readonly_mode = True
+    combo.current = current
+    combo.configured_values = []
+
+    def configure(**kwargs):
+        if "values" in kwargs:
+            combo.configured_values = list(kwargs["values"])
+
+    def get():
+        return combo.current
+
+    def set_value(value):
+        combo.current = value
+
+    combo.configure = configure
+    combo.get = get
+    combo.set = set_value
+    return combo
+
+
+def test_searchable_combobox_matches_accentless_supplier_text():
+    combo = _make_searchable_combo(["Geen", "Café Metaal", "Delta Works"])
+
+    assert SearchableCombobox._filter_values(combo, "cafe") == ["Café Metaal"]
+
+
+def test_searchable_combobox_commits_typed_supplier_to_best_match():
+    combo = _make_searchable_combo(
+        ["Geen", "Alpha Lasers", "Metaalwerken NV"],
+        current="metaal",
+    )
+
+    assert SearchableCombobox.commit_typed_value(combo) is True
+    assert combo.current == "Metaalwerken NV"
+    assert combo._last_valid_value == "Metaalwerken NV"
+
+
+def test_searchable_combobox_prefers_supplier_over_empty_choice_for_partial_match():
+    combo = _make_searchable_combo(
+        ["Geen", "Govaerts Staal"],
+        current="g",
+    )
+
+    assert SearchableCombobox.commit_typed_value(combo) is True
+    assert combo.current == "Govaerts Staal"
