@@ -1546,10 +1546,29 @@
       "product_type": "-",
       "product_description": "-",
       "favorite": false
+    },
+    {
+      "supplier": "Productora",
+      "description": "Metal processing - 2D / 3D laser & bending",
+      "supplier_id": "SUPP_088",
+      "adres_1": "Krekelenberg 86",
+      "adres_2": "B-2980 Zoersel",
+      "postcode": null,
+      "gemeente": null,
+      "land": null,
+      "btw": "BE 1004 023 343",
+      "contact_sales": "Simon Driessen",
+      "sales_email": "SimonD@productora.eu",
+      "phone": "+32 3 485 57 11",
+      "product_type": "Metal processing",
+      "product_description": "Metal processing - 2D / 3D laser & bending",
+      "favorite": false
     }
   ],
   "defaults_by_production": {
-    "Mount material": "Elcee Belux"
+    "Mount material": "Elcee Belux",
+    "Lasercutting": "Productora",
+    "Sheetmetal": "Productora"
   },
   "defaults_by_finish": {
     "Finish-Galvanised _ Powder coating-RAL 6018": "Van Gils Coating - Beringen/Maasmechelen"

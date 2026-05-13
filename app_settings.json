@@ -1,8 +1,8 @@
 {
-  "source_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2026/20260061 - Herstelling goot st Agnes/CAD/3D Soldiworks Files/V1",
-  "dest_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2026/20260061 - Herstelling goot st Agnes/CAD/Bestellingen",
-  "project_number": "20260061",
-  "project_name": "Herstelling goot st Agnes",
+  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/Kanal/83 - Lot10b - Central - Bibliotheek + leeszaal/Bibliotheek en leeszaal/cad - wandrek",
+  "dest_folder": "C:/Users/jeroe/Desktop",
+  "project_number": "83",
+  "project_name": "Wandrek",
   "file_extensions": [
     {
       "key": "pdf",
@@ -43,7 +43,7 @@
       "patterns": [
         ".html"
       ],
-      "enabled": false
+      "enabled": true
     }
   ],
   "zip_per_production": false,
@@ -93,11 +93,13 @@
     "mount material": false,
     "roof": false,
     "sheet milling": false,
-    "bending": true,
+    "bending": false,
     "dummy assembly": false,
     "groendak": false,
     "sticker": false,
     "weld assembly alu": false,
-    "woodwork": false
+    "woodwork": false,
+    "casting print": false,
+    "3d print": false
   }
 }
