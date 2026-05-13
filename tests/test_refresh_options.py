@@ -311,3 +311,58 @@ def test_apply_custom_bom_refreshes_order_tab_when_present():
         {"select_tab": False, "prompt_opticutter": False}
     ]
     assert app.status_var.get().endswith("Bestelbonnen bijgewerkt.")
+
+
+def test_apply_custom_bom_recalculates_file_status_when_source_available():
+    class DummyNotebook:
+        def __init__(self):
+            self.selected = None
+
+        def select(self, tab):
+            self.selected = tab
+
+    class DummyApp:
+        _apply_custom_bom_to_main = App._apply_custom_bom_to_main
+
+        def __init__(self):
+            self.custom_bom_tab = None
+            self.bom_df = pd.DataFrame(
+                [{"PartNumber": "OLD", "Production": "Laser", "Status": "oud"}]
+            )
+            self.main_frame = object()
+            self.nb = DummyNotebook()
+            self.sel_frame = None
+            self.status_var = DummyVar("")
+            self.source_folder = "bron"
+            self.file_status_exts = None
+            self.tree_refreshed = False
+            self.custom_synced = False
+
+        def _store_custom_row_flags(self, df, flags):
+            self.flags_saved = (df, list(flags))
+
+        def _selected_exts(self):
+            return [".pdf"]
+
+        def _update_bom_file_status(self, exts):
+            self.file_status_exts = list(exts)
+            self.bom_df["Bestanden gevonden"] = ["pdf"]
+            self.bom_df["Status"] = ["fresh"]
+            self.bom_df["Link"] = [""]
+
+        def _refresh_tree(self):
+            self.tree_refreshed = True
+
+        def _sync_custom_bom_from_main(self):
+            self.custom_synced = True
+
+    app = DummyApp()
+    custom_df = pd.DataFrame({"PartNumber": ["PN-001"], "Production": ["Plooien"]})
+
+    app._apply_custom_bom_to_main(custom_df)
+
+    assert app.bom_df.loc[0, "Production"] == "Plooien"
+    assert app.bom_df.loc[0, "Status"] == "fresh"
+    assert app.file_status_exts == [".pdf"]
+    assert app.tree_refreshed is False
+    assert "Bestandscontrole bijgewerkt." in app.status_var.get()

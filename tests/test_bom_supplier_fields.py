@@ -1,4 +1,5 @@
 import csv
+from types import SimpleNamespace
 
 
 import pandas as pd
@@ -138,3 +139,31 @@ def test_custom_bom_load_from_main_maps_plate_thickness():
     result = captured["df"]
     assert result.loc[0, "PartNumber"] == "PN1"
     assert result.loc[0, "Thickness"] == "10"
+
+
+def test_custom_bom_push_commits_active_editor_before_building_main_dataframe():
+    tab = object.__new__(BOMCustomTab)
+    tab.HEADERS = BOMCustomTab.HEADERS
+    tab.CUSTOM_TO_MAIN_COLUMN_MAP = BOMCustomTab.CUSTOM_TO_MAIN_COLUMN_MAP
+    tab.MAIN_COLUMN_ORDER = BOMCustomTab.MAIN_COLUMN_ORDER
+    tab.status_messages = []
+
+    data = pd.DataFrame(
+        [["PN1", "Plaat", "1", "", "", "", "Laser", "", "", "", "", "", "", "", "", ""]],
+        columns=BOMCustomTab.HEADERS,
+    )
+    tab.table_model = SimpleNamespace(df=data)
+
+    class FakeTable:
+        def _commit_active_edit(self):
+            tab.table_model.df.loc[0, "Production"] = "Plooien"
+            return True
+
+    captured = {}
+    tab.table = FakeTable()
+    tab.on_push_to_main = lambda df: captured.setdefault("df", df.copy(deep=True))
+    tab._update_status = lambda text: tab.status_messages.append(text)
+
+    BOMCustomTab._push_to_main(tab)
+
+    assert captured["df"].loc[0, "Production"] == "Plooien"

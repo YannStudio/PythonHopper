@@ -1236,6 +1236,12 @@ class BOMCustomTab(ttk.Frame):
         normalized = df.reindex(columns=self.HEADERS)
         return normalized.fillna("").astype(str).values.tolist()
 
+    def _commit_pending_table_edit(self) -> bool:
+        commit = getattr(getattr(self, "table", None), "_commit_active_edit", None)
+        if not callable(commit):
+            return True
+        return bool(commit())
+
     def _push_undo(
         self,
         action: str,
@@ -2169,6 +2175,10 @@ class BOMCustomTab(ttk.Frame):
     # ------------------------------------------------------------------
     # Export
     def _push_to_main(self) -> None:
+        if not self._commit_pending_table_edit():
+            self._update_status("Werk de actieve cel af voordat je de Main-BOM bijwerkt.")
+            return
+
         if self.on_push_to_main is None:
             messagebox.showinfo(
                 "Niet beschikbaar",
@@ -2199,6 +2209,10 @@ class BOMCustomTab(ttk.Frame):
             self._update_status(f"Main-BOM geüpdatet met {len(main_df)} rijen.")
 
     def _export_temp(self) -> None:
+        if not self._commit_pending_table_edit():
+            self._update_status("Werk de actieve cel af voordat je exporteert.")
+            return
+
         data = self._snapshot_data()
         cleaned = [row[: len(self.HEADERS)] for row in data]
         non_empty_rows = [row for row in cleaned if any(cell.strip() for cell in row)]
@@ -2308,7 +2322,7 @@ class BOMCustomTab(ttk.Frame):
         if trimmed.empty:
             return empty
 
-        trimmed = trimmed.fillna("").applymap(lambda value: str(value).strip())
+        trimmed = trimmed.fillna("").map(lambda value: str(value).strip())
         result = pd.DataFrame(index=trimmed.index)
         for custom_col, main_col in self.CUSTOM_TO_MAIN_COLUMN_MAP.items():
             if custom_col in trimmed.columns:

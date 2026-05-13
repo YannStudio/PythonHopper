@@ -10063,9 +10063,22 @@ def start_gui():
                 messagebox.showerror("Fout", str(exc), parent=parent_widget)
                 return
 
+            normalized.attrs.pop("production_column_missing", None)
             self._store_custom_row_flags(normalized, [True] * len(normalized.index))
             self.bom_df = normalized
-            self._refresh_tree()
+            file_status_refreshed = False
+            try:
+                exts = self._selected_exts() if getattr(self, "source_folder", "") else []
+                if exts:
+                    self._update_bom_file_status(exts)
+                    file_status_refreshed = True
+            except Exception as exc:
+                print(
+                    f"Kon bestandsstatus niet herberekenen na Custom BOM-update: {exc}",
+                    file=sys.stderr,
+                )
+            if not file_status_refreshed:
+                self._refresh_tree()
             self._sync_custom_bom_from_main()
             self.nb.select(self.main_frame)
             selection_frame = getattr(self, "sel_frame", None)
@@ -10083,6 +10096,8 @@ def start_gui():
                 except Exception:
                     selection_refreshed = False
             status_message = f"Custom BOM wijzigingen toegepast ({len(normalized)} rijen)."
+            if file_status_refreshed:
+                status_message += " Bestandscontrole bijgewerkt."
             if selection_refreshed:
                 status_message += " Bestelbonnen bijgewerkt."
             self.status_var.set(status_message)
@@ -11833,13 +11848,54 @@ def start_gui():
             except Exception:
                 pass
 
+        def _update_bom_file_status(self, exts):
+            """Recalculate file status columns for the current BOM."""
+
+            idx = _build_file_index(self.source_folder, exts)
+            sw_idx = _build_file_index(self.source_folder, [".sldprt", ".slddrw"])
+            found, status, links = [], [], []
+            groups = []
+            exts_set = set(e.lower() for e in exts)
+            if ".step" in exts_set or ".stp" in exts_set:
+                groups.append({".step", ".stp"})
+                exts_set -= {".step", ".stp"}
+            for e in exts_set:
+                groups.append({e})
+            for _, row in self.bom_df.iterrows():
+                pn = row["PartNumber"]
+                hits = idx.get(pn, [])
+                hit_exts = {os.path.splitext(h)[1].lower() for h in hits}
+                all_present = all(any(ext in hit_exts for ext in g) for g in groups)
+                found.append(", ".join(sorted(e.lstrip('.') for e in hit_exts)))
+                status.append("✅" if all_present else "❌")
+                link = ""
+                if not all_present:
+                    missing = []
+                    for g in groups:
+                        if not any(ext in hit_exts for ext in g):
+                            missing.extend(g)
+                    sw_hits = sw_idx.get(pn, [])
+                    drw = next((p for p in sw_hits if p.lower().endswith(".slddrw")), None)
+                    prt = next((p for p in sw_hits if p.lower().endswith(".sldprt")), None)
+                    if ".pdf" in missing and drw:
+                        link = drw
+                    elif prt:
+                        link = prt
+                    elif drw:
+                        link = drw
+                links.append(link)
+            self.bom_df["Bestanden gevonden"] = found
+            self.bom_df["Status"] = status
+            self.bom_df["Link"] = links
+            self._refresh_tree()
+
         def _check_files(self):
             from tkinter import messagebox
             if not self._ensure_bom_loaded():
                 return
-                if not self.source_folder:
-                    messagebox.showwarning("Let op", "Selecteer een bronmap.")
-                    return
+            if not self.source_folder:
+                messagebox.showwarning("Let op", "Selecteer een bronmap.")
+                return
             exts = self._selected_exts()
             if not exts:
                 messagebox.showwarning("Let op", "Selecteer minstens één bestandstype.")
