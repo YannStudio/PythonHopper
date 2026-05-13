@@ -1563,14 +1563,37 @@
       "product_type": "Metal processing",
       "product_description": "Metal processing - 2D / 3D laser & bending",
       "favorite": false
+    },
+    {
+      "supplier": "Van Eycken",
+      "description": "Tube laser",
+      "supplier_id": null,
+      "adres_1": "Walstraat 9",
+      "adres_2": "3300 Tienen",
+      "postcode": "3300",
+      "gemeente": "Tienen",
+      "land": "Belgie",
+      "btw": "BE 0411.941.776",
+      "contact_sales": "Alexandra Ludewig",
+      "sales_email": "info@vaneycken.be",
+      "phone": "+32 (0)16 499 700",
+      "product_type": "Metal processing",
+      "product_description": "Tube laser",
+      "favorite": false
     }
   ],
   "defaults_by_production": {
     "Mount material": "Elcee Belux",
     "Lasercutting": "Productora",
-    "Sheetmetal": "Productora"
+    "Sheetmetal": "Productora",
+    "Tube laser L": "Van Eycken",
+    "Sheetmetal +4m": "Meeuwsen bv",
+    "Green roof": "Dirk Maris nv",
+    "Tube laser": "Productora"
   },
   "defaults_by_finish": {
-    "Finish-Galvanised _ Powder coating-RAL 6018": "Van Gils Coating - Beringen/Maasmechelen"
+    "Finish-Galvanised _ Powder coating-RAL 6018": "Van Gils Coating - Beringen/Maasmechelen",
+    "Finish-Galvanised _ Powder coating-RAL 9007": "Van Gils Coating - Beringen/Maasmechelen",
+    "Finish-Metalised _ Powdercoating-RAL 9007": "Van Gils Coating - Beringen/Maasmechelen"
   }
 }

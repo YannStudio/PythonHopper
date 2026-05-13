@@ -1,8 +1,8 @@
 {
-  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/Kanal/83 - Lot10b - Central - Bibliotheek + leeszaal/Bibliotheek en leeszaal/cad - wandrek",
-  "dest_folder": "C:/Users/jeroe/Desktop",
-  "project_number": "83",
-  "project_name": "Wandrek",
+  "source_folder": "",
+  "dest_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/Interne projecten/00. Stock bestelbonnen",
+  "project_number": "",
+  "project_name": "",
   "file_extensions": [
     {
       "key": "pdf",
@@ -75,7 +75,7 @@
   "en1090_preferences": {
     "cutting": false,
     "dummy part": false,
-    "lasercutting": false,
+    "lasercutting": true,
     "sheetmetal": false,
     "sheetmetal 4m": true,
     "spare part": false,
@@ -100,6 +100,7 @@
     "weld assembly alu": false,
     "woodwork": false,
     "casting print": false,
-    "3d print": false
+    "3d print": false,
+    "green roof": false
   }
 }

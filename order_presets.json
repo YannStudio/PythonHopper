@@ -8,6 +8,7 @@
       "client": "Tecno Art bvba",
       "selection_kind": "production",
       "identifiers": [
+        "Green roof",
         "Groendak"
       ],
       "supplier": "Dirk Maris nv",
@@ -234,7 +235,7 @@
       "priority": 100,
       "auto_apply": true,
       "client": "Tecno Art bvba",
-      "selection_kind": "opticutter",
+      "selection_kind": "production",
       "identifiers": [
         "Sheetmetal +4m"
       ],
@@ -275,6 +276,22 @@
       "delivery": "Tecno Art bvba",
       "remark": "",
       "en1090": true
+    },
+    {
+      "name": "Tecno Art - Dummy assembly",
+      "enabled": true,
+      "priority": 90,
+      "auto_apply": true,
+      "client": "Tecno Art bvba",
+      "selection_kind": "production",
+      "identifiers": [
+        "Dummy assembly"
+      ],
+      "supplier": "",
+      "doc_type": "Standaard bon",
+      "delivery": "",
+      "remark": "Interne pré-assemby",
+      "en1090": null
     }
   ]
 }
