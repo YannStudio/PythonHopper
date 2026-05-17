@@ -4137,7 +4137,7 @@ def start_gui():
             proj_container = tk.Frame(left)
             proj_container.pack(fill="x", pady=(0, 6))
             proj_container.grid_columnconfigure(0, weight=0)
-            proj_container.grid_columnconfigure(1, weight=1)
+            proj_container.grid_columnconfigure(1, weight=0)
 
             proj_frame = tk.LabelFrame(
                 proj_container,
@@ -4149,7 +4149,7 @@ def start_gui():
             proj_frame.grid(row=0, column=0, sticky="nw")
 
             clear_btn_container = tk.Frame(proj_container)
-            clear_btn_container.grid(row=0, column=1, sticky="new", padx=(12, 0))
+            clear_btn_container.grid(row=0, column=1, sticky="nw", padx=(12, 0))
             clear_btn_container.grid_columnconfigure(0, weight=1)
 
             secondary_actions = tk.LabelFrame(
@@ -4158,43 +4158,47 @@ def start_gui():
                 padx=6,
                 pady=4,
             )
-            secondary_actions.grid(row=0, column=0, sticky="e", pady=(2, 0))
+            secondary_actions.grid(row=0, column=0, sticky="nw", pady=(2, 0))
+            secondary_actions_primary = tk.Frame(secondary_actions)
+            secondary_actions_primary.pack(anchor="e", fill="x")
+            secondary_actions_logs = tk.Frame(secondary_actions)
+            secondary_actions_logs.pack(anchor="e", fill="x", pady=(3, 0))
             tk.Button(
-                secondary_actions,
+                secondary_actions_primary,
                 text="Nieuw leveradres",
                 command=self._add_delivery_address,
             ).pack(side="left", padx=(0, 4))
             tk.Button(
-                secondary_actions,
+                secondary_actions_primary,
                 text="Beheer presetregels",
                 command=self._open_preset_manager,
             ).pack(side="left", padx=(0, 4))
             tk.Button(
-                secondary_actions,
+                secondary_actions_primary,
+                text="Leegmaken",
+                command=self._clear_saved_suppliers,
+            ).pack(side="left")
+            tk.Button(
+                secondary_actions_logs,
                 text="Exportlog laden",
                 command=self._load_export_log_from_file,
             ).pack(side="left", padx=(0, 4))
             tk.Button(
-                secondary_actions,
+                secondary_actions_logs,
                 text="Laatste exportlog",
                 command=self._load_latest_export_log,
             ).pack(side="left", padx=(0, 4))
             self.export_log_documents_button = tk.Button(
-                secondary_actions,
+                secondary_actions_logs,
                 text="Vorige docs",
                 command=self._open_loaded_export_documents_dialog,
                 state="disabled",
             )
-            self.export_log_documents_button.pack(side="left", padx=(0, 4))
+            self.export_log_documents_button.pack(side="left")
             _HelpTooltip(
                 self.export_log_documents_button,
                 "Open de vorige exportmap of documenten uit de laatst geladen exportlog.",
             )
-            tk.Button(
-                secondary_actions,
-                text="Leegmaken",
-                command=self._clear_saved_suppliers,
-            ).pack(side="left")
 
             readonly_bg = "#f0f0f0"
             copy_button_text = "⧉"
@@ -5187,11 +5191,12 @@ def start_gui():
             header_font = ("TkDefaultFont", 10, "bold")
             headers = ("Onderdeel", "St.", "Prijs/st.", "Totaalprijs")
             for col, text in enumerate(headers):
+                header_padx = (0, 18) if col == len(headers) - 1 else (0, 8)
                 tk.Label(inner, text=text, font=header_font, anchor="w").grid(
                     row=0,
                     column=col,
                     sticky="ew",
-                    padx=(0, 8),
+                    padx=header_padx,
                     pady=(0, 4),
                 )
 
@@ -5318,7 +5323,13 @@ def start_gui():
                     width=14,
                     font=default_font,
                 )
-                total_entry.grid(row=row_index, column=3, sticky="ew", pady=2)
+                total_entry.grid(
+                    row=row_index,
+                    column=3,
+                    sticky="ew",
+                    padx=(0, 18),
+                    pady=2,
+                )
                 unit_var.trace_add(
                     "write",
                     lambda *_args, key=item_key, qty=quantity: _on_line_price_change(
