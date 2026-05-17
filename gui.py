@@ -4159,45 +4159,108 @@ def start_gui():
                 pady=4,
             )
             secondary_actions.grid(row=0, column=0, sticky="nw", pady=(2, 0))
-            secondary_actions_primary = tk.Frame(secondary_actions)
-            secondary_actions_primary.pack(anchor="e", fill="x")
-            secondary_actions_logs = tk.Frame(secondary_actions)
-            secondary_actions_logs.pack(anchor="e", fill="x", pady=(3, 0))
             tk.Button(
-                secondary_actions_primary,
+                secondary_actions,
                 text="Nieuw leveradres",
                 command=self._add_delivery_address,
             ).pack(side="left", padx=(0, 4))
             tk.Button(
-                secondary_actions_primary,
-                text="Beheer presetregels",
+                secondary_actions,
+                text="Presetregels",
                 command=self._open_preset_manager,
             ).pack(side="left", padx=(0, 4))
             tk.Button(
-                secondary_actions_primary,
-                text="Leegmaken",
-                command=self._clear_saved_suppliers,
-            ).pack(side="left")
-            tk.Button(
-                secondary_actions_logs,
+                secondary_actions,
                 text="Exportlog laden",
                 command=self._load_export_log_from_file,
             ).pack(side="left", padx=(0, 4))
             tk.Button(
-                secondary_actions_logs,
-                text="Laatste exportlog",
+                secondary_actions,
+                text="Laatste log",
                 command=self._load_latest_export_log,
             ).pack(side="left", padx=(0, 4))
             self.export_log_documents_button = tk.Button(
-                secondary_actions_logs,
+                secondary_actions,
                 text="Vorige docs",
                 command=self._open_loaded_export_documents_dialog,
                 state="disabled",
             )
-            self.export_log_documents_button.pack(side="left")
+            self.export_log_documents_button.pack(side="left", padx=(0, 4))
             _HelpTooltip(
                 self.export_log_documents_button,
                 "Open de vorige exportmap of documenten uit de laatst geladen exportlog.",
+            )
+            tk.Button(
+                secondary_actions,
+                text="Leegmaken",
+                command=self._clear_saved_suppliers,
+            ).pack(side="left")
+
+            action_row = tk.Frame(clear_btn_container)
+            action_row.grid(row=1, column=0, sticky="nw", pady=(4, 0))
+            export_group = tk.LabelFrame(
+                action_row,
+                text="Export selectie",
+                padx=6,
+                pady=4,
+            )
+            export_group.pack(side="left", padx=(0, 8))
+            tk.Button(
+                export_group,
+                text="Alles aan",
+                command=lambda: self._set_all_exports(True),
+            ).pack(side="left")
+            tk.Button(
+                export_group,
+                text="Alles uit",
+                command=lambda: self._set_all_exports(False),
+            ).pack(side="left", padx=(6, 0))
+            preset_group = tk.LabelFrame(
+                action_row,
+                text="Presets",
+                padx=6,
+                pady=4,
+            )
+            preset_group.pack(side="left", padx=(0, 8))
+            tk.Button(
+                preset_group,
+                text="Invullen",
+                command=self._apply_presets_from_button,
+            ).pack(side="left")
+            view_group = tk.LabelFrame(
+                action_row,
+                text="Weergave",
+                padx=6,
+                pady=4,
+            )
+            view_group.pack(side="left", padx=(0, 8))
+            self.price_columns_visible_var = tk.BooleanVar(
+                value=self._price_columns_visible
+            )
+            price_columns_toggle = tk.Checkbutton(
+                view_group,
+                text="Prijsvelden",
+                variable=self.price_columns_visible_var,
+                command=lambda: self.set_price_columns_visible(
+                    bool(self.price_columns_visible_var.get())
+                ),
+            )
+            price_columns_toggle.pack(side="left")
+            _HelpTooltip(
+                price_columns_toggle,
+                "Toon of verberg de prijsgerelateerde kolommen in de bestelbonregels.",
+            )
+            # Option to include brutomateriaal note on generated PDFs
+            self.include_bruto_note_var = tk.BooleanVar(value=True)
+            bruto_note_toggle = tk.Checkbutton(
+                view_group,
+                text="Bruto-opm.",
+                variable=self.include_bruto_note_var,
+            )
+            bruto_note_toggle.pack(side="left", padx=(10, 0))
+            _HelpTooltip(
+                bruto_note_toggle,
+                "Voeg de bruto materiaal-opmerking toe aan de gegenereerde PDF's.",
             )
 
             readonly_bg = "#f0f0f0"
@@ -4371,63 +4434,6 @@ def start_gui():
             proj_frame.configure(width=target_width, height=required_height)
 
             ttk.Separator(left, orient="horizontal").pack(fill="x", pady=(0, 6))
-
-            action_row = tk.Frame(left)
-            action_row.pack(fill="x", pady=(0, 2))
-            export_group = tk.LabelFrame(
-                action_row,
-                text="Export selectie",
-                padx=6,
-                pady=4,
-            )
-            export_group.pack(side="left", padx=(0, 8))
-            tk.Button(
-                export_group,
-                text="Alles selecteren",
-                command=lambda: self._set_all_exports(True),
-            ).pack(side="left")
-            tk.Button(
-                export_group,
-                text="Alles deselecteren",
-                command=lambda: self._set_all_exports(False),
-            ).pack(side="left", padx=(6, 0))
-            preset_group = tk.LabelFrame(
-                action_row,
-                text="Presets",
-                padx=6,
-                pady=4,
-            )
-            preset_group.pack(side="left", padx=(0, 8))
-            tk.Button(
-                preset_group,
-                text="Invullen volgens preset",
-                command=self._apply_presets_from_button,
-            ).pack(side="left")
-            view_group = tk.LabelFrame(
-                action_row,
-                text="Weergave",
-                padx=6,
-                pady=4,
-            )
-            view_group.pack(side="left", padx=(0, 8))
-            self.price_columns_visible_var = tk.BooleanVar(
-                value=self._price_columns_visible
-            )
-            tk.Checkbutton(
-                view_group,
-                text="Prijsvelden tonen",
-                variable=self.price_columns_visible_var,
-                command=lambda: self.set_price_columns_visible(
-                    bool(self.price_columns_visible_var.get())
-                ),
-            ).pack(side="left")
-            # Option to include brutomateriaal note on generated PDFs
-            self.include_bruto_note_var = tk.BooleanVar(value=True)
-            tk.Checkbutton(
-                view_group,
-                text="Voeg bruto materiaal-opmerking toe",
-                variable=self.include_bruto_note_var,
-            ).pack(side="left", padx=(10, 0))
 
             delivery_opts = self._delivery_options()
 
