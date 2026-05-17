@@ -3873,6 +3873,7 @@ def start_gui():
             "vat_combo",
             "line_price_button",
         )
+        ROW_ALT_BACKGROUND = "#E8E7E2"
 
         @staticmethod
         def _state_has_price_values(state: Optional["SupplierSelectionState"]) -> bool:
@@ -4027,35 +4028,62 @@ def start_gui():
             content = tk.Frame(self)
             content.grid(row=0, column=0, sticky="nsew", padx=10, pady=6)
             content.grid_columnconfigure(0, weight=1)
-            content.grid_rowconfigure(0, weight=1)
-            content.grid_rowconfigure(1, weight=0)
+            content.grid_rowconfigure(0, weight=0)
+            content.grid_rowconfigure(1, weight=1)
+            content.grid_rowconfigure(2, weight=0)
+            content.grid_rowconfigure(3, weight=0)
+
+            top_area = tk.Frame(content)
+            top_area.grid(row=0, column=0, sticky="ew")
+            top_area.grid_columnconfigure(0, weight=1)
 
             rows_scroll_container = tk.Frame(content)
-            rows_scroll_container.grid(row=0, column=0, sticky="nsew")
+            rows_scroll_container.grid(row=1, column=0, sticky="nsew", pady=(4, 0))
             rows_scroll_container.grid_columnconfigure(0, weight=1)
-            rows_scroll_container.grid_rowconfigure(0, weight=1)
+            rows_scroll_container.grid_rowconfigure(0, weight=0)
+            rows_scroll_container.grid_rowconfigure(1, weight=1)
+
+            self.selection_header_canvas = tk.Canvas(
+                rows_scroll_container,
+                height=1,
+                highlightthickness=0,
+                borderwidth=0,
+            )
+            self.selection_header_canvas.grid(row=0, column=0, sticky="ew")
+
+            def _sync_selection_xview(*args) -> None:
+                self.selection_rows_canvas.xview(*args)
+                self.selection_header_canvas.xview(*args)
 
             self.selection_rows_canvas = tk.Canvas(
                 rows_scroll_container,
                 highlightthickness=0,
                 borderwidth=0,
             )
-            self.selection_rows_canvas.grid(row=0, column=0, sticky="nsew")
+            self.selection_rows_canvas.grid(row=1, column=0, sticky="nsew")
             self.selection_rows_scrollbar = ttk.Scrollbar(
                 rows_scroll_container,
                 orient="vertical",
                 command=self.selection_rows_canvas.yview,
             )
-            self.selection_rows_scrollbar.grid(row=0, column=1, sticky="ns")
+            self.selection_rows_scrollbar.grid(row=1, column=1, sticky="ns")
             self.selection_rows_x_scrollbar = ttk.Scrollbar(
                 rows_scroll_container,
                 orient="horizontal",
-                command=self.selection_rows_canvas.xview,
+                command=_sync_selection_xview,
             )
-            self.selection_rows_x_scrollbar.grid(row=1, column=0, sticky="ew")
+            self.selection_rows_x_scrollbar.grid(row=2, column=0, sticky="ew")
+
+            def _on_selection_rows_xscroll(first: str, last: str) -> None:
+                self.selection_rows_x_scrollbar.set(first, last)
+                try:
+                    self.selection_header_canvas.xview_moveto(float(first))
+                except (tk.TclError, ValueError):
+                    pass
+
             self.selection_rows_canvas.configure(
                 yscrollcommand=self.selection_rows_scrollbar.set,
-                xscrollcommand=self.selection_rows_x_scrollbar.set,
+                xscrollcommand=_on_selection_rows_xscroll,
             )
 
             left = tk.Frame(self.selection_rows_canvas)
@@ -4145,7 +4173,7 @@ def start_gui():
             self._opticutter_notice_label.pack_forget()
 
             # Project info entries above production rows
-            proj_container = tk.Frame(left)
+            proj_container = tk.Frame(top_area)
             proj_container.pack(fill="x", pady=(0, 6))
             proj_container.grid_columnconfigure(0, weight=0)
             proj_container.grid_columnconfigure(1, weight=0)
@@ -4476,7 +4504,7 @@ def start_gui():
             proj_frame.grid_propagate(False)
             proj_frame.configure(width=target_width, height=required_height)
 
-            ttk.Separator(left, orient="horizontal").pack(fill="x", pady=(0, 6))
+            ttk.Separator(top_area, orient="horizontal").pack(fill="x", pady=(0, 6))
 
             delivery_opts = self._delivery_options()
 
@@ -4490,8 +4518,55 @@ def start_gui():
                 _prefix_for_doc_type(t) for t in doc_type_opts
             }
 
-            header_row = tk.Frame(left)
-            header_row.pack(fill="x", pady=(8, 3))
+            header_row = tk.Frame(
+                self.selection_header_canvas,
+                background=left.cget("bg"),
+            )
+            self._selection_header_window = self.selection_header_canvas.create_window(
+                (0, 0),
+                window=header_row,
+                anchor="nw",
+            )
+
+            def _sync_selection_header_window_width(
+                viewport_width: Optional[int] = None,
+            ) -> None:
+                try:
+                    requested_width = header_row.winfo_reqwidth()
+                    canvas_width = (
+                        int(viewport_width)
+                        if viewport_width is not None
+                        else self.selection_header_canvas.winfo_width()
+                    )
+                    width = max(requested_width, canvas_width)
+                    self.selection_header_canvas.itemconfigure(
+                        self._selection_header_window,
+                        width=width,
+                    )
+                    requested_height = header_row.winfo_reqheight()
+                    if requested_height:
+                        self.selection_header_canvas.configure(height=requested_height + 3)
+                except tk.TclError:
+                    return
+
+            def _update_selection_header_scroll_region(_event=None) -> None:
+                _sync_selection_header_window_width()
+                try:
+                    bbox = self.selection_header_canvas.bbox("all")
+                except tk.TclError:
+                    return
+                if bbox:
+                    self.selection_header_canvas.configure(scrollregion=bbox)
+
+            def _resize_selection_header_content(event) -> None:
+                _sync_selection_header_window_width(event.width)
+                _update_selection_header_scroll_region()
+
+            header_row.bind("<Configure>", _update_selection_header_scroll_region)
+            self.selection_header_canvas.bind(
+                "<Configure>",
+                _resize_selection_header_content,
+            )
             self._group_header_spacer = tk.Frame(
                 header_row,
                 width=self.GROUP_INDICATOR_WIDTH,
@@ -4568,12 +4643,14 @@ def start_gui():
             self._rows_background = left.cget("bg")
 
             def add_row(display_text: str, sel_key: str, metadata: Dict[str, str]):
-                row = tk.Frame(left, background=self._rows_background)
+                row_index = len(self._row_widget_maps)
+                row_bg = self._row_background_for_index(row_index)
+                row = tk.Frame(left, background=row_bg)
                 row.pack(fill="x", pady=3)
                 group_stripe = tk.Frame(
                     row,
                     width=self.GROUP_INDICATOR_WIDTH,
-                    background=self._rows_background,
+                    background=row_bg,
                 )
                 group_stripe.pack(
                     side="left",
@@ -4586,13 +4663,15 @@ def start_gui():
                     row,
                     variable=export_var,
                     takefocus=False,
+                    background=row_bg,
+                    activebackground=row_bg,
                 )
                 row_label = tk.Label(
                     row,
                     text=display_text,
                     width=self.LABEL_COLUMN_WIDTH,
                     anchor="w",
-                    background=self._rows_background,
+                    background=row_bg,
                 )
                 var = tk.StringVar()
                 self.sel_vars[sel_key] = var
@@ -4642,7 +4721,11 @@ def start_gui():
                 meta_kind = metadata.get("kind")
                 en1090_var = tk.IntVar(value=0)
                 self.en1090_vars[sel_key] = en1090_var
-                en1090_frame = tk.Frame(row, width=self._en1090_column_width_px)
+                en1090_frame = tk.Frame(
+                    row,
+                    width=self._en1090_column_width_px,
+                    background=row_bg,
+                )
                 en1090_frame.pack_propagate(False)
                 self._en1090_frames.append(en1090_frame)
                 en1090_widget: tk.Misc = en1090_frame
@@ -4660,6 +4743,8 @@ def start_gui():
                         variable=en1090_var,
                         command=lambda key=sel_key: self._on_en1090_toggle(key),
                         takefocus=False,
+                        background=row_bg,
+                        activebackground=row_bg,
                     )
                     checkbutton.pack(anchor="w", padx=(2, 0))
                     en1090_frame.update_idletasks()
@@ -4670,7 +4755,7 @@ def start_gui():
                         height=checkbutton.winfo_reqheight(),
                     )
                 else:
-                    placeholder = tk.Label(en1090_frame, text="")
+                    placeholder = tk.Label(en1090_frame, text="", background=row_bg)
                     placeholder.pack(anchor="w", fill="x")
                     en1090_frame.update_idletasks()
                     en1090_frame.configure(
@@ -4793,6 +4878,7 @@ def start_gui():
                     "line_price_button": line_price_button,
                     "remark_entry": remark_entry,
                     "delivery_combo": dcombo,
+                    "row_background": row_bg,
                     "label_default_fg": row_label.cget("fg"),
                     "label_default_font": row_label.cget("font"),
                 }
@@ -4878,18 +4964,47 @@ def start_gui():
             # Zorg dat de kolomhoofden overeenkomen met de zichtbare kolommen bij opstart
             self.set_en1090_enabled(self._en1090_enabled)
 
+            supplier_details_bar = tk.Frame(content)
+            supplier_details_bar.grid(row=2, column=0, sticky="ew", pady=(6, 0))
+            supplier_details_bar.grid_columnconfigure(1, weight=1)
+            self._supplier_details_visible = False
+            self._supplier_details_button = tk.Button(
+                supplier_details_bar,
+                text="Leverancier details tonen",
+                command=self._toggle_supplier_details,
+                padx=10,
+            )
+            self._supplier_details_button.grid(row=0, column=0, sticky="w")
+            self._supplier_details_hint_var = tk.StringVar(
+                value="Klik om leverancierkaarten tijdelijk te tonen."
+            )
+            tk.Label(
+                supplier_details_bar,
+                textvariable=self._supplier_details_hint_var,
+                anchor="w",
+                foreground="#666666",
+            ).grid(row=0, column=1, sticky="ew", padx=(8, 0))
+
             # Container voor kaarten
             preview_frame = tk.LabelFrame(
                 content,
                 text="Leverancier details\n(klik om te selecteren)",
                 labelanchor="n",
             )
-            preview_frame.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
+            self._supplier_preview_frame = preview_frame
+            self._supplier_preview_grid_options = {
+                "row": 3,
+                "column": 0,
+                "sticky": "nsew",
+                "pady": (4, 0),
+            }
+            preview_frame.grid(**self._supplier_preview_grid_options)
             preview_frame.grid_rowconfigure(0, weight=1)
             preview_frame.grid_columnconfigure(0, weight=1)
 
             self.cards_frame = tk.Frame(preview_frame)
             self.cards_frame.grid(row=0, column=0, sticky="nsew", pady=(8, 0))
+            self._set_supplier_details_visible(False)
 
             # Mapping voor combobox per selectie
             self.combo_by_key = getattr(self, "combo_by_key", {})
@@ -4926,6 +5041,48 @@ def start_gui():
                     pass
             self._update_preview_from_any_combo()
             _bind_selection_rows_mousewheel_tree(content)
+
+        def _row_background_for_index(self, row_index: int) -> str:
+            base_bg = getattr(self, "_rows_background", None) or self.cget("bg")
+            return self.ROW_ALT_BACKGROUND if row_index % 2 else base_bg
+
+        def _toggle_supplier_details(self) -> None:
+            self._set_supplier_details_visible(
+                not bool(getattr(self, "_supplier_details_visible", False))
+            )
+
+        def _set_supplier_details_visible(self, visible: bool) -> None:
+            self._supplier_details_visible = bool(visible)
+            frame = getattr(self, "_supplier_preview_frame", None)
+            if frame is not None:
+                try:
+                    if self._supplier_details_visible:
+                        frame.grid(**getattr(self, "_supplier_preview_grid_options", {}))
+                    else:
+                        frame.grid_remove()
+                except tk.TclError:
+                    pass
+
+            button = getattr(self, "_supplier_details_button", None)
+            if button is not None:
+                try:
+                    button.configure(
+                        text=(
+                            "Leverancier details verbergen"
+                            if self._supplier_details_visible
+                            else "Leverancier details tonen"
+                        )
+                    )
+                except tk.TclError:
+                    pass
+
+            hint_var = getattr(self, "_supplier_details_hint_var", None)
+            if hint_var is not None:
+                hint_var.set(
+                    "Klik op een leverancierkaart om die leverancier te selecteren."
+                    if self._supplier_details_visible
+                    else "Klik om leverancierkaarten tijdelijk te tonen."
+                )
 
         def _resolve_current_client(self) -> Optional[Client]:
             clients_db = getattr(self, "clients_db", None)
@@ -6708,12 +6865,19 @@ def start_gui():
             export_log_state_by_key = getattr(self, "_export_log_state_by_key", {})
             for sel_key, _combo in self.rows:
                 widgets = self._row_widgets_by_key.get(sel_key, {})
+                row = widgets.get("row")
+                row_bg = widgets.get("row_background", base_bg)
                 row_label = widgets.get("label")
                 group_stripe = widgets.get("group_stripe")
                 default_fg = widgets.get("label_default_fg", "")
                 default_font = widgets.get("label_default_font", "")
                 if row_label is None:
                     continue
+                if row is not None:
+                    try:
+                        row.configure(background=row_bg)
+                    except tk.TclError:
+                        pass
 
                 spec = self._group_visual_spec(sel_key, group_links)
                 accent = _to_str(spec.get("accent")).strip()
@@ -6735,14 +6899,14 @@ def start_gui():
                         text=label_text,
                         fg=label_fg,
                         font=("TkDefaultFont", 10, "bold") if grouped and is_root else default_font,
-                        background=base_bg,
+                        background=row_bg,
                     )
                 except tk.TclError:
                     pass
 
                 if group_stripe is not None:
                     try:
-                        group_stripe.configure(background=accent if accent else base_bg)
+                        group_stripe.configure(background=accent if accent else row_bg)
                     except tk.TclError:
                         pass
 
