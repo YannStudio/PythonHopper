@@ -3867,6 +3867,37 @@ def start_gui():
             "#6C5CE7",
             "#7A5230",
         )
+        PRICE_COLUMN_KEYS = (
+            "unit_price_entry",
+            "total_price_entry",
+            "vat_combo",
+            "line_price_button",
+        )
+
+        @staticmethod
+        def _state_has_price_values(state: Optional["SupplierSelectionState"]) -> bool:
+            if state is None:
+                return False
+            pricing = getattr(state, "pricing", {}) or {}
+            if isinstance(pricing, Mapping):
+                for value in pricing.values():
+                    if not isinstance(value, Mapping):
+                        continue
+                    if (
+                        _to_str(value.get("unit_price")).strip()
+                        or _to_str(value.get("total_price")).strip()
+                    ):
+                        return True
+                    items = value.get("items")
+                    if isinstance(items, Mapping) and items:
+                        return True
+            vat_rates = getattr(state, "vat_rates", {}) or {}
+            if isinstance(vat_rates, Mapping):
+                for value in vat_rates.values():
+                    text = _to_str(value).strip().replace("%", "")
+                    if text and text != "21":
+                        return True
+            return False
 
         @staticmethod
         def _install_supplier_focus_behavior(combo: "ttk.Combobox") -> None:
@@ -3984,6 +4015,7 @@ def start_gui():
             self._loaded_export_log_export_info: Dict[str, object] = {}
             self._price_link_in_progress: set[str] = set()
             self._price_auto_fields: Dict[str, str] = {}
+            self._price_columns_visible = self._state_has_price_values(initial_state)
             self.finish_entries = finishes
             self._row_widget_maps: List[Dict[str, tk.Misc]] = []
             self._row_widgets_by_key: Dict[str, Dict[str, tk.Misc]] = {}
@@ -4120,11 +4152,49 @@ def start_gui():
             clear_btn_container.grid(row=0, column=1, sticky="new", padx=(12, 0))
             clear_btn_container.grid_columnconfigure(0, weight=1)
 
-            tk.Button(
+            secondary_actions = tk.LabelFrame(
                 clear_btn_container,
-                text="Clear list",
+                text="Beheer en log",
+                padx=6,
+                pady=4,
+            )
+            secondary_actions.grid(row=0, column=0, sticky="e", pady=(2, 0))
+            tk.Button(
+                secondary_actions,
+                text="Nieuw leveradres",
+                command=self._add_delivery_address,
+            ).pack(side="left", padx=(0, 4))
+            tk.Button(
+                secondary_actions,
+                text="Beheer presetregels",
+                command=self._open_preset_manager,
+            ).pack(side="left", padx=(0, 4))
+            tk.Button(
+                secondary_actions,
+                text="Exportlog laden",
+                command=self._load_export_log_from_file,
+            ).pack(side="left", padx=(0, 4))
+            tk.Button(
+                secondary_actions,
+                text="Laatste exportlog",
+                command=self._load_latest_export_log,
+            ).pack(side="left", padx=(0, 4))
+            self.export_log_documents_button = tk.Button(
+                secondary_actions,
+                text="Vorige docs",
+                command=self._open_loaded_export_documents_dialog,
+                state="disabled",
+            )
+            self.export_log_documents_button.pack(side="left", padx=(0, 4))
+            _HelpTooltip(
+                self.export_log_documents_button,
+                "Open de vorige exportmap of documenten uit de laatst geladen exportlog.",
+            )
+            tk.Button(
+                secondary_actions,
+                text="Leegmaken",
                 command=self._clear_saved_suppliers,
-            ).grid(row=0, column=0, sticky="e", pady=(2, 0))
+            ).pack(side="left")
 
             readonly_bg = "#f0f0f0"
             copy_button_text = "⧉"
@@ -4298,66 +4368,62 @@ def start_gui():
 
             ttk.Separator(left, orient="horizontal").pack(fill="x", pady=(0, 6))
 
-            export_toggle_row = tk.Frame(left)
-            export_toggle_row.pack(fill="x", pady=(0, 2))
-            tk.Label(
-                export_toggle_row,
-                text="Export selectie:",
-                anchor="w",
-            ).pack(side="left")
+            action_row = tk.Frame(left)
+            action_row.pack(fill="x", pady=(0, 2))
+            export_group = tk.LabelFrame(
+                action_row,
+                text="Export selectie",
+                padx=6,
+                pady=4,
+            )
+            export_group.pack(side="left", padx=(0, 8))
             tk.Button(
-                export_toggle_row,
+                export_group,
                 text="Alles selecteren",
                 command=lambda: self._set_all_exports(True),
-            ).pack(side="left", padx=(6, 0))
+            ).pack(side="left")
             tk.Button(
-                export_toggle_row,
+                export_group,
                 text="Alles deselecteren",
                 command=lambda: self._set_all_exports(False),
             ).pack(side="left", padx=(6, 0))
+            preset_group = tk.LabelFrame(
+                action_row,
+                text="Presets",
+                padx=6,
+                pady=4,
+            )
+            preset_group.pack(side="left", padx=(0, 8))
             tk.Button(
-                export_toggle_row,
-                text="Nieuw leveradres",
-                command=self._add_delivery_address,
-            ).pack(side="left", padx=(12, 0))
-            tk.Button(
-                export_toggle_row,
+                preset_group,
                 text="Invullen volgens preset",
                 command=self._apply_presets_from_button,
-            ).pack(side="left", padx=(12, 0))
-            tk.Button(
-                export_toggle_row,
-                text="Beheer presetregels",
-                command=self._open_preset_manager,
-            ).pack(side="left", padx=(6, 0))
-            tk.Button(
-                export_toggle_row,
-                text="Exportlog laden",
-                command=self._load_export_log_from_file,
-            ).pack(side="left", padx=(6, 0))
-            tk.Button(
-                export_toggle_row,
-                text="Laatste exportlog",
-                command=self._load_latest_export_log,
-            ).pack(side="left", padx=(6, 0))
-            self.export_log_documents_button = tk.Button(
-                export_toggle_row,
-                text="Vorige docs",
-                command=self._open_loaded_export_documents_dialog,
-                state="disabled",
+            ).pack(side="left")
+            view_group = tk.LabelFrame(
+                action_row,
+                text="Weergave",
+                padx=6,
+                pady=4,
             )
-            self.export_log_documents_button.pack(side="left", padx=(6, 0))
-            _HelpTooltip(
-                self.export_log_documents_button,
-                "Open de vorige exportmap of documenten uit de laatst geladen exportlog.",
+            view_group.pack(side="left", padx=(0, 8))
+            self.price_columns_visible_var = tk.BooleanVar(
+                value=self._price_columns_visible
             )
+            tk.Checkbutton(
+                view_group,
+                text="Prijsvelden tonen",
+                variable=self.price_columns_visible_var,
+                command=lambda: self.set_price_columns_visible(
+                    bool(self.price_columns_visible_var.get())
+                ),
+            ).pack(side="left")
             # Option to include brutomateriaal note on generated PDFs
             self.include_bruto_note_var = tk.BooleanVar(value=True)
             tk.Checkbutton(
-                export_toggle_row,
+                view_group,
                 text="Voeg bruto materiaal-opmerking toe",
                 variable=self.include_bruto_note_var,
-            ).pack(side="left", padx=(12, 0))
+            ).pack(side="left", padx=(10, 0))
 
             delivery_opts = self._delivery_options()
 
@@ -4412,11 +4478,8 @@ def start_gui():
                 ("delivery_combo", "Leveradres", 50, None),
             ]
             self._column_keys = [key for key, *_ in self._column_specs]
-            self._visible_column_keys = [
-                key
-                for key in self._column_keys
-                if key != "en1090_widget" or self._en1090_enabled
-            ]
+            self._visible_column_keys: List[str] = []
+            self._refresh_visible_column_keys()
 
             self._header_column_frames_map: Dict[str, tk.Frame] = {}
             self._header_labels_map: Dict[str, tk.Label] = {}
@@ -6080,6 +6143,13 @@ def start_gui():
             )
 
         def apply_state(self, state: "SupplierSelectionState") -> None:
+            if SupplierSelectionFrame._state_has_price_values(state):
+                set_price_columns_visible = getattr(
+                    self, "set_price_columns_visible", None
+                )
+                if callable(set_price_columns_visible):
+                    set_price_columns_visible(True)
+
             set_combo_value = getattr(
                 type(self), "_set_combo_value", SupplierSelectionFrame._set_combo_value
             )
@@ -6302,6 +6372,15 @@ def start_gui():
                 if frame is not None:
                     frame.pack(side="left", padx=(0, 6))
 
+        def _refresh_visible_column_keys(self) -> None:
+            show_prices = bool(getattr(self, "_price_columns_visible", False))
+            self._visible_column_keys = [
+                key
+                for key in self._column_keys
+                if (key != "en1090_widget" or self._en1090_enabled)
+                and (show_prices or key not in self.PRICE_COLUMN_KEYS)
+            ]
+
         def _pack_row_widgets(self, widgets: Dict[str, "tk.Misc"]) -> None:
             for key in self._column_keys:
                 widget = widgets.get(key)
@@ -6321,26 +6400,29 @@ def start_gui():
             for widgets in self._row_widget_maps:
                 self._pack_row_widgets(widgets)
 
-        def set_en1090_enabled(self, enabled: bool) -> None:
-            desired = bool(enabled)
-            state_changed = desired != self._en1090_enabled
-            self._en1090_enabled = desired
-            if state_changed:
-                if desired and "en1090_widget" not in self._visible_column_keys:
-                    insert_at = self._column_keys.index("en1090_widget")
-                    self._visible_column_keys.insert(insert_at, "en1090_widget")
-                elif not desired:
-                    self._visible_column_keys = [
-                        key
-                        for key in self._visible_column_keys
-                        if key != "en1090_widget"
-                    ]
+        def _repack_visible_columns(self) -> None:
+            self._refresh_visible_column_keys()
             self._repack_header_columns()
             self._repack_all_rows()
             self._header_aligned = False
             self._header_alignment_pending = False
             if self._row_widget_maps:
                 self._schedule_header_alignment(self._row_widget_maps[0])
+
+        def set_price_columns_visible(self, visible: bool) -> None:
+            self._price_columns_visible = bool(visible)
+            var = getattr(self, "price_columns_visible_var", None)
+            if var is not None:
+                try:
+                    if bool(var.get()) != self._price_columns_visible:
+                        var.set(1 if self._price_columns_visible else 0)
+                except Exception:
+                    pass
+            self._repack_visible_columns()
+
+        def set_en1090_enabled(self, enabled: bool) -> None:
+            self._en1090_enabled = bool(enabled)
+            self._repack_visible_columns()
 
         def _clear_saved_suppliers(self) -> None:
             self.db.defaults_by_production.clear()

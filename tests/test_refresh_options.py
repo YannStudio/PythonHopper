@@ -2,7 +2,7 @@ import ast
 import datetime
 import pathlib
 import types
-from typing import List, Dict, Optional
+from typing import List, Dict, Mapping, Optional
 
 import pandas as pd
 
@@ -78,6 +78,7 @@ def _load_gui_classes():
         "ttk": ttk_stub,
         "List": List,
         "Dict": Dict,
+        "Mapping": Mapping,
         "Optional": Optional,
         "Supplier": Supplier,
         "Client": Client,
@@ -258,6 +259,79 @@ def test_supplier_selection_frame_uses_scrollable_rows_canvas():
         and node.value.func.attr == "Canvas"
         for node in ast.walk(init_fn)
     )
+
+
+def test_price_columns_are_hidden_by_default_and_toggleable():
+    class DummySel:
+        PRICE_COLUMN_KEYS = SupplierSelectionFrame.PRICE_COLUMN_KEYS
+        _refresh_visible_column_keys = SupplierSelectionFrame._refresh_visible_column_keys
+        _repack_visible_columns = SupplierSelectionFrame._repack_visible_columns
+        set_price_columns_visible = SupplierSelectionFrame.set_price_columns_visible
+
+        def __init__(self):
+            self._column_keys = [
+                "export_check",
+                "label",
+                "group_combo",
+                "supplier_combo",
+                "doc_combo",
+                "en1090_widget",
+                "doc_entry",
+                "unit_price_entry",
+                "total_price_entry",
+                "vat_combo",
+                "line_price_button",
+                "remark_entry",
+                "delivery_combo",
+            ]
+            self._en1090_enabled = True
+            self._price_columns_visible = False
+            self._visible_column_keys = []
+            self._row_widget_maps = []
+            self._header_aligned = True
+            self._header_alignment_pending = True
+            self.price_columns_visible_var = DummyVar(False)
+            self.header_repack_count = 0
+            self.row_repack_count = 0
+
+        def _repack_header_columns(self):
+            self.header_repack_count += 1
+
+        def _repack_all_rows(self):
+            self.row_repack_count += 1
+
+        def _schedule_header_alignment(self, _row_widgets):
+            raise AssertionError("No rows should be scheduled in this test")
+
+    sel = DummySel()
+    sel._refresh_visible_column_keys()
+
+    assert "unit_price_entry" not in sel._visible_column_keys
+    assert "total_price_entry" not in sel._visible_column_keys
+    assert "vat_combo" not in sel._visible_column_keys
+    assert "line_price_button" not in sel._visible_column_keys
+
+    sel.set_price_columns_visible(True)
+
+    assert sel.price_columns_visible_var.get() == 1
+    assert sel.header_repack_count == 1
+    assert sel.row_repack_count == 1
+    assert [
+        key for key in sel._visible_column_keys if key in sel.PRICE_COLUMN_KEYS
+    ] == list(sel.PRICE_COLUMN_KEYS)
+
+
+def test_price_columns_auto_show_for_existing_price_state():
+    price_state = types.SimpleNamespace(
+        pricing={"production::Laser": {"unit_price": "12,50"}},
+        vat_rates={},
+    )
+    default_state = types.SimpleNamespace(pricing={}, vat_rates={"row": "21"})
+    reduced_vat_state = types.SimpleNamespace(pricing={}, vat_rates={"row": "6"})
+
+    assert SupplierSelectionFrame._state_has_price_values(price_state) is True
+    assert SupplierSelectionFrame._state_has_price_values(default_state) is False
+    assert SupplierSelectionFrame._state_has_price_values(reduced_vat_state) is True
 
 
 def test_apply_custom_bom_refreshes_order_tab_when_present():
