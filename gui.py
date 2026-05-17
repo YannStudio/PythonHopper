@@ -4114,12 +4114,23 @@ def start_gui():
                     return None
                 return "break"
 
-            self.selection_rows_canvas.bind("<MouseWheel>", _on_selection_rows_mousewheel)
-            self.selection_rows_canvas.bind("<Button-4>", _on_selection_rows_mousewheel)
-            self.selection_rows_canvas.bind("<Button-5>", _on_selection_rows_mousewheel)
-            left.bind("<MouseWheel>", _on_selection_rows_mousewheel)
-            left.bind("<Button-4>", _on_selection_rows_mousewheel)
-            left.bind("<Button-5>", _on_selection_rows_mousewheel)
+            def _bind_selection_rows_mousewheel(widget: tk.Misc) -> None:
+                if getattr(widget, "_selection_rows_mousewheel_bound", False):
+                    return
+                for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+                    widget.bind(sequence, _on_selection_rows_mousewheel, add="+")
+                widget._selection_rows_mousewheel_bound = True
+
+            def _bind_selection_rows_mousewheel_tree(widget: tk.Misc) -> None:
+                _bind_selection_rows_mousewheel(widget)
+                try:
+                    children = widget.winfo_children()
+                except tk.TclError:
+                    return
+                for child in children:
+                    _bind_selection_rows_mousewheel_tree(child)
+
+            self._bind_selection_rows_mousewheel_tree = _bind_selection_rows_mousewheel_tree
 
             self._opticutter_notice_var = tk.StringVar(value="")
             self._opticutter_notice_label = tk.Label(
@@ -4159,61 +4170,88 @@ def start_gui():
                 pady=4,
             )
             secondary_actions.grid(row=0, column=0, sticky="nw", pady=(2, 0))
-            tk.Button(
+
+            top_button_kwargs = dict(padx=10, pady=1)
+
+            def _top_action_button(
+                parent,
+                *,
+                text: str,
+                command,
+                tooltip: str = "",
+                state: Optional[str] = None,
+            ) -> tk.Button:
+                kwargs = dict(top_button_kwargs)
+                if state is not None:
+                    kwargs["state"] = state
+                button = tk.Button(parent, text=text, command=command, **kwargs)
+                if tooltip:
+                    _HelpTooltip(button, tooltip)
+                return button
+
+            _top_action_button(
                 secondary_actions,
                 text="Nieuw leveradres",
                 command=self._add_delivery_address,
+                tooltip="Maak een nieuw leveradres aan en selecteer het voor de actieve rij.",
             ).pack(side="left", padx=(0, 4))
-            tk.Button(
+            _top_action_button(
                 secondary_actions,
                 text="Presetregels",
                 command=self._open_preset_manager,
+                tooltip=(
+                    "Beheer regels die leveranciers, documenttypes en opmerkingen "
+                    "automatisch invullen."
+                ),
             ).pack(side="left", padx=(0, 4))
-            tk.Button(
+            _top_action_button(
                 secondary_actions,
                 text="Exportlog laden",
                 command=self._load_export_log_from_file,
+                tooltip="Laad een eerder opgeslagen exportlog voor deze bestelbon.",
             ).pack(side="left", padx=(0, 4))
-            tk.Button(
+            _top_action_button(
                 secondary_actions,
                 text="Laatste log",
                 command=self._load_latest_export_log,
+                tooltip="Laad automatisch de meest recente exportlog voor dit project.",
             ).pack(side="left", padx=(0, 4))
-            self.export_log_documents_button = tk.Button(
+            self.export_log_documents_button = _top_action_button(
                 secondary_actions,
                 text="Vorige docs",
                 command=self._open_loaded_export_documents_dialog,
                 state="disabled",
+                tooltip="Open de vorige exportmap of documenten uit de laatst geladen exportlog.",
             )
             self.export_log_documents_button.pack(side="left", padx=(0, 4))
-            _HelpTooltip(
-                self.export_log_documents_button,
-                "Open de vorige exportmap of documenten uit de laatst geladen exportlog.",
-            )
-            tk.Button(
+            _top_action_button(
                 secondary_actions,
                 text="Leegmaken",
                 command=self._clear_saved_suppliers,
+                tooltip="Wis opgeslagen leverancierkeuzes en reset de velden op deze pagina.",
             ).pack(side="left")
 
             action_row = tk.Frame(clear_btn_container)
             action_row.grid(row=1, column=0, sticky="nw", pady=(4, 0))
+            action_row.grid_rowconfigure(0, weight=1)
             export_group = tk.LabelFrame(
                 action_row,
                 text="Export selectie",
                 padx=6,
                 pady=4,
             )
-            export_group.pack(side="left", padx=(0, 8))
-            tk.Button(
+            export_group.grid(row=0, column=0, sticky="s", padx=(0, 8))
+            _top_action_button(
                 export_group,
                 text="Alles aan",
                 command=lambda: self._set_all_exports(True),
+                tooltip="Selecteer alle bestelbonregels voor export.",
             ).pack(side="left")
-            tk.Button(
+            _top_action_button(
                 export_group,
                 text="Alles uit",
                 command=lambda: self._set_all_exports(False),
+                tooltip="Deselecteer alle bestelbonregels voor export.",
             ).pack(side="left", padx=(6, 0))
             preset_group = tk.LabelFrame(
                 action_row,
@@ -4221,11 +4259,12 @@ def start_gui():
                 padx=6,
                 pady=4,
             )
-            preset_group.pack(side="left", padx=(0, 8))
-            tk.Button(
+            preset_group.grid(row=0, column=1, sticky="s", padx=(0, 8))
+            _top_action_button(
                 preset_group,
                 text="Invullen",
                 command=self._apply_presets_from_button,
+                tooltip="Pas de actieve presetregels toe op de bestelbonregels.",
             ).pack(side="left")
             view_group = tk.LabelFrame(
                 action_row,
@@ -4233,7 +4272,7 @@ def start_gui():
                 padx=6,
                 pady=4,
             )
-            view_group.pack(side="left", padx=(0, 8))
+            view_group.grid(row=0, column=2, sticky="s")
             self.price_columns_visible_var = tk.BooleanVar(
                 value=self._price_columns_visible
             )
@@ -4241,6 +4280,8 @@ def start_gui():
                 view_group,
                 text="Prijsvelden",
                 variable=self.price_columns_visible_var,
+                padx=4,
+                pady=1,
                 command=lambda: self.set_price_columns_visible(
                     bool(self.price_columns_visible_var.get())
                 ),
@@ -4256,6 +4297,8 @@ def start_gui():
                 view_group,
                 text="Bruto-opm.",
                 variable=self.include_bruto_note_var,
+                padx=4,
+                pady=1,
             )
             bruto_note_toggle.pack(side="left", padx=(10, 0))
             _HelpTooltip(
@@ -4882,6 +4925,7 @@ def start_gui():
                 except Exception:
                     pass
             self._update_preview_from_any_combo()
+            _bind_selection_rows_mousewheel_tree(content)
 
         def _resolve_current_client(self) -> Optional[Client]:
             clients_db = getattr(self, "clients_db", None)
@@ -7271,6 +7315,11 @@ def start_gui():
                 card.bind("<Button-1>", handler)
                 for w in widgets:
                     w.bind("<Button-1>", handler)
+            bind_mousewheel_tree = getattr(
+                self, "_bind_selection_rows_mousewheel_tree", None
+            )
+            if callable(bind_mousewheel_tree):
+                bind_mousewheel_tree(self.cards_frame)
 
         def set_busy(self, busy: bool, message: Optional[str] = None) -> None:
             confirm = getattr(self, "confirm_button", None)

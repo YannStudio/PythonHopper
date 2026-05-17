@@ -1582,18 +1582,6 @@
       "favorite": false
     }
   ],
-  "defaults_by_production": {
-    "Mount material": "Elcee Belux",
-    "Lasercutting": "Productora",
-    "Sheetmetal": "Productora",
-    "Tube laser L": "Van Eycken",
-    "Sheetmetal +4m": "Meeuwsen bv",
-    "Green roof": "Dirk Maris nv",
-    "Tube laser": "Productora"
-  },
-  "defaults_by_finish": {
-    "Finish-Galvanised _ Powder coating-RAL 6018": "Van Gils Coating - Beringen/Maasmechelen",
-    "Finish-Galvanised _ Powder coating-RAL 9007": "Van Gils Coating - Beringen/Maasmechelen",
-    "Finish-Metalised _ Powdercoating-RAL 9007": "Van Gils Coating - Beringen/Maasmechelen"
-  }
+  "defaults_by_production": {},
+  "defaults_by_finish": {}
 }
