@@ -46,10 +46,10 @@
       "enabled": true
     }
   ],
-  "zip_per_production": false,
+  "zip_per_production": true,
   "combine_pdf_per_production": false,
   "copy_finish_exports": true,
-  "zip_finish_exports": false,
+  "zip_finish_exports": true,
   "export_processed_bom": true,
   "export_related_bom_files": true,
   "export_date_prefix": false,
@@ -79,7 +79,7 @@
     "sheetmetal": false,
     "sheetmetal 4m": true,
     "spare part": false,
-    "tube laser": false,
+    "tube laser": true,
     "tube laser l": true,
     "onbekend": false,
     "assembly": false,

@@ -2590,6 +2590,7 @@ def start_gui():
             values = {
                 self._key("Geen"),
                 self._key("Klantadres"),
+                self._key("Opdrachtgeveradres"),
                 self._key("Bestelling wordt opgehaald"),
                 self._key("Leveradres wordt nog meegedeeld"),
             }
@@ -3321,7 +3322,7 @@ def start_gui():
                 delivery_values.extend(
                     [
                         "Geen",
-                        "Klantadres",
+                        "Opdrachtgeveradres",
                         "Bestelling wordt opgehaald",
                         "Leveradres wordt nog meegedeeld",
                     ]
@@ -3332,6 +3333,7 @@ def start_gui():
                         delivery_values.append(display)
                         self._delivery_display_to_value[display] = strip_favorite_marker(display).strip()
                 self._delivery_display_to_value["Geen"] = "Geen"
+                self._delivery_display_to_value["Opdrachtgeveradres"] = "Klantadres"
                 self._delivery_display_to_value["Klantadres"] = "Klantadres"
                 self._delivery_display_to_value["Bestelling wordt opgehaald"] = "Bestelling wordt opgehaald"
                 self._delivery_display_to_value["Leveradres wordt nog meegedeeld"] = "Leveradres wordt nog meegedeeld"
@@ -3531,7 +3533,7 @@ def start_gui():
                 delivery_combo.grid(row=2, column=1, sticky="ew", padx=4, pady=2)
                 _HelpTooltip(
                     delivery_combo,
-                    "Klantadres gebruikt het adres van de gekozen opdrachtgever. Een specifiek leveradres kan ook gekozen worden.",
+                    "Opdrachtgeveradres gebruikt het adres van de gekozen opdrachtgever. Een specifiek leveradres kan ook gekozen worden.",
                 )
 
                 tk.Label(what_frame, text="EN 1090:").grid(row=3, column=0, sticky="e", padx=4, pady=2)
@@ -3943,7 +3945,8 @@ def start_gui():
                 self._opticutter_notice_var.set("")
                 self._opticutter_notice_label.pack_forget()
 
-        CLIENT_DELIVERY_PRESET = "Klantadres"
+        CLIENT_DELIVERY_PRESET = "Opdrachtgeveradres"
+        LEGACY_CLIENT_DELIVERY_PRESET = "Klantadres"
         DELIVERY_PRESETS = (
             "Geen",
             CLIENT_DELIVERY_PRESET,
@@ -4673,6 +4676,10 @@ def start_gui():
                     anchor="w",
                     background=row_bg,
                 )
+                _OverflowTooltip(
+                    row_label,
+                    lambda label=row_label: _to_str(label.cget("text")).strip(),
+                )
                 var = tk.StringVar()
                 self.sel_vars[sel_key] = var
                 combo = ttk.Combobox(row, textvariable=var, state="normal", width=50)
@@ -5216,6 +5223,14 @@ def start_gui():
 
         def _default_delivery_value(self) -> str:
             return self.DELIVERY_PRESETS[0]
+
+        @classmethod
+        def _is_client_delivery_choice(cls, value: object) -> bool:
+            clean = strip_favorite_marker(_to_str(value)).strip().casefold()
+            return clean in {
+                cls.CLIENT_DELIVERY_PRESET.casefold(),
+                cls.LEGACY_CLIENT_DELIVERY_PRESET.casefold(),
+            }
 
         def _delivery_options(self) -> List[str]:
             options = list(self.DELIVERY_PRESETS)
@@ -5806,6 +5821,8 @@ def start_gui():
             clean = self._clean_display_value(delivery_name)
             if not clean:
                 return ""
+            if SupplierSelectionFrame._is_client_delivery_choice(clean):
+                return self.CLIENT_DELIVERY_PRESET
             options = []
             delivery_options = getattr(self, "_delivery_options", None)
             if callable(delivery_options):
@@ -6499,7 +6516,7 @@ def start_gui():
                 dcombo = self.delivery_combos.get(sel_key)
                 if dcombo is not None:
                     try:
-                        dcombo.set(value)
+                        dcombo.set(self._find_delivery_display_for_name(value))
                     except tk.TclError:
                         pass
 
@@ -7319,6 +7336,8 @@ def start_gui():
                 dcombo["values"] = delivery_opts
                 if cur in delivery_opts:
                     dcombo.set(cur)
+                elif SupplierSelectionFrame._is_client_delivery_choice(cur):
+                    dcombo.set(self.CLIENT_DELIVERY_PRESET)
                 else:
                     dcombo.set(default_delivery)
             refresh_group_options = getattr(self, "_refresh_group_options", None)
@@ -9599,7 +9618,7 @@ def start_gui():
             clean = strip_favorite_marker(_to_str(delivery_display)).strip()
             if not clean or clean == "Geen":
                 return None
-            if clean == SupplierSelectionFrame.CLIENT_DELIVERY_PRESET:
+            if SupplierSelectionFrame._is_client_delivery_choice(clean):
                 selected_client = client if client is not None else self._current_client()
                 if selected_client is None:
                     return None

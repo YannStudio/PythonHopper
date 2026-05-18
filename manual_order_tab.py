@@ -661,7 +661,8 @@ class ManualOrderTab(tk.Frame):
     QUANTITY_KEY_HINTS = {"aantal", "st", "st.", "qty", "quantity", "stuks"}
 
     DOC_TYPE_OPTIONS: tuple[str, ...] = ("Bestelbon", "Standaard bon", "Offerteaanvraag")
-    CLIENT_ADDRESS_PRESET = "Klantadres"
+    CLIENT_ADDRESS_PRESET = "Opdrachtgeveradres"
+    LEGACY_CLIENT_ADDRESS_PRESET = "Klantadres"
     DELIVERY_PRESETS: tuple[str, ...] = (
         "Geen",
         CLIENT_ADDRESS_PRESET,
@@ -1193,7 +1194,13 @@ class ManualOrderTab(tk.Frame):
         current_delivery = self.delivery_var.get()
         self.delivery_combo.configure(values=delivery_opts)
         if current_delivery not in delivery_opts:
-            self.delivery_var.set(self._default_delivery_choice())
+            if (
+                strip_favorite_marker(_to_str(current_delivery)).strip().casefold()
+                == self.LEGACY_CLIENT_ADDRESS_PRESET.casefold()
+            ):
+                self.delivery_var.set(self.CLIENT_ADDRESS_PRESET)
+            else:
+                self.delivery_var.set(self._default_delivery_choice())
 
     def _selected_client(self):
         if self.clients_db is None:
