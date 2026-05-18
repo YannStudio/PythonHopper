@@ -1,8 +1,8 @@
 {
-  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Thissen/Steel block/cad/V3",
-  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Thissen/Steel block/export",
-  "project_number": "Thissen",
-  "project_name": "SteelBlock",
+  "source_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2026/20260079 - Privé Carport Brugge/CAD/3D Soldiworks Files/V2",
+  "dest_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2026/20260079 - Privé Carport Brugge/CAD/Bestellingen",
+  "project_number": "20260079",
+  "project_name": "Carport Brugge",
   "file_extensions": [
     {
       "key": "pdf",
@@ -75,7 +75,7 @@
   "en1090_preferences": {
     "cutting": false,
     "dummy part": false,
-    "lasercutting": false,
+    "lasercutting": true,
     "sheetmetal": false,
     "sheetmetal 4m": true,
     "spare part": false,

@@ -48,7 +48,7 @@
       "doc_type": "Bestelbon",
       "delivery": "Klantadres",
       "remark": "",
-      "en1090": null
+      "en1090": true
     },
     {
       "name": "Tecno Art - Sheetmetal",
