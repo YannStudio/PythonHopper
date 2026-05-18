@@ -4678,8 +4678,10 @@ def start_gui():
                 combo = ttk.Combobox(row, textvariable=var, state="normal", width=50)
                 combo.bind("<<ComboboxSelected>>", self._on_combo_change)
                 combo.bind(
-                    "<FocusIn>", lambda _e, key=sel_key: self._on_focus_key(key)
+                    "<FocusIn>",
+                    lambda _e, key=sel_key: self._on_supplier_combo_focus_in(key),
                 )
+                combo.bind("<FocusOut>", self._on_supplier_combo_focus_out)
                 self._install_supplier_focus_behavior(combo)
                 combo.bind(
                     "<KeyRelease>",
@@ -5004,6 +5006,8 @@ def start_gui():
 
             self.cards_frame = tk.Frame(preview_frame)
             self.cards_frame.grid(row=0, column=0, sticky="nsew", pady=(8, 0))
+            self._supplier_details_hide_after_id: Optional[str] = None
+            self._supplier_details_auto_open = False
             self._set_supplier_details_visible(False)
 
             # Mapping voor combobox per selectie
@@ -5047,12 +5051,20 @@ def start_gui():
             return self.ROW_ALT_BACKGROUND if row_index % 2 else base_bg
 
         def _toggle_supplier_details(self) -> None:
+            self._cancel_supplier_details_auto_hide()
             self._set_supplier_details_visible(
-                not bool(getattr(self, "_supplier_details_visible", False))
+                not bool(getattr(self, "_supplier_details_visible", False)),
+                automatic=False,
             )
 
-        def _set_supplier_details_visible(self, visible: bool) -> None:
+        def _set_supplier_details_visible(
+            self,
+            visible: bool,
+            *,
+            automatic: bool = False,
+        ) -> None:
             self._supplier_details_visible = bool(visible)
+            self._supplier_details_auto_open = bool(automatic) if visible else False
             frame = getattr(self, "_supplier_preview_frame", None)
             if frame is not None:
                 try:
@@ -5083,6 +5095,91 @@ def start_gui():
                     if self._supplier_details_visible
                     else "Klik om leverancierkaarten tijdelijk te tonen."
                 )
+
+        def _cancel_supplier_details_auto_hide(self) -> None:
+            after_id = getattr(self, "_supplier_details_hide_after_id", None)
+            if after_id:
+                try:
+                    self.after_cancel(after_id)
+                except Exception:
+                    pass
+            self._supplier_details_hide_after_id = None
+
+        def _show_supplier_details_for_supplier_search(self) -> None:
+            self._cancel_supplier_details_auto_hide()
+            self._set_supplier_details_visible(True, automatic=True)
+
+        def _widget_is_or_contains(
+            self,
+            container: Optional["tk.Misc"],
+            widget: Optional["tk.Misc"],
+        ) -> bool:
+            if container is None or widget is None:
+                return False
+            current = widget
+            while current is not None:
+                if current is container or str(current) == str(container):
+                    return True
+                try:
+                    current = current.master
+                except Exception:
+                    return False
+            return False
+
+        def _supplier_details_focus_inside(self) -> bool:
+            try:
+                focused = self.focus_get()
+            except tk.TclError:
+                focused = None
+            if focused is None:
+                return False
+
+            for combo in getattr(self, "combo_by_key", {}).values():
+                if self._widget_is_or_contains(combo, focused):
+                    return True
+            for container_name in ("_supplier_preview_frame", "cards_frame"):
+                if self._widget_is_or_contains(
+                    getattr(self, container_name, None),
+                    focused,
+                ):
+                    return True
+            return False
+
+        def _hide_supplier_details_if_focus_left(self) -> None:
+            self._supplier_details_hide_after_id = None
+            if not bool(getattr(self, "_supplier_details_auto_open", False)):
+                return
+            if self._supplier_details_focus_inside():
+                return
+            self._set_supplier_details_visible(False)
+
+        def _schedule_supplier_details_auto_hide(self) -> None:
+            if not bool(getattr(self, "_supplier_details_auto_open", False)):
+                return
+            self._cancel_supplier_details_auto_hide()
+            try:
+                self._supplier_details_hide_after_id = self.after(
+                    180,
+                    self._hide_supplier_details_if_focus_left,
+                )
+            except tk.TclError:
+                self._hide_supplier_details_if_focus_left()
+
+        def _on_supplier_combo_focus_in(self, sel_key: str) -> None:
+            self._on_focus_key(sel_key)
+            self._cancel_supplier_details_auto_hide()
+            combo = self.combo_by_key.get(sel_key)
+            text = ""
+            if combo is not None:
+                try:
+                    text = combo.get().strip()
+                except tk.TclError:
+                    text = ""
+            if text and text.lower() not in {"(geen)", "geen"}:
+                self._show_supplier_details_for_supplier_search()
+
+        def _on_supplier_combo_focus_out(self, _event=None) -> None:
+            self._schedule_supplier_details_auto_hide()
 
         def _resolve_current_client(self) -> Optional[Client]:
             clients_db = getattr(self, "clients_db", None)
@@ -7282,6 +7379,7 @@ def start_gui():
                 combo["values"] = base_options
                 self._populate_cards([], sel_key)
                 self._update_preview_for_text("")
+                self._set_supplier_details_visible(False)
                 return
 
             if keysym == "BackSpace":
@@ -7321,6 +7419,7 @@ def start_gui():
                     text_so_far += char
 
             type_map[sel_key] = text_so_far
+            self._show_supplier_details_for_supplier_search()
 
             if keysym not in ("Return", "KP_Enter"):
                 try:
@@ -7337,6 +7436,8 @@ def start_gui():
                 combo["values"] = base_options
                 self._populate_cards([], sel_key)
                 self._update_preview_for_text("")
+                if bool(getattr(self, "_supplier_details_auto_open", False)):
+                    self._set_supplier_details_visible(False)
                 return
 
             disp_to_name = getattr(self, "_disp_to_name", {})
@@ -10359,7 +10460,11 @@ def start_gui():
                 df["Link"] = ""
             self._store_custom_row_flags(df, [mark_as_custom] * len(df.index))
             self.bom_df = df
-            self.bom_source_path = os.path.abspath(path)
+            previous_source_path = _to_str(getattr(self, "bom_source_path", "")).strip()
+            if mark_as_custom and previous_source_path:
+                self.bom_source_path = previous_source_path
+            else:
+                self.bom_source_path = os.path.abspath(path)
             self._refresh_tree()
             self.status_var.set(f"BOM geladen: {len(df)} rijen")
             self._sync_custom_bom_from_main()
@@ -12608,7 +12713,7 @@ def start_gui():
                         self.after(0, on_error)
                         return
 
-                if bom_written and export_related_enabled and bom_source:
+                if export_related_enabled and bom_source:
                     try:
                         for src_file in find_related_bom_exports(bom_source, idx):
                             if src_file in copied_paths:

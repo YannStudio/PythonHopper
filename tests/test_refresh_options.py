@@ -1,5 +1,6 @@
 import ast
 import datetime
+import os
 import pathlib
 import types
 from typing import List, Dict, Mapping, Optional
@@ -80,6 +81,7 @@ def _load_gui_classes():
         "Dict": Dict,
         "Mapping": Mapping,
         "Optional": Optional,
+        "os": os,
         "Supplier": Supplier,
         "Client": Client,
         "DeliveryAddress": DeliveryAddress,
@@ -442,6 +444,48 @@ def test_apply_custom_bom_recalculates_file_status_when_source_available():
     assert app.file_status_exts == [".pdf"]
     assert app.tree_refreshed is False
     assert "Bestandscontrole bijgewerkt." in app.status_var.get()
+
+
+def test_loading_custom_bom_keeps_original_related_bom_source(tmp_path):
+    original_bom = tmp_path / "ProjectX-BOM.xlsx"
+    custom_bom = tmp_path / "BOM-FileHopper-Temp.xlsx"
+
+    class DummyApp:
+        _load_bom_from_path = App._load_bom_from_path
+
+        def __init__(self):
+            self.bom_source_path = str(original_bom)
+            self.status_var = DummyVar("")
+            self.bom_df = None
+            self.flags_saved = None
+            self.tree_refreshed = False
+            self.custom_synced = False
+
+        def _store_custom_row_flags(self, df, flags):
+            self.flags_saved = (df, list(flags))
+
+        def _refresh_tree(self):
+            self.tree_refreshed = True
+
+        def _sync_custom_bom_from_main(self):
+            self.custom_synced = True
+
+    globals_dict = App._load_bom_from_path.__globals__
+    previous_loader = globals_dict.get("load_bom")
+    globals_dict["load_bom"] = lambda _path: pd.DataFrame({"PartNumber": ["PN-001"]})
+    try:
+        app = DummyApp()
+        app._load_bom_from_path(str(custom_bom), mark_as_custom=True)
+    finally:
+        if previous_loader is None:
+            globals_dict.pop("load_bom", None)
+        else:
+            globals_dict["load_bom"] = previous_loader
+
+    assert app.bom_source_path == str(original_bom)
+    assert app.flags_saved[1] == [True]
+    assert app.tree_refreshed is True
+    assert app.custom_synced is True
 
 
 def test_leaving_dirty_opticutter_tab_confirms_update():

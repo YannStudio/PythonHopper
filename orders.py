@@ -876,21 +876,48 @@ def find_related_bom_exports(
     stem = Path(bom_source_path).stem.lower()
     if not stem:
         return []
+
+    def _component_contains(haystack: str, needle: str) -> bool:
+        idx = haystack.find(needle)
+        while idx != -1:
+            if idx > 0 and haystack[idx - 1].isalnum():
+                idx = haystack.find(needle, idx + 1)
+                continue
+            end = idx + len(needle)
+            if end < len(haystack) and haystack[end].isalnum():
+                idx = haystack.find(needle, idx + 1)
+                continue
+            return True
+        return False
+
+    def _candidate_allowed(value: str) -> bool:
+        return bool(value) and (len(value) >= 4 or any(ch.isdigit() for ch in value))
+
+    bom_candidates = [stem]
+    bom_match = re.search(r"(.*?)(?:[-_.\s]*\bBOM\b)", stem, flags=re.IGNORECASE)
+    if bom_match:
+        base = bom_match.group(1).rstrip(" -_.")
+        if base:
+            bom_candidates.append(base)
+    bom_candidates = [
+        candidate
+        for candidate in dict.fromkeys(bom_candidates)
+        if _candidate_allowed(candidate)
+    ]
+
     matches: List[str] = []
     seen: set[str] = set()
     for key in sorted(file_index.keys(), key=len, reverse=True):
         if not key:
             continue
         key_lower = key.lower()
-        if len(key_lower) < 4 and not any(ch.isdigit() for ch in key_lower):
+        if not _candidate_allowed(key_lower):
             continue
-        idx = stem.find(key_lower)
-        if idx == -1:
-            continue
-        if idx > 0 and stem[idx - 1].isalnum():
-            continue
-        end = idx + len(key_lower)
-        if end < len(stem) and stem[end].isalnum():
+        if not any(
+            _component_contains(candidate, key_lower)
+            or _component_contains(key_lower, candidate)
+            for candidate in bom_candidates
+        ):
             continue
         for src_file in file_index.get(key, []):
             if src_file not in seen:
@@ -3505,10 +3532,10 @@ def copy_per_production_and_orders(
     When ``bom_source_path`` refers to the loaded BOM file, Filehopper tries to
     copy export files from ``source`` whose filename stem appears inside the BOM
     name (for example ``123-BOM-PartsOnly`` → ``123.pdf``). Matching files are
-    placed next to the exported BOM workbook and use the same optional
+    placed in the root export folder and use the same optional
     name-transformations (date/prefix/suffix). When no related files are found
     nothing is copied. Set ``export_related_files`` to ``False`` to skip copying
-    these auxiliary files even when a BOM export is created.
+    these auxiliary files.
 
     Finish-specific overrides, document types/numbers and deliveries can be
     provided via the ``finish_*`` mappings. Keys correspond to the normalized
@@ -4592,7 +4619,7 @@ def copy_per_production_and_orders(
         except Exception as exc:  # pragma: no cover - unexpected
             raise RuntimeError(f"Kon BOM-export niet opslaan: {exc}") from exc
 
-    if export_bom and export_related_files and bom_source_path:
+    if export_related_files and bom_source_path:
         for src_file in find_related_bom_exports(bom_source_path, file_index):
             transformed = _transform_export_name(os.path.basename(src_file))
             target_path = os.path.join(dest, transformed)

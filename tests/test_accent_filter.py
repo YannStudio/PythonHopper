@@ -177,6 +177,16 @@ class DummySel:
         self._preview_supplier = None
         self.cards_frame = SupplierSelectionFrame._Frame(None)
         self._type_filter_by_key = {}
+        self.detail_visibility = []
+        self._supplier_details_auto_open = False
+
+    def _show_supplier_details_for_supplier_search(self):
+        self._supplier_details_auto_open = True
+        self.detail_visibility.append(True)
+
+    def _set_supplier_details_visible(self, visible, *, automatic=False):
+        self._supplier_details_auto_open = bool(automatic) if visible else False
+        self.detail_visibility.append(bool(visible))
 
     def _update_preview_for_text(self, text):
         self._preview_supplier = self._resolve_text_to_supplier(text)
@@ -216,6 +226,27 @@ def test_populate_cards_not_called_for_empty_text():
         types.SimpleNamespace(keysym="a", char="a", state=0), "Prod", combo
     )
     assert calls == [["Alpha"]]
+
+
+def test_supplier_details_open_while_typing_and_close_when_search_is_empty():
+    sdb = SuppliersDB([Supplier(supplier="Nedco"), Supplier(supplier="Alpha")])
+    sel = DummySel(sdb)
+    sel._refresh_options(initial=True)
+    combo = sel.rows[0][1]
+
+    sel._on_combo_type(
+        types.SimpleNamespace(keysym="N", char="N", state=0), "Prod", combo
+    )
+
+    assert sel.detail_visibility[-1] is True
+    assert combo.values == ["Nedco"]
+
+    sel._supplier_details_auto_open = True
+    sel._on_combo_type(
+        types.SimpleNamespace(keysym="BackSpace", char="", state=0), "Prod", combo
+    )
+
+    assert sel.detail_visibility[-1] is False
 
 
 def test_filters_use_supplier_name_not_display_prefix():

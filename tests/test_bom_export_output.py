@@ -226,3 +226,64 @@ def test_related_exports_copied_next_to_bom(tmp_path, monkeypatch):
 
     assert cnt == 2
     assert (dest / f"{assembly_stem}.pdf").is_file()
+
+
+def test_related_exports_copied_without_processed_bom_export(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    src = tmp_path / "src"
+    dest = tmp_path / "dest"
+    src.mkdir(); dest.mkdir()
+
+    (src / "PN-001.pdf").write_text("dummy", encoding="utf-8")
+    assembly_stem = "20230171-v2-a00"
+    (src / f"{assembly_stem}.pdf").write_text("top", encoding="utf-8")
+    bom_path = src / f"{assembly_stem}-BOM-PartsOnly.xlsx"
+    bom_path.write_text("bom", encoding="utf-8")
+
+    cnt, _ = copy_per_production_and_orders(
+        str(src),
+        str(dest),
+        _basic_bom(),
+        [".pdf"],
+        _make_db(),
+        {"Laser": "ACME"},
+        {},
+        {},
+        False,
+        export_bom=False,
+        export_related_files=True,
+        bom_source_path=str(bom_path),
+    )
+
+    assert cnt == 2
+    assert not any(dest.glob("*.xlsx"))
+    assert (dest / f"{assembly_stem}.pdf").is_file()
+
+
+def test_related_exports_match_variant_bom_file_stem(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    src = tmp_path / "src"
+    dest = tmp_path / "dest"
+    src.mkdir(); dest.mkdir()
+
+    (src / "PN-001.pdf").write_text("dummy", encoding="utf-8")
+    (src / "ProjectX-BOM-revA.pdf").write_text("top", encoding="utf-8")
+    bom_path = src / "ProjectX-BOM.xlsx"
+    bom_path.write_text("bom", encoding="utf-8")
+
+    copy_per_production_and_orders(
+        str(src),
+        str(dest),
+        _basic_bom(),
+        [".pdf"],
+        _make_db(),
+        {"Laser": "ACME"},
+        {},
+        {},
+        False,
+        export_bom=True,
+        export_related_files=True,
+        bom_source_path=str(bom_path),
+    )
+
+    assert (dest / "ProjectX-BOM-revA.pdf").is_file()
