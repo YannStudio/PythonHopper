@@ -1,7 +1,7 @@
 {
   "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/HYE/01.Projecten/260316-Berendrecht/cad",
-  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/HYE/01.Projecten/260316-Berendrecht/export",
-  "project_number": "SLBES-V00405-ASB-D3-MW-TE-780",
+  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/HYE/01.Projecten/260316-Berendrecht/export/2026-05-18_SLBES-V00405-ASB-D3-MW-TE-780_kabelsleep",
+  "project_number": "2026-05-18_SLBES-V00405-ASB-D3-MW-TE-780",
   "project_name": "Kabelsleep",
   "file_extensions": [
     {
@@ -79,7 +79,7 @@
     "sheetmetal": false,
     "sheetmetal 4m": true,
     "spare part": false,
-    "tube laser": true,
+    "tube laser": false,
     "tube laser l": true,
     "onbekend": false,
     "assembly": false,
