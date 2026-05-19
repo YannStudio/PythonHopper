@@ -65,6 +65,17 @@
       "accent_color": "#F5A500",
       "logo_path": "client_logos/hye_20260414223258.png",
       "logo_crop": null
+    },
+    {
+      "name": "Thissen Biljarts",
+      "address": "Van Wesenbekestraat 51 - 55, 2060",
+      "vat": "BE 0404.668.162",
+      "email": "info@thissen.be",
+      "website": "www.thissen.be",
+      "favorite": false,
+      "accent_color": "#123024",
+      "logo_path": "client_logos/thissen_biljarts_20260519190356.png",
+      "logo_crop": null
     }
   ]
 }
