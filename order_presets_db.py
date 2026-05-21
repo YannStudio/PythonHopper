@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
 
 from app_paths import data_file
+from data_storage import write_json_with_backup
 
 ORDER_PRESETS_DB_FILE = data_file("order_presets.json")
 ORDER_PRESET_KINDS = {"production", "finish", "opticutter"}
@@ -273,8 +274,7 @@ class OrderPresetsDB:
         return OrderPresetsDB(rules)
 
     def save(self, path: str = ORDER_PRESETS_DB_FILE) -> None:
-        with open(path, "w", encoding="utf-8") as handle:
-            json.dump(self.to_dict(), handle, indent=2, ensure_ascii=False)
+        write_json_with_backup(path, self.to_dict())
 
     def to_dict(self) -> Dict[str, Any]:
         return {"rules": [asdict(rule) for rule in self.rules]}

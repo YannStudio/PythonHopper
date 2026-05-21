@@ -1,8 +1,10 @@
 import os
 import json
 from dataclasses import asdict
+from pathlib import Path
 from typing import List, Dict, Optional
 
+from data_storage import write_json_with_backup
 from models import Supplier
 from app_paths import data_file
 from helpers import favorite_prefix
@@ -17,21 +19,24 @@ class SuppliersDB:
         suppliers: List[Supplier] = None,
         defaults_by_production: Dict[str, str] = None,
         defaults_by_finish: Dict[str, str] = None,
+        storage_path: str | os.PathLike[str] | None = None,
     ):
         self.suppliers: List[Supplier] = suppliers or []
         self.defaults_by_production: Dict[str, str] = defaults_by_production or {}
         self.defaults_by_finish: Dict[str, str] = defaults_by_finish or {}
+        self._path: Optional[Path] = _resolve_storage_path(storage_path)
 
     @staticmethod
     def load(path: str = SUPPLIERS_DB_FILE) -> "SuppliersDB":
+        storage_path = _resolve_storage_path(path)
         if not os.path.exists(path):
-            return SuppliersDB()
+            return SuppliersDB(storage_path=storage_path)
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, list):  # backward compat
                 sups = [Supplier(supplier=s) for s in data]
-                return SuppliersDB(sups, {}, {})
+                return SuppliersDB(sups, {}, {}, storage_path=storage_path)
             sups_raw = data.get("suppliers", [])
             sups = []
             for rec in sups_raw:
@@ -41,18 +46,27 @@ class SuppliersDB:
                     pass
             defaults = data.get("defaults_by_production", {}) or {}
             finish_defaults = data.get("defaults_by_finish", {}) or {}
-            return SuppliersDB(sups, defaults, finish_defaults)
+            return SuppliersDB(sups, defaults, finish_defaults, storage_path=storage_path)
         except Exception:
-            return SuppliersDB()
+            return SuppliersDB(storage_path=storage_path)
 
-    def save(self, path: str = SUPPLIERS_DB_FILE) -> None:
+    def save(self, path: str | os.PathLike[str] | None = None) -> None:
+        target = _resolve_storage_path(path) or self._path or _resolve_storage_path(SUPPLIERS_DB_FILE)
         data = {
             "suppliers": [asdict(s) for s in self.suppliers],
             "defaults_by_production": self.defaults_by_production,
             "defaults_by_finish": self.defaults_by_finish,
         }
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        write_json_with_backup(target, data)
+        self._path = target
+
+    def save_to_storage(self) -> bool:
+        """Save only when this database is tied to a storage path."""
+
+        if self._path is None:
+            return False
+        self.save(self._path)
+        return True
 
     def suppliers_sorted(self) -> List[Supplier]:
         return sorted(self.suppliers, key=lambda s: (not s.favorite, s.supplier.lower()))
@@ -215,3 +229,9 @@ class SuppliersDB:
 
     def get_default_finish(self, finish_key: str) -> Optional[str]:
         return self.defaults_by_finish.get(str(finish_key))
+
+
+def _resolve_storage_path(path: str | os.PathLike[str] | None) -> Optional[Path]:
+    if path is None:
+        return None
+    return Path(path).resolve()

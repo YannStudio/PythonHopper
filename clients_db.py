@@ -3,6 +3,7 @@ import json
 from dataclasses import asdict
 from typing import List, Optional
 
+from data_storage import write_json_with_backup
 from models import Client
 from app_paths import data_file
 from helpers import favorite_prefix
@@ -38,8 +39,7 @@ class ClientsDB:
 
     def save(self, path: str = CLIENTS_DB_FILE) -> None:
         data = {"clients": [asdict(c) for c in self.clients]}
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        write_json_with_backup(path, data)
 
     def clients_sorted(self) -> List[Client]:
         return sorted(self.clients, key=lambda c: (not c.favorite, c.name.lower()))

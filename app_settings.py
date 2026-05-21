@@ -6,6 +6,7 @@ from dataclasses import dataclass, field, asdict, fields
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
+from data_storage import write_json_with_backup
 from suppliers_db import SUPPLIERS_DB_FILE
 from orders import DEFAULT_FOOTER_NOTE
 from en1090 import EN1090_NOTE_TEXT
@@ -345,9 +346,7 @@ class AppSettings:
     def save(self, path: Optional[Any] = None) -> None:
         settings_path = Path(path) if path is not None else getattr(self, "_path", SETTINGS_FILE)
         payload = self.to_dict()
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(settings_path, "w", encoding="utf-8") as fh:
-            json.dump(payload, fh, indent=2, ensure_ascii=False)
+        write_json_with_backup(settings_path, payload)
         self._path = settings_path
 
     def to_dict(self) -> Dict[str, Any]:

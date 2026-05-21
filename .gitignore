@@ -342,6 +342,8 @@ paket-files/
 # Python Tools for Visual Studio (PTVS)
 **/__pycache__/
 *.pyc
+.filehopper_backups/
+**/.filehopper_backups/
 
 # Cake - Uncomment if you are using it
 #tools/**

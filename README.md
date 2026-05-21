@@ -38,6 +38,14 @@ python build_executable.py --target windows --onefile
 python build_executable.py --target windows --onefile --only-gui
 ```
 
+Voor een release-build met een vaste versie-outputmap gebruik je `--release`:
+
+```bash
+python build_executable.py --target windows --release
+```
+
+De resultaten komen dan in `releases/Filehopper-<versie>/`.
+
 Standaard worden er twee varianten gemaakt:
 
 * `filehopper-<target>` — console-app met CLI-ondersteuning.
@@ -53,6 +61,24 @@ Wanneer je een gebundelde versie gebruikt, worden de databestanden per gebruiker
 opgeslagen. Op Windows vind je ze in `%LOCALAPPDATA%\Filehopper`, op macOS in
 `~/Library/Application Support/Filehopper`. Hierdoor blijven gegevens behouden
 na updates.
+
+Bij het overschrijven van belangrijke JSON-bestanden maakt Filehopper automatisch
+een backup in `.filehopper_backups/`. Dat geldt onder andere voor leveranciers,
+klanten, leveradressen, order-presets en app-instellingen.
+
+## Release voorbereiden
+
+Gebruik het release-script om versienummers en changelog gelijk te houden:
+
+```bash
+python scripts/release.py 3.1.1 --test
+```
+
+Met `--build` start het script na de versie-update ook de release-build:
+
+```bash
+python scripts/release.py 3.1.1 --test --build --target windows
+```
 
 ## Voorbeelden
 

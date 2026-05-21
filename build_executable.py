@@ -19,6 +19,7 @@ from app_paths import APP_NAME, APP_VERSION
 PROJECT_ROOT = Path(__file__).resolve().parent
 BUILD_DIR = PROJECT_ROOT / "build" / "pyinstaller"
 DIST_DIR = PROJECT_ROOT / "dist"
+RELEASES_DIR = PROJECT_ROOT / "releases"
 SPEC_DIR = BUILD_DIR / "specs"
 VERSION_FILE_DIR = BUILD_DIR / "version-files"
 DATA_FILE_DIR = BUILD_DIR / "data-files"
@@ -118,6 +119,7 @@ def _pyinstaller_cmd(
     windowed: bool,
     onefile: bool,
     data_files: Iterable[str],
+    dist_dir: Path = DIST_DIR,
 ) -> List[str]:
     cmd = [
         sys.executable,
@@ -129,7 +131,7 @@ def _pyinstaller_cmd(
         "--noconfirm",
         "--clean",
         "--distpath",
-        str(DIST_DIR),
+        str(dist_dir),
         "--workpath",
         str(BUILD_DIR / "work"),
         "--specpath",
@@ -160,6 +162,7 @@ def run_pyinstaller(
     windowed: bool,
     onefile: bool,
     data_files: Iterable[str],
+    dist_dir: Path = DIST_DIR,
 ) -> None:
     cmd = _pyinstaller_cmd(
         entry,
@@ -167,6 +170,7 @@ def run_pyinstaller(
         windowed=windowed,
         onefile=onefile,
         data_files=data_files,
+        dist_dir=dist_dir,
     )
     print("Running", " ".join(cmd))
     result = subprocess.run(cmd, check=False)
@@ -181,10 +185,11 @@ def build_targets(
     include_cli: bool,
     onefile: bool,
     data_files: Iterable[str],
+    dist_dir: Path = DIST_DIR,
 ) -> None:
     data_files = list(data_files)
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
-    DIST_DIR.mkdir(parents=True, exist_ok=True)
+    dist_dir.mkdir(parents=True, exist_ok=True)
     SPEC_DIR.mkdir(parents=True, exist_ok=True)
 
     for target in targets:
@@ -195,6 +200,7 @@ def build_targets(
                 windowed=False,
                 onefile=onefile,
                 data_files=data_files,
+                dist_dir=dist_dir,
             )
         if include_gui:
             run_pyinstaller(
@@ -203,7 +209,14 @@ def build_targets(
                 windowed=True,
                 onefile=onefile,
                 data_files=data_files,
+                dist_dir=dist_dir,
             )
+
+
+def release_dist_dir(version: str = APP_VERSION) -> Path:
+    """Return the standard release output directory for an app version."""
+
+    return RELEASES_DIR / f"{APP_NAME}-{version}"
 
 
 def _detect_target() -> str:
@@ -244,6 +257,16 @@ def main(argv: List[str] | None = None) -> int:
         action="store_true",
         help="Build a single-file executable instead of a portable folder",
     )
+    parser.add_argument(
+        "--release",
+        action="store_true",
+        help="Write build output to releases/Filehopper-<version>/",
+    )
+    parser.add_argument(
+        "--dist-dir",
+        type=Path,
+        help="Custom build output directory (overrides --release)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -252,6 +275,7 @@ def main(argv: List[str] | None = None) -> int:
 
     include_gui = not args.only_cli
     include_cli = not args.only_gui
+    dist_dir = args.dist_dir or (release_dist_dir() if args.release else DIST_DIR)
 
     if not include_gui and not include_cli:
         parser.error("At least one of GUI or CLI builds must be enabled")
@@ -263,10 +287,12 @@ def main(argv: List[str] | None = None) -> int:
             include_cli=include_cli,
             onefile=args.onefile,
             data_files=data_files,
+            dist_dir=dist_dir,
         )
     except BuildError as exc:
         print(exc, file=sys.stderr)
         return 1
+    print(f"Build output: {dist_dir}")
     return 0
 
 

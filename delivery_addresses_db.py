@@ -3,6 +3,7 @@ import json
 from dataclasses import asdict
 from typing import List, Optional
 
+from data_storage import write_json_with_backup
 from models import DeliveryAddress
 from clients_db import ClientsDB, CLIENTS_DB_FILE
 from app_paths import data_file
@@ -58,8 +59,7 @@ class DeliveryAddressesDB:
 
     def save(self, path: str = DELIVERY_DB_FILE) -> None:
         data = {"addresses": [asdict(a) for a in self.addresses]}
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        write_json_with_backup(path, data)
 
     def addresses_sorted(self) -> List[DeliveryAddress]:
         return sorted(self.addresses, key=lambda a: (not a.favorite, a.name.lower()))

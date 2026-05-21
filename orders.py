@@ -4633,7 +4633,11 @@ def copy_per_production_and_orders(
             )
             count_copied += 1
 
-    db.save(SUPPLIERS_DB_FILE)
+    save_to_storage = getattr(db, "save_to_storage", None)
+    if callable(save_to_storage):
+        save_to_storage()
+    else:
+        db.save(SUPPLIERS_DB_FILE)
 
     return count_copied, chosen
 

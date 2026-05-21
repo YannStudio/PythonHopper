@@ -9,7 +9,7 @@ def test_defaults_persist(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     # Setup supplier database with two suppliers
-    db = SuppliersDB()
+    db = SuppliersDB(storage_path=tmp_path / "suppliers_db.json")
     db.upsert(Supplier.from_any({"supplier": "ACME"}))
     db.upsert(Supplier.from_any({"supplier": "BETA"}))
 
