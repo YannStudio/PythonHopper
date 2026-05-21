@@ -1,8 +1,8 @@
 {
-  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/HYE/01.Projecten/260316-Berendrecht/cad",
-  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/HYE/01.Projecten/260316-Berendrecht/export/2026-05-18_SLBES-V00405-ASB-D3-MW-TE-780_kabelsleep",
-  "project_number": "2026-05-18_SLBES-V00405-ASB-D3-MW-TE-780",
-  "project_name": "Kabelsleep",
+  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/Jef van Looveren/00. Pannen/00. CAD/00. Pannen",
+  "dest_folder": "C:/Users/jeroe/Desktop/JVL",
+  "project_number": "JVL",
+  "project_name": "Assembly",
   "file_extensions": [
     {
       "key": "pdf",
