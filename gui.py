@@ -17,6 +17,12 @@ from typing import Dict, Iterable, List, Mapping, Optional, Tuple, TYPE_CHECKING
 import pandas as pd
 
 from app_settings import AppSettings, FileExtensionSetting, FILE_EXTENSION_PRESETS
+from app_diagnostics import (
+    backup_root,
+    build_diagnostic_report,
+    create_data_file_backups,
+    format_report_for_clipboard,
+)
 from helpers import (
     _to_str,
     _build_file_index,
@@ -8159,6 +8165,198 @@ def start_gui():
             )
 
             self._refresh_list()
+            self._build_diagnostics_section(content, row=5)
+            self._refresh_diagnostics()
+
+        def _build_diagnostics_section(self, content: tk.Widget, *, row: int) -> None:
+            diagnostics_frame = tk.LabelFrame(
+                content,
+                text="Diagnose",
+                labelanchor="n",
+            )
+            diagnostics_frame.grid(row=row, column=0, sticky="nsew", pady=(12, 0))
+            diagnostics_frame.columnconfigure(0, weight=1)
+            diagnostics_frame.rowconfigure(2, weight=1)
+
+            tk.Label(
+                diagnostics_frame,
+                text=(
+                    "Controleer versie, databestanden, backups en basisvalidatie "
+                    "zonder extra tab op het hoofdscherm."
+                ),
+                justify="left",
+                anchor="w",
+                wraplength=560,
+            ).grid(row=0, column=0, sticky="ew", padx=12, pady=(8, 4))
+
+            self.diagnostics_summary_var = tk.StringVar(value="")
+            tk.Label(
+                diagnostics_frame,
+                textvariable=self.diagnostics_summary_var,
+                justify="left",
+                anchor="w",
+                foreground="#444444",
+                wraplength=560,
+            ).grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 6))
+
+            columns = ("status", "aantal", "gewijzigd", "schrijfbaar", "backups")
+            self.diagnostics_tree = ttk.Treeview(
+                diagnostics_frame,
+                columns=columns,
+                show="tree headings",
+                height=6,
+                selectmode="browse",
+            )
+            self.diagnostics_tree.heading("#0", text="Bestand")
+            self.diagnostics_tree.heading("status", text="Status")
+            self.diagnostics_tree.heading("aantal", text="Aantal")
+            self.diagnostics_tree.heading("gewijzigd", text="Gewijzigd")
+            self.diagnostics_tree.heading("schrijfbaar", text="Schrijfbaar")
+            self.diagnostics_tree.heading("backups", text="Backups")
+            self.diagnostics_tree.column("#0", width=155, minwidth=130, stretch=True)
+            self.diagnostics_tree.column("status", width=90, minwidth=80, anchor="center")
+            self.diagnostics_tree.column("aantal", width=70, minwidth=60, anchor="center")
+            self.diagnostics_tree.column("gewijzigd", width=120, minwidth=110)
+            self.diagnostics_tree.column("schrijfbaar", width=80, minwidth=70, anchor="center")
+            self.diagnostics_tree.column("backups", width=85, minwidth=75, anchor="center")
+            self.diagnostics_tree.grid(row=2, column=0, sticky="nsew", padx=12, pady=(0, 6))
+
+            warning_frame = tk.Frame(diagnostics_frame)
+            warning_frame.grid(row=3, column=0, sticky="nsew", padx=12, pady=(0, 6))
+            warning_frame.columnconfigure(0, weight=1)
+            warning_frame.rowconfigure(0, weight=1)
+
+            self.diagnostics_warning_text = tk.Text(
+                warning_frame,
+                height=4,
+                wrap="word",
+                font=("TkDefaultFont", 9),
+                state="disabled",
+            )
+            self.diagnostics_warning_text.grid(row=0, column=0, sticky="nsew")
+            warning_scroll = tk.Scrollbar(
+                warning_frame,
+                orient="vertical",
+                command=self.diagnostics_warning_text.yview,
+            )
+            warning_scroll.grid(row=0, column=1, sticky="ns")
+            self.diagnostics_warning_text.configure(yscrollcommand=warning_scroll.set)
+
+            btns = tk.Frame(diagnostics_frame)
+            btns.grid(row=4, column=0, sticky="ew", padx=12, pady=(0, 10))
+            tk.Button(btns, text="Vernieuwen", command=self._refresh_diagnostics).pack(
+                side="left", padx=(0, 4)
+            )
+            tk.Button(btns, text="Backup maken", command=self._create_diagnostics_backup).pack(
+                side="left", padx=4
+            )
+            tk.Button(btns, text="Datamap openen", command=self._open_diagnostics_data_folder).pack(
+                side="left", padx=4
+            )
+            tk.Button(btns, text="Backupmap openen", command=self._open_diagnostics_backup_folder).pack(
+                side="left", padx=4
+            )
+            tk.Button(btns, text="Kopieer diagnose", command=self._copy_diagnostics).pack(
+                side="left", padx=4
+            )
+
+        def _refresh_diagnostics(self) -> None:
+            try:
+                report = build_diagnostic_report(self.app.settings)
+            except Exception as exc:
+                messagebox.showerror("Diagnose mislukt", str(exc), parent=self)
+                return
+            self._diagnostic_report = report
+            self.diagnostics_summary_var.set(
+                (
+                    f"{report.app_name} {report.app_version} | Runtime: {report.runtime_mode} | "
+                    f"Datamap: {report.storage_path}"
+                )
+            )
+            existing_items = self.diagnostics_tree.get_children()
+            if existing_items:
+                self.diagnostics_tree.delete(*existing_items)
+            for item in report.data_files:
+                backups_label = (
+                    f"{item.backup_count} ({item.latest_backup_label})"
+                    if item.backup_count
+                    else "0"
+                )
+                self.diagnostics_tree.insert(
+                    "",
+                    tk.END,
+                    text=item.filename,
+                    values=(
+                        item.status,
+                        item.count_label,
+                        item.modified_label,
+                        item.writable_label,
+                        backups_label,
+                    ),
+                )
+            self._set_diagnostic_warnings(report.warnings)
+
+        def _set_diagnostic_warnings(self, warnings: List[str]) -> None:
+            self.diagnostics_warning_text.configure(state="normal")
+            self.diagnostics_warning_text.delete("1.0", "end")
+            if warnings:
+                self.diagnostics_warning_text.insert(
+                    "1.0",
+                    "\n".join(f"- {warning}" for warning in warnings),
+                )
+            else:
+                self.diagnostics_warning_text.insert("1.0", "Geen waarschuwingen.")
+            self.diagnostics_warning_text.configure(state="disabled")
+
+        def _create_diagnostics_backup(self) -> None:
+            try:
+                backups = create_data_file_backups()
+            except Exception as exc:
+                messagebox.showerror("Backup mislukt", str(exc), parent=self)
+                return
+            self._refresh_diagnostics()
+            if backups:
+                messagebox.showinfo(
+                    "Backup gemaakt",
+                    f"{len(backups)} backupbestand(en) gemaakt.",
+                    parent=self,
+                )
+            else:
+                messagebox.showinfo(
+                    "Geen backup gemaakt",
+                    "Er zijn geen bestaande databestanden gevonden om te backuppen.",
+                    parent=self,
+                )
+
+        def _open_diagnostics_data_folder(self) -> None:
+            report = getattr(self, "_diagnostic_report", None)
+            folder = report.storage_path if report is not None else Path.cwd()
+            self._open_folder(folder)
+
+        def _open_diagnostics_backup_folder(self) -> None:
+            folder = backup_root()
+            folder.mkdir(parents=True, exist_ok=True)
+            self._open_folder(folder)
+
+        def _copy_diagnostics(self) -> None:
+            report = getattr(self, "_diagnostic_report", None)
+            if report is None:
+                report = build_diagnostic_report(self.app.settings)
+                self._diagnostic_report = report
+            self.clipboard_clear()
+            self.clipboard_append(format_report_for_clipboard(report))
+            messagebox.showinfo("Diagnose gekopieerd", "Diagnose staat op het klembord.", parent=self)
+
+        def _open_folder(self, folder: Path) -> None:
+            try:
+                if sys.platform.startswith("win"):
+                    os.startfile(str(folder))  # type: ignore[attr-defined]
+                elif sys.platform == "darwin":
+                    subprocess.Popen(["open", str(folder)])
+                else:
+                    subprocess.Popen(["xdg-open", str(folder)])
+            except Exception as exc:
+                messagebox.showerror("Map openen mislukt", str(exc), parent=self)
 
         def _refresh_list(self) -> None:
             self.listbox.delete(0, tk.END)
