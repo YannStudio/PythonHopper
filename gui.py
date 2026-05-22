@@ -7795,17 +7795,24 @@ def start_gui():
             self.extensions: List[FileExtensionSetting] = deepcopy(
                 self.app.settings.file_extensions
             )
+            self._settings_bg = "#F5F7FA"
+            self._settings_card_bg = "#FFFFFF"
+            self._settings_border = "#D8DEE6"
+            self._settings_text = "#1F2933"
+            self._settings_muted = "#5F6B7A"
+            self._settings_accent = "#2E7D6B"
+            self.configure(background=self._settings_bg)
 
             self.columnconfigure(0, weight=1)
             self.rowconfigure(0, weight=1)
 
-            scroll_container = tk.Frame(self)
+            scroll_container = tk.Frame(self, background=self._settings_bg)
             scroll_container.grid(row=0, column=0, sticky="nsew")
 
             settings_canvas = tk.Canvas(
                 scroll_container,
                 highlightthickness=0,
-                background=self.cget("background"),
+                background=self._settings_bg,
             )
             settings_canvas.pack(side="left", fill="both", expand=True)
 
@@ -7815,8 +7822,8 @@ def start_gui():
             settings_scrollbar.pack(side="right", fill="y")
             settings_canvas.configure(yscrollcommand=settings_scrollbar.set)
 
-            content = tk.Frame(settings_canvas)
-            content.configure(padx=12, pady=12)
+            content = tk.Frame(settings_canvas, background=self._settings_bg)
+            content.configure(padx=18, pady=18)
             content_id = settings_canvas.create_window(
                 (0, 0), window=content, anchor="nw"
             )
@@ -7857,12 +7864,88 @@ def start_gui():
             settings_canvas.bind("<Button-5>", _on_mousewheel)
 
             content.columnconfigure(0, weight=1)
-            content.rowconfigure(4, weight=1)
+            content.rowconfigure(6, weight=1)
 
-            export_options = tk.LabelFrame(
-                content, text="Exportopties", labelanchor="n"
+            def _section(row: int, title: str, description: str = "") -> tk.Frame:
+                section = tk.Frame(
+                    content,
+                    background=self._settings_card_bg,
+                    highlightthickness=1,
+                    highlightbackground=self._settings_border,
+                    highlightcolor=self._settings_border,
+                )
+                section.grid(row=row, column=0, sticky="nsew", pady=(0, 12))
+                section.columnconfigure(0, weight=1)
+
+                header_frame = tk.Frame(section, background=self._settings_card_bg)
+                header_frame.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 6))
+                header_frame.columnconfigure(0, weight=1)
+                tk.Label(
+                    header_frame,
+                    text=title,
+                    background=self._settings_card_bg,
+                    foreground=self._settings_text,
+                    font=("TkDefaultFont", 11, "bold"),
+                    anchor="w",
+                ).grid(row=0, column=0, sticky="ew")
+                if description:
+                    tk.Label(
+                        header_frame,
+                        text=description,
+                        background=self._settings_card_bg,
+                        foreground=self._settings_muted,
+                        justify="left",
+                        anchor="w",
+                        wraplength=620,
+                    ).grid(row=1, column=0, sticky="ew", pady=(2, 0))
+
+                body_frame = tk.Frame(section, background=self._settings_card_bg)
+                body_frame.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 14))
+                body_frame.columnconfigure(0, weight=1)
+                return body_frame
+
+            header = tk.Frame(
+                content,
+                background=self._settings_card_bg,
+                highlightthickness=1,
+                highlightbackground=self._settings_border,
+                highlightcolor=self._settings_border,
             )
-            export_options.grid(row=0, column=0, sticky="ew")
+            header.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+            header.columnconfigure(0, weight=1)
+            title_block = tk.Frame(header, background=self._settings_card_bg)
+            title_block.grid(row=0, column=0, sticky="ew", padx=18, pady=14)
+            title_block.columnconfigure(0, weight=1)
+            tk.Label(
+                title_block,
+                text="Instellingen",
+                background=self._settings_card_bg,
+                foreground=self._settings_text,
+                font=("TkDefaultFont", 16, "bold"),
+                anchor="w",
+            ).grid(row=0, column=0, sticky="ew")
+            tk.Label(
+                title_block,
+                text="Beheer templates, documentteksten, bestandstypen, data en diagnose.",
+                background=self._settings_card_bg,
+                foreground=self._settings_muted,
+                anchor="w",
+            ).grid(row=1, column=0, sticky="ew", pady=(2, 0))
+            tk.Label(
+                header,
+                text=f"{APP_NAME} {APP_VERSION}",
+                background="#E7F3EF",
+                foreground=self._settings_accent,
+                padx=10,
+                pady=4,
+                font=("TkDefaultFont", 9, "bold"),
+            ).grid(row=0, column=1, sticky="ne", padx=18, pady=16)
+
+            export_options = _section(
+                1,
+                "Exportgedrag",
+                "Standaardgedrag voor extra exportbestanden en hulpmappen.",
+            )
             export_options.columnconfigure(0, weight=1)
 
             def _add_option(
@@ -7872,127 +7955,110 @@ def start_gui():
                 variable: "tk.IntVar",
             ) -> None:
                 row = parent.grid_size()[1]
-                container = tk.Frame(parent)
-                container.grid(row=row, column=0, sticky="ew", padx=12, pady=(6, 2))
+                container = tk.Frame(parent, background=self._settings_card_bg)
+                container.grid(row=row, column=0, sticky="ew", pady=(5, 5))
                 container.columnconfigure(0, weight=1)
-                tk.Checkbutton(
+                tk.Label(
                     container,
                     text=text,
-                    variable=variable,
+                    background=self._settings_card_bg,
+                    foreground=self._settings_text,
+                    font=("TkDefaultFont", 10, "bold"),
                     anchor="w",
                     justify="left",
-                ).grid(row=0, column=0, sticky="w")
+                ).grid(row=0, column=0, sticky="ew")
                 tk.Label(
                     container,
                     text=description,
                     justify="left",
                     anchor="w",
-                    wraplength=520,
-                    foreground="#555555",
-                ).grid(row=1, column=0, sticky="ew", padx=(28, 0))
+                    wraplength=560,
+                    foreground=self._settings_muted,
+                    background=self._settings_card_bg,
+                ).grid(row=1, column=0, sticky="ew", pady=(1, 0))
+                tk.Checkbutton(
+                    container,
+                    variable=variable,
+                    background=self._settings_card_bg,
+                    activebackground=self._settings_card_bg,
+                    anchor="w",
+                    justify="left",
+                ).grid(row=0, column=1, rowspan=2, sticky="e", padx=(12, 0))
 
             _add_option(
                 export_options,
                 "Exporteer bewerkte BOM naar exportmap",
-                (
-                    "Bewaar automatisch een Excel-bestand van de huidige BOM in de "
-                    "hoofdfolder van elke export. Alle wijzigingen die je in Filehopper "
-                    "hebt aangebracht, zoals verwijderde rijen, worden meegeschreven."
-                ),
+                "Bewaar de actuele BOM mee in de hoofdmap van elke export.",
                 self.app.export_bom_var,
             )
 
             _add_option(
                 export_options,
                 "Exporteer gerelateerde exportbestanden naar exportmap",
-                (
-                    "Zoek in de geselecteerde extensies naar bestanden waarvan de naam "
-                    "overeenkomt met de BOM en kopieer ze naast het BOM-bestand. "
-                    "Handig voor extra documenten zoals PDF's of STEP-bestanden."
-                ),
+                "Kopieer extra bestanden die bij de geopende BOM horen.",
                 self.app.export_related_files_var,
             )
 
             _add_option(
                 export_options,
                 "Maak snelkoppeling naar nieuwste exportmap",
-                (
-                    "Na het exporteren wordt er een snelkoppeling met de naam 'latest'"
-                    " geplaatst in de exportmap. Deze verwijst altijd naar de"
-                    " meest recente export zodat je die snel kunt openen."
-                ),
+                "Maak een 'latest'-koppeling naar de meest recente export.",
                 self.app.bundle_latest_var,
             )
             _add_option(
                 export_options,
                 "Testrun: toon alleen doelmap (niets wordt gekopieerd)",
-                (
-                    "Voer een proefrun uit zonder bestanden te kopiëren. Je ziet"
-                    " welke doelmap gebruikt zou worden, maar er worden geen"
-                    " bestanden aangemaakt of overschreven."
-                ),
+                "Toon de exportdoelmap zonder bestanden aan te maken.",
                 self.app.bundle_dry_run_var,
             )
             _add_option(
                 export_options,
                 "Vul Custom BOM automatisch na het laden van de hoofd-BOM",
-                (
-                    "Wanneer je een BOM opent, wordt dezelfde inhoud ook in de"
-                    " Custom BOM-tab geplaatst zodat je daar meteen kunt"
-                    " aanpassen en bijwerken."
-                ),
+                "Zet de geopende BOM ook klaar in de Custom BOM-tab.",
                 self.app.autofill_custom_bom_var,
             )
 
-            template_frame = tk.LabelFrame(
-                content,
-                text="BOM-template",
-            )
-            template_frame.grid(
-                row=1,
-                column=0,
-                sticky="ew",
-                padx=0,
-                pady=(12, 0),
+            template_frame = _section(
+                2,
+                "BOM-template",
+                "Download een leeg Excel-sjabloon met alle BOM-kolommen.",
             )
             template_frame.columnconfigure(0, weight=1)
-
-            tk.Label(
-                template_frame,
-                text=(
-                    "Download een leeg Excel-sjabloon met alle kolommen van de BOM."
-                    " Handig om gegevens vooraf in te vullen of te delen met collega's."
-                ),
-                justify="left",
-                anchor="w",
-                wraplength=480,
-            ).grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 4))
 
             tk.Button(
                 template_frame,
                 text="Download BOM template",
                 command=self._download_bom_template,
-            ).grid(row=1, column=0, sticky="w", padx=10, pady=(0, 10))
+            ).grid(row=0, column=0, sticky="w")
 
-            en1090_frame = tk.LabelFrame(
-                content,
-                text="EN 1090",
-                labelanchor="n",
+            document_texts_frame = _section(
+                3,
+                "Documentteksten",
+                "Beheer vaste teksten die op bestelbonnen en offerteaanvragen verschijnen.",
             )
-            en1090_frame.grid(row=2, column=0, sticky="nsew", pady=(12, 0))
+            document_texts_frame.columnconfigure(0, weight=1)
+            document_texts_frame.rowconfigure(0, weight=1)
+            document_texts_frame.rowconfigure(1, weight=1)
+
+            en1090_frame = tk.Frame(
+                document_texts_frame,
+                background=self._settings_card_bg,
+                highlightthickness=1,
+                highlightbackground="#EEF1F5",
+                highlightcolor="#EEF1F5",
+            )
+            en1090_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 10))
             en1090_frame.columnconfigure(0, weight=1)
             en1090_frame.rowconfigure(2, weight=1)
 
             tk.Label(
                 en1090_frame,
-                text=(
-                    "Schakel hier de EN 1090-kolom op de bestelbonpagina in of uit "
-                    "en pas de begeleidende tekst aan."
-                ),
-                justify="left",
+                text="EN 1090",
+                background=self._settings_card_bg,
+                foreground=self._settings_text,
+                font=("TkDefaultFont", 10, "bold"),
                 anchor="w",
-                wraplength=520,
-            ).grid(row=0, column=0, sticky="ew", padx=12, pady=(8, 4))
+            ).grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 4))
 
             tk.Checkbutton(
                 en1090_frame,
@@ -8000,9 +8066,11 @@ def start_gui():
                 variable=self.app.en1090_enabled_var,
                 anchor="w",
                 command=self._toggle_en1090_setting,
-            ).grid(row=1, column=0, sticky="w", padx=12, pady=(0, 6))
+                background=self._settings_card_bg,
+                activebackground=self._settings_card_bg,
+            ).grid(row=1, column=0, sticky="w", padx=12, pady=(0, 8))
 
-            en1090_note_container = tk.Frame(en1090_frame)
+            en1090_note_container = tk.Frame(en1090_frame, background=self._settings_card_bg)
             en1090_note_container.grid(
                 row=2,
                 column=0,
@@ -8030,8 +8098,8 @@ def start_gui():
             self.en1090_note_text.configure(yscrollcommand=en1090_scrollbar.set)
             self._reload_en1090_note()
 
-            en1090_btns = tk.Frame(en1090_frame)
-            en1090_btns.grid(row=3, column=0, sticky="e", padx=12, pady=(0, 8))
+            en1090_btns = tk.Frame(en1090_frame, background=self._settings_card_bg)
+            en1090_btns.grid(row=3, column=0, sticky="e", padx=12, pady=(4, 10))
             tk.Button(
                 en1090_btns, text="Opslaan", command=self._save_en1090_note
             ).pack(side="left", padx=4)
@@ -8041,27 +8109,27 @@ def start_gui():
                 command=self._reset_en1090_note,
             ).pack(side="left", padx=4)
 
-            footer_frame = tk.LabelFrame(
-                content,
-                text="Bestelbon/offerte onderschrift",
-                labelanchor="n",
+            footer_frame = tk.Frame(
+                document_texts_frame,
+                background=self._settings_card_bg,
+                highlightthickness=1,
+                highlightbackground="#EEF1F5",
+                highlightcolor="#EEF1F5",
             )
-            footer_frame.grid(row=3, column=0, sticky="nsew", pady=(12, 0))
+            footer_frame.grid(row=1, column=0, sticky="nsew")
             footer_frame.columnconfigure(0, weight=1)
             footer_frame.rowconfigure(1, weight=1)
 
             tk.Label(
                 footer_frame,
-                text=(
-                    "Pas hier het onderschrift aan dat onderaan de bestelbon of"
-                    " offerteaanvraag wordt geplaatst."
-                ),
-                justify="left",
+                text="Bestelbon/offerte onderschrift",
+                background=self._settings_card_bg,
+                foreground=self._settings_text,
+                font=("TkDefaultFont", 10, "bold"),
                 anchor="w",
-                wraplength=520,
-            ).grid(row=0, column=0, sticky="ew", padx=12, pady=(8, 4))
+            ).grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 6))
 
-            footer_text_container = tk.Frame(footer_frame)
+            footer_text_container = tk.Frame(footer_frame, background=self._settings_card_bg)
             footer_text_container.grid(
                 row=1,
                 column=0,
@@ -8089,8 +8157,8 @@ def start_gui():
             self.footer_note_text.configure(yscrollcommand=footer_scrollbar.set)
             self._reload_footer_note()
 
-            footer_btns = tk.Frame(footer_frame)
-            footer_btns.grid(row=2, column=0, sticky="e", padx=12, pady=(0, 8))
+            footer_btns = tk.Frame(footer_frame, background=self._settings_card_bg)
+            footer_btns.grid(row=2, column=0, sticky="e", padx=12, pady=(4, 10))
             tk.Button(footer_btns, text="Opslaan", command=self._save_footer_note).pack(
                 side="left", padx=4
             )
@@ -8100,60 +8168,62 @@ def start_gui():
                 command=self._reset_footer_note,
             ).pack(side="left", padx=4)
 
-            extensions_frame = tk.LabelFrame(
-                content, text="Bestandstypen", labelanchor="n"
+            extensions_frame = _section(
+                5,
+                "Bestandstypen",
+                "Beheer de extensies die op het hoofdscherm beschikbaar zijn.",
             )
-            extensions_frame.grid(row=4, column=0, sticky="nsew", pady=(12, 0))
             extensions_frame.columnconfigure(0, weight=1)
-            extensions_frame.rowconfigure(1, weight=1)
+            extensions_frame.rowconfigure(0, weight=1)
 
-            tk.Label(
-                extensions_frame,
-                text=(
-                    "Beheer hier welke bestandstypen beschikbaar zijn op het hoofdscherm.\n"
-                    "Voeg extensies toe of verwijder ze naar wens."
-                ),
-                justify="left",
-                anchor="w",
-                wraplength=520,
-            ).grid(row=0, column=0, columnspan=2, sticky="ew", padx=12, pady=(8, 4))
-
-            list_container = tk.Frame(extensions_frame)
-            list_container.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=12)
+            list_container = tk.Frame(extensions_frame, background=self._settings_card_bg)
+            list_container.grid(row=0, column=0, columnspan=2, sticky="nsew")
             list_container.columnconfigure(0, weight=1)
             list_container.rowconfigure(0, weight=1)
 
-            list_frame = tk.Frame(list_container)
+            list_frame = tk.Frame(list_container, background=self._settings_card_bg)
             list_frame.grid(row=0, column=0, sticky="nsew")
             list_frame.columnconfigure(0, weight=1)
 
-            self.listbox = tk.Listbox(list_frame, activestyle="none")
-            self.listbox.grid(row=0, column=0, sticky="nsew")
-            scrollbar = tk.Scrollbar(list_frame, command=self.listbox.yview)
+            self.extensions_tree = ttk.Treeview(
+                list_frame,
+                columns=("status", "label", "patterns"),
+                show="headings",
+                height=7,
+                selectmode="browse",
+            )
+            self.extensions_tree.heading("status", text="Status")
+            self.extensions_tree.heading("label", text="Naam")
+            self.extensions_tree.heading("patterns", text="Extensies")
+            self.extensions_tree.column("status", width=72, minwidth=60, anchor="center", stretch=False)
+            self.extensions_tree.column("label", width=210, minwidth=150, stretch=True)
+            self.extensions_tree.column("patterns", width=260, minwidth=160, stretch=True)
+            self.extensions_tree.grid(row=0, column=0, sticky="nsew")
+            scrollbar = tk.Scrollbar(list_frame, command=self.extensions_tree.yview)
             scrollbar.grid(row=0, column=1, sticky="ns")
-            self.listbox.configure(yscrollcommand=scrollbar.set)
-            self.listbox.bind("<Double-Button-1>", lambda _e: self._edit_selected())
+            self.extensions_tree.configure(yscrollcommand=scrollbar.set)
+            self.extensions_tree.bind("<Double-Button-1>", lambda _e: self._edit_selected())
 
-            move_btns = tk.Frame(list_container)
+            move_btns = tk.Frame(list_container, background=self._settings_card_bg)
             move_btns.grid(row=0, column=1, sticky="ns", padx=(8, 0))
             move_btns.grid_rowconfigure(0, weight=1)
             move_btns.grid_rowconfigure(3, weight=1)
             move_btns.grid_columnconfigure(0, weight=1)
             tk.Button(
                 move_btns,
-                text="▲",
-                width=3,
+                text="Omhoog",
+                width=8,
                 command=lambda: self._move_selected(-1),
             ).grid(row=1, column=0, pady=2, sticky="nsew")
             tk.Button(
                 move_btns,
-                text="▼",
-                width=3,
+                text="Omlaag",
+                width=8,
                 command=lambda: self._move_selected(1),
             ).grid(row=2, column=0, pady=2, sticky="nsew")
 
-            btns = tk.Frame(extensions_frame)
-            btns.grid(row=2, column=0, columnspan=2, sticky="ew", padx=12, pady=(8, 12))
+            btns = tk.Frame(extensions_frame, background=self._settings_card_bg)
+            btns.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(10, 0))
             tk.Button(btns, text="Toevoegen", command=self._add_extension).pack(
                 side="left", padx=4
             )
@@ -8165,29 +8235,89 @@ def start_gui():
             )
 
             self._refresh_list()
-            self._build_diagnostics_section(content, row=5)
+            self._build_diagnostics_section(content, row=6)
             self._refresh_diagnostics()
 
         def _build_diagnostics_section(self, content: tk.Widget, *, row: int) -> None:
-            diagnostics_frame = tk.LabelFrame(
+            section = tk.Frame(
                 content,
-                text="Diagnose",
-                labelanchor="n",
+                background=self._settings_card_bg,
+                highlightthickness=1,
+                highlightbackground=self._settings_border,
+                highlightcolor=self._settings_border,
             )
-            diagnostics_frame.grid(row=row, column=0, sticky="nsew", pady=(12, 0))
+            section.grid(row=row, column=0, sticky="nsew", pady=(0, 12))
+            section.columnconfigure(0, weight=1)
+
+            header_frame = tk.Frame(section, background=self._settings_card_bg)
+            header_frame.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 6))
+            header_frame.columnconfigure(0, weight=1)
+            tk.Label(
+                header_frame,
+                text="Data en diagnose",
+                background=self._settings_card_bg,
+                foreground=self._settings_text,
+                font=("TkDefaultFont", 11, "bold"),
+                anchor="w",
+            ).grid(row=0, column=0, sticky="ew")
+            tk.Label(
+                header_frame,
+                text="Controleer databestanden, backups, schrijfrechten en waarschuwingen.",
+                background=self._settings_card_bg,
+                foreground=self._settings_muted,
+                justify="left",
+                anchor="w",
+                wraplength=620,
+            ).grid(row=1, column=0, sticky="ew", pady=(2, 0))
+
+            diagnostics_frame = tk.Frame(section, background=self._settings_card_bg)
+            diagnostics_frame.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 14))
             diagnostics_frame.columnconfigure(0, weight=1)
             diagnostics_frame.rowconfigure(2, weight=1)
 
-            tk.Label(
-                diagnostics_frame,
-                text=(
-                    "Controleer versie, databestanden, backups en basisvalidatie "
-                    "zonder extra tab op het hoofdscherm."
-                ),
-                justify="left",
-                anchor="w",
-                wraplength=560,
-            ).grid(row=0, column=0, sticky="ew", padx=12, pady=(8, 4))
+            cards_frame = tk.Frame(diagnostics_frame, background=self._settings_card_bg)
+            cards_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+            for col in range(3):
+                cards_frame.columnconfigure(col, weight=1)
+
+            self.diagnostics_files_var = tk.StringVar(value="0")
+            self.diagnostics_warnings_var = tk.StringVar(value="0")
+            self.diagnostics_problems_var = tk.StringVar(value="0")
+
+            def _status_card(column: int, title: str, variable: "tk.StringVar", color: str) -> tk.Frame:
+                card = tk.Frame(
+                    cards_frame,
+                    background=color,
+                    highlightthickness=1,
+                    highlightbackground=self._settings_border,
+                )
+                card.grid(row=0, column=column, sticky="ew", padx=(0 if column == 0 else 6, 0))
+                tk.Label(
+                    card,
+                    text=title,
+                    background=color,
+                    foreground=self._settings_muted,
+                    anchor="w",
+                ).grid(row=0, column=0, sticky="ew", padx=10, pady=(7, 0))
+                tk.Label(
+                    card,
+                    textvariable=variable,
+                    background=color,
+                    foreground=self._settings_text,
+                    font=("TkDefaultFont", 14, "bold"),
+                    anchor="w",
+                ).grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 7))
+                return card
+
+            self.diagnostics_files_card = _status_card(
+                0, "Databestanden", self.diagnostics_files_var, "#F7FAFC"
+            )
+            self.diagnostics_warnings_card = _status_card(
+                1, "Waarschuwingen", self.diagnostics_warnings_var, "#FFF7E6"
+            )
+            self.diagnostics_problems_card = _status_card(
+                2, "Problemen", self.diagnostics_problems_var, "#FDECEC"
+            )
 
             self.diagnostics_summary_var = tk.StringVar(value="")
             tk.Label(
@@ -8195,9 +8325,10 @@ def start_gui():
                 textvariable=self.diagnostics_summary_var,
                 justify="left",
                 anchor="w",
-                foreground="#444444",
+                background=self._settings_card_bg,
+                foreground=self._settings_muted,
                 wraplength=560,
-            ).grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 6))
+            ).grid(row=1, column=0, sticky="ew", pady=(0, 8))
 
             columns = ("status", "aantal", "gewijzigd", "schrijfbaar", "backups")
             self.diagnostics_tree = ttk.Treeview(
@@ -8219,10 +8350,10 @@ def start_gui():
             self.diagnostics_tree.column("gewijzigd", width=120, minwidth=110)
             self.diagnostics_tree.column("schrijfbaar", width=80, minwidth=70, anchor="center")
             self.diagnostics_tree.column("backups", width=85, minwidth=75, anchor="center")
-            self.diagnostics_tree.grid(row=2, column=0, sticky="nsew", padx=12, pady=(0, 6))
+            self.diagnostics_tree.grid(row=2, column=0, sticky="nsew", pady=(0, 8))
 
-            warning_frame = tk.Frame(diagnostics_frame)
-            warning_frame.grid(row=3, column=0, sticky="nsew", padx=12, pady=(0, 6))
+            warning_frame = tk.Frame(diagnostics_frame, background=self._settings_card_bg)
+            warning_frame.grid(row=3, column=0, sticky="nsew", pady=(0, 8))
             warning_frame.columnconfigure(0, weight=1)
             warning_frame.rowconfigure(0, weight=1)
 
@@ -8242,8 +8373,8 @@ def start_gui():
             warning_scroll.grid(row=0, column=1, sticky="ns")
             self.diagnostics_warning_text.configure(yscrollcommand=warning_scroll.set)
 
-            btns = tk.Frame(diagnostics_frame)
-            btns.grid(row=4, column=0, sticky="ew", padx=12, pady=(0, 10))
+            btns = tk.Frame(diagnostics_frame, background=self._settings_card_bg)
+            btns.grid(row=4, column=0, sticky="ew")
             tk.Button(btns, text="Vernieuwen", command=self._refresh_diagnostics).pack(
                 side="left", padx=(0, 4)
             )
@@ -8267,6 +8398,21 @@ def start_gui():
                 messagebox.showerror("Diagnose mislukt", str(exc), parent=self)
                 return
             self._diagnostic_report = report
+            problem_count = sum(1 for item in report.data_files if item.status != "OK")
+            warning_count = len(report.warnings)
+            self.diagnostics_files_var.set(str(len(report.data_files)))
+            self.diagnostics_warnings_var.set(str(warning_count))
+            self.diagnostics_problems_var.set(str(problem_count))
+            self.diagnostics_warnings_card.configure(
+                background="#FFF7E6" if warning_count else "#F0F7F4"
+            )
+            self.diagnostics_problems_card.configure(
+                background="#FDECEC" if problem_count else "#F0F7F4"
+            )
+            for child in self.diagnostics_warnings_card.winfo_children():
+                child.configure(background=self.diagnostics_warnings_card.cget("background"))
+            for child in self.diagnostics_problems_card.winfo_children():
+                child.configure(background=self.diagnostics_problems_card.cget("background"))
             self.diagnostics_summary_var.set(
                 (
                     f"{report.app_name} {report.app_version} | Runtime: {report.runtime_mode} | "
@@ -8359,19 +8505,26 @@ def start_gui():
                 messagebox.showerror("Map openen mislukt", str(exc), parent=self)
 
         def _refresh_list(self) -> None:
-            self.listbox.delete(0, tk.END)
+            existing_items = self.extensions_tree.get_children()
+            if existing_items:
+                self.extensions_tree.delete(*existing_items)
             if not self.extensions:
-                self.listbox.insert(0, "Geen bestandstypen gedefinieerd.")
-                self.listbox.itemconfig(0, foreground="#777777")
-                self._update_listbox_height(1)
-                self._update_listbox_width()
+                self.extensions_tree.insert(
+                    "",
+                    tk.END,
+                    iid="empty",
+                    values=("-", "Geen bestandstypen gedefinieerd", "-"),
+                )
                 return
-            for ext in self.extensions:
-                status = "✓" if ext.enabled else "✗"
+            for idx, ext in enumerate(self.extensions):
+                status = "Aan" if ext.enabled else "Uit"
                 patterns = ", ".join(ext.patterns)
-                self.listbox.insert(tk.END, f"{status} {ext.label} — {patterns}")
-            self._update_listbox_height(len(self.extensions))
-            self._update_listbox_width()
+                self.extensions_tree.insert(
+                    "",
+                    tk.END,
+                    iid=str(idx),
+                    values=(status, ext.label, patterns),
+                )
 
         def _reload_footer_note(self) -> None:
             text = self.app.footer_note_var.get()
@@ -8443,26 +8596,21 @@ def start_gui():
             )
 
         def _update_listbox_height(self, item_count: int) -> None:
-            visible = max(1, item_count)
-            height = min(max(visible, 3), 10)
-            self.listbox.configure(height=height)
+            return
 
         def _update_listbox_width(self) -> None:
-            items = self.listbox.get(0, tk.END)
-            if not items:
-                self.listbox.configure(width=28)
-                return
-            max_len = max(len(item) for item in items)
-            width = max(28, min(64, max_len + 4))
-            self.listbox.configure(width=width)
+            return
 
         def _selected_index(self) -> Optional[int]:
             if not self.extensions:
                 return None
-            sel = self.listbox.curselection()
+            sel = self.extensions_tree.selection()
             if not sel:
                 return None
-            idx = int(sel[0])
+            try:
+                idx = int(sel[0])
+            except (TypeError, ValueError):
+                return None
             if idx >= len(self.extensions):
                 return None
             return idx
@@ -8530,10 +8678,10 @@ def start_gui():
             )
             self._persist()
             if 0 <= new_idx < len(self.extensions):
-                self.listbox.selection_clear(0, tk.END)
-                self.listbox.selection_set(new_idx)
-                self.listbox.activate(new_idx)
-                self.listbox.see(new_idx)
+                item_id = str(new_idx)
+                self.extensions_tree.selection_set(item_id)
+                self.extensions_tree.focus(item_id)
+                self.extensions_tree.see(item_id)
 
         def _open_extension_dialog(
             self, title: str, existing: Optional[FileExtensionSetting]
