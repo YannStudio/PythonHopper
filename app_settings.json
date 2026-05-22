@@ -1,8 +1,8 @@
 {
-  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/Jef van Looveren/00. Pannen/00. CAD/00. Pannen",
-  "dest_folder": "C:/Users/jeroe/Desktop/JVL",
-  "project_number": "JVL",
-  "project_name": "Assembly",
+  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/Kanal/83 - Lot10b - Central - Bibliotheek + leeszaal/Bibliotheek en leeszaal/cad - wandrek",
+  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/Kanal/83 - Lot10b - Central - Bibliotheek + leeszaal/Bibliotheek en leeszaal/export",
+  "project_number": "83",
+  "project_name": "Vitrinekast",
   "file_extensions": [
     {
       "key": "pdf",
@@ -35,7 +35,7 @@
       "patterns": [
         ".dwg"
       ],
-      "enabled": true
+      "enabled": false
     },
     {
       "key": "html",
