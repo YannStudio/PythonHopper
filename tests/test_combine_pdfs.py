@@ -5,7 +5,12 @@ from pathlib import Path
 import pandas as pd
 from PyPDF2 import PdfReader, PdfWriter
 
-from orders import combine_pdfs_per_production, combine_pdfs_from_source
+from orders import (
+    combine_pdfs_per_production,
+    combine_pdfs_from_source,
+    combine_workdossier_pdf_from_source,
+)
+from pdf_workdossier_presets import PdfWorkDossierPreset, PdfWorkDossierSection
 
 
 def _blank_pdf(path: Path, *, width: float = 72, height: float = 72) -> None:
@@ -258,4 +263,133 @@ def test_combine_all_pdfs_places_related_first(tmp_path):
         float(reader.pages[1].mediabox.width),
         float(reader.pages[2].mediabox.width),
     } == {85, 95}
+
+
+def test_workdossier_default_sorts_by_pdf_filename_naturally(tmp_path):
+    source = tmp_path / "src"
+    dest = tmp_path / "out"
+    source.mkdir()
+    dest.mkdir()
+
+    _blank_pdf(source / "B-1.pdf", width=110)
+    _blank_pdf(source / "A-10.pdf", width=100)
+    _blank_pdf(source / "A-2.pdf", width=90)
+
+    bom_df = pd.DataFrame(
+        [
+            {"PartNumber": "B-1", "Production": "Laser"},
+            {"PartNumber": "A-10", "Production": "Assembly"},
+            {"PartNumber": "A-2", "Production": "Assembly"},
+        ]
+    )
+
+    result = combine_workdossier_pdf_from_source(
+        str(source),
+        bom_df,
+        str(dest),
+        "2023-01-01",
+    )
+
+    assert result.count == 1
+    assert len(result.output_files) == 1
+    reader = PdfReader(result.output_files[0])
+    assert [float(page.mediabox.width) for page in reader.pages] == [90, 100, 110]
+
+
+def test_workdossier_preset_controls_section_order_and_bom_pdf(tmp_path):
+    source = tmp_path / "src"
+    dest = tmp_path / "out"
+    bom_source = tmp_path / "Project123-BOM.xlsx"
+    source.mkdir()
+    dest.mkdir()
+    bom_source.write_text("dummy")
+
+    _blank_pdf(source / "Project123.pdf", width=70)
+    _blank_pdf(source / "ASM-2.pdf", width=82)
+    _blank_pdf(source / "LAS-1.pdf", width=90)
+    _blank_pdf(source / "TUBE-1.pdf", width=100)
+    _blank_pdf(source / "SPARE-1.pdf", width=110)
+
+    bom_df = pd.DataFrame(
+        [
+            {"PartNumber": "TUBE-1", "Production": "Tube laser"},
+            {"PartNumber": "SPARE-1", "Production": "Spare parts"},
+            {"PartNumber": "ASM-2", "Production": "Assembly"},
+            {"PartNumber": "LAS-1", "Production": "Laser"},
+        ]
+    )
+    preset = PdfWorkDossierPreset(
+        name="Werkdossier",
+        sections=[
+            PdfWorkDossierSection("Hoofdassembly", include_bom_pdf=True),
+            PdfWorkDossierSection("Assembly tekeningen", ["Assembly"]),
+            PdfWorkDossierSection("Laserwerk", ["Laser"]),
+            PdfWorkDossierSection("Tube laserwerk", ["Tube laser"]),
+            PdfWorkDossierSection("Spare parts", ["Spare parts"]),
+        ],
+    )
+
+    result = combine_workdossier_pdf_from_source(
+        str(source),
+        bom_df,
+        str(dest),
+        "2023-01-01",
+        bom_source_path=str(bom_source),
+        preset=preset,
+    )
+
+    reader = PdfReader(result.output_files[0])
+    assert [float(page.mediabox.width) for page in reader.pages] == [
+        70,
+        82,
+        90,
+        100,
+        110,
+    ]
+
+
+def test_workdossier_can_insert_order_documents_before_production(tmp_path):
+    source = tmp_path / "src"
+    dest = tmp_path / "out"
+    source.mkdir()
+    dest.mkdir()
+
+    _blank_pdf(source / "ASM-1.pdf", width=80)
+    _blank_pdf(source / "LAS-1.pdf", width=90)
+    (dest / "Assembly").mkdir()
+    (dest / "Laser").mkdir()
+    _blank_pdf(dest / "Assembly" / "Bestelbon_Assembly.pdf", width=81)
+    _blank_pdf(dest / "Laser" / "Standaard bon_Laser.pdf", width=91)
+
+    bom_df = pd.DataFrame(
+        [
+            {"PartNumber": "ASM-1", "Production": "Assembly"},
+            {"PartNumber": "LAS-1", "Production": "Laser"},
+        ]
+    )
+    preset = PdfWorkDossierPreset(
+        name="Werkdossier",
+        sections=[
+            PdfWorkDossierSection("Assembly tekeningen", ["Assembly"]),
+            PdfWorkDossierSection("Laserwerk", ["Laser"]),
+        ],
+    )
+
+    result = combine_workdossier_pdf_from_source(
+        str(source),
+        bom_df,
+        str(dest),
+        "2023-01-01",
+        preset=preset,
+        include_order_documents=True,
+        order_document_root=str(dest),
+    )
+
+    reader = PdfReader(result.output_files[0])
+    assert [float(page.mediabox.width) for page in reader.pages] == [
+        81,
+        80,
+        91,
+        90,
+    ]
 

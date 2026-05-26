@@ -18,6 +18,8 @@ RUNTIME_DATA_FILES = [
     "suppliers_db.json",
     "delivery_addresses_db.json",
     "app_settings.json",
+    "order_presets.json",
+    "pdf_workdossier_presets.json",
 ]
 
 

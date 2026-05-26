@@ -1,8 +1,8 @@
 {
-  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/Kanal/83 - Lot10b - Central - Bibliotheek + leeszaal/Bibliotheek en leeszaal/cad - wandrek",
-  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/Kanal/83 - Lot10b - Central - Bibliotheek + leeszaal/Bibliotheek en leeszaal/export",
-  "project_number": "83",
-  "project_name": "Vitrinekast",
+  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Slimp/00. Projecten/2026/P26-005 - Rubix transportband/cad",
+  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Slimp/00. Projecten/2026/P26-005 - Rubix transportband/export",
+  "project_number": "P26-005",
+  "project_name": "Rubix transportband HI",
   "file_extensions": [
     {
       "key": "pdf",

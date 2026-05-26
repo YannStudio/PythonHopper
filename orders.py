@@ -81,6 +81,7 @@ from helpers import (
     _build_file_index,
 )
 from models import Supplier, Client, DeliveryAddress, color_to_rgb, normalize_rgb_color
+from pdf_workdossier_presets import PdfWorkDossierPreset, PdfWorkDossierSection
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from bom import load_bom  # noqa: F401 - imported for module dependency
 
@@ -253,6 +254,17 @@ class CombinedPdfResult:
 
     count: int
     output_dir: str
+    output_files: List[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class PdfWorkDossierPlanItem:
+    """One PDF file in the final work dossier merge plan."""
+
+    path: str
+    section_name: str = ""
+    production: str = ""
+    role: str = "drawing"
 
 
 @dataclass(slots=True)
@@ -685,6 +697,150 @@ def _sanitize_component(value: object) -> str:
         else:
             cleaned.append(ch)
     return "".join(cleaned).strip(" .-_")
+
+
+_NATURAL_SORT_RE = re.compile(r"(\d+)")
+
+
+def _natural_pdf_name_key(path: str) -> Tuple[Tuple[int, object], ...]:
+    """Return a natural, case-insensitive sort key for PDF filenames."""
+
+    name = os.path.basename(_to_str(path)).casefold()
+    key_parts: List[Tuple[int, object]] = []
+    for part in _NATURAL_SORT_RE.split(name):
+        if not part:
+            continue
+        if part.isdigit():
+            try:
+                key_parts.append((0, int(part)))
+            except Exception:
+                key_parts.append((1, part))
+        else:
+            key_parts.append((1, part))
+    return tuple(key_parts)
+
+
+def _pdf_match_text(value: object) -> str:
+    text = unicodedata.normalize("NFKD", _to_str(value))
+    text = text.encode("ASCII", "ignore").decode("ASCII")
+    text = re.sub(r"[^0-9a-zA-Z]+", " ", text).casefold()
+    return " ".join(text.split())
+
+
+def _pdf_section_match_score(production: str, identifier: str) -> int:
+    production_key = _pdf_match_text(production)
+    identifier_key = _pdf_match_text(identifier)
+    if not production_key or not identifier_key:
+        return 0
+    if production_key == identifier_key:
+        return 10000 + len(identifier_key)
+    if identifier_key in production_key:
+        return 1000 + len(identifier_key)
+    if production_key in identifier_key:
+        return 500 + len(production_key)
+    return 0
+
+
+def _assign_pdf_sections(
+    productions: Sequence[str],
+    sections: Sequence[PdfWorkDossierSection],
+) -> Dict[str, int]:
+    assigned: Dict[str, int] = {}
+    active_sections = [
+        (index, section)
+        for index, section in enumerate(sections)
+        if getattr(section, "enabled", True)
+    ]
+    for production in productions:
+        best_index: int | None = None
+        best_score = 0
+        for index, section in active_sections:
+            for identifier in getattr(section, "identifiers", []) or []:
+                score = _pdf_section_match_score(production, identifier)
+                if score <= 0:
+                    continue
+                if score > best_score or (
+                    score == best_score
+                    and (best_index is None or index < best_index)
+                ):
+                    best_score = score
+                    best_index = index
+        if best_index is not None:
+            assigned[production] = best_index
+    return assigned
+
+
+def _is_order_interleaf_pdf(filename: str, *, include_offers: bool = False) -> bool:
+    name = os.path.basename(_to_str(filename)).strip().casefold()
+    if not name.endswith(".pdf"):
+        return False
+    if name.startswith("bestelbon") or name.startswith("standaard"):
+        return True
+    return include_offers and name.startswith("offerteaanvraag")
+
+
+def _find_order_interleaf_pdfs(
+    root_dir: str | None,
+    production: str,
+    *,
+    include_offers: bool = False,
+) -> List[str]:
+    """Find generated order PDFs for a production folder."""
+
+    root = _to_str(root_dir).strip()
+    if not root:
+        return []
+    production_text = _to_str(production).strip()
+    if not production_text:
+        return []
+
+    candidates: List[str] = []
+    seen: set[str] = set()
+
+    direct_dir = os.path.join(root, production_text)
+    search_roots = [direct_dir] if os.path.isdir(direct_dir) else []
+    if not search_roots and os.path.isdir(root):
+        production_key = production_text.casefold()
+        for dirpath, dirnames, _filenames in os.walk(root):
+            basename = os.path.basename(dirpath).casefold()
+            if basename == production_key:
+                search_roots.append(dirpath)
+                dirnames[:] = []
+
+    for search_root in search_roots:
+        try:
+            filenames = os.listdir(search_root)
+        except OSError:
+            continue
+        for filename in filenames:
+            if not _is_order_interleaf_pdf(filename, include_offers=include_offers):
+                continue
+            path = os.path.join(search_root, filename)
+            if not os.path.isfile(path):
+                continue
+            key = os.path.abspath(path).casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(path)
+
+    candidates.sort(key=_natural_pdf_name_key)
+    return candidates
+
+
+def _unique_pdf_paths(paths: Sequence[str]) -> List[str]:
+    result: List[str] = []
+    seen: set[str] = set()
+    for path in paths:
+        clean = _to_str(path).strip()
+        if not clean:
+            continue
+        key = os.path.abspath(clean).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(clean)
+    return result
 
 
 def _slugify_name(value: object, fallback: str) -> str:
@@ -4642,6 +4798,243 @@ def copy_per_production_and_orders(
     return count_copied, chosen
 
 
+def _append_pdf_production_group(
+    plan: List[PdfWorkDossierPlanItem],
+    *,
+    section_name: str,
+    production: str,
+    drawing_files: Sequence[str],
+    include_order_documents: bool,
+    order_document_root: str | None,
+    include_offers: bool,
+) -> None:
+    if include_order_documents:
+        for path in _find_order_interleaf_pdfs(
+            order_document_root,
+            production,
+            include_offers=include_offers,
+        ):
+            plan.append(
+                PdfWorkDossierPlanItem(
+                    path=path,
+                    section_name=section_name,
+                    production=production,
+                    role="order",
+                )
+            )
+    for path in sorted(_unique_pdf_paths(drawing_files), key=_natural_pdf_name_key):
+        plan.append(
+            PdfWorkDossierPlanItem(
+                path=path,
+                section_name=section_name,
+                production=production,
+                role="drawing",
+            )
+        )
+
+
+def build_pdf_workdossier_plan(
+    source: str,
+    bom_df: pd.DataFrame,
+    *,
+    bom_source_path: str | None = None,
+    preset: PdfWorkDossierPreset | None = None,
+    include_order_documents: bool = False,
+    order_document_root: str | None = None,
+    include_offers: bool = False,
+) -> List[PdfWorkDossierPlanItem]:
+    """Return the ordered PDF files for a work dossier merge."""
+
+    idx = _build_file_index(source, [".pdf"])
+
+    related_bom_pdfs: List[str] = []
+    if bom_source_path:
+        related_bom_pdfs = [
+            path
+            for path in find_related_bom_exports(bom_source_path, idx)
+            if path.lower().endswith(".pdf")
+        ]
+        related_bom_pdfs = _unique_pdf_paths(related_bom_pdfs)
+
+    prod_to_files: Dict[str, List[str]] = defaultdict(list)
+    for _, row in bom_df.iterrows():
+        prod = _to_str(row.get("Production")).strip() or "_Onbekend"
+        pn = _to_str(row.get("PartNumber")).strip()
+        if not pn:
+            continue
+        prod_to_files[prod].extend(idx.get(pn, []))
+
+    for prod, paths in list(prod_to_files.items()):
+        prod_to_files[prod] = _unique_pdf_paths(paths)
+
+    plan: List[PdfWorkDossierPlanItem] = []
+    if preset is None:
+        if not include_order_documents:
+            all_files: List[str] = []
+            all_files.extend(related_bom_pdfs)
+            for paths in prod_to_files.values():
+                all_files.extend(paths)
+            for path in sorted(_unique_pdf_paths(all_files), key=_natural_pdf_name_key):
+                plan.append(PdfWorkDossierPlanItem(path=path, role="drawing"))
+            return plan
+
+        for path in sorted(related_bom_pdfs, key=_natural_pdf_name_key):
+            plan.append(
+                PdfWorkDossierPlanItem(
+                    path=path,
+                    section_name="Algemeen",
+                    role="bom",
+                )
+            )
+        production_order = sorted(
+            prod_to_files.keys(),
+            key=lambda prod: (
+                _natural_pdf_name_key(prod_to_files[prod][0])
+                if prod_to_files[prod]
+                else _natural_pdf_name_key(prod)
+            ),
+        )
+        for production in production_order:
+            _append_pdf_production_group(
+                plan,
+                section_name="Alfabetisch",
+                production=production,
+                drawing_files=prod_to_files[production],
+                include_order_documents=include_order_documents,
+                order_document_root=order_document_root,
+                include_offers=include_offers,
+            )
+        return plan
+
+    sections = [section for section in preset.sections if section.enabled]
+    assigned = _assign_pdf_sections(list(prod_to_files.keys()), sections)
+
+    for section_index, section in enumerate(sections):
+        if section.include_bom_pdf:
+            for path in sorted(related_bom_pdfs, key=_natural_pdf_name_key):
+                plan.append(
+                    PdfWorkDossierPlanItem(
+                        path=path,
+                        section_name=section.name,
+                        role="bom",
+                    )
+                )
+
+        section_productions = [
+            production
+            for production, assigned_index in assigned.items()
+            if assigned_index == section_index
+        ]
+        section_productions.sort(
+            key=lambda prod: (
+                _natural_pdf_name_key(prod_to_files[prod][0])
+                if prod_to_files[prod]
+                else _natural_pdf_name_key(prod)
+            )
+        )
+        for production in section_productions:
+            _append_pdf_production_group(
+                plan,
+                section_name=section.name,
+                production=production,
+                drawing_files=prod_to_files[production],
+                include_order_documents=include_order_documents,
+                order_document_root=order_document_root,
+                include_offers=include_offers,
+            )
+
+    if preset.include_unmatched:
+        unmatched = [
+            production
+            for production in prod_to_files
+            if production not in assigned
+        ]
+        unmatched.sort(
+            key=lambda prod: (
+                _natural_pdf_name_key(prod_to_files[prod][0])
+                if prod_to_files[prod]
+                else _natural_pdf_name_key(prod)
+            )
+        )
+        for production in unmatched:
+            _append_pdf_production_group(
+                plan,
+                section_name=preset.unmatched_section_name or "Overige",
+                production=production,
+                drawing_files=prod_to_files[production],
+                include_order_documents=include_order_documents,
+                order_document_root=order_document_root,
+                include_offers=include_offers,
+            )
+
+    return plan
+
+
+def combine_workdossier_pdf_from_source(
+    source: str,
+    bom_df: pd.DataFrame,
+    dest: str,
+    date_str: str | None = None,
+    *,
+    project_number: str | None = None,
+    project_name: str | None = None,
+    timestamp: datetime.datetime | None = None,
+    bom_source_path: str | None = None,
+    preset: PdfWorkDossierPreset | None = None,
+    include_order_documents: bool = False,
+    order_document_root: str | None = None,
+    include_offers: bool = False,
+) -> CombinedPdfResult:
+    """Combine drawing PDFs into one work dossier PDF."""
+
+    if PdfMerger is None:
+        raise ModuleNotFoundError(
+            "PyPDF2 must be installed to combine PDF files"
+        )
+
+    date_str = date_str or datetime.date.today().strftime("%Y-%m-%d")
+    out_dir = _create_combined_output_dir(
+        dest,
+        project_number,
+        project_name,
+        timestamp=timestamp,
+    )
+
+    plan = build_pdf_workdossier_plan(
+        source,
+        bom_df,
+        bom_source_path=bom_source_path,
+        preset=preset,
+        include_order_documents=include_order_documents,
+        order_document_root=order_document_root,
+        include_offers=include_offers,
+    )
+    if not plan:
+        return CombinedPdfResult(count=0, output_dir=out_dir)
+
+    merger = PdfMerger()
+    output_path = ""
+    appended = 0
+    try:
+        for item in plan:
+            merger.append(item.path)
+            appended += 1
+        out_name = f"Werkdossier_{date_str}_combined.pdf"
+        safe_name = _fit_filename_within_path(out_dir, out_name)
+        output_path = os.path.join(out_dir, safe_name)
+        merger.write(output_path)
+    finally:
+        merger.close()
+
+    if appended <= 0 or not output_path:
+        return CombinedPdfResult(count=0, output_dir=out_dir)
+    return CombinedPdfResult(
+        count=1,
+        output_dir=out_dir,
+        output_files=[output_path],
+    )
+
+
 def combine_pdfs_from_source(
     source: str,
     bom_df: pd.DataFrame,
@@ -4701,6 +5094,7 @@ def combine_pdfs_from_source(
         timestamp=timestamp,
     )
     count = 0
+    output_files: List[str] = []
 
     if combine_per_production:
         # When combining per production, copy related PDFs to output dir separately
@@ -4727,8 +5121,10 @@ def combine_pdfs_from_source(
                 continue
             out_name = f"{prod}_{date_str}_combined.pdf"
             safe_name = _fit_filename_within_path(out_dir, out_name)
-            merger.write(os.path.join(out_dir, safe_name))
+            output_path = os.path.join(out_dir, safe_name)
+            merger.write(output_path)
             merger.close()
+            output_files.append(output_path)
             count += 1
     else:
         ordered_files: List[str] = []
@@ -4755,11 +5151,13 @@ def combine_pdfs_from_source(
                 merger.append(path)
             out_name = f"BOM_{date_str}_combined.pdf"
             safe_name = _fit_filename_within_path(out_dir, out_name)
-            merger.write(os.path.join(out_dir, safe_name))
+            output_path = os.path.join(out_dir, safe_name)
+            merger.write(output_path)
             merger.close()
+            output_files.append(output_path)
             count = 1
 
-    return CombinedPdfResult(count=count, output_dir=out_dir)
+    return CombinedPdfResult(count=count, output_dir=out_dir, output_files=output_files)
 
 
 def combine_pdfs_per_production(
@@ -4792,6 +5190,7 @@ def combine_pdfs_per_production(
     )
     out_dir_name = os.path.basename(out_dir)
     count = 0
+    output_files: List[str] = []
     for prod in sorted(os.listdir(dest)):
         prod_path = os.path.join(dest, prod)
         if not os.path.isdir(prod_path):
@@ -4841,7 +5240,9 @@ def combine_pdfs_per_production(
                         merger.append(io.BytesIO(fh.read()))
         out_name = f"{prod}_{date_str}_combined.pdf"
         safe_name = _fit_filename_within_path(out_dir, out_name)
-        merger.write(os.path.join(out_dir, safe_name))
+        output_path = os.path.join(out_dir, safe_name)
+        merger.write(output_path)
         merger.close()
+        output_files.append(output_path)
         count += 1
-    return CombinedPdfResult(count=count, output_dir=out_dir)
+    return CombinedPdfResult(count=count, output_dir=out_dir, output_files=output_files)

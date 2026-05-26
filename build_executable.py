@@ -30,6 +30,7 @@ DEFAULT_DATA_FILES = [
     "delivery_addresses_db.json",
     "app_settings.json",
     "order_presets.json",
+    "pdf_workdossier_presets.json",
     "suppliers_template.csv",
 ]
 

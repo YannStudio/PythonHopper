@@ -29,8 +29,8 @@
       "email": "info@slimp.be",
       "website": null,
       "favorite": false,
-      "accent_color": null,
-      "logo_path": null,
+      "accent_color": "#E9B927",
+      "logo_path": "client_logos/slim_p_bv_20260522150300.png",
       "logo_crop": null
     },
     {
