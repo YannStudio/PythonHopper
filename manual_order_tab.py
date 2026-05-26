@@ -209,6 +209,7 @@ class SearchableCombobox(ttk.Combobox):
         self._sync_last_valid_value()
         self.bind("<KeyRelease>", self._on_key_release, add="+")
         self.bind("<<ComboboxSelected>>", self._on_selection, add="+")
+        self.bind("<Button-1>", self._on_button_press, add="+")
         self.bind("<FocusIn>", self._restore_values, add="+")
         self.bind("<FocusIn>", self._on_focus_in, add="+")
         self.bind("<FocusOut>", self._on_focus_out, add="+")
@@ -295,6 +296,14 @@ class SearchableCombobox(ttk.Combobox):
         self._clear_text_selection()
         self._unpost_dropdown()
         self._remember_selection()
+
+    def _on_button_press(self, event: tk.Event) -> None:
+        try:
+            element = self.identify(event.x, event.y)
+        except Exception:
+            element = ""
+        if "arrow" in _to_str(element).lower():
+            self._restore_values()
 
     def _restore_values(self, _event: tk.Event | None = None) -> None:
         self.configure(values=self._all_values)

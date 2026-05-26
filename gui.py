@@ -9958,12 +9958,6 @@ def start_gui():
                 anchor="w",
             ).pack(anchor="w", pady=2)
             tk.Checkbutton(
-                options_frame,
-                text="Combineer pdf per productie (uit = één PDF)",
-                variable=self.combine_pdf_per_production_var,
-                anchor="w",
-            ).pack(anchor="w", pady=2)
-            tk.Checkbutton(
                 general_export_name_inner,
                 text="Datumprefix (YYYYMMDD-)",
                 variable=self.export_date_prefix_var,
@@ -10192,7 +10186,7 @@ def start_gui():
             )
             self.copy_per_prod_button.pack(side="left", padx=6)
             tk.Button(
-                act, text="Combine pdf", command=self._combine_pdf, **button_style
+                act, text="PDF combineren", command=self._combine_pdf, **button_style
             ).pack(side="left", padx=6)
 
             # Status
