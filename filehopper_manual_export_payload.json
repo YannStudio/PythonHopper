@@ -1,0 +1,111 @@
+{
+  "doc_type": "Bestelbon",
+  "doc_number": "BB-001",
+  "client": "Thissen Biljarts",
+  "supplier": "Productora",
+  "delivery": "Bestelling wordt opgehaald",
+  "context_label": "Balgeleiding",
+  "context_kind": "document",
+  "remark": "P25-001-V3-p28 dient afgelast te worden.\nOnderdelen dienen gelakt te worden.",
+  "items": [
+    {
+      "PartNumber": "P25-001-V3-p27",
+      "Description": "Ball gutter",
+      "Materiaal": "ST235JR",
+      "Aantal": 1,
+      "Oppervlakte": 0.42,
+      "Gewicht": 3.23
+    },
+    {
+      "PartNumber": "P25-001-V3-p28",
+      "Description": "Ball box",
+      "Materiaal": "ST235JR",
+      "Aantal": 1,
+      "Oppervlakte": 0.56,
+      "Gewicht": 4.29
+    },
+    {
+      "PartNumber": "P25-001-V3-p03",
+      "Description": "Ball gutter",
+      "Materiaal": "ST235JR",
+      "Aantal": 1,
+      "Oppervlakte": 0.42,
+      "Gewicht": 3.23
+    }
+  ],
+  "total_weight": 10.75,
+  "template": "Standaard",
+  "column_layout": [
+    {
+      "key": "PartNumber",
+      "label": "Artikel nr.",
+      "width": 16,
+      "justify": "left",
+      "stretch": false,
+      "wrap": false,
+      "weight": 1.6,
+      "_display_chars": 16,
+      "_min_width_px": 96
+    },
+    {
+      "key": "Description",
+      "label": "Omschrijving",
+      "width": 32,
+      "justify": "left",
+      "stretch": true,
+      "wrap": true,
+      "weight": 2.6,
+      "_display_chars": 32,
+      "_min_width_px": 192
+    },
+    {
+      "key": "Materiaal",
+      "label": "Materiaal",
+      "width": 18,
+      "justify": "left",
+      "stretch": false,
+      "wrap": false,
+      "weight": 1.6,
+      "_display_chars": 18,
+      "_min_width_px": 108
+    },
+    {
+      "key": "Aantal",
+      "label": "Aantal",
+      "width": 8,
+      "justify": "right",
+      "numeric": true,
+      "stretch": false,
+      "wrap": false,
+      "weight": 0.8,
+      "integer": true,
+      "_display_chars": 8,
+      "_min_width_px": 48
+    },
+    {
+      "key": "Oppervlakte",
+      "label": "Oppervlakte",
+      "width": 10,
+      "justify": "right",
+      "numeric": true,
+      "stretch": false,
+      "wrap": false,
+      "weight": 1.0,
+      "_display_chars": 12,
+      "_min_width_px": 72
+    },
+    {
+      "key": "Gewicht",
+      "label": "Gewicht (kg)",
+      "width": 10,
+      "justify": "right",
+      "numeric": true,
+      "stretch": false,
+      "wrap": false,
+      "weight": 1.0,
+      "total_weight": true,
+      "_display_chars": 12,
+      "_min_width_px": 72
+    }
+  ]
+}

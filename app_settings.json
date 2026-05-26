@@ -1,8 +1,8 @@
 {
-  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Slimp/00. Projecten/2026/P26-005 - Rubix transportband/cad",
-  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Slimp/00. Projecten/2026/P26-005 - Rubix transportband/export",
-  "project_number": "P26-005",
-  "project_name": "Rubix transportband HI",
+  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Thissen/Steel block/cad/V3",
+  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Thissen/Steel block/export",
+  "project_number": "P25-001",
+  "project_name": "Ball support",
   "file_extensions": [
     {
       "key": "pdf",
@@ -103,6 +103,7 @@
     "3d print": false,
     "green roof": false,
     "stone": false,
-    "waterjet": false
+    "waterjet": false,
+    "sparte part": false
   }
 }
