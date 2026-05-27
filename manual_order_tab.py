@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 import tkinter as tk
@@ -92,6 +92,7 @@ class _ManualRowWidgets:
     vars: Dict[str, tk.StringVar]
     entries: Dict[str, tk.Entry]
     remove_btn: tk.Button
+    tooltips: List[_OverflowTooltip] = field(default_factory=list)
 
 
 DEFAULT_MANUAL_CONTEXT = "Bestelbon-editor"
@@ -207,6 +208,7 @@ class SearchableCombobox(ttk.Combobox):
         super().__init__(master, values=values, state=actual_state, **kwargs)
         self._store_all_values(list(values or ()))
         self._sync_last_valid_value()
+        self.bind("<KeyPress>", self._on_key_press, add="+")
         self.bind("<KeyRelease>", self._on_key_release, add="+")
         self.bind("<<ComboboxSelected>>", self._on_selection, add="+")
         self.bind("<Button-1>", self._on_button_press, add="+")
@@ -279,6 +281,24 @@ class SearchableCombobox(ttk.Combobox):
 
             self.after_idle(_restore_entry)
 
+    def _on_key_press(self, event: tk.Event) -> None:
+        if not self._is_plain_text_key(event):
+            return
+        try:
+            if self.selection_present():
+                return
+        except Exception:
+            pass
+
+        current = self.get().strip()
+        if not current or self._last_query:
+            return
+        if current in self._all_values or current == self._last_valid_value:
+            try:
+                self.delete(0, tk.END)
+            except Exception:
+                pass
+
     def _on_key_release(self, event: tk.Event) -> None:
         if event.keysym in {"Return", "KP_Enter"}:
             self.commit_typed_value()
@@ -289,7 +309,12 @@ class SearchableCombobox(ttk.Combobox):
             if event.keysym == "Escape":
                 self._restore_values()
             return
-        self.after_idle(lambda: self._apply_filter(self.get()))
+        if not self._is_plain_text_key(event) and event.keysym not in {
+            "BackSpace",
+            "Delete",
+        }:
+            return
+        self._apply_filter(self.get())
 
     def _on_selection(self, _event: tk.Event) -> None:
         self._restore_values()
@@ -320,6 +345,7 @@ class SearchableCombobox(ttk.Combobox):
             except Exception:
                 pass
 
+        _select_all()
         self.after_idle(_select_all)
 
     def _on_focus_out(self, _event: tk.Event) -> None:
@@ -344,6 +370,37 @@ class SearchableCombobox(ttk.Combobox):
                 self.event_generate("<Escape>")
             except Exception:
                 pass
+
+    @staticmethod
+    def _is_plain_text_key(event: tk.Event) -> bool:
+        keysym = getattr(event, "keysym", "")
+        if keysym in {
+            "BackSpace",
+            "Delete",
+            "Escape",
+            "Return",
+            "KP_Enter",
+            "Tab",
+            "Up",
+            "Down",
+            "Left",
+            "Right",
+            "Home",
+            "End",
+            "Prior",
+            "Next",
+        }:
+            return False
+        state = int(getattr(event, "state", 0) or 0)
+        control_mask = 0x4
+        alt_mask = 0x8
+        command_mask = 0x100000
+        if state & (control_mask | alt_mask | command_mask):
+            return False
+        char = getattr(event, "char", "")
+        if char and len(char) == 1 and char >= " " and char != "\x7f":
+            return True
+        return len(keysym) == 1 or keysym == "space"
 
     @staticmethod
     def _normalize_text(value: object) -> str:
@@ -729,6 +786,7 @@ class ManualOrderTab(tk.Frame):
         self._on_manage_suppliers = on_manage_suppliers
         self._on_manage_deliveries = on_manage_deliveries
         self._document_name_builder = document_name_builder
+        self._header_overflow_tooltips: List[_OverflowTooltip] = []
 
         self.configure(padx=12, pady=12)
         self.columnconfigure(0, weight=1)
@@ -774,11 +832,16 @@ class ManualOrderTab(tk.Frame):
         tk.Label(header, text="Projectnummer:").grid(
             row=0, column=3, sticky="w"
         )
-        tk.Entry(
+        project_number_entry = tk.Entry(
             header,
             textvariable=self.project_number_var,
             width=field_char_width,
-        ).grid(row=0, column=4, sticky="w", padx=(6, 0))
+        )
+        project_number_entry.grid(row=0, column=4, sticky="w", padx=(6, 0))
+        self._attach_entry_overflow_tooltip(
+            project_number_entry,
+            lambda: self.project_number_var.get().strip(),
+        )
 
         tk.Label(header, text="Documentnummer:").grid(
             row=1, column=0, sticky="w", pady=(6, 0)
@@ -790,15 +853,24 @@ class ManualOrderTab(tk.Frame):
             width=field_char_width,
         )
         self.doc_number_entry.grid(row=1, column=1, sticky="w", padx=(6, 0), pady=(6, 0))
+        self._attach_entry_overflow_tooltip(
+            self.doc_number_entry,
+            lambda: self.doc_number_var.get().strip(),
+        )
 
         tk.Label(header, text="Projectnaam:").grid(
             row=1, column=3, sticky="w", pady=(6, 0)
         )
-        tk.Entry(
+        project_name_entry = tk.Entry(
             header,
             textvariable=self.project_name_var,
             width=field_char_width,
-        ).grid(row=1, column=4, sticky="w", padx=(6, 0), pady=(6, 0))
+        )
+        project_name_entry.grid(row=1, column=4, sticky="w", padx=(6, 0), pady=(6, 0))
+        self._attach_entry_overflow_tooltip(
+            project_name_entry,
+            lambda: self.project_name_var.get().strip(),
+        )
 
         self._doc_number_prefix = _prefix_for_doc_type(self.doc_type_var.get())
         if self._doc_number_prefix:
@@ -853,7 +925,10 @@ class ManualOrderTab(tk.Frame):
             width=field_char_width,
         )
         self.dest_entry.pack(side="left")
-        _OverflowTooltip(self.dest_entry, lambda: self.dest_folder_var.get().strip())
+        self._attach_entry_overflow_tooltip(
+            self.dest_entry,
+            lambda: self.dest_folder_var.get().strip(),
+        )
         tk.Button(
             dest_field,
             text="Bladeren",
@@ -955,6 +1030,10 @@ class ManualOrderTab(tk.Frame):
             sticky="w",
             padx=(6, 0),
             pady=(6, 0),
+        )
+        self._attach_entry_overflow_tooltip(
+            context_entry,
+            lambda: self.doc_name_preview_var.get().strip(),
         )
 
         def _sync_project_name(*_args):
@@ -1257,6 +1336,24 @@ class ManualOrderTab(tk.Frame):
             )
         self.doc_name_preview_var.set(f"{basename}.pdf")
 
+    def _attach_entry_overflow_tooltip(
+        self,
+        entry: tk.Entry,
+        text_provider: Callable[[], str],
+        *,
+        store: Optional[List[_OverflowTooltip]] = None,
+    ) -> _OverflowTooltip:
+        """Attach and retain a tooltip that shows the full entry text on overflow."""
+
+        tooltip = _OverflowTooltip(entry, text_provider)
+        if store is None:
+            if not hasattr(self, "_header_overflow_tooltips"):
+                self._header_overflow_tooltips = []
+            self._header_overflow_tooltips.append(tooltip)
+        else:
+            store.append(tooltip)
+        return tooltip
+
     # Row management -------------------------------------------------
     def _create_header_row_in_canvas(self) -> None:
         """Creëer de header-rij als rij 0 in rows_frame centrale grid."""
@@ -1343,6 +1440,11 @@ class ManualOrderTab(tk.Frame):
                 justify=column.get("justify", "left"),
             )
             entry.grid(row=row_idx, column=grid_col, sticky="ew", padx=(6, 6))
+            self._attach_entry_overflow_tooltip(
+                entry,
+                lambda v=var: v.get().strip(),
+                store=widgets.tooltips,
+            )
             
             # Configure column width
             if column.get("stretch"):

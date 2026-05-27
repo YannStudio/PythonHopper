@@ -2,6 +2,7 @@ import math
 
 import pytest
 
+import manual_order_tab
 from manual_order_tab import _ensure_integer_quantity, ManualOrderTab, SearchableCombobox
 
 
@@ -66,6 +67,52 @@ def test_build_document_basename_ignores_prefix_only_doc_number():
         )
         == "Leien-60x80"
     )
+
+
+def test_attach_entry_overflow_tooltip_retains_tooltip(monkeypatch):
+    created = []
+
+    class FakeTooltip:
+        def __init__(self, widget, text_provider):
+            self.widget = widget
+            self.text_provider = text_provider
+            created.append(self)
+
+    monkeypatch.setattr(manual_order_tab, "_OverflowTooltip", FakeTooltip)
+    tab = ManualOrderTab.__new__(ManualOrderTab)
+    entry = object()
+
+    tooltip = ManualOrderTab._attach_entry_overflow_tooltip(
+        tab,
+        entry,
+        lambda: "C:/very/long/source/path/file.xlsx",
+    )
+
+    assert tooltip is created[0]
+    assert tab._header_overflow_tooltips == [tooltip]
+    assert tooltip.widget is entry
+    assert tooltip.text_provider() == "C:/very/long/source/path/file.xlsx"
+
+
+def test_attach_entry_overflow_tooltip_can_store_on_row(monkeypatch):
+    class FakeTooltip:
+        def __init__(self, widget, text_provider):
+            self.widget = widget
+            self.text_provider = text_provider
+
+    monkeypatch.setattr(manual_order_tab, "_OverflowTooltip", FakeTooltip)
+    tab = ManualOrderTab.__new__(ManualOrderTab)
+    row_tooltips = []
+
+    tooltip = ManualOrderTab._attach_entry_overflow_tooltip(
+        tab,
+        object(),
+        lambda: "lange waarde",
+        store=row_tooltips,
+    )
+
+    assert row_tooltips == [tooltip]
+    assert not hasattr(tab, "_header_overflow_tooltips")
 
 
 class _DummyVar:
@@ -138,6 +185,10 @@ def _make_searchable_combo(values, current=""):
     combo._readonly_mode = True
     combo.current = current
     combo.configured_values = []
+    combo.dropdown_calls = []
+    combo.cursor_at_end = False
+    combo.focused = False
+    combo.selection_is_present = False
 
     def configure(**kwargs):
         if "values" in kwargs:
@@ -149,9 +200,43 @@ def _make_searchable_combo(values, current=""):
     def set_value(value):
         combo.current = value
 
+    def delete(_start, _end):
+        combo.current = ""
+
+    def insert(_index, value):
+        combo.current = value
+
+    def selection_present():
+        return combo.selection_is_present
+
+    def selection_clear():
+        combo.selection_is_present = False
+
+    def icursor(_index):
+        combo.cursor_at_end = True
+
+    def focus_set():
+        combo.focused = True
+
+    def after_idle(callback):
+        callback()
+
+    class _FakeTk:
+        def call(self, *args):
+            combo.dropdown_calls.append(args)
+
     combo.configure = configure
     combo.get = get
     combo.set = set_value
+    combo.delete = delete
+    combo.insert = insert
+    combo.selection_present = selection_present
+    combo.selection_clear = selection_clear
+    combo.icursor = icursor
+    combo.focus_set = focus_set
+    combo.after_idle = after_idle
+    combo.tk = _FakeTk()
+    combo._w = "combo"
     return combo
 
 
@@ -180,3 +265,31 @@ def test_searchable_combobox_prefers_supplier_over_empty_choice_for_partial_matc
 
     assert SearchableCombobox.commit_typed_value(combo) is True
     assert combo.current == "Govaerts Staal"
+
+
+def test_searchable_combobox_typing_first_letter_filters_and_opens_dropdown():
+    combo = _make_searchable_combo(
+        ["Geen", "Antwerp Steel", "Apple Metaal", "Beta Works"],
+        current="a",
+    )
+    event = type("Event", (), {"keysym": "a", "char": "a", "state": 0})()
+
+    SearchableCombobox._on_key_release(combo, event)
+
+    assert combo.configured_values == ["Antwerp Steel", "Apple Metaal"]
+    assert ("ttk::combobox::Post", "combo") in combo.dropdown_calls
+    assert combo.current == "a"
+    assert combo.cursor_at_end is True
+    assert combo.focused is True
+
+
+def test_searchable_combobox_keypress_replaces_existing_supplier_choice():
+    combo = _make_searchable_combo(
+        ["Geen", "Antwerp Steel", "Beta Works"],
+        current="Geen",
+    )
+    event = type("Event", (), {"keysym": "a", "char": "a", "state": 0})()
+
+    SearchableCombobox._on_key_press(combo, event)
+
+    assert combo.current == ""
