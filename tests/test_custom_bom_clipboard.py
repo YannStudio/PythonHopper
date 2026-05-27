@@ -35,6 +35,37 @@ def test_clipboard_slice_empty_when_nothing_selected() -> None:
     assert _dataframe_slice_to_clipboard(df, [], []) == ""
 
 
+def test_parse_clipboard_keeps_comma_inside_single_cell() -> None:
+    tab, _statuses = _build_tab(
+        pd.DataFrame({header: [""] for header in BOMCustomTab.HEADERS})
+    )
+
+    parsed = tab._parse_clipboard_text("RVS, geborsteld")
+
+    assert parsed == [["RVS, geborsteld"]]
+
+
+def test_paste_keeps_comma_inside_single_cell() -> None:
+    df = pd.DataFrame({header: [""] for header in BOMCustomTab.HEADERS})
+    tab, statuses = _build_tab(df)
+    table = SimpleNamespace(
+        currentrow=0,
+        currentcol=0,
+        multiplerowlist=[],
+        multiplecollist=[],
+        _commit_active_edit=lambda: True,
+    )
+    setattr(table, "_Table__last_left_click_src", "")
+    tab.table = table
+
+    result = tab._on_paste(clipboard_text="RVS, geborsteld")
+
+    assert result == "break"
+    assert tab.table_model.df.iat[0, 0] == "RVS, geborsteld"
+    assert tab.table_model.df.iat[0, 1] == ""
+    assert statuses[-1] == "1 cellen geplakt."
+
+
 def _build_tab(df: pd.DataFrame):
     tab = object.__new__(BOMCustomTab)
     tab.table_model = SimpleNamespace(df=df.copy(deep=True))

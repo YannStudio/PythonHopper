@@ -1923,11 +1923,6 @@ class BOMCustomTab(ttk.Frame):
         import io
 
         delimiter = "\t"
-        if "\t" not in text:
-            if ";" in text:
-                delimiter = ";"
-            elif "," in text:
-                delimiter = ","
         reader = csv.reader(io.StringIO(text), delimiter=delimiter)
         rows: List[List[str]] = []
         for row in reader:

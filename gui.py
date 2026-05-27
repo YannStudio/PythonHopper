@@ -12074,7 +12074,7 @@ def start_gui():
             self,
             message: str,
             *,
-            duration_ms: int = 2600,
+            duration_ms: int = 3600,
         ) -> None:
             previous = getattr(self, "_opticutter_toast_window", None)
             if previous is not None:
@@ -12095,33 +12095,59 @@ def start_gui():
                 toast = tk.Toplevel(self)
                 toast.overrideredirect(True)
                 toast.attributes("-topmost", True)
-                toast.configure(background="#1F5132")
+                background = "#174A2E"
+                border = "#68D391"
+                toast.configure(background=background)
+                root_x = self.winfo_rootx()
+                root_y = self.winfo_rooty()
+                root_width = max(self.winfo_width(), 360)
+                root_height = max(self.winfo_height(), 260)
+                min_width = min(
+                    max(int(root_width * 0.42), 360),
+                    max(root_width - 72, 280),
+                )
+
                 container = tk.Frame(
                     toast,
-                    background="#1F5132",
-                    padx=16,
-                    pady=10,
-                    highlightthickness=1,
-                    highlightbackground="#9AE6B4",
+                    background=background,
+                    padx=24,
+                    pady=16,
+                    highlightthickness=2,
+                    highlightbackground=border,
                 )
                 container.pack(fill="both", expand=True)
+                title_font = tkfont.nametofont("TkDefaultFont").copy()
+                try:
+                    title_font.configure(
+                        size=title_font.cget("size") + 2,
+                        weight="bold",
+                    )
+                except tk.TclError:
+                    pass
+                tk.Label(
+                    container,
+                    text="Opticutter bijgewerkt",
+                    background=background,
+                    foreground="#F0FFF4",
+                    font=title_font,
+                    anchor="center",
+                ).pack(fill="x")
                 tk.Label(
                     container,
                     text=message,
-                    background="#1F5132",
-                    foreground="#F0FFF4",
+                    background=background,
+                    foreground="#DCFCE7",
                     font=tkfont.nametofont("TkDefaultFont"),
-                ).pack()
+                    anchor="center",
+                    wraplength=max(min_width - 48, 240),
+                    justify="center",
+                ).pack(fill="x", pady=(4, 0))
                 toast.update_idletasks()
-                width = toast.winfo_reqwidth()
+                width = max(toast.winfo_reqwidth(), min_width)
                 height = toast.winfo_reqheight()
-                root_x = self.winfo_rootx()
-                root_y = self.winfo_rooty()
-                root_width = max(self.winfo_width(), 320)
-                root_height = max(self.winfo_height(), 220)
-                x = root_x + root_width - width - 28
-                y = root_y + root_height - height - 32
-                toast.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+                x = root_x + ((root_width - width) // 2)
+                y = root_y + root_height - height - 72
+                toast.geometry(f"{width}x{height}+{max(x, 0)}+{max(y, 0)}")
                 self._opticutter_toast_window = toast
 
                 def _close_toast() -> None:

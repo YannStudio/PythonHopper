@@ -1,8 +1,10 @@
 import pytest
+import orders
 
 from orders import (
     OrderDocumentSection,
     _build_order_pdf_section_story,
+    generate_pdf_order_platypus,
     _order_palette,
     _wrap_words_to_lines,
 )
@@ -148,3 +150,95 @@ def test_order_pdf_section_compacts_custom_area_and_weight_headers():
     table = story[-1]
     assert table._cellvalues[0][5] == "m\u00b2"
     assert table._cellvalues[0][6] == "kg"
+
+
+def test_single_section_pdf_compacts_custom_area_and_weight_headers(monkeypatch, tmp_path):
+    pytest.importorskip("reportlab")
+
+    captured = {}
+
+    class FakeDoc:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def build(self, story):
+            captured["story"] = story
+
+    monkeypatch.setattr(orders, "SimpleDocTemplate", FakeDoc)
+
+    generate_pdf_order_platypus(
+        str(tmp_path / "bestelbon.pdf"),
+        {},
+        None,
+        production="Document",
+        items=[
+            {
+                "part_number": "BB001",
+                "description": "Ball gutter",
+                "material": "ST235JR",
+                "quantity": 1,
+                "Oppervlakte": 0.42,
+                "Gewicht": 3.23,
+            }
+        ],
+        column_layout=[
+            {
+                "key": "part_number",
+                "label": "Artikel nr.",
+                "justify": "left",
+                "weight": 1.8,
+            },
+            {
+                "key": "description",
+                "label": "Omschrijving",
+                "justify": "left",
+                "weight": 2.9,
+            },
+            {
+                "key": "material",
+                "label": "Materiaal",
+                "justify": "left",
+                "weight": 1.8,
+            },
+            {
+                "key": "quantity",
+                "label": "Aantal",
+                "justify": "right",
+                "numeric": True,
+                "integer": True,
+                "weight": 0.9,
+            },
+            {
+                "key": "Oppervlakte",
+                "label": "Oppervlakte",
+                "justify": "right",
+                "numeric": True,
+                "weight": 1.1,
+            },
+            {
+                "key": "Gewicht",
+                "label": "Gewicht (kg)",
+                "justify": "right",
+                "numeric": True,
+                "weight": 1.1,
+                "total_weight": True,
+            },
+        ],
+        total_weight_kg=3.23,
+    )
+
+    tables = [
+        flowable
+        for flowable in captured["story"]
+        if hasattr(flowable, "_cellvalues")
+    ]
+    order_table = next(
+        table
+        for table in tables
+        if table._cellvalues and "Artikel nr." in table._cellvalues[0]
+    )
+
+    assert "Oppervlakte" not in order_table._cellvalues[0]
+    assert "Gewicht (kg)" not in order_table._cellvalues[0]
+    assert order_table._cellvalues[0][4] == "m\u00b2"
+    assert order_table._cellvalues[0][5] == "kg"

@@ -3,7 +3,7 @@
 import os
 import datetime
 import io
-from typing import Dict, List, Optional
+from typing import Dict, List, Mapping, Optional
 
 
 from app_paths import resolve_runtime_path
@@ -32,6 +32,20 @@ try:
     REPORTLAB_OK = True
 except Exception:
     REPORTLAB_OK = False
+
+
+def _pdf_order_column_label(column: Mapping[str, object]) -> str:
+    """Return a compact header label for PDF tables."""
+
+    key = _to_str(column.get("key")).strip().lower()
+    label = _to_str(column.get("label") or column.get("key") or "").strip()
+    label_lower = label.lower()
+
+    if key == "oppervlakte" or label_lower == "oppervlakte":
+        return "m\u00b2"
+    if key == "gewicht" or label_lower in {"gewicht", "gewicht (kg)"}:
+        return "kg"
+    return label or _to_str(column.get("key")).strip()
 
 
 
@@ -340,7 +354,7 @@ def generate_pdf_order_platypus(
     if custom_layout:
         head = []
         for column in column_layout:
-            header = _to_str(column.get("label") or column.get("key") or "").strip()
+            header = _pdf_order_column_label(column)
             if not header:
                 header = column.get("key", "")
             column["label"] = header

@@ -2787,7 +2787,7 @@ def generate_pdf_order_platypus(
     if custom_layout:
         head = []
         for column in column_layout:
-            header = _to_str(column.get("label") or column.get("key") or "").strip()
+            header = _pdf_order_column_label(column)
             if not header:
                 header = column.get("key", "")
             column["label"] = header
