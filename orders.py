@@ -4908,6 +4908,22 @@ def build_pdf_workdossier_plan(
 
     sections = [section for section in preset.sections if section.enabled]
     assigned = _assign_pdf_sections(list(prod_to_files.keys()), sections)
+    unmatched_inserted = False
+
+    def unmatched_productions() -> List[str]:
+        unmatched = [
+            production
+            for production in prod_to_files
+            if production not in assigned
+        ]
+        unmatched.sort(
+            key=lambda prod: (
+                _natural_pdf_name_key(prod_to_files[prod][0])
+                if prod_to_files[prod]
+                else _natural_pdf_name_key(prod)
+            )
+        )
+        return unmatched
 
     for section_index, section in enumerate(sections):
         if section.include_bom_pdf:
@@ -4943,20 +4959,21 @@ def build_pdf_workdossier_plan(
                 include_offers=include_offers,
             )
 
-    if preset.include_unmatched:
-        unmatched = [
-            production
-            for production in prod_to_files
-            if production not in assigned
-        ]
-        unmatched.sort(
-            key=lambda prod: (
-                _natural_pdf_name_key(prod_to_files[prod][0])
-                if prod_to_files[prod]
-                else _natural_pdf_name_key(prod)
-            )
-        )
-        for production in unmatched:
+        if getattr(section, "include_unmatched", False) and not unmatched_inserted:
+            unmatched_inserted = True
+            for production in unmatched_productions():
+                _append_pdf_production_group(
+                    plan,
+                    section_name=section.name,
+                    production=production,
+                    drawing_files=prod_to_files[production],
+                    include_order_documents=include_order_documents,
+                    order_document_root=order_document_root,
+                    include_offers=include_offers,
+                )
+
+    if preset.include_unmatched and not unmatched_inserted:
+        for production in unmatched_productions():
             _append_pdf_production_group(
                 plan,
                 section_name=preset.unmatched_section_name or "Overige",

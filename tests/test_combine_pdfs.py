@@ -393,3 +393,42 @@ def test_workdossier_can_insert_order_documents_before_production(tmp_path):
         90,
     ]
 
+
+def test_workdossier_unmatched_section_can_be_positioned(tmp_path):
+    source = tmp_path / "src"
+    dest = tmp_path / "out"
+    source.mkdir()
+    dest.mkdir()
+
+    _blank_pdf(source / "ASM-1.pdf", width=80)
+    _blank_pdf(source / "OTHER-1.pdf", width=90)
+    _blank_pdf(source / "LAS-1.pdf", width=100)
+
+    bom_df = pd.DataFrame(
+        [
+            {"PartNumber": "ASM-1", "Production": "Assembly"},
+            {"PartNumber": "OTHER-1", "Production": "Unknown"},
+            {"PartNumber": "LAS-1", "Production": "Laser"},
+        ]
+    )
+    preset = PdfWorkDossierPreset(
+        name="Werkdossier",
+        include_unmatched=False,
+        sections=[
+            PdfWorkDossierSection("Assembly", ["Assembly"]),
+            PdfWorkDossierSection("Other names", include_unmatched=True),
+            PdfWorkDossierSection("Laser", ["Laser"]),
+        ],
+    )
+
+    result = combine_workdossier_pdf_from_source(
+        str(source),
+        bom_df,
+        str(dest),
+        "2023-01-01",
+        preset=preset,
+    )
+
+    reader = PdfReader(result.output_files[0])
+    assert [float(page.mediabox.width) for page in reader.pages] == [80, 90, 100]
+

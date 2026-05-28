@@ -74,6 +74,7 @@ class PdfWorkDossierSection:
     name: str
     identifiers: List[str] = field(default_factory=list)
     include_bom_pdf: bool = False
+    include_unmatched: bool = False
     enabled: bool = True
 
     @classmethod
@@ -83,6 +84,7 @@ class PdfWorkDossierSection:
                 name=data.name,
                 identifiers=list(data.identifiers),
                 include_bom_pdf=bool(data.include_bom_pdf),
+                include_unmatched=bool(getattr(data, "include_unmatched", False)),
                 enabled=bool(data.enabled),
             )
         if not isinstance(data, dict):
@@ -96,6 +98,7 @@ class PdfWorkDossierSection:
             name=name,
             identifiers=_normalize_identifiers(data.get("identifiers")),
             include_bom_pdf=_as_bool(data.get("include_bom_pdf"), False),
+            include_unmatched=_as_bool(data.get("include_unmatched"), False),
             enabled=_as_bool(data.get("enabled"), True),
         )
 
@@ -170,7 +173,31 @@ def default_pdf_workdossier_preset() -> PdfWorkDossierPreset:
                 "Spare parts",
                 identifiers=["Spare parts", "Reserveonderdelen", "Onderdelen"],
             ),
+            PdfWorkDossierSection("Overige", include_unmatched=True),
         ],
+    )
+
+
+def tecno_art_pdf_workdossier_preset() -> PdfWorkDossierPreset:
+    """Return the built-in Tecno Art production order preset."""
+
+    return PdfWorkDossierPreset(
+        name="Tecno Art werkdossier",
+        priority=100,
+        sections=[
+            PdfWorkDossierSection("Hoofdassembly", include_bom_pdf=True),
+            PdfWorkDossierSection("Assembly", ["Assembly", "Dummy assembly"]),
+            PdfWorkDossierSection("Weld assembly", ["Weld assembly"]),
+            PdfWorkDossierSection("Mount material", ["Mount material"]),
+            PdfWorkDossierSection("Spare parts", ["Spare part", "Spare parts"]),
+            PdfWorkDossierSection("Cutting", ["Cutting"]),
+            PdfWorkDossierSection("Lasercutting", ["Lasercutting"]),
+            PdfWorkDossierSection("Laser cutting +4m", ["Sheetmetal +4m"]),
+            PdfWorkDossierSection("Tube laser", ["Tube laser"]),
+            PdfWorkDossierSection("Tube laser L", ["Tube laser L"]),
+            PdfWorkDossierSection("Other names", include_unmatched=True),
+        ],
+        unmatched_section_name="Other names",
     )
 
 
@@ -229,3 +256,11 @@ class PdfWorkDossierPresetsDB:
                 self.presets[index] = cloned
                 return
         self.presets.append(cloned)
+
+    def remove(self, name: str) -> bool:
+        key = _normalize_text(name).casefold()
+        for index, existing in enumerate(self.presets):
+            if existing.name.casefold() == key:
+                self.presets.pop(index)
+                return True
+        return False

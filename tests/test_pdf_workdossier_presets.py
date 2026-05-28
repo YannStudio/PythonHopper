@@ -3,6 +3,7 @@ from pdf_workdossier_presets import (
     PdfWorkDossierPresetsDB,
     PdfWorkDossierSection,
     default_pdf_workdossier_preset,
+    tecno_art_pdf_workdossier_preset,
 )
 
 
@@ -21,6 +22,10 @@ def test_pdf_workdossier_preset_roundtrip(tmp_path):
                         "Laserwerk",
                         identifiers=["Laser", "Lasersnijden"],
                     ),
+                    PdfWorkDossierSection(
+                        "Overige",
+                        include_unmatched=True,
+                    ),
                 ],
             )
         ]
@@ -33,6 +38,7 @@ def test_pdf_workdossier_preset_roundtrip(tmp_path):
     assert preset is not None
     assert preset.sections[0].include_bom_pdf is True
     assert preset.sections[1].identifiers == ["Laser", "Lasersnijden"]
+    assert preset.sections[2].include_unmatched is True
 
 
 def test_default_pdf_workdossier_preset_contains_expected_sections():
@@ -43,3 +49,23 @@ def test_default_pdf_workdossier_preset_contains_expected_sections():
     assert "Assembly tekeningen" in names
     assert "Tube laserwerk" in names
     assert "Spare parts" in names
+    assert "Overige" in names
+
+
+def test_tecno_art_pdf_workdossier_preset_contains_requested_order():
+    preset = tecno_art_pdf_workdossier_preset()
+
+    assert [section.name for section in preset.sections] == [
+        "Hoofdassembly",
+        "Assembly",
+        "Weld assembly",
+        "Mount material",
+        "Spare parts",
+        "Cutting",
+        "Lasercutting",
+        "Laser cutting +4m",
+        "Tube laser",
+        "Tube laser L",
+        "Other names",
+    ]
+    assert preset.sections[-1].include_unmatched is True

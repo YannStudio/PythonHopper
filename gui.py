@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from copy import deepcopy
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping, Optional, Tuple, TYPE_CHECKING
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, TYPE_CHECKING
 
 import pandas as pd
 
@@ -56,6 +56,7 @@ from pdf_workdossier_presets import (
     PdfWorkDossierPresetsDB,
     PdfWorkDossierSection,
     default_pdf_workdossier_preset,
+    tecno_art_pdf_workdossier_preset,
 )
 from bom import read_csv_flex, load_bom
 from bom_custom_tab import BOMCustomTab
@@ -216,6 +217,28 @@ def _safe_make_logo_photo(img, image_tk, resample, max_size: tuple[int, int]):
         return image_tk.PhotoImage(thumb)
     except Exception:
         return None
+
+
+def _resolve_file_dialog_initial_dir(preferred_path: object) -> str:
+    """Return a usable start directory for native file dialogs."""
+
+    fallback = os.getcwd()
+    raw_path = _to_str(preferred_path).strip()
+    if not raw_path:
+        return fallback
+
+    try:
+        candidate = os.path.abspath(os.path.expanduser(raw_path))
+    except (OSError, TypeError, ValueError):
+        return fallback
+
+    try:
+        if os.path.isdir(candidate):
+            return candidate
+    except OSError:
+        pass
+    return fallback
+
 
 def start_gui():
     ensure_runtime_files(RUNTIME_DATA_FILES)
@@ -8822,20 +8845,384 @@ def start_gui():
             win.focus_set()
             win.wait_window()
 
-    class PdfWorkDossierDialog(tk.Toplevel):
+    class PdfWorkDossierSectionsEditor(tk.Frame):
+        INSERT_PRESETS: Tuple[Tuple[str, Tuple[str, ...], bool], ...] = (
+            ("Assembly", ("Assembly", "Dummy assembly"), False),
+            ("Weld assembly", ("Weld assembly",), False),
+            ("Mount material", ("Mount material",), False),
+            ("Spare parts", ("Spare part", "Spare parts"), False),
+            ("Cutting", ("Cutting",), False),
+            ("Lasercutting", ("Lasercutting",), False),
+            ("Laser cutting +4m", ("Sheetmetal +4m",), False),
+            ("Tube laser", ("Tube laser",), False),
+            ("Tube laser L", ("Tube laser L",), False),
+            ("Other names", (), True),
+        )
+
+        def __init__(self, master) -> None:
+            super().__init__(master)
+            self.sections: List[PdfWorkDossierSection] = []
+            self._row_controls: List[Dict[str, object]] = []
+            self._selected_index: Optional[int] = None
+            self._drag_start_index: Optional[int] = None
+            self._drag_over_index: Optional[int] = None
+            self._enabled = True
+
+            insert_frame = tk.LabelFrame(self, text="Invoegen", padx=6, pady=6)
+            insert_frame.pack(fill="x")
+            self._insert_buttons: List[tk.Button] = []
+            for index, (name, identifiers, unmatched) in enumerate(self.INSERT_PRESETS):
+                button = tk.Button(
+                    insert_frame,
+                    text=name,
+                    command=lambda n=name, ids=identifiers, u=unmatched: self.add_section(
+                        n, list(ids), include_unmatched=u
+                    ),
+                )
+                button.grid(
+                    row=index // 5,
+                    column=index % 5,
+                    sticky="ew",
+                    padx=2,
+                    pady=2,
+                )
+                self._insert_buttons.append(button)
+            for col in range(5):
+                insert_frame.columnconfigure(col, weight=1)
+
+            actions = tk.Frame(self)
+            actions.pack(fill="x", pady=(6, 4))
+            self._up_button = ttk.Button(actions, text="Omhoog", command=self.move_selected_up)
+            self._up_button.pack(side="left", padx=(0, 4))
+            self._down_button = ttk.Button(actions, text="Omlaag", command=self.move_selected_down)
+            self._down_button.pack(side="left", padx=(0, 4))
+            self._delete_button = ttk.Button(
+                actions,
+                text="Verwijder blok",
+                command=self.delete_selected,
+            )
+            self._delete_button.pack(side="left", padx=(0, 4))
+            self._clear_button = ttk.Button(
+                actions,
+                text="Leegmaken",
+                command=self.clear_sections,
+            )
+            self._clear_button.pack(side="left", padx=(0, 4))
+
+            body = tk.Frame(self)
+            body.pack(fill="both", expand=True)
+            body.rowconfigure(0, weight=1)
+            body.columnconfigure(0, weight=1)
+            self.canvas = tk.Canvas(body, highlightthickness=0, borderwidth=0, height=210)
+            self.canvas.grid(row=0, column=0, sticky="nsew")
+            self.scrollbar = ttk.Scrollbar(
+                body,
+                orient="vertical",
+                command=self.canvas.yview,
+            )
+            self.scrollbar.grid(row=0, column=1, sticky="ns")
+            self.canvas.configure(yscrollcommand=self.scrollbar.set)
+            self.inner = tk.Frame(self.canvas)
+            self.inner_window = self.canvas.create_window(
+                (0, 0),
+                window=self.inner,
+                anchor="nw",
+            )
+            self.inner.bind(
+                "<Configure>",
+                lambda _e: self.canvas.configure(scrollregion=self.canvas.bbox("all")),
+            )
+            self.canvas.bind(
+                "<Configure>",
+                lambda event: self.canvas.itemconfigure(
+                    self.inner_window,
+                    width=event.width,
+                ),
+            )
+            self._render_sections()
+
+        def set_enabled(self, enabled: bool) -> None:
+            self._enabled = bool(enabled)
+            state = "normal" if self._enabled else "disabled"
+            for button in self._insert_buttons:
+                button.configure(state=state)
+            for button in (
+                self._up_button,
+                self._down_button,
+                self._delete_button,
+                self._clear_button,
+            ):
+                button.configure(state=state)
+            for controls in self._row_controls:
+                for widget in controls.get("stateful_widgets", []):
+                    try:
+                        widget.configure(state=state)
+                    except Exception:
+                        pass
+
+        def _sync_sections_from_rows(self) -> None:
+            if not self._row_controls:
+                return
+            sections: List[PdfWorkDossierSection] = []
+            for controls in self._row_controls:
+                name_var = controls.get("name_var")
+                identifiers_var = controls.get("identifiers_var")
+                unmatched_var = controls.get("unmatched_var")
+                name = name_var.get().strip() if name_var is not None else ""
+                if not name:
+                    continue
+                include_unmatched = bool(unmatched_var.get()) if unmatched_var is not None else False
+                identifiers: List[str] = []
+                if not include_unmatched and identifiers_var is not None:
+                    identifiers = [
+                        part.strip()
+                        for part in re.split(r"[,;]+", identifiers_var.get())
+                        if part.strip()
+                    ]
+                sections.append(
+                    PdfWorkDossierSection(
+                        name,
+                        identifiers=identifiers,
+                        include_unmatched=include_unmatched,
+                    )
+                )
+            self.sections = sections
+            if self._selected_index is not None and self._selected_index >= len(self.sections):
+                self._selected_index = len(self.sections) - 1 if self.sections else None
+
+        def _select_index(self, index: int) -> None:
+            if 0 <= index < len(self.sections):
+                self._selected_index = index
+                self._render_sections()
+
+        def _set_unmatched_state(self, identifiers_entry, identifiers_var, unmatched_var) -> None:
+            if bool(unmatched_var.get()):
+                identifiers_var.set("")
+                identifiers_entry.configure(state="disabled")
+            else:
+                identifiers_entry.configure(state="normal" if self._enabled else "disabled")
+
+        def _bind_drag_handle(self, widget, index: int) -> None:
+            widget.bind("<ButtonPress-1>", lambda _e, i=index: self._start_drag(i), add="+")
+            widget.bind("<Enter>", lambda _e, i=index: self._drag_over(i), add="+")
+            widget.bind("<ButtonRelease-1>", lambda _e: self._finish_drag(), add="+")
+
+        def _start_drag(self, index: int) -> None:
+            self._sync_sections_from_rows()
+            self._selected_index = index
+            self._drag_start_index = index
+            self._drag_over_index = index
+
+        def _drag_over(self, index: int) -> None:
+            if self._drag_start_index is not None:
+                self._drag_over_index = index
+
+        def _finish_drag(self) -> None:
+            start = self._drag_start_index
+            target = self._drag_over_index
+            self._drag_start_index = None
+            self._drag_over_index = None
+            if start is None or target is None or start == target:
+                return
+            self._move_index(start, target)
+
+        def _render_sections(self) -> None:
+            for child in self.inner.winfo_children():
+                child.destroy()
+            self._row_controls = []
+
+            if not self.sections:
+                empty = tk.Label(
+                    self.inner,
+                    text="Geen sectieblokken. Voeg een productieblok toe.",
+                    anchor="w",
+                    justify="left",
+                    foreground="#5D6670",
+                )
+                empty.pack(fill="x", padx=8, pady=8)
+                return
+
+            for index, section in enumerate(self.sections):
+                selected = index == self._selected_index
+                row = tk.Frame(
+                    self.inner,
+                    relief="solid",
+                    borderwidth=1,
+                    background="#EAF2FF" if selected else "#FFFFFF",
+                )
+                row.pack(fill="x", padx=2, pady=3)
+                row.columnconfigure(3, weight=1)
+
+                handle = tk.Label(
+                    row,
+                    text="::",
+                    width=3,
+                    cursor="sb_v_double_arrow",
+                    background=row.cget("background"),
+                )
+                handle.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(4, 2), pady=4)
+                number = tk.Label(
+                    row,
+                    text=f"{index + 1}.",
+                    width=4,
+                    anchor="e",
+                    background=row.cget("background"),
+                )
+                number.grid(row=0, column=1, rowspan=2, sticky="ns", padx=(0, 6), pady=4)
+                name_var = tk.StringVar(value=section.name)
+                identifiers_var = tk.StringVar(value=", ".join(section.identifiers))
+                unmatched_var = tk.IntVar(value=1 if section.include_unmatched else 0)
+
+                tk.Label(row, text="Blok:", background=row.cget("background")).grid(
+                    row=0,
+                    column=2,
+                    sticky="e",
+                    padx=(0, 4),
+                    pady=(4, 2),
+                )
+                name_entry = ttk.Entry(row, textvariable=name_var, width=26)
+                name_entry.grid(row=0, column=3, sticky="ew", pady=(4, 2))
+                tk.Label(row, text="Producties:", background=row.cget("background")).grid(
+                    row=1,
+                    column=2,
+                    sticky="e",
+                    padx=(0, 4),
+                    pady=(2, 4),
+                )
+                identifiers_entry = ttk.Entry(row, textvariable=identifiers_var)
+                identifiers_entry.grid(row=1, column=3, sticky="ew", pady=(2, 4))
+                unmatched_check = tk.Checkbutton(
+                    row,
+                    text="Other names",
+                    variable=unmatched_var,
+                    background=row.cget("background"),
+                    command=lambda e=identifiers_entry, v=identifiers_var, u=unmatched_var: self._set_unmatched_state(e, v, u),
+                )
+                unmatched_check.grid(row=0, column=4, rowspan=2, sticky="w", padx=(8, 4))
+                delete_btn = ttk.Button(
+                    row,
+                    text="X",
+                    width=3,
+                    command=lambda i=index: self.delete_index(i),
+                )
+                delete_btn.grid(row=0, column=5, rowspan=2, sticky="ns", padx=(0, 4), pady=4)
+
+                self._bind_drag_handle(row, index)
+                self._bind_drag_handle(handle, index)
+                self._bind_drag_handle(number, index)
+                row.bind("<Button-1>", lambda _e, i=index: self._select_index(i), add="+")
+
+                self._set_unmatched_state(identifiers_entry, identifiers_var, unmatched_var)
+                stateful_widgets = [
+                    name_entry,
+                    identifiers_entry,
+                    unmatched_check,
+                    delete_btn,
+                ]
+                self._row_controls.append(
+                    {
+                        "name_var": name_var,
+                        "identifiers_var": identifiers_var,
+                        "unmatched_var": unmatched_var,
+                        "stateful_widgets": stateful_widgets,
+                    }
+                )
+            self.set_enabled(self._enabled)
+
+        def set_sections(self, sections: Sequence[PdfWorkDossierSection]) -> None:
+            self.sections = [
+                PdfWorkDossierSection.from_any(section)
+                for section in sections
+                if not getattr(section, "include_bom_pdf", False)
+            ]
+            self._selected_index = 0 if self.sections else None
+            self._render_sections()
+
+        def get_sections(self) -> List[PdfWorkDossierSection]:
+            self._sync_sections_from_rows()
+            return [PdfWorkDossierSection.from_any(section) for section in self.sections]
+
+        def add_section(
+            self,
+            name: str,
+            identifiers: Optional[List[str]] = None,
+            *,
+            include_unmatched: bool = False,
+        ) -> None:
+            if not self._enabled:
+                return
+            self._sync_sections_from_rows()
+            self.sections.append(
+                PdfWorkDossierSection(
+                    name,
+                    identifiers=list(identifiers or []),
+                    include_unmatched=include_unmatched,
+                )
+            )
+            self._selected_index = len(self.sections) - 1
+            self._render_sections()
+
+        def clear_sections(self) -> None:
+            if not self._enabled:
+                return
+            self.sections = []
+            self._selected_index = None
+            self._render_sections()
+
+        def delete_index(self, index: int) -> None:
+            if not self._enabled:
+                return
+            self._sync_sections_from_rows()
+            if not (0 <= index < len(self.sections)):
+                return
+            self.sections.pop(index)
+            if not self.sections:
+                self._selected_index = None
+            else:
+                self._selected_index = min(index, len(self.sections) - 1)
+            self._render_sections()
+
+        def delete_selected(self) -> None:
+            if self._selected_index is not None:
+                self.delete_index(self._selected_index)
+
+        def _move_index(self, start: int, target: int) -> None:
+            if not self._enabled:
+                return
+            self._sync_sections_from_rows()
+            if not (0 <= start < len(self.sections) and 0 <= target < len(self.sections)):
+                return
+            section = self.sections.pop(start)
+            self.sections.insert(target, section)
+            self._selected_index = target
+            self._render_sections()
+
+        def move_selected_up(self) -> None:
+            if self._selected_index is None or self._selected_index <= 0:
+                return
+            self._move_index(self._selected_index, self._selected_index - 1)
+
+        def move_selected_down(self) -> None:
+            if self._selected_index is None or self._selected_index >= len(self.sections) - 1:
+                return
+            self._move_index(self._selected_index, self._selected_index + 1)
+
+    class PdfWorkDossierOptionsFrame(tk.Frame):
         MODE_WORKDOSSIER = "Werkdossier (een PDF)"
         MODE_PER_PRODUCTION = "Aparte PDF per productie"
         MODE_ALPHABETIC_SINGLE = "Een PDF alfabetisch"
         NO_PRESET_LABEL = "(Geen preset - PDF-namen alfabetisch)"
 
-        def __init__(self, master, presets_db: PdfWorkDossierPresetsDB):
+        def __init__(
+            self,
+            master,
+            presets_db: PdfWorkDossierPresetsDB,
+            *,
+            on_presets_changed=None,
+        ):
             super().__init__(master)
-            self.title("PDF werkdossier maken")
-            self.transient(master)
-            self.grab_set()
-            self.resizable(True, True)
-            self.result: Optional[Dict[str, object]] = None
             self.presets_db = presets_db
+            self.on_presets_changed = on_presets_changed
             self._preset_map: Dict[str, PdfWorkDossierPreset] = {}
 
             self.mode_var = tk.StringVar(value=self.MODE_WORKDOSSIER)
@@ -8846,6 +9233,7 @@ def start_gui():
             self.open_pdf_var = tk.IntVar(value=1)
 
             self.columnconfigure(0, weight=1)
+            self.rowconfigure(1, weight=1)
             header = tk.Label(
                 self,
                 text=(
@@ -8861,6 +9249,7 @@ def start_gui():
             form = tk.Frame(self)
             form.grid(row=1, column=0, sticky="nsew", padx=12)
             form.columnconfigure(1, weight=1)
+            form.rowconfigure(3, weight=1)
 
             tk.Label(form, text="Modus:").grid(row=0, column=0, sticky="e", padx=(0, 6), pady=3)
             self.mode_combo = ttk.Combobox(
@@ -8900,34 +9289,16 @@ def start_gui():
             tk.Label(form, text="Secties:").grid(
                 row=3, column=0, sticky="ne", padx=(0, 6), pady=(8, 3)
             )
-            text_frame = tk.Frame(form)
-            text_frame.grid(row=3, column=1, sticky="nsew", pady=(8, 3))
-            text_frame.columnconfigure(0, weight=1)
-            text_frame.rowconfigure(0, weight=1)
-            self.sections_text = tk.Text(
-                text_frame,
-                height=7,
-                width=58,
-                wrap="word",
-                font=tkfont.nametofont("TkDefaultFont"),
-            )
-            self.sections_text.grid(row=0, column=0, sticky="nsew")
-            sections_scroll = ttk.Scrollbar(
-                text_frame,
-                orient="vertical",
-                command=self.sections_text.yview,
-            )
-            sections_scroll.grid(row=0, column=1, sticky="ns")
-            self.sections_text.configure(yscrollcommand=sections_scroll.set)
+            self.sections_editor = PdfWorkDossierSectionsEditor(form)
+            self.sections_editor.grid(row=3, column=1, sticky="nsew", pady=(8, 3))
             _HelpTooltip(
-                self.sections_text,
-                "Een sectie per regel: Sectienaam = Productie 1, Productie 2. "
-                "De regelvolgorde is de PDF-blokvolgorde.",
+                self.sections_editor,
+                "Voeg productieblokken toe en sleep ze verticaal in de gewenste PDF-volgorde.",
             )
 
             help_label = tk.Label(
                 form,
-                text="Voorbeeld: Assembly tekeningen = Assembly, Assemblage",
+                text="Sleep aan de ::-greep of gebruik Omhoog/Omlaag. Other names vangt niet-gematchte producties op.",
                 anchor="w",
                 justify="left",
                 foreground="#5D6670",
@@ -8956,27 +9327,19 @@ def start_gui():
                 anchor="w",
             ).grid(row=2, column=0, sticky="w", padx=6, pady=(0, 4))
 
-            btns = tk.Frame(self)
-            btns.grid(row=2, column=0, sticky="ew", padx=12, pady=12)
-            tk.Button(btns, text="Preset bewaren als...", command=self._save_preset).pack(
-                side="left", padx=(0, 6)
-            )
-            tk.Button(btns, text="Combineer", command=self._confirm).pack(
-                side="right", padx=(6, 0)
-            )
-            tk.Button(btns, text="Annuleer", command=self.destroy).pack(side="right")
-
             self._reload_presets()
             self._sync_mode()
-            _place_window_near_parent(self, master)
-            self.wait_visibility()
-            self.focus_set()
 
         def _reload_presets(self) -> None:
             choices = [self.NO_PRESET_LABEL]
-            built_in = default_pdf_workdossier_preset()
-            self._preset_map = {built_in.name: built_in}
-            choices.append(built_in.name)
+            built_ins = [
+                default_pdf_workdossier_preset(),
+                tecno_art_pdf_workdossier_preset(),
+            ]
+            self._preset_map = {}
+            for built_in in built_ins:
+                self._preset_map[built_in.name] = built_in
+                choices.append(built_in.name)
             for preset in self.presets_db.presets_sorted():
                 label = preset.name
                 if label in self._preset_map:
@@ -8993,55 +9356,38 @@ def start_gui():
             readonly = "readonly" if is_workdossier else "disabled"
             self.preset_combo.configure(state=readonly)
             self.include_bom_check.configure(state=state)
-            self.sections_text.configure(state=state)
+            self.sections_editor.set_enabled(is_workdossier)
 
         def _on_preset_selected(self, _event=None) -> None:
             preset = self._preset_map.get(self.preset_var.get())
-            self.sections_text.configure(state="normal")
-            self.sections_text.delete("1.0", "end")
             self.include_bom_var.set(0)
+            section_blocks: List[PdfWorkDossierSection] = []
             if preset is not None:
-                lines: List[str] = []
                 for section in preset.sections:
                     if section.include_bom_pdf:
                         self.include_bom_var.set(1)
                         continue
-                    identifiers = ", ".join(section.identifiers)
-                    lines.append(f"{section.name} = {identifiers}" if identifiers else section.name)
-                self.sections_text.insert("1.0", "\n".join(lines))
+                    section_blocks.append(section)
+            else:
+                section_blocks = []
+            self.sections_editor.set_sections(section_blocks)
             self._sync_mode()
 
         def _parse_preset_from_form(self, name: str = "Aangepast") -> Optional[PdfWorkDossierPreset]:
-            raw = self.sections_text.get("1.0", "end").strip()
             sections: List[PdfWorkDossierSection] = []
             if self.include_bom_var.get():
                 sections.append(PdfWorkDossierSection("Hoofdassembly", include_bom_pdf=True))
-            for line in raw.splitlines():
-                clean = line.strip()
-                if not clean:
-                    continue
-                if "=" in clean:
-                    section_name, identifiers_raw = clean.split("=", 1)
-                elif ":" in clean:
-                    section_name, identifiers_raw = clean.split(":", 1)
-                else:
-                    section_name, identifiers_raw = clean, ""
-                identifiers = [
-                    part.strip()
-                    for part in re.split(r"[,;]+", identifiers_raw)
-                    if part.strip()
-                ]
-                section_name = section_name.strip()
-                if not section_name:
-                    continue
-                sections.append(
-                    PdfWorkDossierSection(section_name, identifiers=identifiers)
-                )
+            sections.extend(self.sections_editor.get_sections())
             if not sections:
                 return None
-            return PdfWorkDossierPreset(name=name, sections=sections)
+            return PdfWorkDossierPreset(
+                name=name,
+                sections=sections,
+                include_unmatched=False,
+                unmatched_section_name="Other names",
+            )
 
-        def _save_preset(self) -> None:
+        def save_preset_as(self) -> None:
             preset_name = simpledialog.askstring(
                 "Preset bewaren",
                 "Naam voor deze PDF-volgorde preset:",
@@ -9061,19 +9407,105 @@ def start_gui():
             self.presets_db.save(PDF_WORKDOSSIER_PRESETS_DB_FILE)
             self._reload_presets()
             self.preset_var.set(preset.name)
+            if callable(self.on_presets_changed):
+                self.on_presets_changed()
             messagebox.showinfo("Preset bewaard", f"Preset '{preset.name}' is bewaard.", parent=self)
 
-        def _confirm(self) -> None:
+        def update_selected_preset(self) -> None:
+            selected = self._preset_map.get(self.preset_var.get())
+            if selected is None or self.presets_db.get(selected.name) is None:
+                messagebox.showwarning(
+                    "Let op",
+                    "Kies eerst een opgeslagen PDF-preset om bij te werken.",
+                    parent=self,
+                )
+                return
+            preset = self._parse_preset_from_form(selected.name)
+            if preset is None:
+                messagebox.showwarning(
+                    "Let op",
+                    "Geef minstens een hoofdassembly-optie of een sectieblok op.",
+                    parent=self,
+                )
+                return
+            self.presets_db.upsert(preset, old_name=selected.name)
+            self.presets_db.save(PDF_WORKDOSSIER_PRESETS_DB_FILE)
+            self._reload_presets()
+            self.preset_var.set(preset.name)
+            if callable(self.on_presets_changed):
+                self.on_presets_changed()
+            messagebox.showinfo("Preset bijgewerkt", f"Preset '{preset.name}' is bijgewerkt.", parent=self)
+
+        def delete_selected_preset(self) -> None:
+            selected = self._preset_map.get(self.preset_var.get())
+            if selected is None or self.presets_db.get(selected.name) is None:
+                messagebox.showwarning(
+                    "Let op",
+                    "Kies eerst een opgeslagen PDF-preset om te verwijderen.",
+                    parent=self,
+                )
+                return
+            if not messagebox.askyesno(
+                "Preset verwijderen",
+                f"PDF-preset '{selected.name}' verwijderen?",
+                parent=self,
+            ):
+                return
+            if self.presets_db.remove(selected.name):
+                self.presets_db.save(PDF_WORKDOSSIER_PRESETS_DB_FILE)
+            self._reload_presets()
+            self.preset_var.set(self.NO_PRESET_LABEL)
+            self._on_preset_selected()
+            if callable(self.on_presets_changed):
+                self.on_presets_changed()
+
+        def build_options(self) -> Dict[str, object]:
             preset = None
             if self.mode_var.get() == self.MODE_WORKDOSSIER:
                 preset = self._parse_preset_from_form("Aangepast")
-            self.result = {
+            return {
                 "mode": self.mode_var.get(),
                 "preset": preset,
                 "include_order_documents": bool(self.include_order_docs_var.get()),
                 "include_offers": bool(self.include_offers_var.get()),
                 "open_pdf": bool(self.open_pdf_var.get()),
             }
+
+    class PdfWorkDossierDialog(tk.Toplevel):
+        MODE_WORKDOSSIER = PdfWorkDossierOptionsFrame.MODE_WORKDOSSIER
+        MODE_PER_PRODUCTION = PdfWorkDossierOptionsFrame.MODE_PER_PRODUCTION
+        MODE_ALPHABETIC_SINGLE = PdfWorkDossierOptionsFrame.MODE_ALPHABETIC_SINGLE
+        NO_PRESET_LABEL = PdfWorkDossierOptionsFrame.NO_PRESET_LABEL
+
+        def __init__(self, master, presets_db: PdfWorkDossierPresetsDB):
+            super().__init__(master)
+            self.title("PDF werkdossier maken")
+            self.transient(master)
+            self.grab_set()
+            self.resizable(True, True)
+            self.result: Optional[Dict[str, object]] = None
+            self.columnconfigure(0, weight=1)
+            self.rowconfigure(0, weight=1)
+            self.options_frame = PdfWorkDossierOptionsFrame(self, presets_db)
+            self.options_frame.grid(row=0, column=0, sticky="nsew")
+
+            btns = tk.Frame(self)
+            btns.grid(row=1, column=0, sticky="ew", padx=12, pady=12)
+            tk.Button(
+                btns,
+                text="Preset bewaren als...",
+                command=self.options_frame.save_preset_as,
+            ).pack(side="left", padx=(0, 6))
+            tk.Button(btns, text="Combineer", command=self._confirm).pack(
+                side="right", padx=(6, 0)
+            )
+            tk.Button(btns, text="Annuleer", command=self.destroy).pack(side="right")
+            _place_window_near_parent(self, master)
+            self.wait_visibility()
+            self.focus_set()
+
+        def _confirm(self) -> None:
+            self.result = self.options_frame.build_options()
             self.destroy()
 
     class App(tk.Tk):
@@ -9820,6 +10252,11 @@ def start_gui():
             )
             self.preset_rules_frame.configure(padx=12, pady=12)
             self.nb.add(self.preset_rules_frame, text="Presetregels")
+
+            self.pdf_workdossier_frame = tk.Frame(self.nb)
+            self.pdf_workdossier_frame.configure(padx=12, pady=12)
+            self._build_pdf_workdossier_tab()
+            self.nb.add(self.pdf_workdossier_frame, text="PDF werkdossier")
 
             self.settings_frame = SettingsFrame(self.nb, self)
             self.settings_frame.configure(padx=12, pady=12)
@@ -11097,7 +11534,7 @@ def start_gui():
         def _load_bom(self):
             from tkinter import filedialog, messagebox
 
-            start_dir = self.source_folder if self.source_folder else os.getcwd()
+            start_dir = _resolve_file_dialog_initial_dir(self.source_folder)
             path = filedialog.askopenfilename(
                 filetypes=[("Excel", "*.xlsx *.xls"), ("CSV", "*.csv")],
                 initialdir=start_dir,
@@ -14099,6 +14536,155 @@ def start_gui():
                         pass
 
                 sel_frame.bind("<Destroy>", _restore_search, add="+")
+
+        def _build_pdf_workdossier_tab(self) -> None:
+            frame = self.pdf_workdossier_frame
+            frame.columnconfigure(0, weight=1)
+            frame.rowconfigure(0, weight=1)
+
+            self.pdf_workdossier_options_frame = PdfWorkDossierOptionsFrame(
+                frame,
+                self.pdf_workdossier_presets_db,
+                on_presets_changed=self._on_pdf_workdossier_presets_change,
+            )
+            self.pdf_workdossier_options_frame.grid(row=0, column=0, sticky="nsew")
+
+            actions = tk.Frame(frame)
+            actions.grid(row=1, column=0, sticky="ew", pady=(10, 0))
+            tk.Button(
+                actions,
+                text="Preset bewaren als...",
+                command=self.pdf_workdossier_options_frame.save_preset_as,
+            ).pack(side="left", padx=(0, 6))
+            tk.Button(
+                actions,
+                text="Geselecteerde preset bijwerken",
+                command=self.pdf_workdossier_options_frame.update_selected_preset,
+            ).pack(side="left", padx=(0, 6))
+            tk.Button(
+                actions,
+                text="Preset verwijderen",
+                command=self.pdf_workdossier_options_frame.delete_selected_preset,
+            ).pack(side="left", padx=(0, 6))
+            tk.Button(
+                actions,
+                text="PDF dossier aanmaken",
+                command=self._combine_pdf_from_tab,
+                bg=MANUFACT_BRAND_COLOR,
+                activebackground="#F4C46C",
+                fg="black",
+                activeforeground="black",
+                highlightthickness=0,
+                padx=14,
+                pady=6,
+            ).pack(side="right")
+
+        def _on_pdf_workdossier_presets_change(self) -> None:
+            options_frame = getattr(self, "pdf_workdossier_options_frame", None)
+            if options_frame is not None:
+                try:
+                    options_frame._reload_presets()
+                except Exception:
+                    pass
+
+        def _combine_pdf_from_tab(self) -> None:
+            options_frame = getattr(self, "pdf_workdossier_options_frame", None)
+            if options_frame is None:
+                return
+            self._combine_pdf_with_options(options_frame.build_options())
+
+        def _combine_pdf_with_options(self, options: Mapping[str, object]) -> None:
+            from tkinter import messagebox
+
+            if not self._ensure_bom_loaded():
+                return
+            bom_df = self.bom_df
+            if not self.source_folder or bom_df is None:
+                messagebox.showwarning(
+                    "Let op", "Selecteer bronmap en laad een BOM."
+                )
+                return
+
+            def open_path(path: str) -> None:
+                try:
+                    if sys.platform.startswith("win"):
+                        os.startfile(path)
+                    elif sys.platform == "darwin":
+                        subprocess.run(["open", path], check=False)
+                    else:
+                        subprocess.run(["xdg-open", path], check=False)
+                except Exception as exc:
+                    messagebox.showwarning(
+                        "Let op",
+                        f"Kon pad niet openen:\n{exc}",
+                        parent=self,
+                    )
+
+            def work():
+                self.status_var.set("PDF's combineren...")
+                try:
+                    out_dir = self.dest_folder or self.source_folder
+                    pn = self.project_number_var.get().strip() if self.project_number_var else ""
+                    pname = self.project_name_var.get().strip() if self.project_name_var else ""
+                    mode = _to_str(options.get("mode"))
+                    if mode == PdfWorkDossierDialog.MODE_PER_PRODUCTION:
+                        result = combine_pdfs_from_source(
+                            self.source_folder,
+                            bom_df,
+                            out_dir,
+                            project_number=pn or None,
+                            project_name=pname or None,
+                            combine_per_production=True,
+                            bom_source_path=self.bom_source_path,
+                        )
+                    elif mode == PdfWorkDossierDialog.MODE_ALPHABETIC_SINGLE:
+                        result = combine_workdossier_pdf_from_source(
+                            self.source_folder,
+                            bom_df,
+                            out_dir,
+                            project_number=pn or None,
+                            project_name=pname or None,
+                            bom_source_path=self.bom_source_path,
+                        )
+                    else:
+                        result = combine_workdossier_pdf_from_source(
+                            self.source_folder,
+                            bom_df,
+                            out_dir,
+                            project_number=pn or None,
+                            project_name=pname or None,
+                            bom_source_path=self.bom_source_path,
+                            preset=options.get("preset"),
+                            include_order_documents=bool(
+                                options.get("include_order_documents")
+                            ),
+                            order_document_root=out_dir,
+                            include_offers=bool(options.get("include_offers")),
+                        )
+                except ModuleNotFoundError:
+                    self.status_var.set("PyPDF2 ontbreekt")
+                    messagebox.showwarning(
+                        "PyPDF2 ontbreekt",
+                        "Installeer PyPDF2 om PDF's te combineren.",
+                    )
+                    return
+                self.status_var.set(
+                    f"Gecombineerde pdf's: {result.count} -> {result.output_dir}"
+                )
+                output_files = list(getattr(result, "output_files", []) or [])
+                open_pdf = bool(options.get("open_pdf"))
+                target_to_open = (
+                    output_files[0]
+                    if open_pdf and len(output_files) == 1
+                    else result.output_dir
+                )
+                message = "PDF's gecombineerd.\n\n" f"Map: {result.output_dir}"
+                if len(output_files) == 1:
+                    message += f"\nPDF: {output_files[0]}"
+                messagebox.showinfo("Klaar", message)
+                open_path(target_to_open)
+
+            threading.Thread(target=work, daemon=True).start()
 
         def _combine_pdf(self):
             from tkinter import messagebox
