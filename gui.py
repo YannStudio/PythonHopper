@@ -74,6 +74,8 @@ from orders import (
     ORDER_TEXT_COLOR,
     combine_pdfs_from_source,
     combine_workdossier_pdf_from_source,
+    build_pdf_workdossier_plan,
+    PdfWorkDossierPlanItem,
     find_related_bom_exports,
     make_bom_export_filename,
     _prefix_for_doc_type,
@@ -8846,19 +8848,6 @@ def start_gui():
             win.wait_window()
 
     class PdfWorkDossierSectionsEditor(tk.Frame):
-        INSERT_PRESETS: Tuple[Tuple[str, Tuple[str, ...], bool], ...] = (
-            ("Assembly", ("Assembly", "Dummy assembly"), False),
-            ("Weld assembly", ("Weld assembly",), False),
-            ("Mount material", ("Mount material",), False),
-            ("Spare parts", ("Spare part", "Spare parts"), False),
-            ("Cutting", ("Cutting",), False),
-            ("Lasercutting", ("Lasercutting",), False),
-            ("Laser cutting +4m", ("Sheetmetal +4m",), False),
-            ("Tube laser", ("Tube laser",), False),
-            ("Tube laser L", ("Tube laser L",), False),
-            ("Other names", (), True),
-        )
-
         def __init__(self, master) -> None:
             super().__init__(master)
             self.sections: List[PdfWorkDossierSection] = []
@@ -8866,32 +8855,17 @@ def start_gui():
             self._selected_index: Optional[int] = None
             self._drag_start_index: Optional[int] = None
             self._drag_over_index: Optional[int] = None
+            self._drag_widget = None
             self._enabled = True
 
-            insert_frame = tk.LabelFrame(self, text="Invoegen", padx=6, pady=6)
-            insert_frame.pack(fill="x")
-            self._insert_buttons: List[tk.Button] = []
-            for index, (name, identifiers, unmatched) in enumerate(self.INSERT_PRESETS):
-                button = tk.Button(
-                    insert_frame,
-                    text=name,
-                    command=lambda n=name, ids=identifiers, u=unmatched: self.add_section(
-                        n, list(ids), include_unmatched=u
-                    ),
-                )
-                button.grid(
-                    row=index // 5,
-                    column=index % 5,
-                    sticky="ew",
-                    padx=2,
-                    pady=2,
-                )
-                self._insert_buttons.append(button)
-            for col in range(5):
-                insert_frame.columnconfigure(col, weight=1)
-
             actions = tk.Frame(self)
-            actions.pack(fill="x", pady=(6, 4))
+            actions.pack(fill="x", pady=(0, 6))
+            self._add_button = ttk.Button(
+                actions,
+                text="Blok toevoegen",
+                command=self.add_blank_section,
+            )
+            self._add_button.pack(side="left", padx=(0, 4))
             self._up_button = ttk.Button(actions, text="Omhoog", command=self.move_selected_up)
             self._up_button.pack(side="left", padx=(0, 4))
             self._down_button = ttk.Button(actions, text="Omlaag", command=self.move_selected_down)
@@ -8920,7 +8894,7 @@ def start_gui():
                 orient="vertical",
                 command=self.canvas.yview,
             )
-            self.scrollbar.grid(row=0, column=1, sticky="ns")
+            self.scrollbar.grid(row=0, column=1, sticky="ns", padx=(8, 0))
             self.canvas.configure(yscrollcommand=self.scrollbar.set)
             self.inner = tk.Frame(self.canvas)
             self.inner_window = self.canvas.create_window(
@@ -8944,9 +8918,8 @@ def start_gui():
         def set_enabled(self, enabled: bool) -> None:
             self._enabled = bool(enabled)
             state = "normal" if self._enabled else "disabled"
-            for button in self._insert_buttons:
-                button.configure(state=state)
             for button in (
+                self._add_button,
                 self._up_button,
                 self._down_button,
                 self._delete_button,
@@ -8959,6 +8932,19 @@ def start_gui():
                         widget.configure(state=state)
                     except Exception:
                         pass
+                identifiers_entry = controls.get("identifiers_entry")
+                identifiers_var = controls.get("identifiers_var")
+                unmatched_var = controls.get("unmatched_var")
+                if (
+                    identifiers_entry is not None
+                    and identifiers_var is not None
+                    and unmatched_var is not None
+                ):
+                    self._set_unmatched_state(
+                        identifiers_entry,
+                        identifiers_var,
+                        unmatched_var,
+                    )
 
         def _sync_sections_from_rows(self) -> None:
             if not self._row_controls:
@@ -8993,7 +8979,7 @@ def start_gui():
         def _select_index(self, index: int) -> None:
             if 0 <= index < len(self.sections):
                 self._selected_index = index
-                self._render_sections()
+                self._highlight_selected_rows()
 
         def _set_unmatched_state(self, identifiers_entry, identifiers_var, unmatched_var) -> None:
             if bool(unmatched_var.get()):
@@ -9003,28 +8989,95 @@ def start_gui():
                 identifiers_entry.configure(state="normal" if self._enabled else "disabled")
 
         def _bind_drag_handle(self, widget, index: int) -> None:
-            widget.bind("<ButtonPress-1>", lambda _e, i=index: self._start_drag(i), add="+")
-            widget.bind("<Enter>", lambda _e, i=index: self._drag_over(i), add="+")
-            widget.bind("<ButtonRelease-1>", lambda _e: self._finish_drag(), add="+")
+            widget.bind(
+                "<ButtonPress-1>",
+                lambda event, i=index: self._start_drag(i, event),
+                add="+",
+            )
+            widget.bind("<B1-Motion>", self._drag_motion, add="+")
+            widget.bind("<ButtonRelease-1>", self._finish_drag, add="+")
 
-        def _start_drag(self, index: int) -> None:
+        def _start_drag(self, index: int, event=None) -> str:
+            if not self._enabled:
+                return "break"
             self._sync_sections_from_rows()
             self._selected_index = index
             self._drag_start_index = index
             self._drag_over_index = index
+            self._drag_widget = getattr(event, "widget", None)
+            if self._drag_widget is not None:
+                try:
+                    self._drag_widget.grab_set()
+                except tk.TclError:
+                    pass
+            self._highlight_selected_rows()
+            return "break"
 
-        def _drag_over(self, index: int) -> None:
-            if self._drag_start_index is not None:
-                self._drag_over_index = index
+        def _target_index_from_root_y(self, y_root: int) -> Optional[int]:
+            if not self._row_controls:
+                return None
+            last_index = len(self._row_controls) - 1
+            for index, controls in enumerate(self._row_controls):
+                row = controls.get("row")
+                if row is None:
+                    continue
+                try:
+                    top = row.winfo_rooty()
+                    height = max(1, row.winfo_height())
+                except tk.TclError:
+                    continue
+                if y_root < top + (height // 2):
+                    return index
+            return last_index
 
-        def _finish_drag(self) -> None:
+        def _drag_motion(self, event) -> str:
+            if self._drag_start_index is None:
+                return "break"
+            target = self._target_index_from_root_y(int(event.y_root))
+            if target is not None:
+                self._drag_over_index = target
+            return "break"
+
+        def _finish_drag(self, event=None) -> str:
             start = self._drag_start_index
-            target = self._drag_over_index
+            target = None
+            if event is not None:
+                try:
+                    target = self._target_index_from_root_y(int(event.y_root))
+                except Exception:
+                    target = None
+            if target is None:
+                target = self._drag_over_index
+            widget = self._drag_widget
             self._drag_start_index = None
             self._drag_over_index = None
+            self._drag_widget = None
+            if widget is not None:
+                try:
+                    widget.grab_release()
+                except tk.TclError:
+                    pass
             if start is None or target is None or start == target:
-                return
+                return "break"
             self._move_index(start, target)
+            return "break"
+
+        def _highlight_selected_rows(self) -> None:
+            for index, controls in enumerate(self._row_controls):
+                row = controls.get("row")
+                if row is None:
+                    continue
+                color = "#EAF2FF" if index == self._selected_index else "#FFFFFF"
+                try:
+                    row.configure(background=color)
+                    for child in row.winfo_children():
+                        if not isinstance(child, ttk.Entry) and not isinstance(child, ttk.Button):
+                            try:
+                                child.configure(background=color)
+                            except tk.TclError:
+                                pass
+                except tk.TclError:
+                    pass
 
         def _render_sections(self) -> None:
             for child in self.inner.winfo_children():
@@ -9050,7 +9103,7 @@ def start_gui():
                     borderwidth=1,
                     background="#EAF2FF" if selected else "#FFFFFF",
                 )
-                row.pack(fill="x", padx=2, pady=3)
+                row.pack(fill="x", padx=(2, 10), pady=3)
                 row.columnconfigure(3, weight=1)
 
                 handle = tk.Label(
@@ -9073,7 +9126,8 @@ def start_gui():
                 identifiers_var = tk.StringVar(value=", ".join(section.identifiers))
                 unmatched_var = tk.IntVar(value=1 if section.include_unmatched else 0)
 
-                tk.Label(row, text="Blok:", background=row.cget("background")).grid(
+                name_label = tk.Label(row, text="Blok:", background=row.cget("background"))
+                name_label.grid(
                     row=0,
                     column=2,
                     sticky="e",
@@ -9082,7 +9136,12 @@ def start_gui():
                 )
                 name_entry = ttk.Entry(row, textvariable=name_var, width=26)
                 name_entry.grid(row=0, column=3, sticky="ew", pady=(4, 2))
-                tk.Label(row, text="Producties:", background=row.cget("background")).grid(
+                identifiers_label = tk.Label(
+                    row,
+                    text="Producties:",
+                    background=row.cget("background"),
+                )
+                identifiers_label.grid(
                     row=1,
                     column=2,
                     sticky="e",
@@ -9107,10 +9166,21 @@ def start_gui():
                 )
                 delete_btn.grid(row=0, column=5, rowspan=2, sticky="ns", padx=(0, 4), pady=4)
 
-                self._bind_drag_handle(row, index)
                 self._bind_drag_handle(handle, index)
                 self._bind_drag_handle(number, index)
                 row.bind("<Button-1>", lambda _e, i=index: self._select_index(i), add="+")
+                for widget in (name_label, identifiers_label, unmatched_check):
+                    widget.bind(
+                        "<Button-1>",
+                        lambda _e, i=index: self._select_index(i),
+                        add="+",
+                    )
+                for widget in (name_entry, identifiers_entry):
+                    widget.bind(
+                        "<FocusIn>",
+                        lambda _e, i=index: self._select_index(i),
+                        add="+",
+                    )
 
                 self._set_unmatched_state(identifiers_entry, identifiers_var, unmatched_var)
                 stateful_widgets = [
@@ -9124,6 +9194,8 @@ def start_gui():
                         "name_var": name_var,
                         "identifiers_var": identifiers_var,
                         "unmatched_var": unmatched_var,
+                        "row": row,
+                        "identifiers_entry": identifiers_entry,
                         "stateful_widgets": stateful_widgets,
                     }
                 )
@@ -9161,6 +9233,10 @@ def start_gui():
             )
             self._selected_index = len(self.sections) - 1
             self._render_sections()
+
+        def add_blank_section(self) -> None:
+            next_number = len(self.sections) + 1
+            self.add_section(f"Nieuw blok {next_number}", [])
 
         def clear_sections(self) -> None:
             if not self._enabled:
@@ -9212,6 +9288,11 @@ def start_gui():
         MODE_PER_PRODUCTION = "Aparte PDF per productie"
         MODE_ALPHABETIC_SINGLE = "Een PDF alfabetisch"
         NO_PRESET_LABEL = "(Geen preset - PDF-namen alfabetisch)"
+        ROLE_LABELS = {
+            "bom": "BOM",
+            "drawing": "Tekening",
+            "order": "Bestelbon",
+        }
 
         def __init__(
             self,
@@ -9219,11 +9300,18 @@ def start_gui():
             presets_db: PdfWorkDossierPresetsDB,
             *,
             on_presets_changed=None,
+            on_options_changed=None,
+            on_prepare_orders=None,
         ):
             super().__init__(master)
             self.presets_db = presets_db
             self.on_presets_changed = on_presets_changed
+            self.on_options_changed = on_options_changed
+            self.on_prepare_orders = on_prepare_orders
             self._preset_map: Dict[str, PdfWorkDossierPreset] = {}
+            self._busy = False
+            self._option_widgets: List[tk.Widget] = []
+            self._preset_action_widgets: List[tk.Widget] = []
 
             self.mode_var = tk.StringVar(value=self.MODE_WORKDOSSIER)
             self.preset_var = tk.StringVar(value=self.NO_PRESET_LABEL)
@@ -9231,25 +9319,41 @@ def start_gui():
             self.include_order_docs_var = tk.IntVar(value=0)
             self.include_offers_var = tk.IntVar(value=0)
             self.open_pdf_var = tk.IntVar(value=1)
+            self.export_filename_var = tk.StringVar(value="")
+            self.export_folder_var = tk.StringVar(value="")
+            self.preview_status_var = tk.StringVar(value="Geen voorbeeld beschikbaar.")
+            self.order_flow_message_var = tk.StringVar(value="")
 
             self.columnconfigure(0, weight=1)
-            self.rowconfigure(1, weight=1)
-            header = tk.Label(
-                self,
-                text=(
-                    "Maak een werkdossier met een vaste blokvolgorde. "
-                    "Zonder preset sorteert Filehopper op PDF-bestandsnaam."
-                ),
-                justify="left",
-                anchor="w",
-                wraplength=680,
-            )
-            header.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 8))
+            self.rowconfigure(0, weight=1)
 
-            form = tk.Frame(self)
-            form.grid(row=1, column=0, sticky="nsew", padx=12)
+            self.subtabs = ttk.Notebook(self)
+            self.subtabs.grid(row=0, column=0, sticky="nsew")
+            self.work_tab = tk.Frame(self.subtabs, padx=12, pady=12)
+            self.preset_tab = tk.Frame(self.subtabs, padx=12, pady=12)
+            self.subtabs.add(self.work_tab, text="Dossier maken")
+            self.subtabs.add(self.preset_tab, text="Presetregels")
+
+            self._build_work_tab()
+            self._build_preset_tab()
+
+            for var in (
+                self.mode_var,
+                self.preset_var,
+                self.include_bom_var,
+                self.include_order_docs_var,
+                self.include_offers_var,
+                self.open_pdf_var,
+            ):
+                var.trace_add("write", lambda *_args: self._notify_options_changed())
+
+            self._reload_presets()
+            self._sync_mode()
+
+        def _build_work_tab(self) -> None:
+            form = self.work_tab
             form.columnconfigure(1, weight=1)
-            form.rowconfigure(3, weight=1)
+            form.rowconfigure(6, weight=1)
 
             tk.Label(form, text="Modus:").grid(row=0, column=0, sticky="e", padx=(0, 6), pady=3)
             self.mode_combo = ttk.Combobox(
@@ -9265,6 +9369,7 @@ def start_gui():
             )
             self.mode_combo.grid(row=0, column=1, sticky="w", pady=3)
             self.mode_combo.bind("<<ComboboxSelected>>", lambda _e: self._sync_mode())
+            self._option_widgets.append(self.mode_combo)
 
             tk.Label(form, text="Volgorde preset:").grid(
                 row=1, column=0, sticky="e", padx=(0, 6), pady=3
@@ -9277,6 +9382,130 @@ def start_gui():
             )
             self.preset_combo.grid(row=1, column=1, sticky="ew", pady=3)
             self.preset_combo.bind("<<ComboboxSelected>>", self._on_preset_selected)
+            self._option_widgets.append(self.preset_combo)
+
+            options = tk.LabelFrame(form, text="Opties", labelanchor="n")
+            options.grid(row=2, column=1, sticky="ew", pady=(6, 0))
+            options.columnconfigure(0, weight=1)
+            self.include_order_docs_check = tk.Checkbutton(
+                options,
+                text="Bestelbonnen en standaardbonnen voor elke productie invoegen",
+                variable=self.include_order_docs_var,
+                anchor="w",
+            )
+            self.include_order_docs_check.grid(row=0, column=0, sticky="w", padx=6, pady=(4, 0))
+            self.include_offers_check = tk.Checkbutton(
+                options,
+                text="Offerteaanvragen ook invoegen",
+                variable=self.include_offers_var,
+                anchor="w",
+            )
+            self.include_offers_check.grid(row=1, column=0, sticky="w", padx=6)
+            self.open_pdf_check = tk.Checkbutton(
+                options,
+                text="PDF openen na combineren",
+                variable=self.open_pdf_var,
+                anchor="w",
+            )
+            self.open_pdf_check.grid(row=2, column=0, sticky="w", padx=6, pady=(0, 4))
+            self._option_widgets.extend(
+                [self.include_order_docs_check, self.include_offers_check, self.open_pdf_check]
+            )
+
+            export_box = tk.LabelFrame(form, text="Exportbestand", labelanchor="n")
+            export_box.grid(row=3, column=1, sticky="ew", pady=(8, 0))
+            export_box.columnconfigure(1, weight=1)
+            tk.Label(export_box, text="Naam:").grid(
+                row=0, column=0, sticky="e", padx=(8, 6), pady=(6, 2)
+            )
+            ttk.Entry(
+                export_box,
+                textvariable=self.export_filename_var,
+                state="readonly",
+            ).grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=(6, 2))
+            tk.Label(export_box, text="Map:").grid(
+                row=1, column=0, sticky="e", padx=(8, 6), pady=(2, 6)
+            )
+            ttk.Entry(
+                export_box,
+                textvariable=self.export_folder_var,
+                state="readonly",
+            ).grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=(2, 6))
+
+            self.order_flow_frame = tk.Frame(form)
+            self.order_flow_frame.grid(row=4, column=1, sticky="ew", pady=(8, 0))
+            self.order_flow_frame.columnconfigure(0, weight=1)
+            self.order_flow_label = tk.Label(
+                self.order_flow_frame,
+                textvariable=self.order_flow_message_var,
+                anchor="w",
+                justify="left",
+                foreground="#8A5A00",
+                wraplength=740,
+            )
+            self.order_flow_label.grid(row=0, column=0, sticky="ew")
+            self.prepare_orders_button = ttk.Button(
+                self.order_flow_frame,
+                text="Bestelbonnen klaarmaken",
+                command=self._prepare_order_documents,
+            )
+            self.prepare_orders_button.grid(row=0, column=1, sticky="e", padx=(8, 0))
+            self.order_flow_frame.grid_remove()
+
+            preview = tk.LabelFrame(form, text="Voorbeeldvolgorde", labelanchor="n")
+            preview.grid(row=6, column=0, columnspan=2, sticky="nsew", pady=(10, 0))
+            preview.columnconfigure(0, weight=1)
+            preview.rowconfigure(0, weight=1)
+            columns = ("nr", "section", "production", "role", "filename")
+            self.preview_tree = ttk.Treeview(
+                preview,
+                columns=columns,
+                show="headings",
+                height=12,
+                selectmode="browse",
+            )
+            self.preview_tree.heading("nr", text="#")
+            self.preview_tree.heading("section", text="Categorie")
+            self.preview_tree.heading("production", text="Productie")
+            self.preview_tree.heading("role", text="Type")
+            self.preview_tree.heading("filename", text="Bestandsnaam")
+            self.preview_tree.column("nr", width=44, minwidth=36, anchor="e", stretch=False)
+            self.preview_tree.column("section", width=180, minwidth=120)
+            self.preview_tree.column("production", width=180, minwidth=120)
+            self.preview_tree.column("role", width=90, minwidth=80, stretch=False)
+            self.preview_tree.column("filename", width=360, minwidth=180)
+            self.preview_tree.grid(row=0, column=0, sticky="nsew", padx=(6, 0), pady=(6, 2))
+            preview_scroll = ttk.Scrollbar(
+                preview,
+                orient="vertical",
+                command=self.preview_tree.yview,
+            )
+            preview_scroll.grid(row=0, column=1, sticky="ns", padx=(6, 6), pady=(6, 2))
+            self.preview_tree.configure(yscrollcommand=preview_scroll.set)
+            tk.Label(
+                preview,
+                textvariable=self.preview_status_var,
+                anchor="w",
+                foreground="#5D6670",
+            ).grid(row=1, column=0, columnspan=2, sticky="ew", padx=6, pady=(0, 6))
+
+        def _build_preset_tab(self) -> None:
+            form = self.preset_tab
+            form.columnconfigure(1, weight=1)
+            form.rowconfigure(3, weight=1)
+
+            tk.Label(form, text="Preset:").grid(
+                row=0, column=0, sticky="e", padx=(0, 6), pady=3
+            )
+            self.preset_editor_combo = ttk.Combobox(
+                form,
+                textvariable=self.preset_var,
+                state="readonly",
+                width=42,
+            )
+            self.preset_editor_combo.grid(row=0, column=1, sticky="ew", pady=3)
+            self.preset_editor_combo.bind("<<ComboboxSelected>>", self._on_preset_selected)
+            self._preset_action_widgets.append(self.preset_editor_combo)
 
             self.include_bom_check = tk.Checkbutton(
                 form,
@@ -9284,7 +9513,8 @@ def start_gui():
                 variable=self.include_bom_var,
                 anchor="w",
             )
-            self.include_bom_check.grid(row=2, column=1, sticky="w", pady=(4, 0))
+            self.include_bom_check.grid(row=1, column=1, sticky="w", pady=(4, 0))
+            self._preset_action_widgets.append(self.include_bom_check)
 
             tk.Label(form, text="Secties:").grid(
                 row=3, column=0, sticky="ne", padx=(0, 6), pady=(8, 3)
@@ -9305,30 +9535,31 @@ def start_gui():
             )
             help_label.grid(row=4, column=1, sticky="ew", pady=(0, 6))
 
-            options = tk.LabelFrame(form, text="Opties", labelanchor="n")
-            options.grid(row=5, column=1, sticky="ew", pady=(4, 0))
-            options.columnconfigure(0, weight=1)
-            tk.Checkbutton(
-                options,
-                text="Bestelbonnen en standaardbonnen voor elke productie invoegen",
-                variable=self.include_order_docs_var,
-                anchor="w",
-            ).grid(row=0, column=0, sticky="w", padx=6, pady=(4, 0))
-            tk.Checkbutton(
-                options,
-                text="Offerteaanvragen ook invoegen",
-                variable=self.include_offers_var,
-                anchor="w",
-            ).grid(row=1, column=0, sticky="w", padx=6)
-            tk.Checkbutton(
-                options,
-                text="PDF openen na combineren",
-                variable=self.open_pdf_var,
-                anchor="w",
-            ).grid(row=2, column=0, sticky="w", padx=6, pady=(0, 4))
+            actions = tk.Frame(form)
+            actions.grid(row=5, column=1, sticky="ew", pady=(6, 0))
+            save_button = tk.Button(
+                actions,
+                text="Preset bewaren als...",
+                command=self.save_preset_as,
+            )
+            save_button.pack(side="left", padx=(0, 6))
+            update_button = tk.Button(
+                actions,
+                text="Geselecteerde preset bijwerken",
+                command=self.update_selected_preset,
+            )
+            update_button.pack(side="left", padx=(0, 6))
+            delete_button = tk.Button(
+                actions,
+                text="Preset verwijderen",
+                command=self.delete_selected_preset,
+            )
+            delete_button.pack(side="left", padx=(0, 6))
+            self._preset_action_widgets.extend([save_button, update_button, delete_button])
 
-            self._reload_presets()
-            self._sync_mode()
+        def _notify_options_changed(self) -> None:
+            if callable(self.on_options_changed):
+                self.on_options_changed()
 
         def _reload_presets(self) -> None:
             choices = [self.NO_PRESET_LABEL]
@@ -9347,16 +9578,36 @@ def start_gui():
                 self._preset_map[label] = preset
                 choices.append(label)
             self.preset_combo.configure(values=choices)
+            self.preset_editor_combo.configure(values=choices)
             if self.preset_var.get() not in choices:
                 self.preset_var.set(self.NO_PRESET_LABEL)
 
+        def _saved_preset_label(self, name: str) -> str:
+            if name in {
+                default_pdf_workdossier_preset().name,
+                tecno_art_pdf_workdossier_preset().name,
+            }:
+                return f"{name} (opgeslagen)"
+            return name
+
         def _sync_mode(self) -> None:
             is_workdossier = self.mode_var.get() == self.MODE_WORKDOSSIER
-            state = "normal" if is_workdossier else "disabled"
-            readonly = "readonly" if is_workdossier else "disabled"
+            readonly = "readonly" if is_workdossier and not self._busy else "disabled"
             self.preset_combo.configure(state=readonly)
-            self.include_bom_check.configure(state=state)
-            self.sections_editor.set_enabled(is_workdossier)
+            self.include_order_docs_check.configure(
+                state="normal" if is_workdossier and not self._busy else "disabled"
+            )
+            self.include_offers_check.configure(
+                state="normal"
+                if is_workdossier and bool(self.include_order_docs_var.get()) and not self._busy
+                else "disabled"
+            )
+            self.open_pdf_check.configure(state="normal" if not self._busy else "disabled")
+            self.mode_combo.configure(state="readonly" if not self._busy else "disabled")
+            self.preset_editor_combo.configure(state="readonly" if not self._busy else "disabled")
+            self.include_bom_check.configure(state="normal" if not self._busy else "disabled")
+            self.sections_editor.set_enabled(not self._busy)
+            self._notify_options_changed()
 
         def _on_preset_selected(self, _event=None) -> None:
             preset = self._preset_map.get(self.preset_var.get())
@@ -9406,20 +9657,22 @@ def start_gui():
             self.presets_db.upsert(preset)
             self.presets_db.save(PDF_WORKDOSSIER_PRESETS_DB_FILE)
             self._reload_presets()
-            self.preset_var.set(preset.name)
+            self.preset_var.set(self._saved_preset_label(preset.name))
             if callable(self.on_presets_changed):
                 self.on_presets_changed()
+                self.preset_var.set(self._saved_preset_label(preset.name))
             messagebox.showinfo("Preset bewaard", f"Preset '{preset.name}' is bewaard.", parent=self)
 
         def update_selected_preset(self) -> None:
             selected = self._preset_map.get(self.preset_var.get())
-            if selected is None or self.presets_db.get(selected.name) is None:
+            if selected is None:
                 messagebox.showwarning(
                     "Let op",
-                    "Kies eerst een opgeslagen PDF-preset om bij te werken.",
+                    "Kies eerst een PDF-preset om bij te werken.",
                     parent=self,
                 )
                 return
+            was_saved = self.presets_db.get(selected.name) is not None
             preset = self._parse_preset_from_form(selected.name)
             if preset is None:
                 messagebox.showwarning(
@@ -9431,10 +9684,15 @@ def start_gui():
             self.presets_db.upsert(preset, old_name=selected.name)
             self.presets_db.save(PDF_WORKDOSSIER_PRESETS_DB_FILE)
             self._reload_presets()
-            self.preset_var.set(preset.name)
+            self.preset_var.set(self._saved_preset_label(preset.name))
             if callable(self.on_presets_changed):
                 self.on_presets_changed()
-            messagebox.showinfo("Preset bijgewerkt", f"Preset '{preset.name}' is bijgewerkt.", parent=self)
+                self.preset_var.set(self._saved_preset_label(preset.name))
+            if was_saved:
+                message = f"Preset '{preset.name}' is bijgewerkt."
+            else:
+                message = f"Preset '{preset.name}' is opgeslagen als bewerkbare preset."
+            messagebox.showinfo("Preset bijgewerkt", message, parent=self)
 
         def delete_selected_preset(self) -> None:
             selected = self._preset_map.get(self.preset_var.get())
@@ -9471,42 +9729,79 @@ def start_gui():
                 "open_pdf": bool(self.open_pdf_var.get()),
             }
 
-    class PdfWorkDossierDialog(tk.Toplevel):
-        MODE_WORKDOSSIER = PdfWorkDossierOptionsFrame.MODE_WORKDOSSIER
-        MODE_PER_PRODUCTION = PdfWorkDossierOptionsFrame.MODE_PER_PRODUCTION
-        MODE_ALPHABETIC_SINGLE = PdfWorkDossierOptionsFrame.MODE_ALPHABETIC_SINGLE
-        NO_PRESET_LABEL = PdfWorkDossierOptionsFrame.NO_PRESET_LABEL
+        def set_busy(self, busy: bool) -> None:
+            self._busy = bool(busy)
+            state = "disabled" if self._busy else "normal"
+            for widget in self._preset_action_widgets:
+                try:
+                    widget.configure(state=state)
+                except tk.TclError:
+                    pass
+            self._sync_mode()
 
-        def __init__(self, master, presets_db: PdfWorkDossierPresetsDB):
-            super().__init__(master)
-            self.title("PDF werkdossier maken")
-            self.transient(master)
-            self.grab_set()
-            self.resizable(True, True)
-            self.result: Optional[Dict[str, object]] = None
-            self.columnconfigure(0, weight=1)
-            self.rowconfigure(0, weight=1)
-            self.options_frame = PdfWorkDossierOptionsFrame(self, presets_db)
-            self.options_frame.grid(row=0, column=0, sticky="nsew")
+        def select_work_tab(self) -> None:
+            try:
+                self.subtabs.select(self.work_tab)
+            except tk.TclError:
+                pass
 
-            btns = tk.Frame(self)
-            btns.grid(row=1, column=0, sticky="ew", padx=12, pady=12)
-            tk.Button(
-                btns,
-                text="Preset bewaren als...",
-                command=self.options_frame.save_preset_as,
-            ).pack(side="left", padx=(0, 6))
-            tk.Button(btns, text="Combineer", command=self._confirm).pack(
-                side="right", padx=(6, 0)
-            )
-            tk.Button(btns, text="Annuleer", command=self.destroy).pack(side="right")
-            _place_window_near_parent(self, master)
-            self.wait_visibility()
-            self.focus_set()
+        def select_preset_tab(self) -> None:
+            try:
+                self.subtabs.select(self.preset_tab)
+            except tk.TclError:
+                pass
 
-        def _confirm(self) -> None:
-            self.result = self.options_frame.build_options()
-            self.destroy()
+        def set_export_info(self, filename: str, folder: str) -> None:
+            self.export_filename_var.set(filename)
+            self.export_folder_var.set(folder)
+
+        def clear_preview(self, message: str = "Geen voorbeeld beschikbaar.") -> None:
+            for item_id in self.preview_tree.get_children():
+                self.preview_tree.delete(item_id)
+            self.preview_status_var.set(message)
+
+        def set_preview_items(self, items: Sequence[object]) -> None:
+            for item_id in self.preview_tree.get_children():
+                self.preview_tree.delete(item_id)
+            for index, item in enumerate(items, start=1):
+                path = _to_str(getattr(item, "path", ""))
+                section = _to_str(getattr(item, "section_name", "")).strip() or "-"
+                production = _to_str(getattr(item, "production", "")).strip() or "-"
+                role = _to_str(getattr(item, "role", "")).strip().lower()
+                role_label = self.ROLE_LABELS.get(role, role or "-")
+                filename = os.path.basename(path) if path else "-"
+                filename_key = filename.casefold()
+                if role == "order":
+                    if filename_key.startswith("offerteaanvraag"):
+                        role_label = "Offerte"
+                    elif filename_key.startswith("standaard"):
+                        role_label = "Standaardbon"
+                    else:
+                        role_label = "Bestelbon"
+                self.preview_tree.insert(
+                    "",
+                    "end",
+                    values=(index, section, production, role_label, filename),
+                )
+            count = len(items)
+            suffix = "" if count == 1 else "en"
+            self.preview_status_var.set(f"{count} bestand{suffix} in de mergevolgorde.")
+
+        def set_order_flow_message(self, message: str, *, show_button: bool = False) -> None:
+            clean = _to_str(message).strip()
+            self.order_flow_message_var.set(clean)
+            if clean:
+                self.order_flow_frame.grid()
+            else:
+                self.order_flow_frame.grid_remove()
+            if show_button:
+                self.prepare_orders_button.grid()
+            else:
+                self.prepare_orders_button.grid_remove()
+
+        def _prepare_order_documents(self) -> None:
+            if callable(self.on_prepare_orders):
+                self.on_prepare_orders()
 
     class App(tk.Tk):
         _CUSTOM_ROW_ATTR = "_custom_row_flags"
@@ -9744,6 +10039,8 @@ def start_gui():
             self.bom_source_path: Optional[str] = None
             self.sel_frame: Optional["SupplierSelectionFrame"] = None
             self._last_supplier_selection_state: Optional[SupplierSelectionState] = None
+            self._pdf_action_running = False
+            self._pdf_preview_after_id: Optional[str] = None
 
             for var in (
                 self.source_folder_var,
@@ -9799,6 +10096,13 @@ def start_gui():
 
             self.zip_var.trace_add("write", self._update_zip_per_finish_var)
             self.zip_finish_var.trace_add("write", self._update_zip_per_finish_var)
+            for var in (
+                self.source_folder_var,
+                self.dest_folder_var,
+                self.project_number_var,
+                self.project_name_var,
+            ):
+                var.trace_add("write", self._schedule_pdf_workdossier_preview)
             self._update_zip_per_finish_var()
 
             self.grid_columnconfigure(0, weight=1)
@@ -14546,27 +14850,36 @@ def start_gui():
                 frame,
                 self.pdf_workdossier_presets_db,
                 on_presets_changed=self._on_pdf_workdossier_presets_change,
+                on_options_changed=self._schedule_pdf_workdossier_preview,
+                on_prepare_orders=self._prepare_pdf_order_documents,
             )
             self.pdf_workdossier_options_frame.grid(row=0, column=0, sticky="nsew")
 
             actions = tk.Frame(frame)
             actions.grid(row=1, column=0, sticky="ew", pady=(10, 0))
-            tk.Button(
+            actions.columnconfigure(1, weight=1)
+            self.pdf_workdossier_refresh_button = ttk.Button(
                 actions,
-                text="Preset bewaren als...",
-                command=self.pdf_workdossier_options_frame.save_preset_as,
-            ).pack(side="left", padx=(0, 6))
-            tk.Button(
+                text="Voorbeeld vernieuwen",
+                command=self._refresh_pdf_workdossier_preview,
+            )
+            self.pdf_workdossier_refresh_button.grid(row=0, column=0, sticky="w", padx=(0, 8))
+            self.pdf_workdossier_progress_var = tk.DoubleVar(master=self, value=0)
+            self.pdf_workdossier_progress = ttk.Progressbar(
                 actions,
-                text="Geselecteerde preset bijwerken",
-                command=self.pdf_workdossier_options_frame.update_selected_preset,
-            ).pack(side="left", padx=(0, 6))
-            tk.Button(
+                variable=self.pdf_workdossier_progress_var,
+                maximum=100,
+                mode="determinate",
+            )
+            self.pdf_workdossier_progress.grid(row=0, column=1, sticky="ew", padx=(0, 8))
+            self.pdf_workdossier_progress_label_var = tk.StringVar(master=self, value="0%")
+            tk.Label(
                 actions,
-                text="Preset verwijderen",
-                command=self.pdf_workdossier_options_frame.delete_selected_preset,
-            ).pack(side="left", padx=(0, 6))
-            tk.Button(
+                textvariable=self.pdf_workdossier_progress_label_var,
+                width=6,
+                anchor="e",
+            ).grid(row=0, column=2, sticky="e", padx=(0, 8))
+            self.pdf_workdossier_export_button = tk.Button(
                 actions,
                 text="PDF dossier aanmaken",
                 command=self._combine_pdf_from_tab,
@@ -14577,7 +14890,217 @@ def start_gui():
                 highlightthickness=0,
                 padx=14,
                 pady=6,
-            ).pack(side="right")
+            )
+            self.pdf_workdossier_export_button.grid(row=0, column=3, sticky="e")
+            self.after_idle(self._refresh_pdf_workdossier_preview)
+
+        def _schedule_pdf_workdossier_preview(self, *_args) -> None:
+            after_id = getattr(self, "_pdf_preview_after_id", None)
+            if after_id is not None:
+                try:
+                    self.after_cancel(after_id)
+                except tk.TclError:
+                    pass
+            self._pdf_preview_after_id = self.after(250, self._refresh_pdf_workdossier_preview)
+
+        def _pdf_base_output_folder(self) -> str:
+            return self.dest_folder_var.get().strip() or self.source_folder_var.get().strip()
+
+        def _pdf_export_name_preview(self, options: Mapping[str, object]) -> str:
+            date_str = datetime.date.today().strftime("%Y-%m-%d")
+            mode = _to_str(options.get("mode"))
+            if mode == PdfWorkDossierOptionsFrame.MODE_PER_PRODUCTION:
+                return f"<productie>_{date_str}_combined.pdf"
+            return f"Werkdossier_{date_str}_combined.pdf"
+
+        def _build_pdf_preview_items(
+            self,
+            options: Mapping[str, object],
+        ) -> Tuple[List[PdfWorkDossierPlanItem], List[str], str]:
+            source = self.source_folder_var.get().strip()
+            bom_df = self.bom_df
+            if not source:
+                return [], [], "Selecteer een bronmap."
+            if bom_df is None:
+                return [], [], "Laad eerst een BOM."
+
+            output_root = self._pdf_base_output_folder() or source
+            mode = _to_str(options.get("mode"))
+            if mode == PdfWorkDossierOptionsFrame.MODE_PER_PRODUCTION:
+                idx = _build_file_index(source, [".pdf"])
+                prod_to_files: Dict[str, List[str]] = defaultdict(list)
+                for _, row in bom_df.iterrows():
+                    production = _to_str(row.get("Production")).strip() or "_Onbekend"
+                    part_number = _to_str(row.get("PartNumber")).strip()
+                    if not part_number:
+                        continue
+                    prod_to_files[production].extend(idx.get(part_number, []))
+                items: List[PdfWorkDossierPlanItem] = []
+                for production in sorted(prod_to_files, key=lambda value: value.casefold()):
+                    seen_paths: set[str] = set()
+                    files: List[str] = []
+                    for path in prod_to_files[production]:
+                        key = os.path.abspath(path).casefold()
+                        if key in seen_paths:
+                            continue
+                        seen_paths.add(key)
+                        files.append(path)
+                    for path in sorted(files, key=lambda value: os.path.basename(value).casefold()):
+                        items.append(
+                            PdfWorkDossierPlanItem(
+                                path=path,
+                                section_name=production,
+                                production=production,
+                                role="drawing",
+                            )
+                        )
+                return items, [], ""
+
+            include_order_documents = (
+                mode == PdfWorkDossierOptionsFrame.MODE_WORKDOSSIER
+                and bool(options.get("include_order_documents"))
+            )
+            items = build_pdf_workdossier_plan(
+                source,
+                bom_df,
+                bom_source_path=self.bom_source_path,
+                preset=options.get("preset")
+                if mode == PdfWorkDossierOptionsFrame.MODE_WORKDOSSIER
+                else None,
+                include_order_documents=include_order_documents,
+                order_document_root=output_root,
+                include_offers=bool(options.get("include_offers")),
+            )
+            missing_orders: List[str] = []
+            if include_order_documents:
+                drawing_productions = {
+                    _to_str(item.production).strip()
+                    for item in items
+                    if _to_str(item.role).strip().lower() == "drawing"
+                    and _to_str(item.production).strip()
+                }
+                order_productions = {
+                    _to_str(item.production).strip()
+                    for item in items
+                    if _to_str(item.role).strip().lower() == "order"
+                    and _to_str(item.production).strip()
+                }
+                missing_orders = sorted(
+                    drawing_productions - order_productions,
+                    key=lambda value: value.casefold(),
+                )
+            return items, missing_orders, ""
+
+        def _refresh_pdf_workdossier_preview(self) -> None:
+            self._pdf_preview_after_id = None
+            options_frame = getattr(self, "pdf_workdossier_options_frame", None)
+            if options_frame is None:
+                return
+            options = options_frame.build_options()
+            base_folder = self._pdf_base_output_folder()
+            if base_folder:
+                folder_text = f"Nieuwe Combined pdf-map in: {base_folder}"
+            else:
+                folder_text = "Selecteer bronmap of bestemmingsmap"
+            options_frame.set_export_info(
+                self._pdf_export_name_preview(options),
+                folder_text,
+            )
+            try:
+                items, missing_orders, error_message = self._build_pdf_preview_items(options)
+            except Exception as exc:
+                options_frame.clear_preview(f"Voorbeeld kon niet worden opgebouwd: {exc}")
+                options_frame.set_order_flow_message("")
+                return
+            if error_message:
+                options_frame.clear_preview(error_message)
+                options_frame.set_order_flow_message("")
+                return
+            options_frame.set_preview_items(items)
+            if missing_orders:
+                shown = ", ".join(missing_orders[:8])
+                if len(missing_orders) > 8:
+                    shown += f", +{len(missing_orders) - 8}"
+                options_frame.set_order_flow_message(
+                    "Bestelbonnen/standaardbonnen ontbreken voor: "
+                    f"{shown}. Maak of exporteer deze eerst via de bestelbonpagina.",
+                    show_button=True,
+                )
+            else:
+                options_frame.set_order_flow_message("")
+
+        def _prepare_pdf_order_documents(self) -> None:
+            if not self._ensure_bom_loaded():
+                return
+            self.status_var.set("Vul de bestelbonpagina aan voor het PDF-dossier.")
+            self._show_supplier_selection_tab(select_tab=True, prompt_opticutter=True)
+
+        def _handle_missing_pdf_order_documents(self, missing_orders: Sequence[str]) -> None:
+            shown = ", ".join(list(missing_orders)[:10])
+            if len(missing_orders) > 10:
+                shown += f", +{len(missing_orders) - 10}"
+            messagebox.showwarning(
+                "Bestelbonnen ontbreken",
+                (
+                    "De optie om bestelbonnen/standaardbonnen in te voegen staat aan, "
+                    "maar er ontbreken nog PDF-bonnen voor:\n\n"
+                    f"{shown}\n\n"
+                    "Vul of exporteer eerst de bestelbonpagina; daarna kan het PDF-dossier worden gemaakt."
+                ),
+                parent=self,
+            )
+            self._prepare_pdf_order_documents()
+
+        def _set_pdf_action_running(self, running: bool) -> None:
+            self._pdf_action_running = bool(running)
+            state = "disabled" if running else "normal"
+            for attr in ("pdf_workdossier_export_button", "pdf_workdossier_refresh_button"):
+                widget = getattr(self, attr, None)
+                if widget is not None:
+                    try:
+                        widget.configure(state=state)
+                    except tk.TclError:
+                        pass
+            options_frame = getattr(self, "pdf_workdossier_options_frame", None)
+            if options_frame is not None:
+                try:
+                    options_frame.set_busy(running)
+                except tk.TclError:
+                    pass
+            if running:
+                self.pdf_workdossier_progress_var.set(0)
+                self.pdf_workdossier_progress_label_var.set("0%")
+
+        def _update_pdf_progress(self, done: int, total: int, path: str = "") -> None:
+            percentage = 0
+            if total > 0:
+                percentage = max(0, min(100, int((done / total) * 100)))
+            filename = os.path.basename(path) if path else ""
+
+            def apply() -> None:
+                self.pdf_workdossier_progress_var.set(percentage)
+                self.pdf_workdossier_progress_label_var.set(f"{percentage}%")
+                if filename:
+                    self.status_var.set(f"PDF's combineren... {percentage}% - {filename}")
+                else:
+                    self.status_var.set(f"PDF's combineren... {percentage}%")
+
+            self.after(0, apply)
+
+        def _open_export_path(self, path: str) -> None:
+            try:
+                if sys.platform.startswith("win"):
+                    os.startfile(path)
+                elif sys.platform == "darwin":
+                    subprocess.run(["open", path], check=False)
+                else:
+                    subprocess.run(["xdg-open", path], check=False)
+            except Exception as exc:
+                messagebox.showwarning(
+                    "Let op",
+                    f"Kon pad niet openen:\n{exc}",
+                    parent=self,
+                )
 
         def _on_pdf_workdossier_presets_change(self) -> None:
             options_frame = getattr(self, "pdf_workdossier_options_frame", None)
@@ -14586,69 +15109,84 @@ def start_gui():
                     options_frame._reload_presets()
                 except Exception:
                     pass
+            self._schedule_pdf_workdossier_preview()
 
         def _combine_pdf_from_tab(self) -> None:
             options_frame = getattr(self, "pdf_workdossier_options_frame", None)
             if options_frame is None:
                 return
-            self._combine_pdf_with_options(options_frame.build_options())
+            self._run_pdf_combine_with_options(options_frame.build_options())
 
-        def _combine_pdf_with_options(self, options: Mapping[str, object]) -> None:
-            from tkinter import messagebox
-
+        def _run_pdf_combine_with_options(self, options: Mapping[str, object]) -> None:
+            if getattr(self, "_pdf_action_running", False):
+                return
             if not self._ensure_bom_loaded():
                 return
             bom_df = self.bom_df
-            if not self.source_folder or bom_df is None:
+            source_folder = self.source_folder_var.get().strip()
+            out_dir = self.dest_folder_var.get().strip() or source_folder
+            if not source_folder or bom_df is None:
                 messagebox.showwarning(
-                    "Let op", "Selecteer bronmap en laad een BOM."
+                    "Let op", "Selecteer bronmap en laad een BOM.", parent=self
                 )
                 return
 
-            def open_path(path: str) -> None:
-                try:
-                    if sys.platform.startswith("win"):
-                        os.startfile(path)
-                    elif sys.platform == "darwin":
-                        subprocess.run(["open", path], check=False)
-                    else:
-                        subprocess.run(["xdg-open", path], check=False)
-                except Exception as exc:
-                    messagebox.showwarning(
-                        "Let op",
-                        f"Kon pad niet openen:\n{exc}",
-                        parent=self,
-                    )
+            try:
+                preview_items, missing_orders, preview_error = self._build_pdf_preview_items(options)
+            except Exception as exc:
+                messagebox.showerror(
+                    "Fout",
+                    f"Kon de PDF-volgorde niet voorbereiden:\n{exc}",
+                    parent=self,
+                )
+                return
+            self._refresh_pdf_workdossier_preview()
+            if preview_error:
+                messagebox.showwarning("Let op", preview_error, parent=self)
+                return
+            if missing_orders:
+                self._handle_missing_pdf_order_documents(missing_orders)
+                return
+            if not preview_items:
+                messagebox.showwarning(
+                    "Let op",
+                    "Er zijn geen PDF's gevonden om te combineren.",
+                    parent=self,
+                )
+                return
 
-            def work():
-                self.status_var.set("PDF's combineren...")
+            self._set_pdf_action_running(True)
+            self.status_var.set("PDF's combineren... 0%")
+
+            def work() -> None:
                 try:
-                    out_dir = self.dest_folder or self.source_folder
                     pn = self.project_number_var.get().strip() if self.project_number_var else ""
                     pname = self.project_name_var.get().strip() if self.project_name_var else ""
                     mode = _to_str(options.get("mode"))
-                    if mode == PdfWorkDossierDialog.MODE_PER_PRODUCTION:
+                    if mode == PdfWorkDossierOptionsFrame.MODE_PER_PRODUCTION:
                         result = combine_pdfs_from_source(
-                            self.source_folder,
+                            source_folder,
                             bom_df,
                             out_dir,
                             project_number=pn or None,
                             project_name=pname or None,
                             combine_per_production=True,
                             bom_source_path=self.bom_source_path,
+                            progress_callback=self._update_pdf_progress,
                         )
-                    elif mode == PdfWorkDossierDialog.MODE_ALPHABETIC_SINGLE:
+                    elif mode == PdfWorkDossierOptionsFrame.MODE_ALPHABETIC_SINGLE:
                         result = combine_workdossier_pdf_from_source(
-                            self.source_folder,
+                            source_folder,
                             bom_df,
                             out_dir,
                             project_number=pn or None,
                             project_name=pname or None,
                             bom_source_path=self.bom_source_path,
+                            progress_callback=self._update_pdf_progress,
                         )
                     else:
                         result = combine_workdossier_pdf_from_source(
-                            self.source_folder,
+                            source_folder,
                             bom_df,
                             out_dir,
                             project_number=pn or None,
@@ -14660,112 +15198,40 @@ def start_gui():
                             ),
                             order_document_root=out_dir,
                             include_offers=bool(options.get("include_offers")),
+                            progress_callback=self._update_pdf_progress,
                         )
                 except ModuleNotFoundError:
-                    self.status_var.set("PyPDF2 ontbreekt")
-                    messagebox.showwarning(
-                        "PyPDF2 ontbreekt",
-                        "Installeer PyPDF2 om PDF's te combineren.",
-                    )
-                    return
-                self.status_var.set(
-                    f"Gecombineerde pdf's: {result.count} -> {result.output_dir}"
-                )
-                output_files = list(getattr(result, "output_files", []) or [])
-                open_pdf = bool(options.get("open_pdf"))
-                target_to_open = (
-                    output_files[0]
-                    if open_pdf and len(output_files) == 1
-                    else result.output_dir
-                )
-                message = "PDF's gecombineerd.\n\n" f"Map: {result.output_dir}"
-                if len(output_files) == 1:
-                    message += f"\nPDF: {output_files[0]}"
-                messagebox.showinfo("Klaar", message)
-                open_path(target_to_open)
-
-            threading.Thread(target=work, daemon=True).start()
-
-        def _combine_pdf(self):
-            from tkinter import messagebox
-            if not self._ensure_bom_loaded():
-                return
-            bom_df = self.bom_df
-            if self.source_folder and bom_df is not None:
-                dialog = PdfWorkDossierDialog(
-                    self,
-                    self.pdf_workdossier_presets_db,
-                )
-                self.wait_window(dialog)
-                if not dialog.result:
-                    return
-                options = dict(dialog.result)
-
-                def open_path(path: str) -> None:
-                    try:
-                        if sys.platform.startswith("win"):
-                            os.startfile(path)
-                        elif sys.platform == "darwin":
-                            subprocess.run(["open", path], check=False)
-                        else:
-                            subprocess.run(["xdg-open", path], check=False)
-                    except Exception as exc:
-                        messagebox.showwarning(
-                            "Let op",
-                            f"Kon pad niet openen:\n{exc}",
-                            parent=self,
-                        )
-
-                def work():
-                    self.status_var.set("PDF's combineren...")
-                    try:
-                        out_dir = self.dest_folder or self.source_folder
-                        pn = self.project_number_var.get().strip() if self.project_number_var else ""
-                        pname = self.project_name_var.get().strip() if self.project_name_var else ""
-                        mode = _to_str(options.get("mode"))
-                        if mode == PdfWorkDossierDialog.MODE_PER_PRODUCTION:
-                            result = combine_pdfs_from_source(
-                                self.source_folder,
-                                bom_df,
-                                out_dir,
-                                project_number=pn or None,
-                                project_name=pname or None,
-                                combine_per_production=True,
-                                bom_source_path=self.bom_source_path,
-                            )
-                        elif mode == PdfWorkDossierDialog.MODE_ALPHABETIC_SINGLE:
-                            result = combine_workdossier_pdf_from_source(
-                                self.source_folder,
-                                bom_df,
-                                out_dir,
-                                project_number=pn or None,
-                                project_name=pname or None,
-                                bom_source_path=self.bom_source_path,
-                            )
-                        else:
-                            result = combine_workdossier_pdf_from_source(
-                                self.source_folder,
-                                bom_df,
-                                out_dir,
-                                project_number=pn or None,
-                                project_name=pname or None,
-                                bom_source_path=self.bom_source_path,
-                                preset=options.get("preset"),
-                                include_order_documents=bool(
-                                    options.get("include_order_documents")
-                                ),
-                                order_document_root=out_dir,
-                                include_offers=bool(options.get("include_offers")),
-                            )
-                    except ModuleNotFoundError:
+                    def on_missing_module() -> None:
                         self.status_var.set("PyPDF2 ontbreekt")
+                        self._set_pdf_action_running(False)
                         messagebox.showwarning(
                             "PyPDF2 ontbreekt",
                             "Installeer PyPDF2 om PDF's te combineren.",
+                            parent=self,
                         )
-                        return
+
+                    self.after(0, on_missing_module)
+                    return
+                except Exception as exc:
+                    error_message = str(exc)
+
+                    def on_error() -> None:
+                        self.status_var.set("PDF combineren mislukt.")
+                        self._set_pdf_action_running(False)
+                        messagebox.showerror(
+                            "Fout",
+                            f"PDF combineren mislukt:\n{error_message}",
+                            parent=self,
+                        )
+
+                    self.after(0, on_error)
+                    return
+
+                def on_done() -> None:
+                    self.pdf_workdossier_progress_var.set(100)
+                    self.pdf_workdossier_progress_label_var.set("100%")
                     self.status_var.set(
-                        f"Gecombineerde pdf's: {result.count} → {result.output_dir}"
+                        f"Gecombineerde pdf's: {result.count} -> {result.output_dir}"
                     )
                     output_files = list(getattr(result, "output_files", []) or [])
                     open_pdf = bool(options.get("open_pdf"))
@@ -14777,13 +15243,28 @@ def start_gui():
                     message = "PDF's gecombineerd.\n\n" f"Map: {result.output_dir}"
                     if len(output_files) == 1:
                         message += f"\nPDF: {output_files[0]}"
-                    messagebox.showinfo("Klaar", message)
-                    open_path(target_to_open)
-                threading.Thread(target=work, daemon=True).start()
-            else:
-                messagebox.showwarning(
-                    "Let op", "Selecteer bronmap en laad een BOM."
-                )
+                    self._set_pdf_action_running(False)
+                    self._refresh_pdf_workdossier_preview()
+                    messagebox.showinfo("Klaar", message, parent=self)
+                    self._open_export_path(target_to_open)
+
+                self.after(0, on_done)
+
+            threading.Thread(target=work, daemon=True).start()
+
+        def _select_pdf_workdossier_tab(self) -> None:
+            try:
+                self.nb.select(self.pdf_workdossier_frame)
+            except tk.TclError:
+                return
+            options_frame = getattr(self, "pdf_workdossier_options_frame", None)
+            if options_frame is not None:
+                options_frame.select_work_tab()
+            self._refresh_pdf_workdossier_preview()
+
+        def _combine_pdf(self):
+            self._select_pdf_workdossier_tab()
+            return
 
     App().mainloop()
 

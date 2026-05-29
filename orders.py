@@ -5001,6 +5001,7 @@ def combine_workdossier_pdf_from_source(
     include_order_documents: bool = False,
     order_document_root: str | None = None,
     include_offers: bool = False,
+    progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> CombinedPdfResult:
     """Combine drawing PDFs into one work dossier PDF."""
 
@@ -5027,15 +5028,20 @@ def combine_workdossier_pdf_from_source(
         include_offers=include_offers,
     )
     if not plan:
+        if progress_callback is not None:
+            progress_callback(0, 0, "")
         return CombinedPdfResult(count=0, output_dir=out_dir)
 
     merger = PdfMerger()
     output_path = ""
     appended = 0
+    total_items = len(plan)
     try:
         for item in plan:
             merger.append(item.path)
             appended += 1
+            if progress_callback is not None:
+                progress_callback(appended, total_items, item.path)
         out_name = f"Werkdossier_{date_str}_combined.pdf"
         safe_name = _fit_filename_within_path(out_dir, out_name)
         output_path = os.path.join(out_dir, safe_name)
@@ -5063,6 +5069,7 @@ def combine_pdfs_from_source(
     timestamp: datetime.datetime | None = None,
     combine_per_production: bool = True,
     bom_source_path: str | None = None,
+    progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> CombinedPdfResult:
     """Combine PDF drawing files per production directly from ``source``.
 
@@ -5112,6 +5119,7 @@ def combine_pdfs_from_source(
     )
     count = 0
     output_files: List[str] = []
+    progress_done = 0
 
     if combine_per_production:
         # When combining per production, copy related PDFs to output dir separately
@@ -5122,17 +5130,30 @@ def combine_pdfs_from_source(
             except Exception:
                 pass
         
+        production_candidates: Dict[str, List[str]] = {}
         for prod, files in prod_to_files.items():
-            candidates = list(files)
+            candidates = _unique_pdf_paths(list(files))
             if not candidates:
                 continue
+            production_candidates[prod] = sorted(
+                candidates, key=lambda x: os.path.basename(x).lower()
+            )
+        progress_total = sum(len(paths) for paths in production_candidates.values())
+
+        if progress_total == 0 and progress_callback is not None:
+            progress_callback(0, 0, "")
+
+        for prod, candidates in production_candidates.items():
             merger = PdfMerger()
             appended: set[str] = set()
-            for path in sorted(candidates, key=lambda x: os.path.basename(x).lower()):
+            for path in candidates:
                 if path in appended:
                     continue
                 merger.append(path)
                 appended.add(path)
+                progress_done += 1
+                if progress_callback is not None:
+                    progress_callback(progress_done, progress_total, path)
             if not appended:
                 merger.close()
                 continue
@@ -5164,8 +5185,12 @@ def combine_pdfs_from_source(
                 # Preserve related PDFs at the front by reordering ``ordered_files``.
                 rest = [path for path in ordered_files if path not in related_set]
                 ordered_files = related_sorted + rest
+            progress_total = len(ordered_files)
             for path in ordered_files:
                 merger.append(path)
+                progress_done += 1
+                if progress_callback is not None:
+                    progress_callback(progress_done, progress_total, path)
             out_name = f"BOM_{date_str}_combined.pdf"
             safe_name = _fit_filename_within_path(out_dir, out_name)
             output_path = os.path.join(out_dir, safe_name)
@@ -5173,6 +5198,8 @@ def combine_pdfs_from_source(
             merger.close()
             output_files.append(output_path)
             count = 1
+        elif progress_callback is not None:
+            progress_callback(0, 0, "")
 
     return CombinedPdfResult(count=count, output_dir=out_dir, output_files=output_files)
 

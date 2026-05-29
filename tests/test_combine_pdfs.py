@@ -296,6 +296,36 @@ def test_workdossier_default_sorts_by_pdf_filename_naturally(tmp_path):
     assert [float(page.mediabox.width) for page in reader.pages] == [90, 100, 110]
 
 
+def test_workdossier_progress_callback_reports_each_merged_pdf(tmp_path):
+    source = tmp_path / "src"
+    dest = tmp_path / "out"
+    source.mkdir()
+    dest.mkdir()
+
+    _blank_pdf(source / "A-1.pdf", width=80)
+    _blank_pdf(source / "B-1.pdf", width=90)
+
+    bom_df = pd.DataFrame(
+        [
+            {"PartNumber": "A-1", "Production": "Assembly"},
+            {"PartNumber": "B-1", "Production": "Laser"},
+        ]
+    )
+    progress = []
+
+    combine_workdossier_pdf_from_source(
+        str(source),
+        bom_df,
+        str(dest),
+        "2023-01-01",
+        progress_callback=lambda done, total, path: progress.append(
+            (done, total, Path(path).name if path else "")
+        ),
+    )
+
+    assert progress == [(1, 2, "A-1.pdf"), (2, 2, "B-1.pdf")]
+
+
 def test_workdossier_preset_controls_section_order_and_bom_pdf(tmp_path):
     source = tmp_path / "src"
     dest = tmp_path / "out"
