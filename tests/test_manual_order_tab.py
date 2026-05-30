@@ -189,6 +189,8 @@ def _make_searchable_combo(values, current=""):
     combo.cursor_at_end = False
     combo.focused = False
     combo.selection_is_present = False
+    combo.after_callbacks = {}
+    combo.cancelled_after_ids = []
 
     def configure(**kwargs):
         if "values" in kwargs:
@@ -221,6 +223,15 @@ def _make_searchable_combo(values, current=""):
     def after_idle(callback):
         callback()
 
+    def after(_delay, callback):
+        after_id = f"after-{len(combo.after_callbacks) + 1}"
+        combo.after_callbacks[after_id] = callback
+        return after_id
+
+    def after_cancel(after_id):
+        combo.cancelled_after_ids.append(after_id)
+        combo.after_callbacks.pop(after_id, None)
+
     class _FakeTk:
         def call(self, *args):
             combo.dropdown_calls.append(args)
@@ -235,6 +246,8 @@ def _make_searchable_combo(values, current=""):
     combo.icursor = icursor
     combo.focus_set = focus_set
     combo.after_idle = after_idle
+    combo.after = after
+    combo.after_cancel = after_cancel
     combo.tk = _FakeTk()
     combo._w = "combo"
     return combo
@@ -293,3 +306,36 @@ def test_searchable_combobox_keypress_replaces_existing_supplier_choice():
     SearchableCombobox._on_key_press(combo, event)
 
     assert combo.current == ""
+
+
+def test_searchable_combobox_focus_out_waits_for_dropdown_selection():
+    combo = _make_searchable_combo(
+        ["Geen", "Alpha Lasers", "Metaalwerken NV"],
+        current="met",
+    )
+
+    SearchableCombobox._on_focus_out(combo, object())
+
+    assert combo.current == "met"
+    assert combo.dropdown_calls == []
+    assert combo._focus_out_after_id == "after-1"
+
+    combo.current = "Metaalwerken NV"
+    SearchableCombobox._on_selection(combo, object())
+
+    assert combo.current == "Metaalwerken NV"
+    assert combo._last_valid_value == "Metaalwerken NV"
+    assert combo.cancelled_after_ids == ["after-1"]
+
+
+def test_searchable_combobox_focus_out_commits_after_delay():
+    combo = _make_searchable_combo(
+        ["Geen", "Alpha Lasers", "Metaalwerken NV"],
+        current="metaal",
+    )
+
+    SearchableCombobox._on_focus_out(combo, object())
+    combo.after_callbacks["after-1"]()
+
+    assert combo.current == "Metaalwerken NV"
+    assert combo._last_valid_value == "Metaalwerken NV"

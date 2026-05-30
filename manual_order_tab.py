@@ -204,6 +204,7 @@ class SearchableCombobox(ttk.Combobox):
         self._normalized_values: List[Tuple[str, str]] = []
         self._last_query: str = ""
         self._last_valid_value: str = ""
+        self._focus_out_after_id: str | None = None
         actual_state = "normal" if self._readonly_mode else state
         super().__init__(master, values=values, state=actual_state, **kwargs)
         self._store_all_values(list(values or ()))
@@ -317,6 +318,7 @@ class SearchableCombobox(ttk.Combobox):
         self._apply_filter(self.get())
 
     def _on_selection(self, _event: tk.Event) -> None:
+        self._cancel_focus_out_commit()
         self._restore_values()
         self._clear_text_selection()
         self._unpost_dropdown()
@@ -335,6 +337,8 @@ class SearchableCombobox(ttk.Combobox):
         self._last_query = ""
 
     def _on_focus_in(self, _event: tk.Event) -> None:
+        self._cancel_focus_out_commit()
+
         def _select_all() -> None:
             try:
                 self.selection_range(0, tk.END)
@@ -349,8 +353,27 @@ class SearchableCombobox(ttk.Combobox):
         self.after_idle(_select_all)
 
     def _on_focus_out(self, _event: tk.Event) -> None:
-        self._unpost_dropdown()
-        self.commit_typed_value()
+        self._cancel_focus_out_commit()
+
+        def _commit_after_focus_settles() -> None:
+            self._focus_out_after_id = None
+            self._unpost_dropdown()
+            self.commit_typed_value()
+
+        try:
+            self._focus_out_after_id = self.after(150, _commit_after_focus_settles)
+        except Exception:
+            _commit_after_focus_settles()
+
+    def _cancel_focus_out_commit(self) -> None:
+        after_id = getattr(self, "_focus_out_after_id", None)
+        if after_id is None:
+            return
+        self._focus_out_after_id = None
+        try:
+            self.after_cancel(after_id)
+        except Exception:
+            pass
 
     def _clear_text_selection(self) -> None:
         try:

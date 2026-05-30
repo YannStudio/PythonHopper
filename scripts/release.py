@@ -50,10 +50,21 @@ def update_app_version(version: str) -> None:
 
 def update_windows_version_files(version: str) -> None:
     file_version = windows_version_text(version)
+    fixed_version = ", ".join(file_version.split("."))
     for path in VERSION_FILES:
         if not path.exists():
             continue
         text = path.read_text(encoding="utf-8")
+        text = re.sub(
+            r"filevers=\([^)]+\)",
+            f"filevers=({fixed_version})",
+            text,
+        )
+        text = re.sub(
+            r"prodvers=\([^)]+\)",
+            f"prodvers=({fixed_version})",
+            text,
+        )
         text = re.sub(
             r"StringStruct\('FileVersion', '[^']+'\)",
             f"StringStruct('FileVersion', '{file_version}')",
