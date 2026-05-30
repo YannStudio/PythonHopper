@@ -90,6 +90,7 @@ from orders import (
     parse_selection_key,
     _WINDOWS_MAX_PATH,
     _fit_filename_within_path,
+    _sanitize_component,
     _normalize_crop_box,
     build_document_export_basename,
     build_order_pricing_item_key,
@@ -4014,6 +4015,7 @@ def start_gui():
             en1090_enabled: bool = True,
             en1090_getter=None,
             en1090_setter=None,
+            pdf_dossier_context: bool = False,
         ):
             super().__init__(master)
             self.configure(padx=12, pady=12)
@@ -4060,6 +4062,7 @@ def start_gui():
             self._price_link_in_progress: set[str] = set()
             self._price_auto_fields: Dict[str, str] = {}
             self._price_columns_visible = self._state_has_price_values(initial_state)
+            self.pdf_dossier_context = bool(pdf_dossier_context)
             self.finish_entries = finishes
             self._row_widget_maps: List[Dict[str, tk.Misc]] = []
             self._row_widgets_by_key: Dict[str, Dict[str, tk.Misc]] = {}
@@ -4079,6 +4082,22 @@ def start_gui():
             top_area = tk.Frame(content)
             top_area.grid(row=0, column=0, sticky="ew")
             top_area.grid_columnconfigure(0, weight=1)
+
+            if self.pdf_dossier_context:
+                context_label = tk.Label(
+                    top_area,
+                    text=(
+                        "PDF dossier voorbereiden - maak hier alleen de bon-PDF's "
+                        "die straks in het werkdossier worden ingevoegd."
+                    ),
+                    anchor="w",
+                    justify="left",
+                    foreground="#1F4F82",
+                    background="#EAF3FF",
+                    padx=10,
+                    pady=6,
+                )
+                context_label.pack(fill="x", pady=(0, 8))
 
             rows_scroll_container = tk.Frame(content)
             rows_scroll_container.grid(row=1, column=0, sticky="nsew", pady=(4, 0))
@@ -5072,7 +5091,12 @@ def start_gui():
             ).grid(row=0, column=0, sticky="w")
             self.cancel_button = tk.Button(btns, text="Annuleer", command=self._cancel)
             self.cancel_button.grid(row=0, column=1, sticky="e", padx=(4, 0))
-            self.confirm_button = tk.Button(btns, text="Bevestig", command=self._confirm)
+            confirm_text = (
+                "Bon-PDF's aanmaken en terug naar PDF dossier"
+                if self.pdf_dossier_context
+                else "Bevestig"
+            )
+            self.confirm_button = tk.Button(btns, text=confirm_text, command=self._confirm)
             self.confirm_button.grid(row=0, column=2, sticky="e")
             self.status_var = tk.StringVar(value="")
             self.status_label = tk.Label(
@@ -7679,10 +7703,29 @@ def start_gui():
                     self.master.forget(self)
                 except Exception:
                     pass
-                if hasattr(self.master, "select") and hasattr(self.master.master, "main_frame"):
-                    self.master.select(self.master.master.main_frame)
-                if hasattr(self.master.master, "sel_frame"):
-                    self.master.master.sel_frame = None
+                app = getattr(self.master, "master", None)
+                if hasattr(self.master, "select") and app is not None:
+                    target = (
+                        getattr(app, "pdf_workdossier_frame", None)
+                        if self.pdf_dossier_context
+                        else getattr(app, "main_frame", None)
+                    )
+                    if target is not None:
+                        self.master.select(target)
+                    if self.pdf_dossier_context:
+                        options_frame = getattr(
+                            app, "pdf_workdossier_options_frame", None
+                        )
+                        if options_frame is not None:
+                            try:
+                                options_frame.select_work_tab()
+                            except tk.TclError:
+                                pass
+                        refresh = getattr(app, "_refresh_pdf_workdossier_preview", None)
+                        if callable(refresh):
+                            refresh()
+                if app is not None and hasattr(app, "sel_frame"):
+                    app.sel_frame = None
             self.destroy()
 
         def _confirm(self):
@@ -10055,6 +10098,9 @@ def start_gui():
             self._last_supplier_selection_state: Optional[SupplierSelectionState] = None
             self._pdf_action_running = False
             self._pdf_preview_after_id: Optional[str] = None
+            self._pdf_order_document_root = ""
+            self._pdf_generated_order_documents: List[Dict[str, object]] = []
+            self._pdf_order_context_signature: Tuple[str, str, str, str, str] | None = None
 
             for var in (
                 self.source_folder_var,
@@ -12144,8 +12190,10 @@ def start_gui():
             *,
             select_tab: bool = True,
             prompt_opticutter: bool = True,
+            pdf_dossier_context: bool = False,
         ) -> Optional["SupplierSelectionFrame"]:
             from tkinter import messagebox
+            pdf_dossier_context = bool(pdf_dossier_context)
 
             payload = self._collect_supplier_selection_payload(
                 prompt_opticutter=prompt_opticutter
@@ -12191,8 +12239,20 @@ def start_gui():
                     )
                     return
 
-                current_exts = self._selected_exts()
-                if not current_exts or not self.source_folder or not self.dest_folder:
+                source_folder_snapshot = self.source_folder_var.get().strip()
+                dest_folder_snapshot = self.dest_folder_var.get().strip()
+                output_root_snapshot = dest_folder_snapshot or source_folder_snapshot
+                current_exts = self._selected_exts() or []
+                if pdf_dossier_context:
+                    if not source_folder_snapshot or not output_root_snapshot:
+                        messagebox.showwarning(
+                            "Let op",
+                            "Selecteer minstens een bronmap voor het PDF dossier.",
+                            parent=sel_frame or self,
+                        )
+                        return
+                    current_exts = []
+                elif not current_exts or not source_folder_snapshot or not dest_folder_snapshot:
                     messagebox.showwarning(
                         "Let op",
                         "Selecteer bron, bestemming en extensies.",
@@ -12350,6 +12410,10 @@ def start_gui():
                 )
                 client_name_snapshot = _to_str(getattr(client, "name", "") if client else "").strip()
                 bom_source_path_snapshot = _to_str(getattr(self, "bom_source_path", "")).strip()
+                pdf_order_document_base_snapshot = output_root_snapshot
+                pdf_order_document_root_snapshot = ""
+                if pdf_dossier_context:
+                    pdf_order_document_root_snapshot = self._pdf_order_documents_root()
 
                 def update_status(message: str) -> None:
                     def apply() -> None:
@@ -12390,52 +12454,76 @@ def start_gui():
                     opticutter_analysis_snapshot=opticutter_analysis_current,
                     opticutter_choices_snapshot=None,
                 ):
-                    update_status("Bundelmap voorbereiden...")
-                    try:
-                        bundle = create_export_bundle(
-                            self.dest_folder,
-                            project_number or None,
-                            project_name or None,
-                            latest_symlink="latest" if self.bundle_latest_var.get() else False,
-                            dry_run=bool(self.bundle_dry_run_var.get()),
-                        )
-                    except Exception as exc:
-                        def on_error():
-                            messagebox.showerror(
-                                "Fout",
-                                f"Kon bundelmap niet maken:\n{exc}",
-                                parent=self,
+                    bundle = None
+                    if pdf_dossier_context:
+                        update_status("PDF dossier bonnenmap voorbereiden...")
+                        try:
+                            bundle_dest = pdf_order_document_root_snapshot
+                            self._reset_pdf_order_documents_root(
+                                bundle_dest,
+                                base_folder=pdf_order_document_base_snapshot,
                             )
-                            update_status("Bundelmap maken mislukt.")
-                            set_busy_state(False)
+                        except Exception as exc:
+                            def on_error():
+                                messagebox.showerror(
+                                    "Fout",
+                                    f"Kon de PDF dossier documentenmap niet voorbereiden:\n{exc}",
+                                    parent=self,
+                                )
+                                update_status("PDF dossier documentenmap maken mislukt.")
+                                set_busy_state(False)
 
-                        self.after(0, on_error)
-                        return
+                            self.after(0, on_error)
+                            return
+                    else:
+                        update_status("Bundelmap voorbereiden...")
+                        try:
+                            bundle = create_export_bundle(
+                                dest_folder_snapshot,
+                                project_number or None,
+                                project_name or None,
+                                latest_symlink="latest" if self.bundle_latest_var.get() else False,
+                                dry_run=bool(self.bundle_dry_run_var.get()),
+                            )
+                        except Exception as exc:
+                            def on_error():
+                                messagebox.showerror(
+                                    "Fout",
+                                    f"Kon bundelmap niet maken:\n{exc}",
+                                    parent=self,
+                                )
+                                update_status("Bundelmap maken mislukt.")
+                                set_busy_state(False)
 
-                    self.last_bundle_result = bundle
-                    bundle_dest = bundle.bundle_dir
+                            self.after(0, on_error)
+                            return
 
-                    if bundle.warnings:
-                        warnings = list(bundle.warnings)
+                        self.last_bundle_result = bundle
+                        bundle_dest = bundle.bundle_dir
 
-                        def show_warnings():
-                            messagebox.showwarning("Let op", "\n".join(warnings), parent=self)
+                        if bundle.warnings:
+                            warnings = list(bundle.warnings)
 
-                        self.after(0, show_warnings)
+                            def show_warnings():
+                                messagebox.showwarning("Let op", "\n".join(warnings), parent=self)
 
-                    if bundle.dry_run:
-                        def on_dry():
-                            lines = ["Testrun - doelmap:", bundle_dest]
-                            if bundle.latest_symlink:
-                                lines.append(f"Snelkoppeling: {bundle.latest_symlink}")
-                            messagebox.showinfo("Testrun", "\n".join(lines), parent=self)
-                            update_status(f"Testrun - doelmap: {bundle_dest}")
-                            set_busy_state(False)
+                            self.after(0, show_warnings)
 
-                        self.after(0, on_dry)
-                        return
+                        if bundle.dry_run:
+                            def on_dry():
+                                lines = ["Testrun - doelmap:", bundle_dest]
+                                if bundle.latest_symlink:
+                                    lines.append(f"Snelkoppeling: {bundle.latest_symlink}")
+                                messagebox.showinfo("Testrun", "\n".join(lines), parent=self)
+                                update_status(f"Testrun - doelmap: {bundle_dest}")
+                                set_busy_state(False)
+
+                            self.after(0, on_dry)
+                            return
 
                     update_status("KopiÃ«ren & bestelbonnen maken...")
+                    if pdf_dossier_context:
+                        update_status("Bon-PDF's voor PDF dossier maken...")
                     path_limit_messages: List[str] = []
                     document_status_lines: List[str] = []
                     generated_document_records: List[Dict[str, object]] = []
@@ -12445,7 +12533,7 @@ def start_gui():
                                 self.opticutter_profile_selection_choice
                             )
                         cnt, chosen = copy_per_production_and_orders(
-                            self.source_folder,
+                            source_folder_snapshot,
                             bundle_dest,
                             current_bom,
                             current_exts,
@@ -12457,16 +12545,40 @@ def start_gui():
                             client=client,
                             delivery_map=production_delivery_map,
                             footer_note=self.footer_note_var.get(),
-                            zip_parts=bool(self.zip_var.get()),
-                            date_prefix_exports=bool(self.export_date_prefix_var.get()),
-                            date_suffix_exports=bool(self.export_date_suffix_var.get()),
+                            zip_parts=(
+                                False if pdf_dossier_context else bool(self.zip_var.get())
+                            ),
+                            date_prefix_exports=(
+                                False
+                                if pdf_dossier_context
+                                else bool(self.export_date_prefix_var.get())
+                            ),
+                            date_suffix_exports=(
+                                False
+                                if pdf_dossier_context
+                                else bool(self.export_date_suffix_var.get())
+                            ),
                             project_number=project_number,
                             project_name=project_name,
-                            copy_finish_exports=bool(self.finish_export_var.get()),
-                            zip_finish_exports=bool(self.zip_finish_var.get()),
-                            export_bom=bool(self.export_bom_var.get()),
-                            export_related_files=bool(
-                                self.export_related_files_var.get()
+                            copy_finish_exports=(
+                                False
+                                if pdf_dossier_context
+                                else bool(self.finish_export_var.get())
+                            ),
+                            zip_finish_exports=(
+                                False
+                                if pdf_dossier_context
+                                else bool(self.zip_finish_var.get())
+                            ),
+                            export_bom=(
+                                False
+                                if pdf_dossier_context
+                                else bool(self.export_bom_var.get())
+                            ),
+                            export_related_files=(
+                                False
+                                if pdf_dossier_context
+                                else bool(self.export_related_files_var.get())
                             ),
                             export_name_prefix_text=token_prefix_text,
                             export_name_prefix_enabled=token_prefix_enabled,
@@ -12569,6 +12681,56 @@ def start_gui():
                         return
 
                     def on_done():
+                        if pdf_dossier_context:
+                            self._pdf_order_document_root = bundle_dest
+                            self._pdf_generated_order_documents = list(
+                                generated_document_records
+                            )
+                            self._pdf_order_context_signature = (
+                                self._current_pdf_order_context_signature()
+                            )
+                            update_status(
+                                f"Bon-PDF's voor PDF dossier aangemaakt in {bundle_dest}"
+                            )
+                            try:
+                                current_sel = getattr(self, "sel_frame", None)
+                                if current_sel is not None and current_sel.winfo_exists():
+                                    self._last_supplier_selection_state = (
+                                        current_sel.serialize_state()
+                                    )
+                            except Exception:
+                                pass
+                            try:
+                                self.nb.select(self.pdf_workdossier_frame)
+                            except tk.TclError:
+                                pass
+                            options_frame = getattr(
+                                self, "pdf_workdossier_options_frame", None
+                            )
+                            if options_frame is not None:
+                                try:
+                                    options_frame.select_work_tab()
+                                except tk.TclError:
+                                    pass
+                            self._refresh_pdf_workdossier_preview()
+                            set_busy_state(False)
+                            info_lines = [
+                                "Bon-PDF's voor het PDF dossier zijn aangemaakt in:",
+                                bundle_dest,
+                            ]
+                            if document_status_lines:
+                                info_lines.append("")
+                                info_lines.append("Details:")
+                                info_lines.extend(
+                                    f"- {line}" for line in document_status_lines
+                                )
+                            messagebox.showinfo(
+                                "PDF dossier voorbereid",
+                                "\n".join(info_lines),
+                                parent=self,
+                            )
+                            return
+
                         friendly_pairs = []
                         for key, value in chosen.items():
                             kind, identifier = parse_selection_key(key)
@@ -12646,7 +12808,12 @@ def start_gui():
 
                     self.after(0, on_done)
 
-                set_busy_state(True, "Bundelmap voorbereiden...")
+                initial_busy_message = (
+                    "PDF dossier bonnen voorbereiden..."
+                    if pdf_dossier_context
+                    else "Bundelmap voorbereiden..."
+                )
+                set_busy_state(True, initial_busy_message)
 
                 choices_snapshot = dict(self.opticutter_profile_selection_choice)
                 threading.Thread(
@@ -12708,6 +12875,7 @@ def start_gui():
                     en1090_enabled=bool(self.en1090_enabled_var.get()),
                     en1090_getter=self._get_en1090_preference,
                     en1090_setter=self._set_en1090_preference,
+                    pdf_dossier_context=pdf_dossier_context,
                 )
             except Exception:
                 if sup_search_restore and hasattr(sup_frame, "restore_search_filter"):
@@ -12733,10 +12901,11 @@ def start_gui():
                     settings_index = None
             else:
                 settings_index = None
+            tab_text = "Bestelbonnen (PDF dossier)" if pdf_dossier_context else "Bestelbonnen"
             if settings_index is None:
-                self.nb.add(sel_frame, text="Bestelbonnen")
+                self.nb.add(sel_frame, text=tab_text)
             else:
-                self.nb.insert(settings_index, sel_frame, text="Bestelbonnen")
+                self.nb.insert(settings_index, sel_frame, text=tab_text)
             if select_tab or existing_selected:
                 self.nb.select(sel_frame)
 
@@ -14920,6 +15089,63 @@ def start_gui():
         def _pdf_base_output_folder(self) -> str:
             return self.dest_folder_var.get().strip() or self.source_folder_var.get().strip()
 
+        def _current_pdf_order_context_signature(self) -> Tuple[str, str, str, str, str]:
+            def _abs(value: str) -> str:
+                text = _to_str(value).strip()
+                if not text:
+                    return ""
+                try:
+                    return os.path.abspath(text)
+                except (OSError, ValueError):
+                    return text
+
+            return (
+                _abs(self.source_folder_var.get()),
+                _abs(self._pdf_base_output_folder()),
+                self.project_number_var.get().strip(),
+                self.project_name_var.get().strip(),
+                _abs(_to_str(self.bom_source_path)),
+            )
+
+        def _pdf_order_documents_root(self) -> str:
+            base = self._pdf_base_output_folder()
+            project_token = (
+                _sanitize_component(self.project_number_var.get())
+                or _sanitize_component(self.project_name_var.get())
+                or "project"
+            )
+            return os.path.join(base, "PDF dossier documenten", project_token)
+
+        def _reset_pdf_order_documents_root(
+            self,
+            folder: str,
+            base_folder: str | None = None,
+        ) -> None:
+            root_base = _to_str(base_folder).strip() or self._pdf_base_output_folder()
+            base = os.path.abspath(
+                os.path.join(root_base, "PDF dossier documenten")
+            )
+            target = os.path.abspath(folder)
+            try:
+                common = os.path.commonpath([base, target])
+            except ValueError as exc:
+                raise RuntimeError("Ongeldige PDF dossier documentenmap.") from exc
+            if common != base or target == base:
+                raise RuntimeError("Ongeldige PDF dossier documentenmap.")
+            if os.path.isdir(target):
+                shutil.rmtree(target)
+            os.makedirs(target, exist_ok=True)
+
+        def _prepared_pdf_order_documents(self) -> Tuple[str, List[Dict[str, object]]]:
+            root = _to_str(getattr(self, "_pdf_order_document_root", "")).strip()
+            signature = getattr(self, "_pdf_order_context_signature", None)
+            if not root or signature != self._current_pdf_order_context_signature():
+                return "", []
+            if not os.path.isdir(root):
+                return "", []
+            documents = getattr(self, "_pdf_generated_order_documents", []) or []
+            return root, list(documents)
+
         def _pdf_export_name_preview(self, options: Mapping[str, object]) -> str:
             date_str = datetime.date.today().strftime("%Y-%m-%d")
             mode = _to_str(options.get("mode"))
@@ -14939,6 +15165,10 @@ def start_gui():
                 return [], [], "Laad eerst een BOM."
 
             output_root = self._pdf_base_output_folder() or source
+            prepared_order_root, generated_order_documents = (
+                self._prepared_pdf_order_documents()
+            )
+            order_document_root = prepared_order_root or output_root
             mode = _to_str(options.get("mode"))
             if mode == PdfWorkDossierOptionsFrame.MODE_PER_PRODUCTION:
                 idx = _build_file_index(source, [".pdf"])
@@ -14982,8 +15212,9 @@ def start_gui():
                 if mode == PdfWorkDossierOptionsFrame.MODE_WORKDOSSIER
                 else None,
                 include_order_documents=include_order_documents,
-                order_document_root=output_root,
+                order_document_root=order_document_root,
                 include_offers=bool(options.get("include_offers")),
+                generated_order_documents=generated_order_documents,
             )
             missing_orders: List[str] = []
             if include_order_documents:
@@ -15037,7 +15268,8 @@ def start_gui():
                     shown += f", +{len(missing_orders) - 8}"
                 options_frame.set_order_flow_message(
                     "Bestelbonnen/standaardbonnen ontbreken voor: "
-                    f"{shown}. Maak of exporteer deze eerst via de bestelbonpagina.",
+                    f"{shown}. Gebruik 'Bestelbonnen klaarmaken' om de bon-PDF's "
+                    "voor dit PDF dossier aan te maken.",
                     show_button=True,
                 )
             else:
@@ -15046,8 +15278,12 @@ def start_gui():
         def _prepare_pdf_order_documents(self) -> None:
             if not self._ensure_bom_loaded():
                 return
-            self.status_var.set("Vul de bestelbonpagina aan voor het PDF-dossier.")
-            self._show_supplier_selection_tab(select_tab=True, prompt_opticutter=True)
+            self.status_var.set("Vul de bestelbonpagina aan voor het PDF dossier.")
+            self._show_supplier_selection_tab(
+                select_tab=True,
+                prompt_opticutter=True,
+                pdf_dossier_context=True,
+            )
 
         def _handle_missing_pdf_order_documents(self, missing_orders: Sequence[str]) -> None:
             shown = ", ".join(list(missing_orders)[:10])
@@ -15059,7 +15295,8 @@ def start_gui():
                     "De optie om bestelbonnen/standaardbonnen in te voegen staat aan, "
                     "maar er ontbreken nog PDF-bonnen voor:\n\n"
                     f"{shown}\n\n"
-                    "Vul of exporteer eerst de bestelbonpagina; daarna kan het PDF-dossier worden gemaakt."
+                    "Maak eerst de bon-PDF's via de speciale PDF dossier-context; "
+                    "daarna kom je automatisch terug naar deze pagina."
                 ),
                 parent=self,
             )
@@ -15139,6 +15376,10 @@ def start_gui():
             bom_df = self.bom_df
             source_folder = self.source_folder_var.get().strip()
             out_dir = self.dest_folder_var.get().strip() or source_folder
+            prepared_order_root, generated_order_documents = (
+                self._prepared_pdf_order_documents()
+            )
+            order_document_root = prepared_order_root or out_dir
             if not source_folder or bom_df is None:
                 messagebox.showwarning(
                     "Let op", "Selecteer bronmap en laad een BOM.", parent=self
@@ -15210,8 +15451,9 @@ def start_gui():
                             include_order_documents=bool(
                                 options.get("include_order_documents")
                             ),
-                            order_document_root=out_dir,
+                            order_document_root=order_document_root,
                             include_offers=bool(options.get("include_offers")),
+                            generated_order_documents=generated_order_documents,
                             progress_callback=self._update_pdf_progress,
                         )
                 except ModuleNotFoundError:

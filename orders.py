@@ -267,6 +267,9 @@ class PdfWorkDossierPlanItem:
     role: str = "drawing"
 
 
+PDF_WORKDOSSIER_SUPPLEMENTARY_SECTION = "Aanvullende bonnen zonder tekening"
+
+
 @dataclass(slots=True)
 class OpticutterProfileStats:
     """Aggregated length/weight data for a single Opticutter profile."""
@@ -4833,6 +4836,161 @@ def _append_pdf_production_group(
         )
 
 
+def _generated_order_document_path(
+    record: Mapping[str, object],
+    order_document_root: str | None,
+) -> str:
+    raw_path = _to_str(record.get("path")).strip()
+    if not raw_path:
+        return ""
+    if os.path.isabs(raw_path):
+        return raw_path
+    root = _to_str(order_document_root).strip()
+    if root:
+        return os.path.join(root, raw_path)
+    return raw_path
+
+
+def _generated_order_document_selection_pairs(
+    record: Mapping[str, object],
+) -> List[Tuple[str, str]]:
+    keys: List[str] = []
+    primary = _to_str(record.get("selection_key")).strip()
+    if primary:
+        keys.append(primary)
+    extra_keys = record.get("selection_keys")
+    if isinstance(extra_keys, (list, tuple, set)):
+        keys.extend(_to_str(key).strip() for key in extra_keys if _to_str(key).strip())
+
+    pairs: List[Tuple[str, str]] = []
+    seen: set[str] = set()
+    for key in keys:
+        if key in seen:
+            continue
+        seen.add(key)
+        pairs.append(parse_selection_key(key))
+    return pairs
+
+
+def _is_generated_order_pdf(
+    record: Mapping[str, object],
+    path: str,
+    *,
+    include_offers: bool,
+) -> bool:
+    if _to_str(record.get("kind")).strip().casefold() != "order":
+        return False
+    file_format = (
+        _to_str(record.get("format")).strip()
+        or _to_str(record.get("file_format")).strip()
+    ).casefold()
+    if file_format and file_format != "pdf":
+        return False
+    if not path.lower().endswith(".pdf"):
+        return False
+    doc_type = _to_str(record.get("doc_type")).strip().casefold()
+    if doc_type.startswith("offerte") and not include_offers:
+        return False
+    return _is_order_interleaf_pdf(path, include_offers=include_offers)
+
+
+def _order_document_sort_key(
+    *,
+    kind: str,
+    label: str,
+    path: str,
+) -> Tuple[int, str, Tuple[Tuple[int, object], ...]]:
+    rank = {"production": 0, "finish": 1, "opticutter": 2}.get(kind, 3)
+    return (rank, _pdf_match_text(label), _natural_pdf_name_key(path))
+
+
+def _append_pdf_supplementary_order_documents(
+    plan: List[PdfWorkDossierPlanItem],
+    *,
+    order_document_root: str | None,
+    include_offers: bool,
+    generated_order_documents: Sequence[Mapping[str, object]] | None,
+    drawing_productions: Sequence[str],
+    no_drawing_productions: Sequence[str],
+) -> None:
+    used_paths = {
+        os.path.abspath(item.path).casefold()
+        for item in plan
+        if _to_str(item.path).strip()
+    }
+    drawing_keys = {_to_str(production).strip().casefold() for production in drawing_productions}
+    candidates: List[
+        Tuple[Tuple[int, str, Tuple[Tuple[int, object], ...]], str, str]
+    ] = []
+    candidate_paths: set[str] = set()
+
+    def add_candidate(path: str, *, kind: str, label: str) -> None:
+        clean_path = _to_str(path).strip()
+        if not clean_path or not os.path.isfile(clean_path):
+            return
+        key = os.path.abspath(clean_path).casefold()
+        if key in used_paths or key in candidate_paths:
+            return
+        candidate_paths.add(key)
+        clean_label = _to_str(label).strip() or os.path.basename(clean_path)
+        candidates.append(
+            (
+                _order_document_sort_key(
+                    kind=kind,
+                    label=clean_label,
+                    path=clean_path,
+                ),
+                clean_path,
+                clean_label,
+            )
+        )
+
+    for production in sorted(
+        {_to_str(value).strip() for value in no_drawing_productions if _to_str(value).strip()},
+        key=lambda value: value.casefold(),
+    ):
+        for path in _find_order_interleaf_pdfs(
+            order_document_root,
+            production,
+            include_offers=include_offers,
+        ):
+            add_candidate(path, kind="production", label=production)
+
+    for record in generated_order_documents or []:
+        if not isinstance(record, Mapping):
+            continue
+        path = _generated_order_document_path(record, order_document_root)
+        if not _is_generated_order_pdf(record, path, include_offers=include_offers):
+            continue
+        pairs = _generated_order_document_selection_pairs(record)
+        production_ids = [
+            identifier
+            for kind, identifier in pairs
+            if kind == "production" and _to_str(identifier).strip()
+        ]
+        if any(identifier.casefold() in drawing_keys for identifier in production_ids):
+            continue
+        primary_kind = pairs[0][0] if pairs else ""
+        primary_label = pairs[0][1] if pairs else ""
+        label = (
+            _to_str(record.get("context_label")).strip()
+            or _to_str(record.get("context_kind")).strip()
+            or primary_label
+        )
+        add_candidate(path, kind=primary_kind, label=label)
+
+    for _sort_key, path, label in sorted(candidates, key=lambda item: item[0]):
+        plan.append(
+            PdfWorkDossierPlanItem(
+                path=path,
+                section_name=PDF_WORKDOSSIER_SUPPLEMENTARY_SECTION,
+                production=label,
+                role="order",
+            )
+        )
+        used_paths.add(os.path.abspath(path).casefold())
+
+
 def build_pdf_workdossier_plan(
     source: str,
     bom_df: pd.DataFrame,
@@ -4842,6 +5000,7 @@ def build_pdf_workdossier_plan(
     include_order_documents: bool = False,
     order_document_root: str | None = None,
     include_offers: bool = False,
+    generated_order_documents: Sequence[Mapping[str, object]] | None = None,
 ) -> List[PdfWorkDossierPlanItem]:
     """Return the ordered PDF files for a work dossier merge."""
 
@@ -4867,6 +5026,13 @@ def build_pdf_workdossier_plan(
     for prod, paths in list(prod_to_files.items()):
         prod_to_files[prod] = _unique_pdf_paths(paths)
 
+    drawing_prod_to_files = {
+        production: paths for production, paths in prod_to_files.items() if paths
+    }
+    no_drawing_productions = [
+        production for production, paths in prod_to_files.items() if not paths
+    ]
+
     plan: List[PdfWorkDossierPlanItem] = []
     if preset is None:
         if not include_order_documents:
@@ -4887,10 +5053,10 @@ def build_pdf_workdossier_plan(
                 )
             )
         production_order = sorted(
-            prod_to_files.keys(),
+            drawing_prod_to_files.keys(),
             key=lambda prod: (
-                _natural_pdf_name_key(prod_to_files[prod][0])
-                if prod_to_files[prod]
+                _natural_pdf_name_key(drawing_prod_to_files[prod][0])
+                if drawing_prod_to_files[prod]
                 else _natural_pdf_name_key(prod)
             ),
         )
@@ -4899,27 +5065,35 @@ def build_pdf_workdossier_plan(
                 plan,
                 section_name="Alfabetisch",
                 production=production,
-                drawing_files=prod_to_files[production],
+                drawing_files=drawing_prod_to_files[production],
                 include_order_documents=include_order_documents,
                 order_document_root=order_document_root,
                 include_offers=include_offers,
             )
+        _append_pdf_supplementary_order_documents(
+            plan,
+            order_document_root=order_document_root,
+            include_offers=include_offers,
+            generated_order_documents=generated_order_documents,
+            drawing_productions=list(drawing_prod_to_files.keys()),
+            no_drawing_productions=no_drawing_productions,
+        )
         return plan
 
     sections = [section for section in preset.sections if section.enabled]
-    assigned = _assign_pdf_sections(list(prod_to_files.keys()), sections)
+    assigned = _assign_pdf_sections(list(drawing_prod_to_files.keys()), sections)
     unmatched_inserted = False
 
     def unmatched_productions() -> List[str]:
         unmatched = [
             production
-            for production in prod_to_files
+            for production in drawing_prod_to_files
             if production not in assigned
         ]
         unmatched.sort(
             key=lambda prod: (
-                _natural_pdf_name_key(prod_to_files[prod][0])
-                if prod_to_files[prod]
+                _natural_pdf_name_key(drawing_prod_to_files[prod][0])
+                if drawing_prod_to_files[prod]
                 else _natural_pdf_name_key(prod)
             )
         )
@@ -4943,8 +5117,8 @@ def build_pdf_workdossier_plan(
         ]
         section_productions.sort(
             key=lambda prod: (
-                _natural_pdf_name_key(prod_to_files[prod][0])
-                if prod_to_files[prod]
+                _natural_pdf_name_key(drawing_prod_to_files[prod][0])
+                if drawing_prod_to_files[prod]
                 else _natural_pdf_name_key(prod)
             )
         )
@@ -4953,7 +5127,7 @@ def build_pdf_workdossier_plan(
                 plan,
                 section_name=section.name,
                 production=production,
-                drawing_files=prod_to_files[production],
+                drawing_files=drawing_prod_to_files[production],
                 include_order_documents=include_order_documents,
                 order_document_root=order_document_root,
                 include_offers=include_offers,
@@ -4966,7 +5140,7 @@ def build_pdf_workdossier_plan(
                     plan,
                     section_name=section.name,
                     production=production,
-                    drawing_files=prod_to_files[production],
+                    drawing_files=drawing_prod_to_files[production],
                     include_order_documents=include_order_documents,
                     order_document_root=order_document_root,
                     include_offers=include_offers,
@@ -4978,11 +5152,21 @@ def build_pdf_workdossier_plan(
                 plan,
                 section_name=preset.unmatched_section_name or "Overige",
                 production=production,
-                drawing_files=prod_to_files[production],
+                drawing_files=drawing_prod_to_files[production],
                 include_order_documents=include_order_documents,
                 order_document_root=order_document_root,
                 include_offers=include_offers,
             )
+
+    if include_order_documents:
+        _append_pdf_supplementary_order_documents(
+            plan,
+            order_document_root=order_document_root,
+            include_offers=include_offers,
+            generated_order_documents=generated_order_documents,
+            drawing_productions=list(drawing_prod_to_files.keys()),
+            no_drawing_productions=no_drawing_productions,
+        )
 
     return plan
 
@@ -5001,6 +5185,7 @@ def combine_workdossier_pdf_from_source(
     include_order_documents: bool = False,
     order_document_root: str | None = None,
     include_offers: bool = False,
+    generated_order_documents: Sequence[Mapping[str, object]] | None = None,
     progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> CombinedPdfResult:
     """Combine drawing PDFs into one work dossier PDF."""
@@ -5026,6 +5211,7 @@ def combine_workdossier_pdf_from_source(
         include_order_documents=include_order_documents,
         order_document_root=order_document_root,
         include_offers=include_offers,
+        generated_order_documents=generated_order_documents,
     )
     if not plan:
         if progress_callback is not None:

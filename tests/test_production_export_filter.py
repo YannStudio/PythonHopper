@@ -53,3 +53,61 @@ def test_production_export_filter_skips_disabled(tmp_path, monkeypatch):
     assert cnt == 1
     assert make_production_selection_key("Laser") in chosen
     assert make_production_selection_key("Assembly") not in chosen
+
+
+def test_order_documents_can_be_generated_without_copying_source_files(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    src = tmp_path / "src"
+    dest = tmp_path / "dest"
+    src.mkdir()
+    dest.mkdir()
+    (src / "PN-001.pdf").write_text("drawing", encoding="utf-8")
+    df = pd.DataFrame(
+        [
+            {
+                "PartNumber": "PN-001",
+                "Production": "Laser",
+                "Description": "Part",
+                "Aantal": 1,
+            }
+        ]
+    )
+
+    def fake_pdf(path, *_args, **_kwargs):
+        with open(path, "wb") as fh:
+            fh.write(b"%PDF-1.4\n%%EOF\n")
+
+    monkeypatch.setattr("orders.generate_pdf_order_platypus", fake_pdf)
+    generated = []
+
+    cnt, chosen = copy_per_production_and_orders(
+        str(src),
+        str(dest),
+        df,
+        [],
+        _make_db(),
+        {"Laser": "ACME"},
+        {},
+        {"Laser": "BB-1"},
+        remember_defaults=False,
+        export_bom=False,
+        export_related_files=False,
+        generated_documents=generated,
+    )
+
+    assert cnt == 0
+    assert chosen[make_production_selection_key("Laser")] == "ACME"
+    assert not (dest / "Laser" / "PN-001.pdf").exists()
+    pdf_records = [
+        record
+        for record in generated
+        if record.get("format") == "pdf" and record.get("kind") == "order"
+    ]
+    assert pdf_records
+    assert all((dest / record["path"]).exists() for record in pdf_records)
+    assert all(
+        str(record["path"]).replace("\\", "/").startswith("Laser/")
+        for record in pdf_records
+    )

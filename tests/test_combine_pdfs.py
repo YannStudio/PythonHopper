@@ -6,9 +6,12 @@ import pandas as pd
 from PyPDF2 import PdfReader, PdfWriter
 
 from orders import (
+    build_pdf_workdossier_plan,
     combine_pdfs_per_production,
     combine_pdfs_from_source,
     combine_workdossier_pdf_from_source,
+    make_finish_selection_key,
+    make_production_selection_key,
 )
 from pdf_workdossier_presets import PdfWorkDossierPreset, PdfWorkDossierSection
 
@@ -421,6 +424,70 @@ def test_workdossier_can_insert_order_documents_before_production(tmp_path):
         80,
         91,
         90,
+    ]
+
+
+def test_workdossier_appends_bon_pdfs_without_drawings_at_end(tmp_path):
+    source = tmp_path / "src"
+    order_root = tmp_path / "pdf-dossier-docs"
+    source.mkdir()
+    order_root.mkdir()
+
+    _blank_pdf(source / "ASM-1.pdf", width=80)
+    (order_root / "Assembly").mkdir()
+    (order_root / "Spare parts").mkdir()
+    (order_root / "Finish-Poedercoating").mkdir()
+    _blank_pdf(order_root / "Assembly" / "Bestelbon_Assembly.pdf", width=81)
+    _blank_pdf(order_root / "Spare parts" / "Standaard bon_Spare parts.pdf", width=120)
+    _blank_pdf(
+        order_root / "Finish-Poedercoating" / "Bestelbon_Poedercoating.pdf",
+        width=130,
+    )
+
+    bom_df = pd.DataFrame(
+        [
+            {"PartNumber": "ASM-1", "Production": "Assembly"},
+            {"PartNumber": "BOLT-1", "Production": "Spare parts"},
+        ]
+    )
+    generated_documents = [
+        {
+            "path": "Spare parts/Standaard bon_Spare parts.pdf",
+            "kind": "order",
+            "format": "pdf",
+            "selection_key": make_production_selection_key("Spare parts"),
+            "context_kind": "Productie",
+            "context_label": "Spare parts",
+            "doc_type": "Standaardbon",
+        },
+        {
+            "path": "Finish-Poedercoating/Bestelbon_Poedercoating.pdf",
+            "kind": "order",
+            "format": "pdf",
+            "selection_key": make_finish_selection_key("Finish-Poedercoating"),
+            "context_kind": "Afwerking",
+            "context_label": "Poedercoating",
+            "doc_type": "Bestelbon",
+        },
+    ]
+
+    plan = build_pdf_workdossier_plan(
+        str(source),
+        bom_df,
+        include_order_documents=True,
+        order_document_root=str(order_root),
+        generated_order_documents=generated_documents,
+    )
+
+    assert [Path(item.path).name for item in plan] == [
+        "Bestelbon_Assembly.pdf",
+        "ASM-1.pdf",
+        "Standaard bon_Spare parts.pdf",
+        "Bestelbon_Poedercoating.pdf",
+    ]
+    assert [item.section_name for item in plan[-2:]] == [
+        "Aanvullende bonnen zonder tekening",
+        "Aanvullende bonnen zonder tekening",
     ]
 
 
