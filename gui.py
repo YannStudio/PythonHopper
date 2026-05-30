@@ -8848,6 +8848,9 @@ def start_gui():
             win.wait_window()
 
     class PdfWorkDossierSectionsEditor(tk.Frame):
+        UNMATCHED_DISPLAY_NAME = "Overige producties"
+        LEGACY_UNMATCHED_NAMES = {"other names", "overige"}
+
         def __init__(self, master) -> None:
             super().__init__(master)
             self.sections: List[PdfWorkDossierSection] = []
@@ -8955,9 +8958,11 @@ def start_gui():
                 identifiers_var = controls.get("identifiers_var")
                 unmatched_var = controls.get("unmatched_var")
                 name = name_var.get().strip() if name_var is not None else ""
+                include_unmatched = bool(unmatched_var.get()) if unmatched_var is not None else False
+                if include_unmatched and not name:
+                    name = self.UNMATCHED_DISPLAY_NAME
                 if not name:
                     continue
-                include_unmatched = bool(unmatched_var.get()) if unmatched_var is not None else False
                 identifiers: List[str] = []
                 if not include_unmatched and identifiers_var is not None:
                     identifiers = [
@@ -8987,6 +8992,12 @@ def start_gui():
                 identifiers_entry.configure(state="disabled")
             else:
                 identifiers_entry.configure(state="normal" if self._enabled else "disabled")
+
+        def _display_section_name(self, section: PdfWorkDossierSection) -> str:
+            name = _to_str(section.name).strip()
+            if section.include_unmatched and name.casefold() in self.LEGACY_UNMATCHED_NAMES:
+                return self.UNMATCHED_DISPLAY_NAME
+            return name
 
         def _bind_drag_handle(self, widget, index: int) -> None:
             widget.bind(
@@ -9122,7 +9133,7 @@ def start_gui():
                     background=row.cget("background"),
                 )
                 number.grid(row=0, column=1, rowspan=2, sticky="ns", padx=(0, 6), pady=4)
-                name_var = tk.StringVar(value=section.name)
+                name_var = tk.StringVar(value=self._display_section_name(section))
                 identifiers_var = tk.StringVar(value=", ".join(section.identifiers))
                 unmatched_var = tk.IntVar(value=1 if section.include_unmatched else 0)
 
@@ -9152,12 +9163,16 @@ def start_gui():
                 identifiers_entry.grid(row=1, column=3, sticky="ew", pady=(2, 4))
                 unmatched_check = tk.Checkbutton(
                     row,
-                    text="Other names",
+                    text="Overige producties",
                     variable=unmatched_var,
                     background=row.cget("background"),
                     command=lambda e=identifiers_entry, v=identifiers_var, u=unmatched_var: self._set_unmatched_state(e, v, u),
                 )
                 unmatched_check.grid(row=0, column=4, rowspan=2, sticky="w", padx=(8, 4))
+                _HelpTooltip(
+                    unmatched_check,
+                    "Dit blok vangt producties op die niet overeenkomen met een ander blok.",
+                )
                 delete_btn = ttk.Button(
                     row,
                     text="X",
@@ -9226,7 +9241,7 @@ def start_gui():
             self._sync_sections_from_rows()
             self.sections.append(
                 PdfWorkDossierSection(
-                    name,
+                    name or (self.UNMATCHED_DISPLAY_NAME if include_unmatched else ""),
                     identifiers=list(identifiers or []),
                     include_unmatched=include_unmatched,
                 )
@@ -9521,14 +9536,13 @@ def start_gui():
             )
             self.sections_editor = PdfWorkDossierSectionsEditor(form)
             self.sections_editor.grid(row=3, column=1, sticky="nsew", pady=(8, 3))
-            _HelpTooltip(
-                self.sections_editor,
-                "Voeg productieblokken toe en sleep ze verticaal in de gewenste PDF-volgorde.",
-            )
 
             help_label = tk.Label(
                 form,
-                text="Sleep aan de ::-greep of gebruik Omhoog/Omlaag. Other names vangt niet-gematchte producties op.",
+                text=(
+                    "Sleep aan de ::-greep of gebruik Omhoog/Omlaag. "
+                    "Overige producties vangt alles op dat nergens anders matcht."
+                ),
                 anchor="w",
                 justify="left",
                 foreground="#5D6670",
@@ -9635,7 +9649,7 @@ def start_gui():
                 name=name,
                 sections=sections,
                 include_unmatched=False,
-                unmatched_section_name="Other names",
+                unmatched_section_name="Overige producties",
             )
 
         def save_preset_as(self) -> None:

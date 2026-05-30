@@ -66,6 +66,6 @@ def test_tecno_art_pdf_workdossier_preset_contains_requested_order():
         "Laser cutting +4m",
         "Tube laser",
         "Tube laser L",
-        "Other names",
+        "Overige producties",
     ]
     assert preset.sections[-1].include_unmatched is True

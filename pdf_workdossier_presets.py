@@ -195,9 +195,9 @@ def tecno_art_pdf_workdossier_preset() -> PdfWorkDossierPreset:
             PdfWorkDossierSection("Laser cutting +4m", ["Sheetmetal +4m"]),
             PdfWorkDossierSection("Tube laser", ["Tube laser"]),
             PdfWorkDossierSection("Tube laser L", ["Tube laser L"]),
-            PdfWorkDossierSection("Other names", include_unmatched=True),
+            PdfWorkDossierSection("Overige producties", include_unmatched=True),
         ],
-        unmatched_section_name="Other names",
+        unmatched_section_name="Overige producties",
     )
 
 
