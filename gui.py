@@ -118,6 +118,12 @@ from opticutter import (
     parse_length_to_mm,
     prepare_opticutter_export,
 )
+from changelog_viewer import (
+    format_changelog_for_display,
+    get_latest_release_notes,
+    load_changelog,
+)
+from help_content import FAQ_ENTRIES, QUICK_START_STEPS
 
 if TYPE_CHECKING:
     from orders import OpticutterOrderComputation
@@ -8312,8 +8318,158 @@ def start_gui():
             )
 
             self._refresh_list()
-            self._build_diagnostics_section(content, row=6)
+            self._build_release_notes_section(content, row=6)
+            self._build_help_section(content, row=7)
+            self._build_diagnostics_section(content, row=8)
             self._refresh_diagnostics()
+
+        def _build_release_notes_section(self, content: tk.Widget, *, row: int) -> None:
+            section = tk.Frame(
+                content,
+                background=self._settings_card_bg,
+                highlightthickness=1,
+                highlightbackground=self._settings_border,
+                highlightcolor=self._settings_border,
+            )
+            section.grid(row=row, column=0, sticky="nsew", pady=(0, 12))
+            section.columnconfigure(0, weight=1)
+
+            header_frame = tk.Frame(section, background=self._settings_card_bg)
+            header_frame.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 6))
+            header_frame.columnconfigure(0, weight=1)
+            tk.Label(
+                header_frame,
+                text="Release Notes & Info",
+                background=self._settings_card_bg,
+                foreground=self._settings_text,
+                font=("TkDefaultFont", 11, "bold"),
+                anchor="w",
+            ).grid(row=0, column=0, sticky="ew")
+            tk.Label(
+                header_frame,
+                text="Bekijk de meest recente release notes of informatie over Filehopper.",
+                background=self._settings_card_bg,
+                foreground=self._settings_muted,
+                justify="left",
+                anchor="w",
+                wraplength=620,
+            ).grid(row=1, column=0, sticky="ew", pady=(2, 0))
+
+            body_frame = tk.Frame(section, background=self._settings_card_bg)
+            body_frame.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 14))
+            body_frame.columnconfigure(0, weight=1)
+
+            tk.Label(
+                body_frame,
+                text=f"Huidige versie: {APP_VERSION}",
+                background=self._settings_card_bg,
+                foreground=self._settings_text,
+                anchor="w",
+            ).grid(row=0, column=0, sticky="w", pady=(0, 8))
+
+            latest_notes = get_latest_release_notes(load_changelog())
+            tk.Label(
+                body_frame,
+                text="Laatste release notes:",
+                background=self._settings_card_bg,
+                foreground=self._settings_text,
+                font=("TkDefaultFont", 10, "bold"),
+                anchor="w",
+            ).grid(row=2, column=0, sticky="w")
+            tk.Label(
+                body_frame,
+                text=latest_notes,
+                background=self._settings_card_bg,
+                foreground=self._settings_text,
+                justify="left",
+                anchor="w",
+                wraplength=620,
+            ).grid(row=3, column=0, sticky="ew", pady=(2, 10))
+
+            btn_frame = tk.Frame(body_frame, background=self._settings_card_bg)
+            btn_frame.grid(row=4, column=0, sticky="w")
+            tk.Button(
+                btn_frame,
+                text="Bekijk release notes",
+                command=self.app._show_release_notes,
+            ).pack(side="left", padx=(0, 8), pady=4)
+            tk.Button(
+                btn_frame,
+                text="Over Filehopper",
+                command=self.app._show_about_dialog,
+            ).pack(side="left", padx=(0, 8), pady=4)
+
+        def _build_help_section(self, content: tk.Widget, *, row: int) -> None:
+            section = tk.Frame(
+                content,
+                background=self._settings_card_bg,
+                highlightthickness=1,
+                highlightbackground=self._settings_border,
+                highlightcolor=self._settings_border,
+            )
+            section.grid(row=row, column=0, sticky="nsew", pady=(0, 12))
+            section.columnconfigure(0, weight=1)
+
+            header_frame = tk.Frame(section, background=self._settings_card_bg)
+            header_frame.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 6))
+            header_frame.columnconfigure(0, weight=1)
+            tk.Label(
+                header_frame,
+                text="Hulp & Quick Start",
+                background=self._settings_card_bg,
+                foreground=self._settings_text,
+                font=("TkDefaultFont", 11, "bold"),
+                anchor="w",
+            ).grid(row=0, column=0, sticky="ew")
+            tk.Label(
+                header_frame,
+                text=(
+                    "Volg een korte opstartgids of bekijk de meest voorkomende vragen en oplossingen."
+                ),
+                background=self._settings_card_bg,
+                foreground=self._settings_muted,
+                justify="left",
+                anchor="w",
+                wraplength=620,
+            ).grid(row=1, column=0, sticky="ew", pady=(2, 0))
+
+            body_frame = tk.Frame(section, background=self._settings_card_bg)
+            body_frame.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 14))
+            body_frame.columnconfigure(0, weight=1)
+
+            tk.Label(
+                body_frame,
+                text="Snel aan de slag:",
+                background=self._settings_card_bg,
+                foreground=self._settings_text,
+                anchor="w",
+            ).grid(row=0, column=0, sticky="w", pady=(0, 4))
+
+            preview_text = "\n".join(
+                f"{index + 1}. {step['title']}" for index, step in enumerate(QUICK_START_STEPS[:3])
+            )
+            tk.Label(
+                body_frame,
+                text=preview_text,
+                background=self._settings_card_bg,
+                foreground=self._settings_text,
+                justify="left",
+                anchor="w",
+                wraplength=620,
+            ).grid(row=1, column=0, sticky="ew")
+
+            btn_frame = tk.Frame(body_frame, background=self._settings_card_bg)
+            btn_frame.grid(row=2, column=0, sticky="w", pady=(10, 0))
+            tk.Button(
+                btn_frame,
+                text="Start Quick Start",
+                command=self.app._show_quick_start,
+            ).pack(side="left", padx=(0, 8), pady=4)
+            tk.Button(
+                btn_frame,
+                text="Bekijk FAQ",
+                command=self.app._show_faq,
+            ).pack(side="left", padx=(0, 8), pady=4)
 
         def _build_diagnostics_section(self, content: tk.Widget, *, row: int) -> None:
             section = tk.Frame(
@@ -11743,6 +11899,182 @@ def start_gui():
                 self._icon_photo = icon_photo  # Keep reference
             except Exception:
                 pass
+
+        def _show_release_notes(self) -> None:
+            """Display release notes in a new window."""
+            import tkinter as tk
+            from tkinter import scrolledtext
+            
+            changelog = load_changelog()
+            
+            win = tk.Toplevel(self)
+            win.title("Release Notes")
+            win.geometry("800x600")
+            
+            # Title
+            title_frame = tk.Frame(win, background="#f0f0f0", height=60)
+            title_frame.pack(fill="x", side="top")
+            title_frame.pack_propagate(False)
+            
+            title_label = tk.Label(
+                title_frame,
+                text="Release Notes - Wat is er nieuw?",
+                font=("TkDefaultFont", 14, "bold"),
+                background="#f0f0f0",
+                foreground="#333333",
+                anchor="w",
+                justify="left",
+            )
+            title_label.pack(padx=16, pady=12, anchor="w")
+            
+            # Changelog content in scrolled text widget
+            text_frame = tk.Frame(win)
+            text_frame.pack(fill="both", expand=True, padx=8, pady=8)
+            
+            text_widget = scrolledtext.ScrolledText(
+                text_frame,
+                wrap="word",
+                font=("Courier", 9),
+                background="white",
+                foreground="#333333",
+                relief="solid",
+                borderwidth=1,
+                padx=8,
+                pady=8,
+            )
+            text_widget.pack(fill="both", expand=True)
+            text_widget.insert("1.0", format_changelog_for_display(changelog))
+            text_widget.config(state="disabled")  # Read-only
+            
+            # Close button
+            button_frame = tk.Frame(win)
+            button_frame.pack(fill="x", padx=8, pady=8)
+            close_btn = tk.Button(button_frame, text="Sluiten", command=win.destroy)
+            close_btn.pack(side="right", padx=4)
+            
+            # Focus and center window
+            win.transient(self)
+            win.grab_set()
+
+        def _show_quick_start(self) -> None:
+            """Show the interactive quick-start guide."""
+            import tkinter as tk
+            from tkinter import ttk
+
+            steps = QUICK_START_STEPS
+            current = {"index": 0}
+
+            win = tk.Toplevel(self)
+            win.title("Quick Start Guide")
+            win.geometry("680x420")
+
+            def update_step() -> None:
+                step = steps[current["index"]]
+                title_label.config(text=step["title"])
+                description_label.config(text=step["description"])
+                prev_button.config(state="normal" if current["index"] > 0 else "disabled")
+                next_button.config(text="Volgende" if current["index"] < len(steps) - 1 else "Sluiten")
+
+            title_label = tk.Label(
+                win,
+                text="",
+                font=("TkDefaultFont", 13, "bold"),
+                anchor="w",
+                justify="left",
+                wraplength=640,
+                pady=12,
+            )
+            title_label.pack(fill="x", padx=16)
+
+            description_label = tk.Label(
+                win,
+                text="",
+                anchor="nw",
+                justify="left",
+                wraplength=640,
+                padx=4,
+                pady=8,
+            )
+            description_label.pack(fill="both", expand=True, padx=16)
+
+            control_frame = tk.Frame(win)
+            control_frame.pack(fill="x", padx=16, pady=(0, 12))
+            prev_button = tk.Button(control_frame, text="Vorige", command=lambda: navigate(-1))
+            prev_button.pack(side="left")
+            next_button = tk.Button(control_frame, text="Volgende", command=lambda: navigate(1))
+            next_button.pack(side="right")
+
+            def navigate(direction: int) -> None:
+                if direction < 0 and current["index"] > 0:
+                    current["index"] -= 1
+                    update_step()
+                elif direction > 0:
+                    if current["index"] < len(steps) - 1:
+                        current["index"] += 1
+                        update_step()
+                    else:
+                        win.destroy()
+
+            update_step()
+            win.transient(self)
+            win.grab_set()
+
+        def _show_faq(self) -> None:
+            """Show the FAQ dialog."""
+            import tkinter as tk
+            from tkinter import scrolledtext
+
+            content = []
+            for entry in FAQ_ENTRIES:
+                content.append(f"Q: {entry['question']}")
+                content.append(f"A: {entry['answer']}")
+                content.append("")
+
+            win = tk.Toplevel(self)
+            win.title("FAQ")
+            win.geometry("760x520")
+
+            title_label = tk.Label(
+                win,
+                text="Veelgestelde vragen",
+                font=("TkDefaultFont", 14, "bold"),
+                anchor="w",
+                padx=16,
+                pady=12,
+            )
+            title_label.pack(fill="x")
+
+            text_widget = scrolledtext.ScrolledText(
+                win,
+                wrap="word",
+                font=("TkDefaultFont", 10),
+                background="white",
+                relief="solid",
+                borderwidth=1,
+                padx=8,
+                pady=8,
+            )
+            text_widget.pack(fill="both", expand=True, padx=16, pady=(0, 8))
+            text_widget.insert("1.0", "\n".join(content))
+            text_widget.config(state="disabled")
+
+            close_btn = tk.Button(win, text="Sluiten", command=win.destroy)
+            close_btn.pack(anchor="e", padx=16, pady=(0, 12))
+            win.transient(self)
+            win.grab_set()
+
+        def _show_about_dialog(self) -> None:
+            """Show about dialog."""
+            import tkinter as tk
+            from tkinter import messagebox
+            
+            about_text = (
+                f"Filehopper {APP_VERSION}\n\n"
+                f"Een tool voor het efficiënt beheren van bestanden\n"
+                f"en het genereren van bestelbon-documenten.\n\n"
+                f"© 2024-2026"
+            )
+            messagebox.showinfo("Over Filehopper", about_text, parent=self)
 
         def _handle_tab_changed(self, event: "tk.Event") -> None:
             if event.widget is not self.nb:

@@ -9,6 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from release_notes_generator import generate_changelog_entry
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_PATHS_FILE = PROJECT_ROOT / "app_paths.py"
 CHANGELOG_FILE = PROJECT_ROOT / "CHANGELOG.md"
@@ -79,8 +81,9 @@ def update_windows_version_files(version: str) -> None:
 
 
 def update_changelog(version: str, date: _dt.date) -> None:
-    heading = f"## {version} - {date.isoformat()}"
-    entry = f"{heading}\n\n- Release voorbereid.\n\n"
+    date_str = date.isoformat()
+    entry = generate_changelog_entry(version, date_str)
+    
     if CHANGELOG_FILE.exists():
         text = CHANGELOG_FILE.read_text(encoding="utf-8")
         if re.search(rf"^##\s+{re.escape(version)}\b", text, flags=re.MULTILINE):
@@ -91,6 +94,7 @@ def update_changelog(version: str, date: _dt.date) -> None:
             text = f"# Changelog\n\n{entry}{text.lstrip()}"
     else:
         text = f"# Changelog\n\n{entry}"
+    
     CHANGELOG_FILE.write_text(text, encoding="utf-8")
 
 
@@ -106,6 +110,11 @@ def main(argv: list[str] | None = None) -> int:
         "--no-changelog",
         action="store_true",
         help="Do not create or update CHANGELOG.md",
+    )
+    parser.add_argument(
+        "--preview-notes",
+        action="store_true",
+        help="Preview release notes before updating CHANGELOG.md",
     )
     parser.add_argument(
         "--test",
@@ -131,21 +140,49 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         version = validate_version(args.version)
+        
+        # Preview release notes if requested
+        if args.preview_notes and not args.no_changelog:
+            print("\n📋 Release Notes Preview:")
+            print("─" * 70)
+            run_command([sys.executable, "scripts/preview_release_notes.py", version])
+            print("─" * 70 + "\n")
+        
+        print(f"🚀 Preparing release {version}...")
         update_app_version(version)
+        print(f"  ✓ Updated APP_VERSION to {version}")
+        
         update_windows_version_files(version)
+        print(f"  ✓ Updated Windows version files")
+        
         if not args.no_changelog:
             update_changelog(version, _dt.date.today())
+            print(f"  ✓ Updated CHANGELOG.md with auto-generated release notes")
+        
         if args.test:
+            print("\n🧪 Running tests...")
             run_command([sys.executable, "-m", "pytest", "tests"])
+            print("  ✓ All tests passed")
+        
         if args.build:
+            print("\n📦 Building executables...")
             build_cmd = [sys.executable, "build_executable.py", "--release"]
             for target in args.target or []:
                 build_cmd.extend(["--target", target])
             if args.onefile:
                 build_cmd.append("--onefile")
             run_command(build_cmd)
+            print("  ✓ Build complete")
+        
+        print(f"\n✅ Release {version} prepared successfully!")
+        print("\nNext steps:")
+        print(f"  1. Review changes: git diff")
+        print(f"  2. Commit: git commit -am 'Release {version}'")
+        print(f"  3. Tag: git tag v{version}")
+        print(f"  4. Push: git push && git push --tags")
+        
     except Exception as exc:
-        print(exc, file=sys.stderr)
+        print(f"\n❌ Error: {exc}", file=sys.stderr)
         return 1
 
     print(f"Release metadata updated for Filehopper {version}")
