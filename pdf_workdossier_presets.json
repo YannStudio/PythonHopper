@@ -1,3 +1,110 @@
 {
-  "presets": []
+  "presets": [
+    {
+      "name": "Thissen werkdossier",
+      "enabled": true,
+      "priority": 100,
+      "sections": [
+        {
+          "name": "Hoofdassembly",
+          "identifiers": [],
+          "include_bom_pdf": true,
+          "include_unmatched": false,
+          "enabled": true
+        },
+        {
+          "name": "Assembly",
+          "identifiers": [
+            "Assembly",
+            "Dummy assembly"
+          ],
+          "include_bom_pdf": false,
+          "include_unmatched": false,
+          "enabled": true
+        },
+        {
+          "name": "Weld assembly",
+          "identifiers": [
+            "Weld assembly"
+          ],
+          "include_bom_pdf": false,
+          "include_unmatched": false,
+          "enabled": true
+        },
+        {
+          "name": "Mount material",
+          "identifiers": [
+            "Mount material"
+          ],
+          "include_bom_pdf": false,
+          "include_unmatched": false,
+          "enabled": true
+        },
+        {
+          "name": "Spare parts",
+          "identifiers": [
+            "Spare part",
+            "Spare parts"
+          ],
+          "include_bom_pdf": false,
+          "include_unmatched": false,
+          "enabled": true
+        },
+        {
+          "name": "Cutting",
+          "identifiers": [
+            "Cutting"
+          ],
+          "include_bom_pdf": false,
+          "include_unmatched": false,
+          "enabled": true
+        },
+        {
+          "name": "Lasercutting",
+          "identifiers": [
+            "Lasercutting"
+          ],
+          "include_bom_pdf": false,
+          "include_unmatched": false,
+          "enabled": true
+        },
+        {
+          "name": "Laser cutting +4m",
+          "identifiers": [
+            "Sheetmetal +4m"
+          ],
+          "include_bom_pdf": false,
+          "include_unmatched": false,
+          "enabled": true
+        },
+        {
+          "name": "Tube laser",
+          "identifiers": [
+            "Tube laser"
+          ],
+          "include_bom_pdf": false,
+          "include_unmatched": false,
+          "enabled": true
+        },
+        {
+          "name": "Tube laser L",
+          "identifiers": [
+            "Tube laser L"
+          ],
+          "include_bom_pdf": false,
+          "include_unmatched": false,
+          "enabled": true
+        },
+        {
+          "name": "Other names",
+          "identifiers": [],
+          "include_bom_pdf": false,
+          "include_unmatched": true,
+          "enabled": true
+        }
+      ],
+      "include_unmatched": false,
+      "unmatched_section_name": "Other names"
+    }
+  ]
 }
