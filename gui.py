@@ -9661,7 +9661,9 @@ def start_gui():
 
         def _build_work_tab(self) -> None:
             form = self.work_tab
-            form.columnconfigure(1, weight=1)
+            form.columnconfigure(0, weight=0)
+            form.columnconfigure(1, weight=0)
+            form.columnconfigure(2, weight=1)
             form.rowconfigure(6, weight=1)
 
             tk.Label(form, text="Modus:").grid(row=0, column=0, sticky="e", padx=(0, 6), pady=3)
@@ -9674,11 +9676,25 @@ def start_gui():
                     self.MODE_ALPHABETIC_SINGLE,
                 ],
                 state="readonly",
-                width=32,
+                width=26,
             )
             self.mode_combo.grid(row=0, column=1, sticky="w", pady=3)
             self.mode_combo.bind("<<ComboboxSelected>>", lambda _e: self._sync_mode())
             self._option_widgets.append(self.mode_combo)
+
+            self.mode_info_label = tk.Label(
+                form,
+                text=(
+                    "Werkdossier: preset-gebaseerde categorieën. "
+                    "Aparte PDF per productie: per productie een alfabetische PDF. "
+                    "PDF alfabetisch: geen preset, alle bestanden alfabetisch."
+                ),
+                anchor="w",
+                justify="left",
+                foreground="#5D6670",
+                wraplength=360,
+            )
+            self.mode_info_label.grid(row=0, column=2, sticky="w", padx=(12, 0), pady=3)
 
             self.preset_label = tk.Label(form, text="Volgorde preset:")
             self.preset_label.grid(row=1, column=0, sticky="e", padx=(0, 6), pady=3)
@@ -9686,9 +9702,9 @@ def start_gui():
                 form,
                 textvariable=self.preset_var,
                 state="readonly",
-                width=42,
+                width=26,
             )
-            self.preset_combo.grid(row=1, column=1, sticky="ew", pady=3)
+            self.preset_combo.grid(row=1, column=1, sticky="w", pady=3)
             self.preset_combo.bind("<<ComboboxSelected>>", self._on_preset_selected)
             self._option_widgets.append(self.preset_combo)
             _HelpTooltip(
@@ -9702,18 +9718,6 @@ def start_gui():
                 "Aparte PDF per productie: maak per productie een PDF, met producties alfabetisch gerangschikt. "
                 "PDF alfabetisch: geen preset, alle bestanden alfabetisch gesorteerd.",
             )
-
-            tk.Label(
-                form,
-                text=(
-                    "Elke categorie wordt alfabetisch gesorteerd. De volgorde van de categorieën "
-                    "bepaalt de volgorde van de blokken in het werkdossier."
-                ),
-                anchor="w",
-                justify="left",
-                foreground="#5D6670",
-                wraplength=580,
-            ).grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 
             options = tk.LabelFrame(form, text="Opties", labelanchor="n")
             options.grid(row=3, column=1, sticky="ew", pady=(6, 0))
@@ -9891,8 +9895,8 @@ def start_gui():
             if callable(self.on_options_changed):
                 self.on_options_changed()
 
-        def _reload_presets(self) -> None:
-            choices = [self.NO_PRESET_LABEL]
+        def _reload_presets(self, show_blank_template: bool = True) -> None:
+            base_choices = [self.NO_PRESET_LABEL] if show_blank_template else []
             built_ins = [
                 default_pdf_workdossier_preset(),
                 tecno_art_pdf_workdossier_preset(),
@@ -9900,17 +9904,30 @@ def start_gui():
             self._preset_map = {}
             for built_in in built_ins:
                 self._preset_map[built_in.name] = built_in
-                choices.append(built_in.name)
+                base_choices.append(built_in.name)
             for preset in self.presets_db.presets_sorted():
                 label = preset.name
                 if label in self._preset_map:
                     label = f"{preset.name} (opgeslagen)"
                 self._preset_map[label] = preset
-                choices.append(label)
-            self.preset_combo.configure(values=choices)
-            self.preset_editor_combo.configure(values=choices)
-            if self.preset_var.get() not in choices:
-                self.preset_var.set(self.NO_PRESET_LABEL)
+                base_choices.append(label)
+            self.preset_combo.configure(values=base_choices)
+
+            full_choices = [self.NO_PRESET_LABEL]
+            for built_in in built_ins:
+                full_choices.append(built_in.name)
+            for preset in self.presets_db.presets_sorted():
+                label = preset.name
+                if label in self._preset_map:
+                    label = f"{preset.name} (opgeslagen)"
+                full_choices.append(label)
+            self.preset_editor_combo.configure(values=full_choices)
+
+            if self.preset_var.get() not in base_choices:
+                if show_blank_template:
+                    self.preset_var.set(self.NO_PRESET_LABEL)
+                elif base_choices:
+                    self.preset_var.set(base_choices[0])
 
         def _saved_preset_label(self, name: str) -> str:
             if name in {
@@ -9926,9 +9943,11 @@ def start_gui():
             if is_workdossier:
                 self.preset_label.grid()
                 self.preset_combo.grid()
+                self._reload_presets(show_blank_template=False)
             else:
                 self.preset_label.grid_remove()
                 self.preset_combo.grid_remove()
+                self._reload_presets(show_blank_template=True)
             self.preset_combo.configure(state=readonly)
             self.include_order_docs_check.configure(
                 state="normal" if is_workdossier and not self._busy else "disabled"
