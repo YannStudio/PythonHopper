@@ -8467,6 +8467,11 @@ def start_gui():
             ).pack(side="left", padx=(0, 8), pady=4)
             tk.Button(
                 btn_frame,
+                text="Visuele quick manual",
+                command=self.app._open_visual_quick_manual,
+            ).pack(side="left", padx=(0, 8), pady=4)
+            tk.Button(
+                btn_frame,
                 text="Bekijk FAQ",
                 command=self.app._show_faq,
             ).pack(side="left", padx=(0, 8), pady=4)
@@ -9060,44 +9065,51 @@ def start_gui():
             self._drag_widget = None
             self._enabled = True
 
-            actions = tk.Frame(self)
-            actions.pack(fill="x", pady=(0, 6))
-            self._add_button = ttk.Button(
-                actions,
-                text="Blok toevoegen",
-                command=self.add_blank_section,
-            )
-            self._add_button.pack(side="left", padx=(0, 4))
-            self._up_button = ttk.Button(actions, text="Omhoog", command=self.move_selected_up)
-            self._up_button.pack(side="left", padx=(0, 4))
-            self._down_button = ttk.Button(actions, text="Omlaag", command=self.move_selected_down)
-            self._down_button.pack(side="left", padx=(0, 4))
-            self._delete_button = ttk.Button(
-                actions,
-                text="Verwijder blok",
-                command=self.delete_selected,
-            )
-            self._delete_button.pack(side="left", padx=(0, 4))
-            self._clear_button = ttk.Button(
-                actions,
-                text="Leegmaken",
-                command=self.clear_sections,
-            )
-            self._clear_button.pack(side="left", padx=(0, 4))
-
             body = tk.Frame(self)
             body.pack(fill="both", expand=True)
             body.rowconfigure(0, weight=1)
             body.columnconfigure(0, weight=1)
-            self.canvas = tk.Canvas(body, highlightthickness=0, borderwidth=0, height=210)
+            body.columnconfigure(1, minsize=160)
+
+            content_frame = tk.Frame(body)
+            content_frame.grid(row=0, column=0, sticky="nsew")
+            content_frame.rowconfigure(0, weight=1)
+            content_frame.columnconfigure(0, weight=1)
+
+            self.canvas = tk.Canvas(content_frame, highlightthickness=0, borderwidth=0, height=210)
             self.canvas.grid(row=0, column=0, sticky="nsew")
             self.scrollbar = ttk.Scrollbar(
-                body,
+                content_frame,
                 orient="vertical",
                 command=self.canvas.yview,
             )
             self.scrollbar.grid(row=0, column=1, sticky="ns", padx=(8, 0))
             self.canvas.configure(yscrollcommand=self.scrollbar.set)
+
+            actions = tk.Frame(body)
+            actions.grid(row=0, column=1, sticky="n", padx=(12, 0), pady=(0, 6))
+            self._add_button = ttk.Button(
+                actions,
+                text="Blok toevoegen",
+                command=self.add_blank_section,
+            )
+            self._add_button.pack(fill="x", pady=(0, 4))
+            self._up_button = ttk.Button(actions, text="Omhoog", command=self.move_selected_up)
+            self._up_button.pack(fill="x", pady=(0, 4))
+            self._down_button = ttk.Button(actions, text="Omlaag", command=self.move_selected_down)
+            self._down_button.pack(fill="x", pady=(0, 4))
+            self._delete_button = ttk.Button(
+                actions,
+                text="Verwijder blok",
+                command=self.delete_selected,
+            )
+            self._delete_button.pack(fill="x", pady=(0, 4))
+            self._clear_button = ttk.Button(
+                actions,
+                text="Leegmaken",
+                command=self.clear_sections,
+            )
+            self._clear_button.pack(fill="x", pady=(0, 4))
             self.inner = tk.Frame(self.canvas)
             self.inner_window = self.canvas.create_window(
                 (0, 0),
@@ -9289,20 +9301,95 @@ def start_gui():
                 except tk.TclError:
                     pass
 
+        def _convert_example_to_real_section(self, _event=None) -> None:
+            if self.sections:
+                return
+            self.add_section("Parts", ["Lasercutting", "Tube laser"])
+            self._selected_index = 0
+            self._render_sections()
+
         def _render_sections(self) -> None:
             for child in self.inner.winfo_children():
                 child.destroy()
             self._row_controls = []
 
             if not self.sections:
-                empty = tk.Label(
+                example = tk.Frame(
                     self.inner,
-                    text="Geen sectieblokken. Voeg een productieblok toe.",
+                    relief="solid",
+                    borderwidth=1,
+                    background="#FFFFFF",
+                )
+                example.pack(fill="x", padx=(2, 10), pady=3)
+                example.columnconfigure(3, weight=1)
+
+                handle = tk.Label(
+                    example,
+                    text="::",
+                    width=3,
+                    cursor="sb_v_double_arrow",
+                    background="#FFFFFF",
+                    foreground="#999999",
+                )
+                handle.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(4, 2), pady=4)
+                number = tk.Label(
+                    example,
+                    text="1.",
+                    width=4,
+                    anchor="e",
+                    background="#FFFFFF",
+                    foreground="#999999",
+                )
+                number.grid(row=0, column=1, rowspan=2, sticky="ns", padx=(0, 6), pady=4)
+
+                cat_label = tk.Label(
+                    example,
+                    text="Categorie:",
+                    background="#FFFFFF",
+                )
+                cat_label.grid(row=0, column=2, sticky="e", padx=(0, 4), pady=(4, 2))
+                cat_entry_var = tk.StringVar(value="Parts")
+                cat_entry = tk.Entry(
+                    example,
+                    textvariable=cat_entry_var,
+                    width=26,
+                    state="readonly",
+                    readonlybackground="#F8F8F8",
+                    foreground="#888888",
+                )
+                cat_entry.grid(row=0, column=3, sticky="ew", pady=(4, 2))
+
+                prod_label = tk.Label(
+                    example,
+                    text="Producties:",
+                    background="#FFFFFF",
+                )
+                prod_label.grid(row=1, column=2, sticky="e", padx=(0, 4), pady=(2, 4))
+                prod_entry_var = tk.StringVar(value="Lasercutting, Tube laser")
+                prod_entry = tk.Entry(
+                    example,
+                    textvariable=prod_entry_var,
+                    width=40,
+                    state="readonly",
+                    readonlybackground="#F8F8F8",
+                    foreground="#888888",
+                )
+                prod_entry.grid(row=1, column=3, sticky="ew", pady=(2, 4))
+
+                help_label = tk.Label(
+                    example,
+                    text="Klik op dit voorbeeldblok om het om te zetten naar een echt blok dat je kunt bewerken.",
                     anchor="w",
                     justify="left",
-                    foreground="#5D6670",
+                    foreground="#888888",
+                    background="#FFFFFF",
+                    font=(None, 8),
                 )
-                empty.pack(fill="x", padx=8, pady=8)
+                help_label.grid(row=2, column=0, columnspan=4, sticky="ew", padx=8, pady=(4, 8))
+
+                for widget in (example, handle, number, cat_label, cat_entry, prod_label, prod_entry, help_label):
+                    widget.bind("<Button-1>", self._convert_example_to_real_section, add="+")
+
                 return
 
             for index, section in enumerate(self.sections):
@@ -9336,7 +9423,7 @@ def start_gui():
                 identifiers_var = tk.StringVar(value=", ".join(section.identifiers))
                 unmatched_var = tk.IntVar(value=1 if section.include_unmatched else 0)
 
-                name_label = tk.Label(row, text="Blok:", background=row.cget("background"))
+                name_label = tk.Label(row, text="Categorie:", background=row.cget("background"))
                 name_label.grid(
                     row=0,
                     column=2,
@@ -9344,8 +9431,16 @@ def start_gui():
                     padx=(0, 4),
                     pady=(4, 2),
                 )
+                _HelpTooltip(
+                    name_label,
+                    "Categorie naam voor het werkdossier. Gebruik dezelfde naam om meerdere producties te groeperen.",
+                )
                 name_entry = ttk.Entry(row, textvariable=name_var, width=26)
                 name_entry.grid(row=0, column=3, sticky="ew", pady=(4, 2))
+                _HelpTooltip(
+                    name_entry,
+                    "Categorie naam voor het werkdossier. Gebruik dezelfde naam om meerdere producties te groeperen.",
+                )
                 identifiers_label = tk.Label(
                     row,
                     text="Producties:",
@@ -9500,8 +9595,8 @@ def start_gui():
     class PdfWorkDossierOptionsFrame(tk.Frame):
         MODE_WORKDOSSIER = "Werkdossier (een PDF)"
         MODE_PER_PRODUCTION = "Aparte PDF per productie"
-        MODE_ALPHABETIC_SINGLE = "Een PDF alfabetisch"
-        NO_PRESET_LABEL = "(Geen preset - PDF-namen alfabetisch)"
+        MODE_ALPHABETIC_SINGLE = "PDF alfabetisch (alle bestanden)"
+        NO_PRESET_LABEL = "(Blanco template)"
         ROLE_LABELS = {
             "bom": "BOM",
             "drawing": "Tekening",
@@ -9585,9 +9680,8 @@ def start_gui():
             self.mode_combo.bind("<<ComboboxSelected>>", lambda _e: self._sync_mode())
             self._option_widgets.append(self.mode_combo)
 
-            tk.Label(form, text="Volgorde preset:").grid(
-                row=1, column=0, sticky="e", padx=(0, 6), pady=3
-            )
+            self.preset_label = tk.Label(form, text="Volgorde preset:")
+            self.preset_label.grid(row=1, column=0, sticky="e", padx=(0, 6), pady=3)
             self.preset_combo = ttk.Combobox(
                 form,
                 textvariable=self.preset_var,
@@ -9597,9 +9691,32 @@ def start_gui():
             self.preset_combo.grid(row=1, column=1, sticky="ew", pady=3)
             self.preset_combo.bind("<<ComboboxSelected>>", self._on_preset_selected)
             self._option_widgets.append(self.preset_combo)
+            _HelpTooltip(
+                self.preset_combo,
+                "Blanco template start zonder categorieën. Elke categorie wordt alfabetisch gesorteerd, "
+                "en de volgorde van de categorieën bepaalt de volgorde in het werkdossier.",
+            )
+            _HelpTooltip(
+                self.mode_combo,
+                "Werkdossier: gebruik een preset voor categorieën en volgorde. "
+                "Aparte PDF per productie: maak per productie een PDF, met producties alfabetisch gerangschikt. "
+                "PDF alfabetisch: geen preset, alle bestanden alfabetisch gesorteerd.",
+            )
+
+            tk.Label(
+                form,
+                text=(
+                    "Elke categorie wordt alfabetisch gesorteerd. De volgorde van de categorieën "
+                    "bepaalt de volgorde van de blokken in het werkdossier."
+                ),
+                anchor="w",
+                justify="left",
+                foreground="#5D6670",
+                wraplength=580,
+            ).grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 
             options = tk.LabelFrame(form, text="Opties", labelanchor="n")
-            options.grid(row=2, column=1, sticky="ew", pady=(6, 0))
+            options.grid(row=3, column=1, sticky="ew", pady=(6, 0))
             options.columnconfigure(0, weight=1)
             self.include_order_docs_check = tk.Checkbutton(
                 options,
@@ -9627,7 +9744,7 @@ def start_gui():
             )
 
             export_box = tk.LabelFrame(form, text="Exportbestand", labelanchor="n")
-            export_box.grid(row=3, column=1, sticky="ew", pady=(8, 0))
+            export_box.grid(row=4, column=1, sticky="ew", pady=(8, 0))
             export_box.columnconfigure(1, weight=1)
             tk.Label(export_box, text="Naam:").grid(
                 row=0, column=0, sticky="e", padx=(8, 6), pady=(6, 2)
@@ -9806,6 +9923,12 @@ def start_gui():
         def _sync_mode(self) -> None:
             is_workdossier = self.mode_var.get() == self.MODE_WORKDOSSIER
             readonly = "readonly" if is_workdossier and not self._busy else "disabled"
+            if is_workdossier:
+                self.preset_label.grid()
+                self.preset_combo.grid()
+            else:
+                self.preset_label.grid_remove()
+                self.preset_combo.grid_remove()
             self.preset_combo.configure(state=readonly)
             self.include_order_docs_check.configure(
                 state="normal" if is_workdossier and not self._busy else "disabled"
@@ -11116,10 +11239,13 @@ def start_gui():
 
             self.item_links: Dict[str, str] = {}
 
-            # Actions
+            # Actions and status
             ttk.Separator(main_footer, orient="horizontal").pack(fill="x", padx=8)
-            act = tk.Frame(main_footer)
-            act.pack(fill="x", padx=8, pady=(8, 4))
+            footer_row = tk.Frame(main_footer)
+            footer_row.pack(fill="x", padx=8, pady=(8, 8))
+
+            act = tk.Frame(footer_row)
+            act.pack(side="left", fill="x", expand=True)
             button_style = dict(
                 bg=MANUFACT_BRAND_COLOR,
                 activebackground="#F4C46C",
@@ -11146,15 +11272,14 @@ def start_gui():
                 act, text="PDF combineren", command=self._combine_pdf, **button_style
             ).pack(side="left", padx=6)
 
-            # Status
-            self.status_var = tk.StringVar(value="Klaar")
-            status_row = tk.Frame(main_footer)
-            status_row.pack(fill="x", padx=8, pady=(0, 8))
+            self.status_var = tk.StringVar(value="Klaar voor gebruik")
+            status_row = tk.Frame(footer_row)
+            status_row.pack(side="right", fill="x")
             tk.Label(
                 status_row,
                 textvariable=self.status_var,
-                anchor="w",
-            ).pack(side="left", fill="x", expand=True)
+                anchor="e",
+            ).pack(side="left", padx=(0, 20), fill="x", expand=True)
             tk.Label(
                 status_row,
                 text=f"Versie {APP_VERSION}",
@@ -12055,13 +12180,56 @@ def start_gui():
                 pady=8,
             )
             text_widget.pack(fill="both", expand=True, padx=16, pady=(0, 8))
-            text_widget.insert("1.0", "\n".join(content))
+
+            text_widget.tag_configure(
+                "question",
+                font=("TkDefaultFont", 10, "bold"),
+                foreground="#1F2937",
+                lmargin1=4,
+                lmargin2=4,
+            )
+            text_widget.tag_configure(
+                "answer",
+                font=("TkDefaultFont", 10),
+                foreground="#374151",
+                lmargin1=12,
+                lmargin2=12,
+            )
+
+            for entry in FAQ_ENTRIES:
+                text_widget.insert("end", f"Q: {entry['question']}\n", "question")
+                text_widget.insert("end", f"A: {entry['answer']}\n\n", "answer")
+
             text_widget.config(state="disabled")
 
             close_btn = tk.Button(win, text="Sluiten", command=win.destroy)
             close_btn.pack(anchor="e", padx=16, pady=(0, 12))
             win.transient(self)
             win.grab_set()
+
+        def _open_visual_quick_manual(self) -> None:
+            """Open the visual quick-start markdown file."""
+            import os
+            import tkinter as tk
+            from tkinter import messagebox
+            from pathlib import Path
+
+            doc_path = Path(__file__).resolve().parent / "docs" / "quick_start_visual.md"
+            if doc_path.exists():
+                try:
+                    os.startfile(str(doc_path))
+                    return
+                except Exception:
+                    pass
+            try:
+                import webbrowser
+                webbrowser.open(doc_path.as_uri())
+            except Exception as exc:
+                messagebox.showerror(
+                    "Fout",
+                    f"Kon de visuele quick manual niet openen.\n{doc_path}\n{exc}",
+                    parent=self,
+                )
 
         def _show_about_dialog(self) -> None:
             """Show about dialog."""
@@ -15369,13 +15537,18 @@ def start_gui():
                 on_prepare_orders=self._prepare_pdf_order_documents,
             )
             self.pdf_workdossier_options_frame.grid(row=0, column=0, sticky="nsew")
+            self.pdf_workdossier_options_frame.subtabs.bind(
+                "<<NotebookTabChanged>>",
+                lambda _event: self._update_pdf_workdossier_actions_visibility(),
+            )
 
             actions = tk.Frame(frame)
+            self.pdf_workdossier_actions_frame = actions
             actions.grid(row=1, column=0, sticky="ew", pady=(10, 0))
             actions.columnconfigure(1, weight=1)
             self.pdf_workdossier_refresh_button = ttk.Button(
                 actions,
-                text="Voorbeeld vernieuwen",
+                text="Tabel bijwerken",
                 command=self._refresh_pdf_workdossier_preview,
             )
             self.pdf_workdossier_refresh_button.grid(row=0, column=0, sticky="w", padx=(0, 8))
@@ -15407,7 +15580,16 @@ def start_gui():
                 pady=6,
             )
             self.pdf_workdossier_export_button.grid(row=0, column=3, sticky="e")
+            self._update_pdf_workdossier_actions_visibility()
             self.after_idle(self._refresh_pdf_workdossier_preview)
+
+        def _update_pdf_workdossier_actions_visibility(self) -> None:
+            selected_tab = self.pdf_workdossier_options_frame.subtabs.select()
+            work_tab_id = str(self.pdf_workdossier_options_frame.work_tab)
+            if selected_tab == work_tab_id:
+                self.pdf_workdossier_actions_frame.grid()
+            else:
+                self.pdf_workdossier_actions_frame.grid_remove()
 
         def _schedule_pdf_workdossier_preview(self, *_args) -> None:
             after_id = getattr(self, "_pdf_preview_after_id", None)
