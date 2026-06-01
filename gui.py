@@ -9954,11 +9954,15 @@ def start_gui():
             for built_in in built_ins:
                 self._preset_map[built_in.name] = built_in
                 base_choices.append(built_in.name)
+            
+            # Verzamel alle custom presets met correcte labels
+            custom_labels = {}  # name -> label_in_dropdown
             for preset in self.presets_db.presets_sorted():
                 label = preset.name
                 if label in self._preset_map:
                     label = f"{preset.name} (opgeslagen)"
                 self._preset_map[label] = preset
+                custom_labels[preset.name] = label
                 base_choices.append(label)
             self.preset_combo.configure(values=base_choices)
 
@@ -9966,9 +9970,7 @@ def start_gui():
             for built_in in built_ins:
                 full_choices.append(built_in.name)
             for preset in self.presets_db.presets_sorted():
-                label = preset.name
-                if label in self._preset_map:
-                    label = f"{preset.name} (opgeslagen)"
+                label = custom_labels.get(preset.name, preset.name)
                 full_choices.append(label)
             self.preset_editor_combo.configure(values=full_choices)
 
