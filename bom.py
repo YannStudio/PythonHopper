@@ -79,12 +79,13 @@ def load_bom(path: str) -> pd.DataFrame:
         engine = "openpyxl" if path.lower().endswith(".xlsx") else None
         df = pd.read_excel(path, engine=engine)
 
+    column_lookup = {str(c).lower(): c for c in df.columns}
+
     def need(colname: str) -> str:
-        low = {c.lower(): c for c in df.columns}
         lc = colname.lower()
-        if lc not in low:
+        if lc not in column_lookup:
             raise ValueError(f"BOM mist kolom: {colname}")
-        return low[lc]
+        return column_lookup[lc]
 
     pn_c = need("PartNumber")
     try:
@@ -97,10 +98,9 @@ def load_bom(path: str) -> pd.DataFrame:
         pr_c = None
 
     def find_any(names: List[str]) -> Optional[str]:
-        low = {c.lower(): c for c in df.columns}
         for n in names:
-            if n.lower() in low:
-                return low[n.lower()]
+            if n.lower() in column_lookup:
+                return column_lookup[n.lower()]
         return None
 
     aantal_col = find_any(["Aantal", "Qty", "Qty.", "Quantity", "Stuks"])

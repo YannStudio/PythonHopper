@@ -9692,9 +9692,16 @@ def start_gui():
                 anchor="w",
                 justify="left",
                 foreground="#5D6670",
-                wraplength=360,
+                wraplength=720,
             )
-            self.mode_info_label.grid(row=0, column=2, sticky="w", padx=(12, 0), pady=3)
+            self.mode_info_label.grid(
+                row=0,
+                column=2,
+                rowspan=2,
+                sticky="w",
+                padx=(18, 0),
+                pady=3,
+            )
 
             self.preset_label = tk.Label(form, text="Volgorde preset:")
             self.preset_label.grid(row=1, column=0, sticky="e", padx=(0, 6), pady=3)
@@ -9720,7 +9727,7 @@ def start_gui():
             )
 
             options = tk.LabelFrame(form, text="Opties", labelanchor="n")
-            options.grid(row=3, column=1, sticky="ew", pady=(6, 0))
+            options.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(10, 0))
             options.columnconfigure(0, weight=1)
             self.include_order_docs_check = tk.Checkbutton(
                 options,
@@ -9748,7 +9755,7 @@ def start_gui():
             )
 
             export_box = tk.LabelFrame(form, text="Exportbestand", labelanchor="n")
-            export_box.grid(row=4, column=1, sticky="ew", pady=(8, 0))
+            export_box.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(8, 0))
             export_box.columnconfigure(1, weight=1)
             tk.Label(export_box, text="Naam:").grid(
                 row=0, column=0, sticky="e", padx=(8, 6), pady=(6, 2)
@@ -9768,7 +9775,7 @@ def start_gui():
             ).grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=(2, 6))
 
             self.order_flow_frame = tk.Frame(form)
-            self.order_flow_frame.grid(row=4, column=1, sticky="ew", pady=(8, 0))
+            self.order_flow_frame.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(6, 0))
             self.order_flow_frame.columnconfigure(0, weight=1)
             self.order_flow_label = tk.Label(
                 self.order_flow_frame,
@@ -9788,7 +9795,7 @@ def start_gui():
             self.order_flow_frame.grid_remove()
 
             preview = tk.LabelFrame(form, text="Voorbeeldvolgorde", labelanchor="n")
-            preview.grid(row=6, column=0, columnspan=2, sticky="nsew", pady=(10, 0))
+            preview.grid(row=6, column=0, columnspan=3, sticky="nsew", pady=(10, 0))
             preview.columnconfigure(0, weight=1)
             preview.rowconfigure(0, weight=1)
             columns = ("nr", "section", "production", "role", "filename")
@@ -10489,6 +10496,8 @@ def start_gui():
             self._last_selected_notebook_tab = ""
             self.nb.bind("<<NotebookTabChanged>>", self._handle_tab_changed, add="+")
             self.custom_bom_tab: Optional[BOMCustomTab] = None
+            self._custom_bom_needs_sync = False
+            self._bom_load_in_progress = False
             self._custom_bom_placeholder = tk.Frame(
                 self.nb, background=tabs_background
             )
@@ -10579,6 +10588,10 @@ def start_gui():
 
             self._opticutter_refresh_after_id: Optional[str] = None
             self._opticutter_dirty = False
+            self._opticutter_needs_refresh = False
+            self._opticutter_analysis_stale = True
+            self._opticutter_refresh_generation = 0
+            self._opticutter_analysis_refresh_running = False
             self._opticutter_toast_window = None
             self._opticutter_toast_after_id = None
             self.opticutter_kerf_var.trace_add(
@@ -12277,6 +12290,7 @@ def start_gui():
                 return
 
             self._handle_opticutter_tab_transition(previous, selected)
+            self._refresh_opticutter_if_needed(selected)
             self._last_selected_notebook_tab = str(selected or "")
 
         def _is_opticutter_tab(self, tab_id: object) -> bool:
@@ -12286,6 +12300,161 @@ def start_gui():
                 and opticutter_frame is not None
                 and str(tab_id) == str(opticutter_frame)
             )
+
+        def _apply_opticutter_analysis_state(self, analysis) -> None:
+            self.opticutter_last_analysis = analysis
+            if analysis is None or not getattr(analysis, "profiles", None):
+                self.opticutter_profile_selection_scenarios = {}
+                self.opticutter_profile_selection_choice.clear()
+                return
+
+            valid_keys = {profile.key for profile in analysis.profiles}
+            for stored_key in list(self.opticutter_profile_custom_lengths.keys()):
+                if stored_key not in valid_keys:
+                    self.opticutter_profile_custom_lengths.pop(stored_key, None)
+            for stored_key in list(self.opticutter_profile_selection_choice.keys()):
+                if stored_key not in valid_keys:
+                    self.opticutter_profile_selection_choice.pop(stored_key, None)
+
+            selection_scenarios = {}
+            for profile in analysis.profiles:
+                selection_scenarios[profile.key] = profile.scenarios
+                available_values = set(profile.scenarios.keys()) | {"input"}
+                previous_choice = self.opticutter_profile_selection_choice.get(
+                    profile.key
+                )
+                selected_value = (
+                    previous_choice
+                    if previous_choice in available_values
+                    else profile.best_choice
+                )
+                self.opticutter_profile_selection_choice[profile.key] = selected_value
+            self.opticutter_profile_selection_scenarios = selection_scenarios
+
+        def _compute_opticutter_analysis_snapshot(
+            self,
+            bom_df_snapshot: Optional["pd.DataFrame"],
+            kerf_mm: float,
+            custom_stock_mm: Optional[int],
+            manual_lengths: Dict[tuple[str, str, str], int],
+        ):
+            if bom_df_snapshot is None or bom_df_snapshot.empty:
+                return None
+            return analyse_profiles(
+                bom_df_snapshot,
+                kerf_mm=kerf_mm,
+                custom_stock_mm=custom_stock_mm,
+                manual_lengths=manual_lengths,
+            )
+
+        def _ensure_opticutter_analysis_current(self) -> None:
+            if not getattr(self, "_opticutter_analysis_stale", True):
+                return
+
+            self._opticutter_refresh_generation += 1
+            self._opticutter_analysis_refresh_running = False
+            bom_df = self.bom_df
+            bom_df_snapshot = (
+                bom_df.copy(deep=True)
+                if bom_df is not None and not bom_df.empty
+                else None
+            )
+            analysis = self._compute_opticutter_analysis_snapshot(
+                bom_df_snapshot,
+                self._get_opticutter_kerf_mm(),
+                self._get_opticutter_custom_stock_mm(),
+                dict(self.opticutter_profile_custom_lengths),
+            )
+            self._apply_opticutter_analysis_state(analysis)
+            self._opticutter_analysis_stale = False
+
+        def _start_background_opticutter_analysis_refresh(self) -> None:
+            self._opticutter_refresh_generation += 1
+            generation = self._opticutter_refresh_generation
+            self._opticutter_analysis_stale = True
+
+            bom_df = self.bom_df
+            bom_df_snapshot = (
+                bom_df.copy(deep=True)
+                if bom_df is not None and not bom_df.empty
+                else None
+            )
+            kerf_mm = self._get_opticutter_kerf_mm()
+            custom_stock_mm = self._get_opticutter_custom_stock_mm()
+            manual_lengths = dict(self.opticutter_profile_custom_lengths)
+
+            if bom_df_snapshot is None:
+                self._apply_opticutter_analysis_state(None)
+                self._opticutter_analysis_stale = False
+                self._opticutter_analysis_refresh_running = False
+                return
+
+            self._opticutter_analysis_refresh_running = True
+
+            def work() -> None:
+                try:
+                    analysis = self._compute_opticutter_analysis_snapshot(
+                        bom_df_snapshot,
+                        kerf_mm,
+                        custom_stock_mm,
+                        manual_lengths,
+                    )
+                except Exception as exc:
+                    analysis = None
+                    print(
+                        f"Kon Opticutter-analyse niet bijwerken: {exc}",
+                        file=sys.stderr,
+                    )
+
+                def apply() -> None:
+                    if generation != getattr(
+                        self, "_opticutter_refresh_generation", generation
+                    ):
+                        return
+                    self._opticutter_analysis_refresh_running = False
+                    self._apply_opticutter_analysis_state(analysis)
+                    self._opticutter_analysis_stale = False
+                    try:
+                        selected = self.nb.select()
+                    except Exception:
+                        selected = None
+                    if self._is_opticutter_tab(selected):
+                        self._opticutter_needs_refresh = False
+                        self._refresh_opticutter_table(analysis_override=analysis)
+                    else:
+                        self._opticutter_needs_refresh = True
+
+                try:
+                    self.after(0, apply)
+                except tk.TclError:
+                    pass
+
+            threading.Thread(
+                target=work,
+                name="OpticutterAnalysisRefresh",
+                daemon=True,
+            ).start()
+
+        def _refresh_opticutter_if_needed(self, selected_tab: object = None) -> None:
+            if not getattr(self, "_opticutter_needs_refresh", False):
+                return
+            tab_id = selected_tab
+            if tab_id is None:
+                try:
+                    tab_id = self.nb.select()
+                except Exception:
+                    tab_id = None
+            if not self._is_opticutter_tab(tab_id):
+                return
+            self._opticutter_needs_refresh = False
+            analysis = None
+            if not getattr(self, "_opticutter_analysis_stale", True):
+                analysis = getattr(self, "opticutter_last_analysis", None)
+            self._refresh_opticutter_table(analysis_override=analysis)
+
+        def _request_opticutter_refresh(self) -> None:
+            self._opticutter_needs_refresh = True
+            self._start_background_opticutter_analysis_refresh()
 
         def _handle_opticutter_tab_transition(
             self,
@@ -12332,6 +12501,11 @@ def start_gui():
             else:
                 self.nb.insert(insert_index, tab, text="Custom BOM")
             self.custom_bom_tab = tab
+            if self._autofill_custom_bom_enabled() and (
+                getattr(self, "_custom_bom_needs_sync", False)
+                or self.bom_df is not None
+            ):
+                self._load_current_bom_into_custom_tab(tab)
             return tab
 
         def _select_custom_bom_tab(self) -> None:
@@ -12372,31 +12546,41 @@ def start_gui():
                     pass
             return bool(getattr(self.settings, "autofill_custom_bom", True))
 
-        def _sync_custom_bom_from_main(self) -> None:
-            """Update the Custom BOM tab so it mirrors the main BOM."""
-
-            tab = getattr(self, "custom_bom_tab", None)
-            if tab is None:
-                tab = self._ensure_custom_bom_tab()
-            if not self._autofill_custom_bom_enabled():
-                return
-
+        def _load_current_bom_into_custom_tab(self, tab: "BOMCustomTab") -> None:
             df = self.bom_df
             if df is None:
-                empty = pd.DataFrame(columns=BOMCustomTab.MAIN_COLUMN_ORDER)
-            else:
-                empty = df
+                df = pd.DataFrame(columns=BOMCustomTab.MAIN_COLUMN_ORDER)
 
             try:
-                tab.load_from_main_dataframe(empty)
+                tab.load_from_main_dataframe(df)
             except Exception as exc:
                 print(
                     f"Kon custom BOM niet vullen vanuit hoofd-BOM: {exc}",
                     file=sys.stderr,
                 )
+            finally:
+                self._custom_bom_needs_sync = False
 
-        def _load_bom_from_path(self, path: str, *, mark_as_custom: bool = False) -> None:
-            df = load_bom(path)
+        def _sync_custom_bom_from_main(self) -> None:
+            """Update the Custom BOM tab so it mirrors the main BOM."""
+
+            if not self._autofill_custom_bom_enabled():
+                self._custom_bom_needs_sync = False
+                return
+
+            tab = getattr(self, "custom_bom_tab", None)
+            if tab is None:
+                self._custom_bom_needs_sync = self.bom_df is not None
+                return
+            self._load_current_bom_into_custom_tab(tab)
+
+        def _apply_loaded_bom(
+            self,
+            path: str,
+            df: "pd.DataFrame",
+            *,
+            mark_as_custom: bool = False,
+        ) -> None:
             if "Bestanden gevonden" not in df.columns:
                 df["Bestanden gevonden"] = ""
             if "Status" not in df.columns:
@@ -12414,6 +12598,10 @@ def start_gui():
             self.status_var.set(f"BOM geladen: {len(df)} rijen")
             self._sync_custom_bom_from_main()
 
+        def _load_bom_from_path(self, path: str, *, mark_as_custom: bool = False) -> None:
+            df = load_bom(path)
+            self._apply_loaded_bom(path, df, mark_as_custom=mark_as_custom)
+
         def _load_bom(self):
             from tkinter import filedialog, messagebox
 
@@ -12424,10 +12612,46 @@ def start_gui():
             )
             if not path:
                 return
-            try:
-                self._load_bom_from_path(path)
-            except Exception as e:
-                messagebox.showerror("Fout", str(e))
+            if getattr(self, "_bom_load_in_progress", False):
+                messagebox.showinfo(
+                    "BOM wordt geladen",
+                    "Er wordt al een BOM geladen. Wacht tot die klaar is.",
+                    parent=self,
+                )
+                return
+
+            self._bom_load_in_progress = True
+            self.status_var.set("BOM laden...")
+
+            def work() -> None:
+                try:
+                    df = load_bom(path)
+                except Exception as exc:
+                    error_message = str(exc)
+
+                    def on_error(message: str = error_message) -> None:
+                        self._bom_load_in_progress = False
+                        messagebox.showerror("Fout", message, parent=self)
+
+                    try:
+                        self.after(0, on_error)
+                    except tk.TclError:
+                        pass
+                    return
+
+                def on_loaded(loaded_df: "pd.DataFrame" = df) -> None:
+                    self._bom_load_in_progress = False
+                    try:
+                        self._apply_loaded_bom(path, loaded_df)
+                    except Exception as exc:
+                        messagebox.showerror("Fout", str(exc), parent=self)
+
+                try:
+                    self.after(0, on_loaded)
+                except tk.TclError:
+                    pass
+
+            threading.Thread(target=work, name="BOMLoader", daemon=True).start()
 
         def _on_custom_bom_ready(self, path: "Path", _row_count: int) -> None:
             from tkinter import messagebox
@@ -12622,7 +12846,7 @@ def start_gui():
                             context_kind="Afwerking",
                         )
 
-            self._refresh_opticutter_table()
+            self._ensure_opticutter_analysis_current()
             opticutter_analysis = getattr(self, "opticutter_last_analysis", None)
             scenarios_ready = bool(self.opticutter_profile_selection_scenarios)
 
@@ -12651,7 +12875,7 @@ def start_gui():
                         self.opticutter_profile_selection_scenarios[profile.key] = (
                             profile.scenarios
                         )
-                    self._refresh_opticutter_table()
+                    self._ensure_opticutter_analysis_current()
                     opticutter_analysis = getattr(self, "opticutter_last_analysis", None)
                     scenarios_ready = bool(self.opticutter_profile_selection_scenarios)
 
@@ -12780,7 +13004,7 @@ def start_gui():
                     return
 
                 client = self._current_client()
-                self._refresh_opticutter_table()
+                self._ensure_opticutter_analysis_current()
                 opticutter_analysis_current = getattr(
                     self, "opticutter_last_analysis", None
                 )
@@ -13837,7 +14061,7 @@ def start_gui():
                 self._opticutter_selection_update_in_progress = False
                 self.opticutter_profile_selection_choice[key] = chosen
 
-        def _refresh_opticutter_table(self) -> None:
+        def _refresh_opticutter_table(self, analysis_override=None) -> None:
             after_id = getattr(self, "_opticutter_refresh_after_id", None)
             if after_id is not None:
                 try:
@@ -13878,27 +14102,49 @@ def start_gui():
 
             df = self.bom_df
             if df is None:
+                self._apply_opticutter_analysis_state(None)
+                self._opticutter_analysis_stale = False
+                self._opticutter_needs_refresh = False
                 self.opticutter_profile_selection_scenarios = {}
                 self._update_opticutter_selection_rows([])
                 return
             if df.empty:
                 if info_var is not None:
                     info_var.set("BOM is leeg. Geen profielen om te tonen.")
+                self._apply_opticutter_analysis_state(None)
+                self._opticutter_analysis_stale = False
+                self._opticutter_needs_refresh = False
                 self.opticutter_profile_selection_scenarios = {}
                 self._update_opticutter_selection_rows([])
                 return
 
-            kerf_mm = self._get_opticutter_kerf_mm()
-            custom_stock_mm = self._get_opticutter_custom_stock_mm()
-
-            manual_lengths = dict(self.opticutter_profile_custom_lengths)
-            analysis = analyse_profiles(
-                df,
-                kerf_mm=kerf_mm,
-                custom_stock_mm=custom_stock_mm,
-                manual_lengths=manual_lengths,
-            )
-            self.opticutter_last_analysis = analysis
+            if analysis_override is None:
+                self._opticutter_refresh_generation += 1
+                self._opticutter_analysis_refresh_running = False
+                kerf_mm = self._get_opticutter_kerf_mm()
+                custom_stock_mm = self._get_opticutter_custom_stock_mm()
+                analysis = analyse_profiles(
+                    df,
+                    kerf_mm=kerf_mm,
+                    custom_stock_mm=custom_stock_mm,
+                    manual_lengths=dict(self.opticutter_profile_custom_lengths),
+                )
+            else:
+                analysis = analysis_override
+                kerf_mm = getattr(analysis, "kerf_mm", self._get_opticutter_kerf_mm())
+                custom_stock_mm = getattr(
+                    analysis,
+                    "custom_stock_mm",
+                    self._get_opticutter_custom_stock_mm(),
+                )
+            self._apply_opticutter_analysis_state(analysis)
+            self._opticutter_analysis_stale = False
+            self._opticutter_needs_refresh = False
+            if analysis is None:
+                if info_var is not None:
+                    info_var.set("Geen Opticutter-analyse beschikbaar.")
+                self._update_opticutter_selection_rows([])
+                return
 
             valid_keys = {profile.key for profile in analysis.profiles}
             for stored_key in list(self.opticutter_profile_custom_lengths.keys()):
@@ -14310,7 +14556,7 @@ def start_gui():
             self.item_links.clear()
             for it in self.tree.get_children():
                 self.tree.delete(it)
-            self._refresh_opticutter_table()
+            self._request_opticutter_refresh()
             df = self.bom_df
             if df is None:
                 self.status_var.set("Geen BOM geladen.")
@@ -14457,7 +14703,7 @@ def start_gui():
                 except tk.TclError:
                     pass
 
-            self._refresh_opticutter_table()
+            self._request_opticutter_refresh()
 
 
             return "break" if event is not None else None
@@ -14925,7 +15171,7 @@ def start_gui():
             }
             sel_frame = None
 
-            self._refresh_opticutter_table()
+            self._ensure_opticutter_analysis_current()
             opticutter_analysis = getattr(self, "opticutter_last_analysis", None)
             scenarios_ready = bool(self.opticutter_profile_selection_scenarios)
 
@@ -14953,7 +15199,7 @@ def start_gui():
                     self.opticutter_profile_selection_scenarios[profile.key] = (
                         profile.scenarios
                     )
-                self._refresh_opticutter_table()
+                self._ensure_opticutter_analysis_current()
                 opticutter_analysis = getattr(self, "opticutter_last_analysis", None)
                 scenarios_ready = bool(self.opticutter_profile_selection_scenarios)
 
@@ -15004,7 +15250,7 @@ def start_gui():
                     return
                 current_bom = self.bom_df
                 client = self._current_client()
-                self._refresh_opticutter_table()
+                self._ensure_opticutter_analysis_current()
                 opticutter_analysis_current = getattr(
                     self, "opticutter_last_analysis", None
                 )
