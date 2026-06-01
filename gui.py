@@ -9691,6 +9691,7 @@ def start_gui():
 
             self._reload_presets()
             self._sync_mode()
+            self._on_preset_selected()
 
         def _build_work_tab(self) -> None:
             form = self.work_tab
@@ -10025,7 +10026,6 @@ def start_gui():
             else:
                 section_blocks = []
             self.sections_editor.set_sections(section_blocks)
-            self._sync_mode()
 
         def _parse_preset_from_form(self, name: str = "Aangepast") -> Optional[PdfWorkDossierPreset]:
             sections: List[PdfWorkDossierSection] = []
