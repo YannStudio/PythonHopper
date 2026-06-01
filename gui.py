@@ -9304,9 +9304,16 @@ def start_gui():
         def _convert_example_to_real_section(self, _event=None) -> None:
             if self.sections:
                 return
-            self.add_section("Parts", ["Lasercutting", "Tube laser"])
+            self.sections = [PdfWorkDossierSection("", [])]
             self._selected_index = 0
             self._render_sections()
+            first_row = self._row_controls[0] if self._row_controls else {}
+            name_entry = first_row.get("name_entry")
+            if name_entry is not None:
+                try:
+                    name_entry.focus_set()
+                except tk.TclError:
+                    pass
 
         def _render_sections(self) -> None:
             for child in self.inner.winfo_children():
@@ -9314,11 +9321,25 @@ def start_gui():
             self._row_controls = []
 
             if not self.sections:
+                bg = "#FFFFFF"
+                placeholder_entry_style = "Placeholder.TEntry"
+                try:
+                    style = ttk.Style(self)
+                    style.configure(placeholder_entry_style, foreground="#8A8F98")
+                    style.map(
+                        placeholder_entry_style,
+                        foreground=[
+                            ("readonly", "#8A8F98"),
+                            ("disabled", "#8A8F98"),
+                        ],
+                    )
+                except tk.TclError:
+                    placeholder_entry_style = "TEntry"
                 example = tk.Frame(
                     self.inner,
                     relief="solid",
                     borderwidth=1,
-                    background="#FFFFFF",
+                    background=bg,
                 )
                 example.pack(fill="x", padx=(2, 10), pady=3)
                 example.columnconfigure(3, weight=1)
@@ -9328,7 +9349,7 @@ def start_gui():
                     text="::",
                     width=3,
                     cursor="sb_v_double_arrow",
-                    background="#FFFFFF",
+                    background=bg,
                     foreground="#999999",
                 )
                 handle.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(4, 2), pady=4)
@@ -9337,7 +9358,7 @@ def start_gui():
                     text="1.",
                     width=4,
                     anchor="e",
-                    background="#FFFFFF",
+                    background=bg,
                     foreground="#999999",
                 )
                 number.grid(row=0, column=1, rowspan=2, sticky="ns", padx=(0, 6), pady=4)
@@ -9345,49 +9366,60 @@ def start_gui():
                 cat_label = tk.Label(
                     example,
                     text="Categorie:",
-                    background="#FFFFFF",
+                    background=bg,
                 )
                 cat_label.grid(row=0, column=2, sticky="e", padx=(0, 4), pady=(4, 2))
                 cat_entry_var = tk.StringVar(value="Parts")
-                cat_entry = tk.Entry(
+                cat_entry = ttk.Entry(
                     example,
                     textvariable=cat_entry_var,
                     width=26,
                     state="readonly",
-                    readonlybackground="#F8F8F8",
-                    foreground="#888888",
+                    style=placeholder_entry_style,
                 )
                 cat_entry.grid(row=0, column=3, sticky="ew", pady=(4, 2))
 
                 prod_label = tk.Label(
                     example,
                     text="Producties:",
-                    background="#FFFFFF",
+                    background=bg,
                 )
                 prod_label.grid(row=1, column=2, sticky="e", padx=(0, 4), pady=(2, 4))
                 prod_entry_var = tk.StringVar(value="Lasercutting, Tube laser")
-                prod_entry = tk.Entry(
+                prod_entry = ttk.Entry(
                     example,
                     textvariable=prod_entry_var,
-                    width=40,
                     state="readonly",
-                    readonlybackground="#F8F8F8",
-                    foreground="#888888",
+                    style=placeholder_entry_style,
                 )
                 prod_entry.grid(row=1, column=3, sticky="ew", pady=(2, 4))
-
-                help_label = tk.Label(
+                unmatched_var = tk.IntVar(value=0)
+                unmatched_check = tk.Checkbutton(
                     example,
-                    text="Klik op dit voorbeeldblok om het om te zetten naar een echt blok dat je kunt bewerken.",
-                    anchor="w",
-                    justify="left",
-                    foreground="#888888",
-                    background="#FFFFFF",
-                    font=(None, 8),
+                    text="Overige producties",
+                    variable=unmatched_var,
+                    background=bg,
+                    command=self._convert_example_to_real_section,
                 )
-                help_label.grid(row=2, column=0, columnspan=4, sticky="ew", padx=8, pady=(4, 8))
+                unmatched_check.grid(row=0, column=4, rowspan=2, sticky="w", padx=(8, 4))
+                delete_btn = ttk.Button(
+                    example,
+                    text="X",
+                    width=3,
+                    command=self._convert_example_to_real_section,
+                )
+                delete_btn.grid(row=0, column=5, rowspan=2, sticky="ns", padx=(0, 4), pady=4)
 
-                for widget in (example, handle, number, cat_label, cat_entry, prod_label, prod_entry, help_label):
+                for widget in (
+                    example,
+                    handle,
+                    number,
+                    cat_label,
+                    cat_entry,
+                    prod_label,
+                    prod_entry,
+                    unmatched_check,
+                ):
                     widget.bind("<Button-1>", self._convert_example_to_real_section, add="+")
 
                 return
@@ -9504,6 +9536,7 @@ def start_gui():
                         "identifiers_var": identifiers_var,
                         "unmatched_var": unmatched_var,
                         "row": row,
+                        "name_entry": name_entry,
                         "identifiers_entry": identifiers_entry,
                         "stateful_widgets": stateful_widgets,
                     }
@@ -9682,19 +9715,8 @@ def start_gui():
             self.mode_combo.bind("<<ComboboxSelected>>", lambda _e: self._sync_mode())
             self._option_widgets.append(self.mode_combo)
 
-            self.mode_info_label = tk.Label(
-                form,
-                text=(
-                    "Werkdossier: preset-gebaseerde categorieën. "
-                    "Aparte PDF per productie: per productie een alfabetische PDF. "
-                    "PDF alfabetisch: geen preset, alle bestanden alfabetisch."
-                ),
-                anchor="w",
-                justify="left",
-                foreground="#5D6670",
-                wraplength=720,
-            )
-            self.mode_info_label.grid(
+            self.mode_info_frame = tk.Frame(form)
+            self.mode_info_frame.grid(
                 row=0,
                 column=2,
                 rowspan=2,
@@ -9702,6 +9724,25 @@ def start_gui():
                 padx=(18, 0),
                 pady=3,
             )
+            tk.Label(
+                self.mode_info_frame,
+                text="Kies hoe het dossier wordt opgebouwd.",
+                anchor="w",
+                justify="left",
+                foreground="#263238",
+            ).pack(anchor="w")
+            tk.Label(
+                self.mode_info_frame,
+                text=(
+                    "Werkdossier gebruikt de presetvolgorde. "
+                    "Per productie maakt aparte PDF's. "
+                    "Alfabetisch sorteert alle bestanden op naam."
+                ),
+                anchor="w",
+                justify="left",
+                foreground="#5D6670",
+                wraplength=720,
+            ).pack(anchor="w", pady=(2, 0))
 
             self.preset_label = tk.Label(form, text="Volgorde preset:")
             self.preset_label.grid(row=1, column=0, sticky="e", padx=(0, 6), pady=3)
