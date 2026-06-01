@@ -10063,9 +10063,9 @@ def start_gui():
             self.presets_db.save(PDF_WORKDOSSIER_PRESETS_DB_FILE)
             self._reload_presets()
             self.preset_var.set(self._saved_preset_label(preset.name))
+            self._on_preset_selected()
             if callable(self.on_presets_changed):
                 self.on_presets_changed()
-                self.preset_var.set(self._saved_preset_label(preset.name))
             messagebox.showinfo("Preset bewaard", f"Preset '{preset.name}' is bewaard.", parent=self)
 
         def update_selected_preset(self) -> None:
@@ -10090,9 +10090,9 @@ def start_gui():
             self.presets_db.save(PDF_WORKDOSSIER_PRESETS_DB_FILE)
             self._reload_presets()
             self.preset_var.set(self._saved_preset_label(preset.name))
+            self._on_preset_selected()
             if callable(self.on_presets_changed):
                 self.on_presets_changed()
-                self.preset_var.set(self._saved_preset_label(preset.name))
             if was_saved:
                 message = f"Preset '{preset.name}' is bijgewerkt."
             else:
