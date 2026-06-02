@@ -1,8 +1,8 @@
 {
   "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Thissen/Steel block/cad/V3",
   "dest_folder": "C:/Users/jeroe/Desktop",
-  "project_number": "",
-  "project_name": "",
+  "project_number": "190610",
+  "project_name": "Bar Chair-Powdercoating",
   "file_extensions": [
     {
       "key": "pdf",
@@ -61,9 +61,9 @@
   "document_filename_profile": "custom",
   "document_filename_show_doc_type": true,
   "document_filename_show_doc_number": true,
-  "document_filename_show_context": true,
-  "document_filename_show_date": true,
-  "document_filename_compact_doc_number": true,
+  "document_filename_show_context": false,
+  "document_filename_show_date": false,
+  "document_filename_compact_doc_number": false,
   "document_filename_separator": "underscore",
   "document_display_compact_doc_number": true,
   "bundle_latest": false,

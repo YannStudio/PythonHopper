@@ -1,39 +1,25 @@
 {
   "doc_type": "Bestelbon",
   "doc_number": "BB-001",
-  "client": "Thissen Biljarts",
-  "supplier": "Productora",
+  "client": "* Jeroen Van Dooren GCV",
+  "supplier": "ML coating",
   "delivery": "Bestelling wordt opgehaald",
-  "context_label": "Balgeleiding",
+  "context_label": "Bar Chair-Powdercoating",
   "context_kind": "document",
-  "remark": "P25-001-V3-p28 dient afgelast te worden.\nOnderdelen dienen gelakt te worden.",
+  "remark": "Poederlakken in fijn structuur.",
   "items": [
     {
-      "PartNumber": "P25-001-V3-p27",
-      "Description": "Ball gutter",
-      "Materiaal": "ST235JR",
-      "Aantal": 1,
-      "Oppervlakte": 0.42,
-      "Gewicht": 3.23
-    },
-    {
-      "PartNumber": "P25-001-V3-p28",
-      "Description": "Ball box",
-      "Materiaal": "ST235JR",
-      "Aantal": 1,
-      "Oppervlakte": 0.56,
-      "Gewicht": 4.29
-    },
-    {
-      "PartNumber": "P25-001-V3-p03",
-      "Description": "Ball gutter",
-      "Materiaal": "ST235JR",
-      "Aantal": 1,
-      "Oppervlakte": 0.42,
-      "Gewicht": 3.23
+      "PartNumber": "190610_p07",
+      "Description": "Poeder coating - Bar chair frame - RAL 3022 FS",
+      "Materiaal": "S235JR",
+      "Aantal": 4,
+      "Oppervlakte": 0.5,
+      "Gewicht": 7.8,
+      "Eenheidsprijs": 87.5,
+      "Totaalprijs": 350
     }
   ],
-  "total_weight": 10.75,
+  "total_weight": 7.8,
   "template": "Standaard",
   "column_layout": [
     {
@@ -106,6 +92,30 @@
       "total_weight": true,
       "_display_chars": 12,
       "_min_width_px": 72
+    },
+    {
+      "key": "Eenheidsprijs",
+      "label": "Eenheidsprijs (€)",
+      "width": 14,
+      "justify": "right",
+      "numeric": true,
+      "stretch": false,
+      "wrap": false,
+      "weight": 1.3,
+      "_display_chars": 15,
+      "_min_width_px": 90
+    },
+    {
+      "key": "Totaalprijs",
+      "label": "Totaalprijs (€)",
+      "width": 14,
+      "justify": "right",
+      "numeric": true,
+      "stretch": false,
+      "wrap": false,
+      "weight": 1.3,
+      "_display_chars": 14,
+      "_min_width_px": 84
     }
   ]
 }
