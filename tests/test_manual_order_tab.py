@@ -153,7 +153,7 @@ class _FakeSuppliersDb:
         return supplier
 
 
-def test_refresh_data_uses_searchable_supplier_choices():
+def test_refresh_data_uses_supplier_choices():
     tab = ManualOrderTab.__new__(ManualOrderTab)
     tab.clients_db = None
     tab.suppliers_db = _FakeSuppliersDb()
@@ -161,15 +161,13 @@ def test_refresh_data_uses_searchable_supplier_choices():
     tab.client_var = _DummyVar("")
     tab.client_combo = _DummyCombo()
     tab.supplier_var = _DummyVar("Leverancier B")
-    tab.supplier_combo = _DummySearchableCombo()
+    tab.supplier_combo = _DummyCombo()
     tab.delivery_var = _DummyVar("")
     tab.delivery_combo = _DummyCombo()
 
     ManualOrderTab.refresh_data(tab)
 
-    assert tab.supplier_combo.set_choices_calls == [
-        ["Geen", "Leverancier A", "Leverancier B"]
-    ]
+    assert tab.supplier_combo.values == ["Geen", "Leverancier A", "Leverancier B"]
     assert tab.supplier_var.get() == "Leverancier B"
 
 

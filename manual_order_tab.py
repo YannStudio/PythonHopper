@@ -324,6 +324,7 @@ class SearchableCombobox(ttk.Combobox):
         except Exception:
             element = ""
         if "arrow" in _to_str(element).lower():
+            self._cancel_focus_out_commit()
             self._restore_values()
             self.after_idle(self._post_dropdown)
 
@@ -390,6 +391,7 @@ class SearchableCombobox(ttk.Combobox):
                 pass
 
     def _post_dropdown(self) -> None:
+        self._cancel_focus_out_commit()
         try:
             self.tk.call("ttk::combobox::Post", self._w)
         except Exception:
@@ -999,7 +1001,7 @@ class ManualOrderTab(tk.Frame):
             padx=(6, 0),
             pady=(8, 0),
         )
-        self.supplier_combo = SearchableCombobox(
+        self.supplier_combo = ttk.Combobox(
             supplier_field,
             textvariable=self.supplier_var,
             width=field_char_width,
@@ -1296,7 +1298,7 @@ class ManualOrderTab(tk.Frame):
                 for s in self.suppliers_db.suppliers_sorted()
             )
         current_supplier = self.supplier_var.get()
-        self.supplier_combo.set_choices(supplier_opts)
+        self.supplier_combo.configure(values=supplier_opts)
         if current_supplier not in supplier_opts:
             self.supplier_var.set("Geen")
 
