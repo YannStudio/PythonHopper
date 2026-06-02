@@ -157,16 +157,22 @@ def default_pdf_workdossier_preset() -> PdfWorkDossierPreset:
         name="Werkdossier standaard",
         sections=[
             PdfWorkDossierSection("Hoofdassembly", include_bom_pdf=True),
-            PdfWorkDossierSection("Assembly", ["Assembly", "Dummy assembly"]),
+            PdfWorkDossierSection(
+                "Assembly tekeningen",
+                ["Assembly", "Dummy assembly"],
+            ),
             PdfWorkDossierSection("Weld assembly", ["Weld assembly"]),
             PdfWorkDossierSection("Mount material", ["Mount material"]),
             PdfWorkDossierSection("Spare parts", ["Spare part", "Spare parts"]),
             PdfWorkDossierSection("Cutting", ["Cutting"]),
             PdfWorkDossierSection("Lasercutting", ["Lasercutting"]),
-            PdfWorkDossierSection("Tube laser", ["Tube laser"]),
-            PdfWorkDossierSection("Overige producties", include_unmatched=True),
+            PdfWorkDossierSection(
+                "Tube laserwerk",
+                ["Tube laser", "Tube laser L"],
+            ),
+            PdfWorkDossierSection("Overige", include_unmatched=True),
         ],
-        unmatched_section_name="Overige producties",
+        unmatched_section_name="Overige",
     )
 
 

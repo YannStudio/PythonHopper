@@ -84,7 +84,7 @@ def parse_exts(s: str, allowed_exts: Optional[Union[Iterable[str], str]] = None)
     return sorted(set(result))
 
 
-def cli_suppliers(args):
+def cli_suppliers(args: argparse.Namespace) -> int:
     db = SuppliersDB.load(SUPPLIERS_DB_FILE)
     if args.action == "list":
         rows = db.suppliers_sorted()
@@ -199,7 +199,7 @@ def cli_suppliers(args):
     return 2
 
 
-def cli_clients(args):
+def cli_clients(args: argparse.Namespace) -> int:
     db = ClientsDB.load(CLIENTS_DB_FILE)
     if args.action == "list":
         rows = db.clients_sorted()
@@ -279,7 +279,7 @@ def cli_clients(args):
     return 2
 
 
-def cli_delivery_addresses(args):
+def cli_delivery_addresses(args: argparse.Namespace) -> int:
     db = DeliveryAddressesDB.load(DELIVERY_DB_FILE)
     if args.action == "rename":
         addr = db.get(args.old_name)
@@ -300,7 +300,7 @@ def cli_delivery_addresses(args):
     return 2
 
 
-def cli_bom_check(args):
+def cli_bom_check(args: argparse.Namespace) -> int:
     exts = parse_exts(args.exts, args.allowed_exts)
     df = load_bom(args.bom)
     if not os.path.isdir(args.source):
@@ -335,7 +335,7 @@ def cli_bom_check(args):
     return 0
 
 
-def cli_copy(args):
+def cli_copy(args: argparse.Namespace) -> int:
     exts = parse_exts(args.exts, args.allowed_exts)
     if not os.path.isdir(args.source) or not os.path.isdir(args.dest):
         print("Bron of bestemming ongeldig")
@@ -351,7 +351,7 @@ def cli_copy(args):
     return 0
 
 
-def cli_copy_per_prod(args):
+def cli_copy_per_prod(args: argparse.Namespace) -> int:
     exts = parse_exts(args.exts, args.allowed_exts)
     df = load_bom(args.bom)
     db = SuppliersDB.load(SUPPLIERS_DB_FILE)

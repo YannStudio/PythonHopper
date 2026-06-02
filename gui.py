@@ -98,6 +98,7 @@ from orders import (
     write_order_excel,
     generate_pdf_order_platypus,
 )
+from progress import ProgressEvent
 from export_session_log import (
     EXPORT_SESSION_LOG_FILENAME,
     build_export_session_log,
@@ -11355,15 +11356,55 @@ def start_gui():
                 textvariable=self.status_var,
                 anchor="e",
             ).pack(side="left", padx=(0, 20), fill="x", expand=True)
-            tk.Label(
+            self.export_progress_var = tk.DoubleVar(master=self, value=0)
+            self.export_progress = ttk.Progressbar(
+                status_row,
+                variable=self.export_progress_var,
+                maximum=100,
+                mode="determinate",
+                length=150,
+            )
+            self.export_progress_label_var = tk.StringVar(master=self, value="")
+            self.export_progress_label = tk.Label(
+                status_row,
+                textvariable=self.export_progress_label_var,
+                width=5,
+                anchor="e",
+            )
+            self.version_label = tk.Label(
                 status_row,
                 text=f"Versie {APP_VERSION}",
                 anchor="e",
-            ).pack(side="right")
+            )
+            self.version_label.pack(side="right")
             self._refresh_document_filename_controls()
             self._sync_document_filename_profile_display()
             self._update_document_filename_preview()
             self._save_settings()
+
+        def _set_export_progress_visible(self, visible: bool) -> None:
+            progress = getattr(self, "export_progress", None)
+            label = getattr(self, "export_progress_label", None)
+            if progress is None or label is None:
+                return
+            try:
+                if visible:
+                    if not progress.winfo_manager():
+                        progress.pack(side="left", padx=(0, 6))
+                    if not label.winfo_manager():
+                        label.pack(side="left", padx=(0, 12))
+                else:
+                    progress.pack_forget()
+                    label.pack_forget()
+            except tk.TclError:
+                pass
+
+        def _apply_export_progress_event(self, event: ProgressEvent) -> None:
+            percentage = event.normalized_percent()
+            self._set_export_progress_visible(True)
+            self.export_progress_var.set(percentage)
+            self.export_progress_label_var.set(f"{percentage}%")
+            self.status_var.set(event.message)
 
         def _current_client(self) -> Optional[Client]:
             if not hasattr(self, "client_var"):
@@ -13213,6 +13254,18 @@ def start_gui():
 
                     self.after(0, apply)
 
+                def update_progress(event: ProgressEvent) -> None:
+                    def apply() -> None:
+                        self._apply_export_progress_event(event)
+                        if sel_frame is not None:
+                            try:
+                                if sel_frame.winfo_exists():
+                                    sel_frame.update_status(event.display_text())
+                            except tk.TclError:
+                                pass
+
+                    self.after(0, apply)
+
                 def set_busy_state(active: bool, message: Optional[str] = None) -> None:
                     def apply() -> None:
                         btn = getattr(self, "copy_per_prod_button", None)
@@ -13221,6 +13274,14 @@ def start_gui():
                                 btn.configure(state="disabled" if active else "normal")
                             except tk.TclError:
                                 pass
+                        if active:
+                            self._apply_export_progress_event(
+                                ProgressEvent(
+                                    "prepare",
+                                    message or "Export voorbereiden...",
+                                    percent=0,
+                                )
+                            )
                         if sel_frame is not None:
                             try:
                                 if sel_frame.winfo_exists():
@@ -13307,7 +13368,7 @@ def start_gui():
                             self.after(0, on_dry)
                             return
 
-                    update_status("KopiÃ«ren & bestelbonnen maken...")
+                    update_status("Kopiëren & bestelbonnen maken...")
                     if pdf_dossier_context:
                         update_status("Bon-PDF's voor PDF dossier maken...")
                     path_limit_messages: List[str] = []
@@ -13428,6 +13489,7 @@ def start_gui():
                             en1090_note=self.en1090_note_var.get(),
                             document_status_messages=document_status_lines,
                             generated_documents=generated_document_records,
+                            progress_callback=update_progress,
                         )
                         if export_state_snapshot is not None:
                             try:
@@ -13536,7 +13598,7 @@ def start_gui():
                             else str(chosen)
                         )
                         final_status = (
-                            f"Klaar. Gekopieerd: {cnt}. Leveranciers: {suppliers_text}. â†’ {bundle_dest}"
+                            f"Klaar. Gekopieerd: {cnt}. Leveranciers: {suppliers_text}. → {bundle_dest}"
                         )
                         update_status(final_status)
                         try:
@@ -13556,7 +13618,7 @@ def start_gui():
                                     f"Windows laat maximaal {_WINDOWS_MAX_PATH} tekens per pad toe; Filehopper voegt dan automatisch een korte code toe.",
                                     "",
                                 ]
-                                warning_lines.extend(f"â€¢ {msg}" for msg in path_limit_messages)
+                                warning_lines.extend(f"• {msg}" for msg in path_limit_messages)
                                 warning_lines.extend(
                                     [
                                         "",
@@ -14959,6 +15021,24 @@ def start_gui():
                             seen_part_numbers.add(pn)
                             part_numbers_for_export.append(pn)
 
+            source_folder_snapshot = self.source_folder
+            dest_folder_snapshot = self.dest_folder
+            project_number_snapshot = self.project_number_var.get().strip()
+            project_name_snapshot = self.project_name_var.get().strip()
+            bundle_latest_snapshot = bool(self.bundle_latest_var.get())
+            bundle_dry_run_snapshot = bool(self.bundle_dry_run_var.get())
+            date_prefix_snapshot = bool(self.export_date_prefix_var.get())
+            date_suffix_snapshot = bool(self.export_date_suffix_var.get())
+
+            def update_progress(event: ProgressEvent) -> None:
+                self.after(0, lambda: self._apply_export_progress_event(event))
+
+            def phase_percent(start: int, end: int, index: int, total: int) -> int:
+                if total <= 0:
+                    return start
+                fraction = max(0.0, min(1.0, index / total))
+                return int(round(start + (end - start) * fraction))
+
             def work(
                 token_prefix_text=custom_prefix_text,
                 token_suffix_text=custom_suffix_text,
@@ -14970,14 +15050,20 @@ def start_gui():
                 export_bom_enabled=bool(self.export_bom_var.get()),
                 export_related_enabled=bool(self.export_related_files_var.get()),
             ):
-                self.status_var.set("Bundelmap voorbereiden...")
+                update_progress(
+                    ProgressEvent(
+                        "prepare",
+                        "Bundelmap voorbereiden...",
+                        percent=0,
+                    )
+                )
                 try:
                     bundle = create_export_bundle(
-                        self.dest_folder,
-                        self.project_number_var.get().strip() or None,
-                        self.project_name_var.get().strip() or None,
-                        latest_symlink="latest" if self.bundle_latest_var.get() else False,
-                        dry_run=bool(self.bundle_dry_run_var.get()),
+                        dest_folder_snapshot,
+                        project_number_snapshot or None,
+                        project_name_snapshot or None,
+                        latest_symlink="latest" if bundle_latest_snapshot else False,
+                        dry_run=bundle_dry_run_snapshot,
                     )
                 except Exception as exc:
                     def on_error():
@@ -15009,14 +15095,23 @@ def start_gui():
                             lines.append(f"Snelkoppeling: {bundle.latest_symlink}")
                         messagebox.showinfo("Testrun", "\n".join(lines), parent=self)
                         self.status_var.set(f"Testrun - doelmap: {bundle_dest}")
+                        self._apply_export_progress_event(
+                            ProgressEvent(
+                                "dry_run",
+                                f"Testrun - doelmap: {bundle_dest}",
+                                percent=100,
+                            )
+                        )
 
                     self.after(0, on_dry)
                     return
 
-                self.status_var.set("Kopiëren...")
-                idx = _build_file_index(self.source_folder, exts)
-                date_prefix = bool(self.export_date_prefix_var.get())
-                date_suffix = bool(self.export_date_suffix_var.get())
+                update_progress(
+                    ProgressEvent("scan", "Bestanden zoeken...", percent=8)
+                )
+                idx = _build_file_index(source_folder_snapshot, exts)
+                date_prefix = date_prefix_snapshot
+                date_suffix = date_suffix_snapshot
                 prefix_text_clean = (token_prefix_text or "").strip()
                 suffix_text_clean = (token_suffix_text or "").strip()
                 prefix_active = bool(token_prefix_enabled) and bool(prefix_text_clean)
@@ -15050,21 +15145,47 @@ def start_gui():
                     new_stem = "-".join([p for p in parts if p])
                     return f"{new_stem}{ext}"
                 copied_paths: set[str] = set()
-                cnt = 0
+                files_to_copy: List[str] = []
                 for pn in export_part_numbers:
                     for p in idx.get(pn, []):
                         if p in copied_paths:
                             continue
                         copied_paths.add(p)
-                        name = _export_name(os.path.basename(p))
-                        dst = os.path.join(bundle_dest, name)
-                        shutil.copy2(p, dst)
-                        cnt += 1
+                        files_to_copy.append(p)
+                total_files = len(files_to_copy)
+                if total_files:
+                    update_progress(
+                        ProgressEvent(
+                            "files",
+                            f"Bestanden kopieren... 0 van {total_files}",
+                            percent=15,
+                            done=0,
+                            total=total_files,
+                        )
+                    )
+                cnt = 0
+                for file_index, p in enumerate(files_to_copy, start=1):
+                    name = _export_name(os.path.basename(p))
+                    dst = os.path.join(bundle_dest, name)
+                    shutil.copy2(p, dst)
+                    cnt += 1
+                    update_progress(
+                        ProgressEvent(
+                            "files",
+                            f"Bestand gekopieerd... {os.path.basename(p)}",
+                            percent=phase_percent(15, 78, file_index, total_files),
+                            done=file_index,
+                            total=total_files,
+                        )
+                    )
 
                 bom_written = False
                 related_copied = 0
 
                 if export_bom_enabled:
+                    update_progress(
+                        ProgressEvent("bom", "BOM exporteren...", percent=82)
+                    )
                     if bom_df_snapshot is None:
                         def on_error():
                             messagebox.showerror(
@@ -15098,15 +15219,38 @@ def start_gui():
 
                 if export_related_enabled and bom_source:
                     try:
-                        for src_file in find_related_bom_exports(bom_source, idx):
-                            if src_file in copied_paths:
-                                continue
+                        related_exports = [
+                            src_file
+                            for src_file in find_related_bom_exports(bom_source, idx)
+                            if src_file not in copied_paths
+                        ]
+                        related_total = len(related_exports)
+                        if related_total:
+                            update_progress(
+                                ProgressEvent(
+                                    "related_files",
+                                    f"Gerelateerde BOM-bestanden kopieren... 0 van {related_total}",
+                                    percent=90,
+                                    done=0,
+                                    total=related_total,
+                                )
+                            )
+                        for related_index, src_file in enumerate(related_exports, start=1):
                             copied_paths.add(src_file)
                             transformed = _export_name(os.path.basename(src_file))
                             dst = os.path.join(bundle_dest, transformed)
                             shutil.copy2(src_file, dst)
                             related_copied += 1
-                    except Exception:
+                            update_progress(
+                                ProgressEvent(
+                                    "related_files",
+                                    f"Gerelateerd BOM-bestand gekopieerd... {os.path.basename(src_file)}",
+                                    percent=phase_percent(90, 97, related_index, related_total),
+                                    done=related_index,
+                                    total=related_total,
+                                )
+                            )
+                    except Exception as exc:
                         def on_error():
                             messagebox.showerror(
                                 "Fout",
@@ -15117,6 +15261,10 @@ def start_gui():
 
                         self.after(0, on_error)
                         return
+
+                update_progress(
+                    ProgressEvent("done", "Export afgerond.", percent=100)
+                )
 
                 def on_done():
                     status_text = f"Klaar. Gekopieerd: {cnt} → {bundle_dest}"
@@ -15455,6 +15603,18 @@ def start_gui():
 
                     self.after(0, apply)
 
+                def update_progress(event: ProgressEvent) -> None:
+                    def apply() -> None:
+                        self._apply_export_progress_event(event)
+                        if sel_frame is not None:
+                            try:
+                                if sel_frame.winfo_exists():
+                                    sel_frame.update_status(event.display_text())
+                            except tk.TclError:
+                                pass
+
+                    self.after(0, apply)
+
                 def set_busy_state(active: bool, message: Optional[str] = None) -> None:
                     def apply() -> None:
                         btn = getattr(self, "copy_per_prod_button", None)
@@ -15463,6 +15623,14 @@ def start_gui():
                                 btn.configure(state="disabled" if active else "normal")
                             except tk.TclError:
                                 pass
+                        if active:
+                            self._apply_export_progress_event(
+                                ProgressEvent(
+                                    "prepare",
+                                    message or "Export voorbereiden...",
+                                    percent=0,
+                                )
+                            )
                         if sel_frame is not None:
                             try:
                                 if sel_frame.winfo_exists():
@@ -15622,6 +15790,7 @@ def start_gui():
                             en1090_note=self.en1090_note_var.get(),
                             document_status_messages=document_status_lines,
                             generated_documents=generated_document_records,
+                            progress_callback=update_progress,
                         )
                         if export_state_snapshot is not None:
                             try:
@@ -16141,22 +16310,35 @@ def start_gui():
                 except tk.TclError:
                     pass
             if running:
-                self.pdf_workdossier_progress_var.set(0)
-                self.pdf_workdossier_progress_label_var.set("0%")
+                self._set_pdf_progress_display(0, "PDF's combineren... 0%")
+
+        def _set_pdf_progress_display(
+            self,
+            percentage: int,
+            status_text: str | None = None,
+        ) -> None:
+            percentage = max(0, min(100, int(percentage)))
+            self.pdf_workdossier_progress_var.set(percentage)
+            self.pdf_workdossier_progress_label_var.set(f"{percentage}%")
+            if status_text is not None:
+                self.status_var.set(status_text)
 
         def _update_pdf_progress(self, done: int, total: int, path: str = "") -> None:
             percentage = 0
             if total > 0:
-                percentage = max(0, min(100, int((done / total) * 100)))
+                # PyPDF2 still has to write the combined output after all source
+                # PDFs are appended. Keep some room so 100% means fully finished.
+                percentage = max(0, min(95, int((done / total) * 100)))
             filename = os.path.basename(path) if path else ""
+            if total > 0 and done >= total:
+                status_text = "PDF opslaan..."
+            elif filename:
+                status_text = f"PDF's samenvoegen... {percentage}% - {filename}"
+            else:
+                status_text = f"PDF's samenvoegen... {percentage}%"
 
             def apply() -> None:
-                self.pdf_workdossier_progress_var.set(percentage)
-                self.pdf_workdossier_progress_label_var.set(f"{percentage}%")
-                if filename:
-                    self.status_var.set(f"PDF's combineren... {percentage}% - {filename}")
-                else:
-                    self.status_var.set(f"PDF's combineren... {percentage}%")
+                self._set_pdf_progress_display(percentage, status_text)
 
             self.after(0, apply)
 
@@ -16233,7 +16415,7 @@ def start_gui():
                 return
 
             self._set_pdf_action_running(True)
-            self.status_var.set("PDF's combineren... 0%")
+            self._set_pdf_progress_display(0, "PDF's combineren... 0%")
 
             def work() -> None:
                 try:
@@ -16278,6 +16460,11 @@ def start_gui():
                             generated_order_documents=generated_order_documents,
                             progress_callback=self._update_pdf_progress,
                         )
+
+                    def on_finalize() -> None:
+                        self._set_pdf_progress_display(98, "PDF dossier afronden...")
+
+                    self.after(0, on_finalize)
                 except ModuleNotFoundError:
                     def on_missing_module() -> None:
                         self.status_var.set("PyPDF2 ontbreekt")
@@ -16306,11 +16493,6 @@ def start_gui():
                     return
 
                 def on_done() -> None:
-                    self.pdf_workdossier_progress_var.set(100)
-                    self.pdf_workdossier_progress_label_var.set("100%")
-                    self.status_var.set(
-                        f"Gecombineerde pdf's: {result.count} -> {result.output_dir}"
-                    )
                     output_files = list(getattr(result, "output_files", []) or [])
                     open_pdf = bool(options.get("open_pdf"))
                     target_to_open = (
@@ -16321,8 +16503,13 @@ def start_gui():
                     message = "PDF's gecombineerd.\n\n" f"Map: {result.output_dir}"
                     if len(output_files) == 1:
                         message += f"\nPDF: {output_files[0]}"
-                    self._set_pdf_action_running(False)
+                    self._set_pdf_progress_display(98, "PDF voorbeeld bijwerken...")
                     self._refresh_pdf_workdossier_preview()
+                    self._set_pdf_progress_display(
+                        100,
+                        f"Gecombineerde pdf's: {result.count} -> {result.output_dir}",
+                    )
+                    self._set_pdf_action_running(False)
                     messagebox.showinfo("Klaar", message, parent=self)
                     self._open_export_path(target_to_open)
 
