@@ -58,7 +58,7 @@
   "custom_prefix_text": "",
   "custom_suffix_enabled": false,
   "custom_suffix_text": "",
-  "document_filename_profile": "short",
+  "document_filename_profile": "custom",
   "document_filename_show_doc_type": true,
   "document_filename_show_doc_number": true,
   "document_filename_show_context": true,

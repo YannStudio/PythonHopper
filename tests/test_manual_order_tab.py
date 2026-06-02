@@ -296,6 +296,35 @@ def test_searchable_combobox_typing_first_letter_filters_and_opens_dropdown():
     assert combo.focused is True
 
 
+def test_searchable_combobox_button_press_restores_all_choices_and_posts_dropdown():
+    combo = _make_searchable_combo([
+        "Geen",
+        "Alpha Lasers",
+        "Beta Works",
+    ], current="a")
+    combo.identify = lambda x, y: "arrow"
+    combo.event_generate = lambda event: combo.dropdown_calls.append(event)
+
+    SearchableCombobox._on_button_press(combo, type("Event", (), {"x": 0, "y": 0})())
+
+    assert combo.configured_values == ["Geen", "Alpha Lasers", "Beta Works"]
+    assert ("ttk::combobox::Post", "combo") in combo.dropdown_calls
+
+
+def test_searchable_combobox_post_dropdown_fallback_uses_down_event():
+    combo = _make_searchable_combo(["Geen", "Alpha Lasers"])
+
+    def fail_call(*args):
+        raise Exception("post failed")
+
+    combo.tk.call = fail_call
+    combo.event_generate = lambda event: combo.dropdown_calls.append(event)
+
+    SearchableCombobox._post_dropdown(combo)
+
+    assert combo.dropdown_calls == ["<Down>"]
+
+
 def test_searchable_combobox_keypress_replaces_existing_supplier_choice():
     combo = _make_searchable_combo(
         ["Geen", "Antwerp Steel", "Beta Works"],

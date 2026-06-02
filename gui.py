@@ -12373,6 +12373,14 @@ def start_gui():
                 self._last_selected_notebook_tab = str(tab)
                 return
 
+            # Refresh data when switching to the Bestelbon-editor tab to show new suppliers/clients/deliveries
+            manual_order_tab = getattr(self, "manual_order_tab", None)
+            if manual_order_tab is not None and selected and str(selected) == str(manual_order_tab):
+                try:
+                    manual_order_tab.refresh_data()
+                except Exception:
+                    pass
+
             self._handle_opticutter_tab_transition(previous, selected)
             self._refresh_opticutter_if_needed(selected)
             self._last_selected_notebook_tab = str(selected or "")

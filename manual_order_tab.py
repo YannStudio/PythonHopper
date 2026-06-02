@@ -262,13 +262,7 @@ class SearchableCombobox(ttk.Combobox):
             return
         if filtered:
             # Toon de dropdown zodat de gebruiker direct kan kiezen
-            try:
-                self.tk.call("ttk::combobox::Post", self._w)
-            except Exception:
-                try:
-                    self.event_generate("<Down>")
-                except Exception:
-                    pass
+            self.after_idle(self._post_dropdown)
 
             def _restore_entry() -> None:
                 try:
@@ -331,6 +325,7 @@ class SearchableCombobox(ttk.Combobox):
             element = ""
         if "arrow" in _to_str(element).lower():
             self._restore_values()
+            self.after_idle(self._post_dropdown)
 
     def _restore_values(self, _event: tk.Event | None = None) -> None:
         self.configure(values=self._all_values)
@@ -391,6 +386,15 @@ class SearchableCombobox(ttk.Combobox):
         except Exception:
             try:
                 self.event_generate("<Escape>")
+            except Exception:
+                pass
+
+    def _post_dropdown(self) -> None:
+        try:
+            self.tk.call("ttk::combobox::Post", self._w)
+        except Exception:
+            try:
+                self.event_generate("<Down>")
             except Exception:
                 pass
 
