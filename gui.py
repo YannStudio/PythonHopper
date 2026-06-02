@@ -11513,6 +11513,8 @@ def start_gui():
                         entry["weight"] = weight
                     if column.get("total_weight"):
                         entry["total_weight"] = True
+                    if column.get("total_surface"):
+                        entry["total_surface"] = True
                     column_layout.append(entry)
 
             items = list(payload.get("items") or [])
@@ -11578,6 +11580,12 @@ def start_gui():
             }
 
             footer_note_text = self.footer_note_var.get().strip() or DEFAULT_FOOTER_NOTE
+            total_surface = payload.get("total_surface")
+            if not isinstance(total_surface, (int, float)):
+                try:
+                    total_surface = float(total_surface)
+                except Exception:
+                    total_surface = None
             total_weight = payload.get("total_weight")
             if not isinstance(total_weight, (int, float)):
                 try:
@@ -11599,6 +11607,7 @@ def start_gui():
                     context_label=context_label,
                     context_kind=context_kind,
                     order_remark=remark_text or None,
+                    total_surface_m2=total_surface if isinstance(total_surface, (int, float)) else None,
                     total_weight_kg=total_weight if isinstance(total_weight, (int, float)) else None,
                     en1090_required=False,
                     en1090_note=None,
@@ -11618,6 +11627,7 @@ def start_gui():
                     project_name=project_name or None,
                     label_kind=context_kind,
                     order_remark=remark_text or None,
+                    total_surface_m2=total_surface if isinstance(total_surface, (int, float)) else None,
                     total_weight_kg=total_weight if isinstance(total_weight, (int, float)) else None,
                     en1090_required=False,
                     en1090_note=None,

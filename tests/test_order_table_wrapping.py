@@ -126,13 +126,14 @@ def test_order_pdf_section_compacts_custom_area_and_weight_headers():
                 "Gewicht": 2.50,
             }
         ],
-        total_weight_kg=2.50,
+        total_surface_m2=2.0,
+        total_weight_kg=50.0,
         column_layout=[
             {"key": "part_number", "label": "Artikel nr.", "justify": "left", "weight": 1.8},
             {"key": "description", "label": "Omschrijving", "justify": "left", "weight": 2.9},
             {"key": "material", "label": "Materiaal", "justify": "left", "weight": 1.8},
             {"key": "quantity", "label": "Aantal", "justify": "right", "numeric": True, "integer": True, "weight": 0.9},
-            {"key": "Oppervlakte", "label": "Oppervlakte", "justify": "right", "numeric": True, "weight": 1.1},
+            {"key": "Oppervlakte", "label": "Oppervlakte", "justify": "right", "numeric": True, "weight": 1.1, "total_surface": True},
             {"key": "Gewicht", "label": "Gewicht (kg)", "justify": "right", "numeric": True, "weight": 1.1, "total_weight": True},
         ],
     )
@@ -150,6 +151,9 @@ def test_order_pdf_section_compacts_custom_area_and_weight_headers():
     table = story[-1]
     assert table._cellvalues[0][5] == "m\u00b2"
     assert table._cellvalues[0][6] == "kg"
+    assert table._cellvalues[2][1].getPlainText() == "Totaal"
+    assert table._cellvalues[2][5].getPlainText() == "2.00"
+    assert table._cellvalues[2][6].getPlainText() == "50.00"
 
 
 def test_single_section_pdf_compacts_custom_area_and_weight_headers(monkeypatch, tmp_path):
@@ -214,6 +218,7 @@ def test_single_section_pdf_compacts_custom_area_and_weight_headers(monkeypatch,
                 "justify": "right",
                 "numeric": True,
                 "weight": 1.1,
+                "total_surface": True,
             },
             {
                 "key": "Gewicht",
@@ -224,6 +229,7 @@ def test_single_section_pdf_compacts_custom_area_and_weight_headers(monkeypatch,
                 "total_weight": True,
             },
         ],
+        total_surface_m2=0.42,
         total_weight_kg=3.23,
     )
 
@@ -242,3 +248,6 @@ def test_single_section_pdf_compacts_custom_area_and_weight_headers(monkeypatch,
     assert "Gewicht (kg)" not in order_table._cellvalues[0]
     assert order_table._cellvalues[0][4] == "m\u00b2"
     assert order_table._cellvalues[0][5] == "kg"
+    assert order_table._cellvalues[2][0].getPlainText() == "Totaal"
+    assert order_table._cellvalues[2][4].getPlainText() == "0.42"
+    assert order_table._cellvalues[2][5].getPlainText() == "3.23"

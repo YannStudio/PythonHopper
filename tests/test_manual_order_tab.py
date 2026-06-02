@@ -58,6 +58,33 @@ def test_ensure_column_metrics_marks_integer_column():
     assert "integer" not in length_column
 
 
+def test_collect_items_multiplies_surface_and_weight_by_quantity():
+    tab = ManualOrderTab.__new__(ManualOrderTab)
+    tab.current_columns = [
+        {"key": "Aantal", "numeric": True},
+        {"key": "Oppervlakte", "numeric": True, "total_surface": True},
+        {"key": "Gewicht", "numeric": True, "total_weight": True},
+    ]
+    tab.rows = [
+        type(
+            "Row",
+            (),
+            {
+                "vars": {
+                    "Aantal": _DummyVar("4"),
+                    "Oppervlakte": _DummyVar("0,50"),
+                    "Gewicht": _DummyVar("7,80"),
+                }
+            },
+        )()
+    ]
+
+    payload = ManualOrderTab._collect_items(tab)
+
+    assert payload["total_surface"] == pytest.approx(2.0)
+    assert payload["total_weight"] == pytest.approx(31.2)
+
+
 def test_build_document_basename_ignores_prefix_only_doc_number():
     assert (
         ManualOrderTab.build_document_basename(

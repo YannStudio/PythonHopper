@@ -147,6 +147,7 @@ def write_order_excel(
     context_label: str | None = None,
     context_kind: str = "productie",
     order_remark: str | None = None,
+    total_surface_m2: float | None = None,
     total_weight_kg: float | None = None,
     en1090_required: bool = False,
     en1090_note: Optional[str] = None,
@@ -176,16 +177,24 @@ def write_order_excel(
                 row[header] = value
             rows.append(row)
         df = pd.DataFrame(rows, columns=headers)
+        surface_header: str | None = None
         weight_header: str | None = None
         for column in column_layout:
-            if column.get("total_weight"):
+            if surface_header is None and core.is_order_surface_column(column):
+                surface_header = column["label"]
+            if weight_header is None and core.is_order_weight_column(column):
                 weight_header = column["label"]
-                break
-        if weight_header and total_weight_kg is not None:
+        if (
+            (surface_header and total_surface_m2 is not None)
+            or (weight_header and total_weight_kg is not None)
+        ):
             total_row = {header: "" for header in headers}
             if headers:
                 total_row[headers[0]] = "Totaal"
-            total_row[weight_header] = core._format_weight_kg(total_weight_kg)
+            if surface_header and total_surface_m2 is not None:
+                total_row[surface_header] = core._format_weight_kg(total_surface_m2)
+            if weight_header and total_weight_kg is not None:
+                total_row[weight_header] = core._format_weight_kg(total_weight_kg)
             df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
     else:
         if is_raw_material_order:
@@ -193,13 +202,32 @@ def write_order_excel(
         else:
             df_columns = ["PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht"]
         df = pd.DataFrame(items, columns=df_columns)
-        if is_raw_material_order and total_weight_kg is not None:
+        if is_raw_material_order:
+            if total_weight_kg is not None:
+                total_row = {
+                    "Profiel": "Totaal",
+                    "Materiaal": "",
+                    "Lengte": "",
+                    "St.": "",
+                    "kg": core._format_weight_kg(total_weight_kg),
+                }
+                df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
+        elif total_surface_m2 is not None or total_weight_kg is not None:
             total_row = {
-                "Profiel": "Totaal",
+                "PartNumber": "Totaal",
+                "Description": "",
                 "Materiaal": "",
-                "Lengte": "",
-                "St.": "",
-                "kg": core._format_weight_kg(total_weight_kg),
+                "Aantal": "",
+                "Oppervlakte": (
+                    core._format_weight_kg(total_surface_m2)
+                    if total_surface_m2 is not None
+                    else ""
+                ),
+                "Gewicht": (
+                    core._format_weight_kg(total_weight_kg)
+                    if total_weight_kg is not None
+                    else ""
+                ),
             }
             df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
 
@@ -259,17 +287,7 @@ def write_order_excel(
         not is_standaard_doc or bool(supplier_name)
     )
     if include_supplier_block:
-        addr_parts = []
-        if supplier.adres_1:
-            addr_parts.append(supplier.adres_1)
-        if supplier.adres_2:
-            addr_parts.append(supplier.adres_2)
-        pc_gem = " ".join(x for x in [supplier.postcode, supplier.gemeente] if x)
-        if pc_gem:
-            addr_parts.append(pc_gem)
-        if supplier.land:
-            addr_parts.append(supplier.land)
-        full_addr = ", ".join(addr_parts)
+        full_addr = core.format_supplier_address(supplier)
         header_lines.extend(
             [
                 ("Leverancier", supplier.supplier),

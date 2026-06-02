@@ -63,6 +63,7 @@ def generate_pdf_order_platypus(
     project_name: str | None = None,
     label_kind: str = "productie",
     order_remark: str | None = None,
+    total_surface_m2: float | None = None,
     total_weight_kg: float | None = None,
     en1090_required: bool = False,
     en1090_note: Optional[str] = None,
@@ -199,17 +200,7 @@ def generate_pdf_order_platypus(
 
     supp_lines: List[str] = []
     if supplier is not None and not is_standaard_doc:
-        addr_parts = []
-        if supplier.adres_1:
-            addr_parts.append(supplier.adres_1)
-        if supplier.adres_2:
-            addr_parts.append(supplier.adres_2)
-        pc_gem = " ".join(x for x in [supplier.postcode, supplier.gemeente] if x)
-        if pc_gem:
-            addr_parts.append(pc_gem)
-        if supplier.land:
-            addr_parts.append(supplier.land)
-        full_addr = ", ".join(addr_parts)
+        full_addr = core.format_supplier_address(supplier)
 
         supp_lines = [f"<b>Besteld bij:</b> {supplier.supplier}"]
         if full_addr:
@@ -441,11 +432,13 @@ def generate_pdf_order_platypus(
     data = [head]
     total_row_index: int | None = None
     if custom_layout:
+        surface_idx: int | None = None
         weight_idx: int | None = None
         for idx, column in enumerate(column_layout):
-            if column.get("total_weight"):
+            if surface_idx is None and core.is_order_surface_column(column):
+                surface_idx = idx
+            if weight_idx is None and core.is_order_weight_column(column):
                 weight_idx = idx
-                break
         for it in items:
             row_cells: List[object] = []
             for idx, column in enumerate(column_layout):
@@ -466,13 +459,19 @@ def generate_pdf_order_platypus(
                 row_cells.append(wrap_cell_html(value, small=small, align=align))
             data.append(row_cells)
 
-        if weight_idx is not None and total_weight_kg is not None:
+        if (
+            (surface_idx is not None and total_surface_m2 is not None)
+            or (weight_idx is not None and total_weight_kg is not None)
+        ):
             total_row: List[object] = []
             for idx, column in enumerate(column_layout):
                 align = _to_str(column.get("justify") or "left").strip().upper() or "LEFT"
                 if align not in {"LEFT", "RIGHT", "CENTER"}:
                     align = "LEFT"
-                if idx == weight_idx:
+                if idx == surface_idx and total_surface_m2 is not None:
+                    surface_text = _num_to_2dec(total_surface_m2)
+                    total_row.append(wrap_cell_html(surface_text, small=True, align=align))
+                elif idx == weight_idx and total_weight_kg is not None:
                     weight_text = _num_to_2dec(total_weight_kg)
                     total_row.append(wrap_cell_html(weight_text, small=True, align=align))
                 elif idx == 0:
@@ -534,6 +533,29 @@ def generate_pdf_order_platypus(
                     wrap_cell_html(gew, small=True, align="RIGHT"),
                 ]
             )
+        if total_surface_m2 is not None or total_weight_kg is not None:
+            total_row = [
+                wrap_cell_html("Totaal", small=False, align="LEFT"),
+                wrap_cell_html("", small=False, align="LEFT"),
+                wrap_cell_html("", small=True, align="RIGHT"),
+                wrap_cell_html("", small=True, align="RIGHT"),
+                wrap_cell_html(
+                    _num_to_2dec(total_surface_m2)
+                    if total_surface_m2 is not None
+                    else "",
+                    small=True,
+                    align="RIGHT",
+                ),
+                wrap_cell_html(
+                    _num_to_2dec(total_weight_kg)
+                    if total_weight_kg is not None
+                    else "",
+                    small=True,
+                    align="RIGHT",
+                ),
+            ]
+            data.append(total_row)
+            total_row_index = len(data) - 1
 
     if custom_layout and column_layout:
         weights: List[float] = []

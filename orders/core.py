@@ -41,6 +41,58 @@ DEFAULT_FOOTER_NOTE = (
 STEP_EXTS = {".step", ".stp"}
 NO_SUPPLIER_PLACEHOLDER = "(geen)"
 
+
+def _clean_address_part(value: object) -> str:
+    text = _to_str(value).strip()
+    return "" if text.lower() == "nan" else text
+
+
+def _normalize_address_part(value: str) -> str:
+    text = unicodedata.normalize("NFKD", _to_str(value))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+
+
+def _address_part_already_present(parts: Sequence[str], candidate: str) -> bool:
+    normalized_candidate = _normalize_address_part(candidate)
+    if not normalized_candidate:
+        return True
+    for part in parts:
+        normalized_part = _normalize_address_part(part)
+        if (
+            normalized_candidate == normalized_part
+            or normalized_candidate in normalized_part
+        ):
+            return True
+    return False
+
+
+def format_supplier_address(supplier: Supplier | None) -> str:
+    """Return a compact supplier address without repeated city/postcode data."""
+
+    if supplier is None:
+        return ""
+    parts: List[str] = []
+
+    def add_part(value: object) -> None:
+        text = _clean_address_part(value)
+        if text and not _address_part_already_present(parts, text):
+            parts.append(text)
+
+    add_part(supplier.adres_1)
+    add_part(supplier.adres_2)
+    add_part(" ".join(
+        part
+        for part in (
+            _clean_address_part(supplier.postcode),
+            _clean_address_part(supplier.gemeente),
+        )
+        if part
+    ))
+    add_part(supplier.land)
+    return ", ".join(parts)
+
+
 # BOM columns
 _BOM_STATUS_COLUMNS: Tuple[str, ...] = ("Bestanden gevonden", "Status", "Link")
 _BOM_EXPORT_BASE_COLUMNS: Tuple[str, ...] = (
@@ -733,9 +785,23 @@ def parse_selection_key(key: str) -> Tuple[str, str]:
 
 def _parse_weight_kg(value: object) -> float | None:
     """Parse a textual kilogram value to float."""
-    text = _to_str(value).strip()
-    if not text:
+    return _parse_order_measure_value(value)
+
+
+def _parse_order_measure_value(value: object) -> float | None:
+    """Parse a textual surface/weight value to float."""
+
+    if value is None:
         return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+        return number if math.isfinite(number) else None
+    text = _to_str(value).strip()
+    if not text or text.lower() in {"nan", "none", "null", "nat"}:
+        return None
+    text = text.replace("\u00a0", "")
     text = text.replace(" ", "")
     text = text.replace(",", ".")
     cleaned = []
@@ -756,9 +822,106 @@ def _parse_weight_kg(value: object) -> float | None:
     if candidate in {"", "+", "-", ".", "+.", "-."}:
         return None
     try:
-        return float(candidate)
+        number = float(candidate)
     except Exception:
         return None
+    return number if math.isfinite(number) else None
+
+
+_ORDER_QUANTITY_KEY_HINTS = {"aantal", "qty", "quantity", "st", "stukken", "pieces"}
+_ORDER_SURFACE_KEY_HINTS = {
+    "oppervlakte",
+    "oppervlaktem2",
+    "m2",
+    "surface",
+    "surfacearea",
+    "surfaceaream2",
+}
+_ORDER_WEIGHT_KEY_HINTS = {
+    "gewicht",
+    "gewichtkg",
+    "kg",
+    "weight",
+    "weightkg",
+}
+
+
+def _normalize_order_measure_key(value: object) -> str:
+    text = _to_str(value).strip().lower().replace("\u00b2", "2")
+    return re.sub(r"[^a-z0-9]+", "", text)
+
+
+def is_order_surface_column(column: Mapping[str, object]) -> bool:
+    """Return whether an order column should receive surface totals."""
+
+    if bool(column.get("total_surface")):
+        return True
+    key = _normalize_order_measure_key(column.get("key"))
+    label = _normalize_order_measure_key(column.get("label"))
+    return key in _ORDER_SURFACE_KEY_HINTS or label in _ORDER_SURFACE_KEY_HINTS
+
+
+def is_order_weight_column(column: Mapping[str, object]) -> bool:
+    """Return whether an order column should receive weight totals."""
+
+    if bool(column.get("total_weight")):
+        return True
+    key = _normalize_order_measure_key(column.get("key"))
+    label = _normalize_order_measure_key(column.get("label"))
+    return key in _ORDER_WEIGHT_KEY_HINTS or label in _ORDER_WEIGHT_KEY_HINTS
+
+
+def _first_order_measure_value(
+    item: Mapping[str, object],
+    key_hints: set[str],
+) -> object:
+    for key, value in item.items():
+        if _normalize_order_measure_key(key) in key_hints:
+            return value
+    return None
+
+
+def _order_item_quantity(item: Mapping[str, object]) -> float:
+    qty_value = _first_order_measure_value(item, _ORDER_QUANTITY_KEY_HINTS)
+    qty = _parse_order_measure_value(qty_value)
+    if qty is None or qty <= 0:
+        return 1.0
+    return qty
+
+
+def calculate_order_measure_totals(
+    items: Sequence[Mapping[str, object]],
+) -> tuple[float | None, float | None]:
+    """Return total surface m2 and weight kg for order items.
+
+    Surface and weight values are treated as per-piece values and multiplied by
+    the row quantity when a quantity column is present.
+    """
+
+    surface_total = 0.0
+    weight_total = 0.0
+    surface_found = False
+    weight_found = False
+
+    for item in items:
+        qty = _order_item_quantity(item)
+        surface_each = _parse_order_measure_value(
+            _first_order_measure_value(item, _ORDER_SURFACE_KEY_HINTS)
+        )
+        if surface_each is not None:
+            surface_total += surface_each * qty
+            surface_found = True
+        weight_each = _parse_order_measure_value(
+            _first_order_measure_value(item, _ORDER_WEIGHT_KEY_HINTS)
+        )
+        if weight_each is not None:
+            weight_total += weight_each * qty
+            weight_found = True
+
+    return (
+        surface_total if surface_found else None,
+        weight_total if weight_found else None,
+    )
 
 
 def _collect_opticutter_profile_stats(

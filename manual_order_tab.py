@@ -12,6 +12,7 @@ from tkinter import font, messagebox, ttk
 
 from helpers import _to_str, strip_favorite_marker
 from orders import _normalize_doc_number, _prefix_for_doc_type, _sanitize_component
+from orders.core import calculate_order_measure_totals
 
 if TYPE_CHECKING:
     from clients_db import ClientsDB
@@ -572,6 +573,7 @@ class ManualOrderTab(tk.Frame):
                 "stretch": False,
                 "wrap": False,
                 "weight": 1.0,
+                "total_surface": True,
             },
             {
                 "key": "Gewicht",
@@ -1235,9 +1237,15 @@ class ManualOrderTab(tk.Frame):
             command=self._confirm_clear_rows,
         ).grid(row=0, column=3, sticky="w", padx=(12, 0))
 
+        totals_frame = tk.Frame(controls)
+        totals_frame.grid(row=0, column=4, sticky="e")
+        self.total_surface_var = tk.StringVar(value="Totaal opp.: —")
+        tk.Label(totals_frame, textvariable=self.total_surface_var, anchor="e").pack(
+            side="left", padx=(0, 12)
+        )
         self.total_weight_var = tk.StringVar(value="Totaal gewicht: —")
-        tk.Label(controls, textvariable=self.total_weight_var, anchor="e").grid(
-            row=0, column=4, sticky="e"
+        tk.Label(totals_frame, textvariable=self.total_weight_var, anchor="e").pack(
+            side="left"
         )
 
         footer = tk.Frame(self)
@@ -1600,10 +1608,7 @@ class ManualOrderTab(tk.Frame):
     # Data collection ------------------------------------------------
     def _collect_items(self) -> Dict[str, object]:
         items: List[Dict[str, object]] = []
-        total_weight = 0.0
-        weight_found = False
         numeric_keys = {col["key"] for col in self.current_columns if col.get("numeric")}
-        weight_columns = [col["key"] for col in self.current_columns if col.get("total_weight")]
         column_usage = {
             col.get("key"): False
             for col in self.current_columns
@@ -1627,24 +1632,13 @@ class ManualOrderTab(tk.Frame):
                 else:
                     normalized = value
                 record[key] = normalized
-            if weight_columns:
-                weight_key = weight_columns[0]
-                weight_raw = raw.get(weight_key, "")
-            else:
-                weight_raw = ""
-            if weight_raw:
-                try:
-                    weight_total = float(weight_raw.replace(",", "."))
-                except Exception:
-                    weight_total = None
-                if weight_total is not None and math.isfinite(weight_total):
-                    total_weight += weight_total
-                    weight_found = True
             items.append(record)
 
+        total_surface, total_weight = calculate_order_measure_totals(items)
         return {
             "items": items,
-            "total_weight": total_weight if weight_found else None,
+            "total_surface": total_surface,
+            "total_weight": total_weight,
             "used_columns": {key for key, used in column_usage.items() if used},
         }
 
@@ -1721,6 +1715,7 @@ class ManualOrderTab(tk.Frame):
             "context_kind": "document",
             "remark": remark,
             "items": items,
+            "total_surface": payload["total_surface"],
             "total_weight": payload["total_weight"],
             "template": self.current_template_name,
             "column_layout": column_layout,
@@ -1775,6 +1770,13 @@ class ManualOrderTab(tk.Frame):
     # Internal -------------------------------------------------------
     def _update_totals(self) -> None:
         payload = self._collect_items()
+        total_surface = payload["total_surface"]
+        if total_surface is None:
+            surface_text = "Totaal opp.: —"
+        else:
+            surface_text = f"Totaal opp.: {total_surface:.2f} m²"
+        self.total_surface_var.set(surface_text)
+
         total_weight = payload["total_weight"]
         if total_weight is None:
             text = "Totaal gewicht: —"
