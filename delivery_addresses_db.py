@@ -14,7 +14,7 @@ _FAVORITE_PREFIX = favorite_prefix()
 
 
 class DeliveryAddressesDB:
-    def __init__(self, addresses: Optional[List[DeliveryAddress]] = None):
+    def __init__(self, addresses: Optional[List[DeliveryAddress]] = None) -> None:
         self.addresses: List[DeliveryAddress] = addresses or []
 
     @staticmethod

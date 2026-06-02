@@ -1580,6 +1580,23 @@
       "product_type": "Metal processing",
       "product_description": "Tube laser",
       "favorite": false
+    },
+    {
+      "supplier": "ML Projects (BV)",
+      "description": "Coatings",
+      "supplier_id": "SUPP_089",
+      "adres_1": "Boutersemdrief 30/1",
+      "adres_2": "B-2240 Zandhoven",
+      "postcode": "2240",
+      "gemeente": "Zandhoven",
+      "land": "Belgie",
+      "btw": "BE 0544.691.127",
+      "contact_sales": "nan",
+      "sales_email": "info@mlcoating.be",
+      "phone": "+32 476 71 13 45",
+      "product_type": "Coatings",
+      "product_description": "Coatings",
+      "favorite": false
     }
   ],
   "defaults_by_production": {},

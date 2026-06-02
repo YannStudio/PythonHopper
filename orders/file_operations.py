@@ -1,7 +1,7 @@
-"""Order-related utilities for creating purchase documents and copying files.
+"""Order-related file operations and export orchestration.
 
-This module groups functions previously in Main_v22.py and depends on helpers,
-models, suppliers_db, and bom modules.
+This module contains the legacy order export implementation while the public
+``orders`` package keeps backward-compatible imports.
 """
 
 import os
@@ -82,6 +82,7 @@ from helpers import (
 )
 from models import Supplier, Client, DeliveryAddress, color_to_rgb, normalize_rgb_color
 from pdf_workdossier_presets import PdfWorkDossierPreset, PdfWorkDossierSection
+from progress import ProgressCallback, ProgressEvent
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from bom import load_bom  # noqa: F401 - imported for module dependency
 
@@ -3627,6 +3628,7 @@ def copy_per_production_and_orders(
     en1090_note: Optional[str] = None,
     document_status_messages: List[str] | None = None,
     generated_documents: List[Dict[str, object]] | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> Tuple[int, Dict[str, str]]:
     """Copy files per production and create accompanying order documents.
 
@@ -3708,11 +3710,39 @@ def copy_per_production_and_orders(
     and document metadata for generated PDF/XLSX files so callers can store a
     traceable export log.
     """
+    def _emit_progress(
+        phase: str,
+        message: str,
+        *,
+        percent: int | None = None,
+        done: int = 0,
+        total: int = 0,
+    ) -> None:
+        if progress_callback is None:
+            return
+        progress_callback(
+            ProgressEvent(
+                phase=phase,
+                message=message,
+                done=done,
+                total=total,
+                percent=percent,
+            )
+        )
+
+    def _phase_percent(start: int, end: int, index: int, total: int) -> int:
+        if total <= 0:
+            return start
+        fraction = max(0.0, min(1.0, index / total))
+        return int(round(start + (end - start) * fraction))
+
+    _emit_progress("prepare", "Export voorbereiden...", percent=0)
     en1090_active = bool(en1090_enabled)
     en1090_note_text = (
         EN1090_NOTE_TEXT if en1090_note is None else _to_str(en1090_note)
     )
     os.makedirs(dest, exist_ok=True)
+    _emit_progress("scan", "Bestanden zoeken...", percent=4)
     file_index = _build_file_index(source, selected_exts)
     selected_exts_set = {ext.lower() for ext in selected_exts}
     count_copied = 0
@@ -3973,8 +4003,33 @@ def copy_per_production_and_orders(
         "logo_crop": client.logo_crop if client else None,
     }
     order_candidates: List[OrderDocumentCandidate] = []
+    production_items = list(prod_to_rows.items())
+    production_total = len(production_items)
+    finish_copy_items = list(finish_groups.items()) if copy_finish_exports and finish_groups else []
+    finish_copy_total = len(finish_copy_items)
+    finish_doc_items = sorted(
+        finish_groups.items(),
+        key=lambda item: _to_str(item[1].get("label", "")).lower(),
+    )
+    finish_doc_total = len(finish_doc_items)
 
-    for prod, rows in prod_to_rows.items():
+    if production_total:
+        _emit_progress(
+            "productions",
+            f"Producties verwerken... 0 van {production_total}",
+            percent=8,
+            done=0,
+            total=production_total,
+        )
+
+    for prod_index, (prod, rows) in enumerate(production_items, start=1):
+        _emit_progress(
+            "productions",
+            f"Productie verwerken... {prod}",
+            percent=_phase_percent(8, 45, prod_index - 1, production_total),
+            done=prod_index - 1,
+            total=production_total,
+        )
         if production_export_filter and not production_export_filter.get(prod, True):
             continue
         prod_folder = os.path.join(dest, prod)
@@ -4441,9 +4496,32 @@ def copy_per_production_and_orders(
                     file=sys.stderr,
                 )
 
-    if copy_finish_exports and finish_groups:
+        _emit_progress(
+            "productions",
+            f"Productie verwerkt... {prod}",
+            percent=_phase_percent(8, 45, prod_index, production_total),
+            done=prod_index,
+            total=production_total,
+        )
+
+    if finish_copy_items:
+        _emit_progress(
+            "finish_files",
+            f"Afwerkingsbestanden verwerken... 0 van {finish_copy_total}",
+            percent=46,
+            done=0,
+            total=finish_copy_total,
+        )
         finish_seen: Dict[str, set[tuple[str, str]]] = defaultdict(set)
-        for finish_key, info in finish_groups.items():
+        for finish_index, (finish_key, info) in enumerate(finish_copy_items, start=1):
+            finish_label = _to_str(info.get("label")) or finish_key
+            _emit_progress(
+                "finish_files",
+                f"Afwerkingsbestanden verwerken... {finish_label}",
+                percent=_phase_percent(46, 56, finish_index - 1, finish_copy_total),
+                done=finish_index - 1,
+                total=finish_copy_total,
+            )
             if finish_export_filter and not finish_export_filter.get(finish_key, True):
                 continue
             part_numbers = info.get("part_numbers") or set()
@@ -4500,11 +4578,31 @@ def copy_per_production_and_orders(
                         shutil.copy2(src_file, os.path.join(target_dir, transformed))
             if zf is not None:
                 zf.close()
+            _emit_progress(
+                "finish_files",
+                f"Afwerkingsbestanden verwerkt... {finish_label}",
+                percent=_phase_percent(46, 56, finish_index, finish_copy_total),
+                done=finish_index,
+                total=finish_copy_total,
+            )
 
     if finish_groups:
-        for finish_key, info in sorted(
-            finish_groups.items(), key=lambda item: _to_str(item[1].get("label", "")).lower()
-        ):
+        _emit_progress(
+            "finish_documents",
+            f"Afwerkingsbonnen voorbereiden... 0 van {finish_doc_total}",
+            percent=57,
+            done=0,
+            total=finish_doc_total,
+        )
+        for finish_index, (finish_key, info) in enumerate(finish_doc_items, start=1):
+            finish_label = _to_str(info.get("label")) or finish_key
+            _emit_progress(
+                "finish_documents",
+                f"Afwerkingsbon voorbereiden... {finish_label}",
+                percent=_phase_percent(57, 65, finish_index - 1, finish_doc_total),
+                done=finish_index - 1,
+                total=finish_doc_total,
+            )
             if finish_export_filter and not finish_export_filter.get(finish_key, True):
                 label = _to_str(info.get("label")) or finish_key
                 _append_document_status(
@@ -4594,13 +4692,29 @@ def copy_per_production_and_orders(
                     column_layout=column_layout,
                 )
             )
+            _emit_progress(
+                "finish_documents",
+                f"Afwerkingsbon voorbereid... {finish_label}",
+                percent=_phase_percent(57, 65, finish_index, finish_doc_total),
+                done=finish_index,
+                total=finish_doc_total,
+            )
             continue
 
     if order_candidates:
-        for job in _build_grouped_document_jobs(
+        document_jobs = _build_grouped_document_jobs(
             order_candidates,
             document_group_map,
-        ):
+        )
+        document_total = len(document_jobs)
+        _emit_progress(
+            "documents",
+            f"Bestelbonnen maken... 0 van {document_total}",
+            percent=66,
+            done=0,
+            total=document_total,
+        )
+        for document_index, job in enumerate(document_jobs, start=1):
             primary_section = job.sections[0]
             supplier_name_clean = (
                 _to_str(job.supplier.supplier).strip() if job.supplier else ""
@@ -4633,6 +4747,13 @@ def copy_per_production_and_orders(
                 f"Groep '{job.context_for_filename}'"
                 if len(job.sections) > 1
                 else _format_order_section_title(context_kind, context_label)
+            )
+            _emit_progress(
+                "documents",
+                f"Bestelbon maken... {context_for_warning}",
+                percent=_phase_percent(66, 88, document_index - 1, document_total),
+                done=document_index - 1,
+                total=document_total,
             )
 
             document_base = build_document_export_basename(
@@ -4748,10 +4869,18 @@ def copy_per_production_and_orders(
                 _append_document_status(
                     f"Samengestelde afwerkingsbon '{summary_text}' opgeslagen in {target_label}."
                 )
+            _emit_progress(
+                "documents",
+                f"Bestelbon gemaakt... {context_for_warning}",
+                percent=_phase_percent(66, 88, document_index, document_total),
+                done=document_index,
+                total=document_total,
+            )
 
     # Persist any (possibly unchanged) supplier defaults so that callers can rely on
     # the database reflecting the latest state on disk.
     if export_bom:
+        _emit_progress("bom", "BOM exporteren...", percent=90)
         try:
             bom_filename = make_bom_export_filename(
                 bom_source_path, today, _transform_export_name
@@ -4779,7 +4908,17 @@ def copy_per_production_and_orders(
             raise RuntimeError(f"Kon BOM-export niet opslaan: {exc}") from exc
 
     if export_related_files and bom_source_path:
-        for src_file in find_related_bom_exports(bom_source_path, file_index):
+        related_exports = find_related_bom_exports(bom_source_path, file_index)
+        related_total = len(related_exports)
+        if related_total:
+            _emit_progress(
+                "related_files",
+                f"Gerelateerde BOM-bestanden kopieren... 0 van {related_total}",
+                percent=94,
+                done=0,
+                total=related_total,
+            )
+        for related_index, src_file in enumerate(related_exports, start=1):
             transformed = _transform_export_name(os.path.basename(src_file))
             target_path = os.path.join(dest, transformed)
             shutil.copy2(src_file, target_path)
@@ -4791,13 +4930,22 @@ def copy_per_production_and_orders(
                 context_label=_to_str(project_name or project_number).strip(),
             )
             count_copied += 1
+            _emit_progress(
+                "related_files",
+                f"Gerelateerd BOM-bestand gekopieerd... {os.path.basename(src_file)}",
+                percent=_phase_percent(94, 97, related_index, related_total),
+                done=related_index,
+                total=related_total,
+            )
 
+    _emit_progress("save", "Exportgegevens opslaan...", percent=98)
     save_to_storage = getattr(db, "save_to_storage", None)
     if callable(save_to_storage):
         save_to_storage()
     else:
         db.save(SUPPLIERS_DB_FILE)
 
+    _emit_progress("done", "Export afgerond.", percent=100)
     return count_copied, chosen
 
 

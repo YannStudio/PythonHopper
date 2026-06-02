@@ -1,0 +1,26 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "--strict-config",
+    "--strict-markers",
+]
+filterwarnings = [
+    "ignore:PyPDF2 is deprecated:DeprecationWarning",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["."]
+omit = [
+    ".venv/*",
+    ".venv_bak/*",
+    "build/*",
+    "dist/*",
+    "Date-tracker/*",
+    "tests/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 25

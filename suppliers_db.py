@@ -20,7 +20,7 @@ class SuppliersDB:
         defaults_by_production: Dict[str, str] = None,
         defaults_by_finish: Dict[str, str] = None,
         storage_path: str | os.PathLike[str] | None = None,
-    ):
+    ) -> None:
         self.suppliers: List[Supplier] = suppliers or []
         self.defaults_by_production: Dict[str, str] = defaults_by_production or {}
         self.defaults_by_finish: Dict[str, str] = defaults_by_finish or {}
@@ -202,7 +202,7 @@ class SuppliersDB:
             return True
         return False
 
-    def clear_all(self):
+    def clear_all(self) -> None:
         self.suppliers = []
         self.defaults_by_production = {}
         self.defaults_by_finish = {}

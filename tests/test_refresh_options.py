@@ -2,6 +2,8 @@ import ast
 import datetime
 import os
 import pathlib
+import sys
+import threading
 import types
 from typing import List, Dict, Mapping, Optional
 
@@ -13,6 +15,7 @@ from clients_db import ClientsDB
 from helpers import _to_str, strip_favorite_marker
 from models import Supplier, DeliveryAddress, Client
 from app_settings import FileExtensionSetting
+from opticutter import analyse_profiles
 
 
 class DummyCombo:
@@ -92,6 +95,10 @@ def _load_gui_classes():
         "FileExtensionSetting": FileExtensionSetting,
         "prepare_custom_bom_for_main": lambda df, _current: df,
         "datetime": datetime,
+        "pd": pd,
+        "sys": sys,
+        "analyse_profiles": analyse_profiles,
+        "threading": threading,
     }
     exec(code, ns)
     return ns["SupplierSelectionFrame"], ns["App"]
@@ -452,6 +459,7 @@ def test_loading_custom_bom_keeps_original_related_bom_source(tmp_path):
 
     class DummyApp:
         _load_bom_from_path = App._load_bom_from_path
+        _apply_loaded_bom = App._apply_loaded_bom
 
         def __init__(self):
             self.bom_source_path = str(original_bom)
@@ -488,6 +496,154 @@ def test_loading_custom_bom_keeps_original_related_bom_source(tmp_path):
     assert app.custom_synced is True
 
 
+def test_sync_custom_bom_defers_when_tab_is_not_created():
+    class DummyApp:
+        _sync_custom_bom_from_main = App._sync_custom_bom_from_main
+
+        def __init__(self):
+            self.custom_bom_tab = None
+            self.bom_df = pd.DataFrame({"PartNumber": ["PN-001"]})
+            self._custom_bom_needs_sync = False
+            self.created_tab = False
+
+        def _autofill_custom_bom_enabled(self):
+            return True
+
+        def _ensure_custom_bom_tab(self):
+            self.created_tab = True
+            return object()
+
+    app = DummyApp()
+
+    app._sync_custom_bom_from_main()
+
+    assert app.created_tab is False
+    assert app._custom_bom_needs_sync is True
+
+
+def test_ensure_custom_bom_tab_applies_pending_main_sync():
+    class DummyBOMCustomTab:
+        MAIN_COLUMN_ORDER = ("PartNumber",)
+
+        def __init__(self, *_args, **_kwargs):
+            self.loaded = []
+
+        def load_from_main_dataframe(self, df):
+            self.loaded.append(df.copy(deep=True))
+
+    class DummyNotebook:
+        def __init__(self):
+            self.added = None
+
+        def add(self, tab, **_kwargs):
+            self.added = tab
+
+    class DummyApp:
+        _ensure_custom_bom_tab = App._ensure_custom_bom_tab
+        _autofill_custom_bom_enabled = App._autofill_custom_bom_enabled
+        _load_current_bom_into_custom_tab = App._load_current_bom_into_custom_tab
+
+        def __init__(self):
+            self.nb = DummyNotebook()
+            self.custom_bom_tab = None
+            self._custom_bom_placeholder = None
+            self._custom_bom_needs_sync = True
+            self.bom_df = pd.DataFrame({"PartNumber": ["PN-001"]})
+            self.autofill_custom_bom_var = DummyVar(1)
+            self.settings = types.SimpleNamespace(autofill_custom_bom=True)
+
+        def _on_custom_bom_ready(self, *_args, **_kwargs):
+            return None
+
+        def _apply_custom_bom_to_main(self, *_args, **_kwargs):
+            return None
+
+    globals_dict = App._ensure_custom_bom_tab.__globals__
+    previous_tab = globals_dict.get("BOMCustomTab")
+    globals_dict["BOMCustomTab"] = DummyBOMCustomTab
+    try:
+        app = DummyApp()
+        tab = app._ensure_custom_bom_tab()
+    finally:
+        if previous_tab is None:
+            globals_dict.pop("BOMCustomTab", None)
+        else:
+            globals_dict["BOMCustomTab"] = previous_tab
+
+    assert tab is app.nb.added
+    assert app.custom_bom_tab is tab
+    assert tab.loaded[0].loc[0, "PartNumber"] == "PN-001"
+    assert app._custom_bom_needs_sync is False
+
+
+def test_opticutter_refresh_is_deferred_until_tab_is_selected():
+    class DummyNotebook:
+        def __init__(self):
+            self.selected = "main"
+
+        def select(self, *_args):
+            return self.selected
+
+    class DummyApp:
+        _is_opticutter_tab = App._is_opticutter_tab
+        _refresh_opticutter_if_needed = App._refresh_opticutter_if_needed
+        _request_opticutter_refresh = App._request_opticutter_refresh
+
+        def __init__(self):
+            self.nb = DummyNotebook()
+            self.opticutter_frame = "opticutter"
+            self._opticutter_needs_refresh = False
+            self._opticutter_analysis_stale = False
+            self.opticutter_last_analysis = "cached-analysis"
+            self.refresh_count = 0
+            self.background_started = False
+
+        def _refresh_opticutter_table(self, **_kwargs):
+            self.refresh_count += 1
+
+        def _start_background_opticutter_analysis_refresh(self):
+            self.background_started = True
+
+    app = DummyApp()
+
+    app._request_opticutter_refresh()
+    assert app.refresh_count == 0
+    assert app._opticutter_needs_refresh is True
+    assert app.background_started is True
+
+    app.nb.selected = "opticutter"
+    app._refresh_opticutter_if_needed(app.nb.select())
+
+    assert app.refresh_count == 1
+    assert app._opticutter_needs_refresh is False
+
+
+def test_opticutter_analysis_state_keeps_order_scenarios_ready():
+    class DummyApp:
+        _apply_opticutter_analysis_state = App._apply_opticutter_analysis_state
+
+        def __init__(self):
+            self.opticutter_last_analysis = None
+            self.opticutter_profile_custom_lengths = {}
+            self.opticutter_profile_selection_choice = {}
+            self.opticutter_profile_selection_scenarios = {}
+
+    key = ("Koker 50x50", "S235", "Zaag")
+    profile = types.SimpleNamespace(
+        key=key,
+        scenarios={"6000": object(), "12000": object()},
+        best_choice="6000",
+    )
+    analysis = types.SimpleNamespace(profiles=[profile])
+
+    app = DummyApp()
+    app._apply_opticutter_analysis_state(analysis)
+
+    assert app.opticutter_last_analysis is analysis
+    assert app.opticutter_profile_selection_scenarios[key] == profile.scenarios
+    assert app.opticutter_profile_selection_choice[key] == "6000"
+
+
 def test_leaving_dirty_opticutter_tab_confirms_update():
     class DummyNotebook:
         def __init__(self):
@@ -513,6 +669,9 @@ def test_leaving_dirty_opticutter_tab_confirms_update():
             self.confirmed = True
             self._opticutter_dirty = False
             return True
+
+        def _refresh_opticutter_if_needed(self, *_args, **_kwargs):
+            return None
 
     app = DummyApp()
     event = types.SimpleNamespace(widget=app.nb)

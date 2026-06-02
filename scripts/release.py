@@ -9,7 +9,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from release_notes_generator import generate_changelog_entry
+try:
+    from .release_notes_generator import generate_changelog_entry
+except ImportError:  # pragma: no cover - supports running as a script
+    from release_notes_generator import generate_changelog_entry
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_PATHS_FILE = PROJECT_ROOT / "app_paths.py"

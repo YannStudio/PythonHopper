@@ -153,7 +153,7 @@ class _FakeSuppliersDb:
         return supplier
 
 
-def test_refresh_data_uses_searchable_supplier_choices():
+def test_refresh_data_uses_supplier_choices():
     tab = ManualOrderTab.__new__(ManualOrderTab)
     tab.clients_db = None
     tab.suppliers_db = _FakeSuppliersDb()
@@ -161,15 +161,13 @@ def test_refresh_data_uses_searchable_supplier_choices():
     tab.client_var = _DummyVar("")
     tab.client_combo = _DummyCombo()
     tab.supplier_var = _DummyVar("Leverancier B")
-    tab.supplier_combo = _DummySearchableCombo()
+    tab.supplier_combo = _DummyCombo()
     tab.delivery_var = _DummyVar("")
     tab.delivery_combo = _DummyCombo()
 
     ManualOrderTab.refresh_data(tab)
 
-    assert tab.supplier_combo.set_choices_calls == [
-        ["Geen", "Leverancier A", "Leverancier B"]
-    ]
+    assert tab.supplier_combo.values == ["Geen", "Leverancier A", "Leverancier B"]
     assert tab.supplier_var.get() == "Leverancier B"
 
 
@@ -294,6 +292,35 @@ def test_searchable_combobox_typing_first_letter_filters_and_opens_dropdown():
     assert combo.current == "a"
     assert combo.cursor_at_end is True
     assert combo.focused is True
+
+
+def test_searchable_combobox_button_press_restores_all_choices_and_posts_dropdown():
+    combo = _make_searchable_combo([
+        "Geen",
+        "Alpha Lasers",
+        "Beta Works",
+    ], current="a")
+    combo.identify = lambda x, y: "arrow"
+    combo.event_generate = lambda event: combo.dropdown_calls.append(event)
+
+    SearchableCombobox._on_button_press(combo, type("Event", (), {"x": 0, "y": 0})())
+
+    assert combo.configured_values == ["Geen", "Alpha Lasers", "Beta Works"]
+    assert ("ttk::combobox::Post", "combo") in combo.dropdown_calls
+
+
+def test_searchable_combobox_post_dropdown_fallback_uses_down_event():
+    combo = _make_searchable_combo(["Geen", "Alpha Lasers"])
+
+    def fail_call(*args):
+        raise Exception("post failed")
+
+    combo.tk.call = fail_call
+    combo.event_generate = lambda event: combo.dropdown_calls.append(event)
+
+    SearchableCombobox._post_dropdown(combo)
+
+    assert combo.dropdown_calls == ["<Down>"]
 
 
 def test_searchable_combobox_keypress_replaces_existing_supplier_choice():

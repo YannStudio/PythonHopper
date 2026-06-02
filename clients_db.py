@@ -13,7 +13,7 @@ _FAVORITE_PREFIX = favorite_prefix()
 
 
 class ClientsDB:
-    def __init__(self, clients: Optional[List[Client]] = None):
+    def __init__(self, clients: Optional[List[Client]] = None) -> None:
         self.clients: List[Client] = clients or []
 
     @staticmethod

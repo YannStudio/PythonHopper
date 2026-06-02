@@ -98,6 +98,7 @@ from orders import (
     write_order_excel,
     generate_pdf_order_platypus,
 )
+from progress import ProgressEvent
 from export_session_log import (
     EXPORT_SESSION_LOG_FILENAME,
     build_export_session_log,
@@ -8467,6 +8468,11 @@ def start_gui():
             ).pack(side="left", padx=(0, 8), pady=4)
             tk.Button(
                 btn_frame,
+                text="Visuele quick manual",
+                command=self.app._open_visual_quick_manual,
+            ).pack(side="left", padx=(0, 8), pady=4)
+            tk.Button(
+                btn_frame,
                 text="Bekijk FAQ",
                 command=self.app._show_faq,
             ).pack(side="left", padx=(0, 8), pady=4)
@@ -9060,44 +9066,51 @@ def start_gui():
             self._drag_widget = None
             self._enabled = True
 
-            actions = tk.Frame(self)
-            actions.pack(fill="x", pady=(0, 6))
-            self._add_button = ttk.Button(
-                actions,
-                text="Blok toevoegen",
-                command=self.add_blank_section,
-            )
-            self._add_button.pack(side="left", padx=(0, 4))
-            self._up_button = ttk.Button(actions, text="Omhoog", command=self.move_selected_up)
-            self._up_button.pack(side="left", padx=(0, 4))
-            self._down_button = ttk.Button(actions, text="Omlaag", command=self.move_selected_down)
-            self._down_button.pack(side="left", padx=(0, 4))
-            self._delete_button = ttk.Button(
-                actions,
-                text="Verwijder blok",
-                command=self.delete_selected,
-            )
-            self._delete_button.pack(side="left", padx=(0, 4))
-            self._clear_button = ttk.Button(
-                actions,
-                text="Leegmaken",
-                command=self.clear_sections,
-            )
-            self._clear_button.pack(side="left", padx=(0, 4))
-
             body = tk.Frame(self)
             body.pack(fill="both", expand=True)
             body.rowconfigure(0, weight=1)
             body.columnconfigure(0, weight=1)
-            self.canvas = tk.Canvas(body, highlightthickness=0, borderwidth=0, height=210)
+            body.columnconfigure(1, minsize=160)
+
+            content_frame = tk.Frame(body)
+            content_frame.grid(row=0, column=0, sticky="nsew")
+            content_frame.rowconfigure(0, weight=1)
+            content_frame.columnconfigure(0, weight=1)
+
+            self.canvas = tk.Canvas(content_frame, highlightthickness=0, borderwidth=0, height=210)
             self.canvas.grid(row=0, column=0, sticky="nsew")
             self.scrollbar = ttk.Scrollbar(
-                body,
+                content_frame,
                 orient="vertical",
                 command=self.canvas.yview,
             )
             self.scrollbar.grid(row=0, column=1, sticky="ns", padx=(8, 0))
             self.canvas.configure(yscrollcommand=self.scrollbar.set)
+
+            actions = tk.Frame(body)
+            actions.grid(row=0, column=1, sticky="n", padx=(12, 0), pady=(0, 6))
+            self._add_button = ttk.Button(
+                actions,
+                text="Blok toevoegen",
+                command=self.add_blank_section,
+            )
+            self._add_button.pack(fill="x", pady=(0, 4))
+            self._up_button = ttk.Button(actions, text="Omhoog", command=self.move_selected_up)
+            self._up_button.pack(fill="x", pady=(0, 4))
+            self._down_button = ttk.Button(actions, text="Omlaag", command=self.move_selected_down)
+            self._down_button.pack(fill="x", pady=(0, 4))
+            self._delete_button = ttk.Button(
+                actions,
+                text="Verwijder blok",
+                command=self.delete_selected,
+            )
+            self._delete_button.pack(fill="x", pady=(0, 4))
+            self._clear_button = ttk.Button(
+                actions,
+                text="Leegmaken",
+                command=self.clear_sections,
+            )
+            self._clear_button.pack(fill="x", pady=(0, 4))
             self.inner = tk.Frame(self.canvas)
             self.inner_window = self.canvas.create_window(
                 (0, 0),
@@ -9289,20 +9302,127 @@ def start_gui():
                 except tk.TclError:
                     pass
 
+        def _convert_example_to_real_section(self, _event=None) -> None:
+            if self.sections:
+                return
+            self.sections = [PdfWorkDossierSection("", [])]
+            self._selected_index = 0
+            self._render_sections()
+            first_row = self._row_controls[0] if self._row_controls else {}
+            name_entry = first_row.get("name_entry")
+            if name_entry is not None:
+                try:
+                    name_entry.focus_set()
+                except tk.TclError:
+                    pass
+
         def _render_sections(self) -> None:
             for child in self.inner.winfo_children():
                 child.destroy()
             self._row_controls = []
 
             if not self.sections:
-                empty = tk.Label(
+                bg = "#FFFFFF"
+                placeholder_entry_style = "Placeholder.TEntry"
+                try:
+                    style = ttk.Style(self)
+                    style.configure(placeholder_entry_style, foreground="#8A8F98")
+                    style.map(
+                        placeholder_entry_style,
+                        foreground=[
+                            ("readonly", "#8A8F98"),
+                            ("disabled", "#8A8F98"),
+                        ],
+                    )
+                except tk.TclError:
+                    placeholder_entry_style = "TEntry"
+                example = tk.Frame(
                     self.inner,
-                    text="Geen sectieblokken. Voeg een productieblok toe.",
-                    anchor="w",
-                    justify="left",
-                    foreground="#5D6670",
+                    relief="solid",
+                    borderwidth=1,
+                    background=bg,
                 )
-                empty.pack(fill="x", padx=8, pady=8)
+                example.pack(fill="x", padx=(2, 10), pady=3)
+                example.columnconfigure(3, weight=1)
+
+                handle = tk.Label(
+                    example,
+                    text="::",
+                    width=3,
+                    cursor="sb_v_double_arrow",
+                    background=bg,
+                    foreground="#999999",
+                )
+                handle.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(4, 2), pady=4)
+                number = tk.Label(
+                    example,
+                    text="1.",
+                    width=4,
+                    anchor="e",
+                    background=bg,
+                    foreground="#999999",
+                )
+                number.grid(row=0, column=1, rowspan=2, sticky="ns", padx=(0, 6), pady=4)
+
+                cat_label = tk.Label(
+                    example,
+                    text="Categorie:",
+                    background=bg,
+                )
+                cat_label.grid(row=0, column=2, sticky="e", padx=(0, 4), pady=(4, 2))
+                cat_entry_var = tk.StringVar(value="Parts")
+                cat_entry = ttk.Entry(
+                    example,
+                    textvariable=cat_entry_var,
+                    width=26,
+                    state="readonly",
+                    style=placeholder_entry_style,
+                )
+                cat_entry.grid(row=0, column=3, sticky="ew", pady=(4, 2))
+
+                prod_label = tk.Label(
+                    example,
+                    text="Producties:",
+                    background=bg,
+                )
+                prod_label.grid(row=1, column=2, sticky="e", padx=(0, 4), pady=(2, 4))
+                prod_entry_var = tk.StringVar(value="Lasercutting, Tube laser")
+                prod_entry = ttk.Entry(
+                    example,
+                    textvariable=prod_entry_var,
+                    state="readonly",
+                    style=placeholder_entry_style,
+                )
+                prod_entry.grid(row=1, column=3, sticky="ew", pady=(2, 4))
+                unmatched_var = tk.IntVar(value=0)
+                unmatched_check = tk.Checkbutton(
+                    example,
+                    text="Overige producties",
+                    variable=unmatched_var,
+                    background=bg,
+                    command=self._convert_example_to_real_section,
+                )
+                unmatched_check.grid(row=0, column=4, rowspan=2, sticky="w", padx=(8, 4))
+                delete_btn = ttk.Button(
+                    example,
+                    text="X",
+                    width=3,
+                    command=self._convert_example_to_real_section,
+                )
+                delete_btn.grid(row=0, column=5, rowspan=2, sticky="ns", padx=(0, 4), pady=4)
+
+                for widget in (
+                    example,
+                    handle,
+                    number,
+                    cat_label,
+                    cat_entry,
+                    prod_label,
+                    prod_entry,
+                    unmatched_check,
+                ):
+                    widget.bind("<Button-1>", self._convert_example_to_real_section, add="+")
+
                 return
 
             for index, section in enumerate(self.sections):
@@ -9336,7 +9456,7 @@ def start_gui():
                 identifiers_var = tk.StringVar(value=", ".join(section.identifiers))
                 unmatched_var = tk.IntVar(value=1 if section.include_unmatched else 0)
 
-                name_label = tk.Label(row, text="Blok:", background=row.cget("background"))
+                name_label = tk.Label(row, text="Categorie:", background=row.cget("background"))
                 name_label.grid(
                     row=0,
                     column=2,
@@ -9344,8 +9464,16 @@ def start_gui():
                     padx=(0, 4),
                     pady=(4, 2),
                 )
+                _HelpTooltip(
+                    name_label,
+                    "Categorie naam voor het werkdossier. Gebruik dezelfde naam om meerdere producties te groeperen.",
+                )
                 name_entry = ttk.Entry(row, textvariable=name_var, width=26)
                 name_entry.grid(row=0, column=3, sticky="ew", pady=(4, 2))
+                _HelpTooltip(
+                    name_entry,
+                    "Categorie naam voor het werkdossier. Gebruik dezelfde naam om meerdere producties te groeperen.",
+                )
                 identifiers_label = tk.Label(
                     row,
                     text="Producties:",
@@ -9409,6 +9537,7 @@ def start_gui():
                         "identifiers_var": identifiers_var,
                         "unmatched_var": unmatched_var,
                         "row": row,
+                        "name_entry": name_entry,
                         "identifiers_entry": identifiers_entry,
                         "stateful_widgets": stateful_widgets,
                     }
@@ -9500,8 +9629,8 @@ def start_gui():
     class PdfWorkDossierOptionsFrame(tk.Frame):
         MODE_WORKDOSSIER = "Werkdossier (een PDF)"
         MODE_PER_PRODUCTION = "Aparte PDF per productie"
-        MODE_ALPHABETIC_SINGLE = "Een PDF alfabetisch"
-        NO_PRESET_LABEL = "(Geen preset - PDF-namen alfabetisch)"
+        MODE_ALPHABETIC_SINGLE = "PDF alfabetisch (alle bestanden)"
+        NO_PRESET_LABEL = "(Blanco template)"
         ROLE_LABELS = {
             "bom": "BOM",
             "drawing": "Tekening",
@@ -9563,10 +9692,13 @@ def start_gui():
 
             self._reload_presets()
             self._sync_mode()
+            self._on_preset_selected()
 
         def _build_work_tab(self) -> None:
             form = self.work_tab
-            form.columnconfigure(1, weight=1)
+            form.columnconfigure(0, weight=0)
+            form.columnconfigure(1, weight=0)
+            form.columnconfigure(2, weight=1)
             form.rowconfigure(6, weight=1)
 
             tk.Label(form, text="Modus:").grid(row=0, column=0, sticky="e", padx=(0, 6), pady=3)
@@ -9579,27 +9711,66 @@ def start_gui():
                     self.MODE_ALPHABETIC_SINGLE,
                 ],
                 state="readonly",
-                width=32,
+                width=26,
             )
             self.mode_combo.grid(row=0, column=1, sticky="w", pady=3)
             self.mode_combo.bind("<<ComboboxSelected>>", lambda _e: self._sync_mode())
             self._option_widgets.append(self.mode_combo)
 
-            tk.Label(form, text="Volgorde preset:").grid(
-                row=1, column=0, sticky="e", padx=(0, 6), pady=3
+            self.mode_info_frame = tk.Frame(form)
+            self.mode_info_frame.grid(
+                row=0,
+                column=2,
+                rowspan=2,
+                sticky="w",
+                padx=(18, 0),
+                pady=3,
             )
+            tk.Label(
+                self.mode_info_frame,
+                text="Kies hoe het dossier wordt opgebouwd.",
+                anchor="w",
+                justify="left",
+                foreground="#263238",
+            ).pack(anchor="w")
+            tk.Label(
+                self.mode_info_frame,
+                text=(
+                    "Werkdossier gebruikt de presetvolgorde. "
+                    "Per productie maakt aparte PDF's. "
+                    "Alfabetisch sorteert alle bestanden op naam."
+                ),
+                anchor="w",
+                justify="left",
+                foreground="#5D6670",
+                wraplength=720,
+            ).pack(anchor="w", pady=(2, 0))
+
+            self.preset_label = tk.Label(form, text="Volgorde preset:")
+            self.preset_label.grid(row=1, column=0, sticky="e", padx=(0, 6), pady=3)
             self.preset_combo = ttk.Combobox(
                 form,
                 textvariable=self.preset_var,
                 state="readonly",
-                width=42,
+                width=26,
             )
-            self.preset_combo.grid(row=1, column=1, sticky="ew", pady=3)
+            self.preset_combo.grid(row=1, column=1, sticky="w", pady=3)
             self.preset_combo.bind("<<ComboboxSelected>>", self._on_preset_selected)
             self._option_widgets.append(self.preset_combo)
+            _HelpTooltip(
+                self.preset_combo,
+                "Blanco template start zonder categorieën. Elke categorie wordt alfabetisch gesorteerd, "
+                "en de volgorde van de categorieën bepaalt de volgorde in het werkdossier.",
+            )
+            _HelpTooltip(
+                self.mode_combo,
+                "Werkdossier: gebruik een preset voor categorieën en volgorde. "
+                "Aparte PDF per productie: maak per productie een PDF, met producties alfabetisch gerangschikt. "
+                "PDF alfabetisch: geen preset, alle bestanden alfabetisch gesorteerd.",
+            )
 
             options = tk.LabelFrame(form, text="Opties", labelanchor="n")
-            options.grid(row=2, column=1, sticky="ew", pady=(6, 0))
+            options.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(10, 0))
             options.columnconfigure(0, weight=1)
             self.include_order_docs_check = tk.Checkbutton(
                 options,
@@ -9627,7 +9798,7 @@ def start_gui():
             )
 
             export_box = tk.LabelFrame(form, text="Exportbestand", labelanchor="n")
-            export_box.grid(row=3, column=1, sticky="ew", pady=(8, 0))
+            export_box.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(8, 0))
             export_box.columnconfigure(1, weight=1)
             tk.Label(export_box, text="Naam:").grid(
                 row=0, column=0, sticky="e", padx=(8, 6), pady=(6, 2)
@@ -9635,7 +9806,7 @@ def start_gui():
             ttk.Entry(
                 export_box,
                 textvariable=self.export_filename_var,
-                state="readonly",
+                state="disabled",
             ).grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=(6, 2))
             tk.Label(export_box, text="Map:").grid(
                 row=1, column=0, sticky="e", padx=(8, 6), pady=(2, 6)
@@ -9643,11 +9814,11 @@ def start_gui():
             ttk.Entry(
                 export_box,
                 textvariable=self.export_folder_var,
-                state="readonly",
+                state="disabled",
             ).grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=(2, 6))
 
             self.order_flow_frame = tk.Frame(form)
-            self.order_flow_frame.grid(row=4, column=1, sticky="ew", pady=(8, 0))
+            self.order_flow_frame.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(6, 0))
             self.order_flow_frame.columnconfigure(0, weight=1)
             self.order_flow_label = tk.Label(
                 self.order_flow_frame,
@@ -9667,7 +9838,7 @@ def start_gui():
             self.order_flow_frame.grid_remove()
 
             preview = tk.LabelFrame(form, text="Voorbeeldvolgorde", labelanchor="n")
-            preview.grid(row=6, column=0, columnspan=2, sticky="nsew", pady=(10, 0))
+            preview.grid(row=6, column=0, columnspan=3, sticky="nsew", pady=(10, 0))
             preview.columnconfigure(0, weight=1)
             preview.rowconfigure(0, weight=1)
             columns = ("nr", "section", "production", "role", "filename")
@@ -9774,8 +9945,8 @@ def start_gui():
             if callable(self.on_options_changed):
                 self.on_options_changed()
 
-        def _reload_presets(self) -> None:
-            choices = [self.NO_PRESET_LABEL]
+        def _reload_presets(self, show_blank_template: bool = True) -> None:
+            base_choices = [self.NO_PRESET_LABEL] if show_blank_template else []
             built_ins = [
                 default_pdf_workdossier_preset(),
                 tecno_art_pdf_workdossier_preset(),
@@ -9783,17 +9954,32 @@ def start_gui():
             self._preset_map = {}
             for built_in in built_ins:
                 self._preset_map[built_in.name] = built_in
-                choices.append(built_in.name)
+                base_choices.append(built_in.name)
+            
+            # Verzamel alle custom presets met correcte labels
+            custom_labels = {}  # name -> label_in_dropdown
             for preset in self.presets_db.presets_sorted():
                 label = preset.name
                 if label in self._preset_map:
                     label = f"{preset.name} (opgeslagen)"
                 self._preset_map[label] = preset
-                choices.append(label)
-            self.preset_combo.configure(values=choices)
-            self.preset_editor_combo.configure(values=choices)
-            if self.preset_var.get() not in choices:
-                self.preset_var.set(self.NO_PRESET_LABEL)
+                custom_labels[preset.name] = label
+                base_choices.append(label)
+            self.preset_combo.configure(values=base_choices)
+
+            full_choices = [self.NO_PRESET_LABEL]
+            for built_in in built_ins:
+                full_choices.append(built_in.name)
+            for preset in self.presets_db.presets_sorted():
+                label = custom_labels.get(preset.name, preset.name)
+                full_choices.append(label)
+            self.preset_editor_combo.configure(values=full_choices)
+
+            if self.preset_var.get() not in base_choices:
+                if show_blank_template:
+                    self.preset_var.set(self.NO_PRESET_LABEL)
+                elif base_choices:
+                    self.preset_var.set(base_choices[0])
 
         def _saved_preset_label(self, name: str) -> str:
             if name in {
@@ -9806,6 +9992,14 @@ def start_gui():
         def _sync_mode(self) -> None:
             is_workdossier = self.mode_var.get() == self.MODE_WORKDOSSIER
             readonly = "readonly" if is_workdossier and not self._busy else "disabled"
+            if is_workdossier:
+                self.preset_label.grid()
+                self.preset_combo.grid()
+                self._reload_presets(show_blank_template=False)
+            else:
+                self.preset_label.grid_remove()
+                self.preset_combo.grid_remove()
+                self._reload_presets(show_blank_template=True)
             self.preset_combo.configure(state=readonly)
             self.include_order_docs_check.configure(
                 state="normal" if is_workdossier and not self._busy else "disabled"
@@ -9835,7 +10029,6 @@ def start_gui():
             else:
                 section_blocks = []
             self.sections_editor.set_sections(section_blocks)
-            self._sync_mode()
 
         def _parse_preset_from_form(self, name: str = "Aangepast") -> Optional[PdfWorkDossierPreset]:
             sections: List[PdfWorkDossierSection] = []
@@ -9871,9 +10064,9 @@ def start_gui():
             self.presets_db.save(PDF_WORKDOSSIER_PRESETS_DB_FILE)
             self._reload_presets()
             self.preset_var.set(self._saved_preset_label(preset.name))
+            self._on_preset_selected()
             if callable(self.on_presets_changed):
                 self.on_presets_changed()
-                self.preset_var.set(self._saved_preset_label(preset.name))
             messagebox.showinfo("Preset bewaard", f"Preset '{preset.name}' is bewaard.", parent=self)
 
         def update_selected_preset(self) -> None:
@@ -9898,9 +10091,9 @@ def start_gui():
             self.presets_db.save(PDF_WORKDOSSIER_PRESETS_DB_FILE)
             self._reload_presets()
             self.preset_var.set(self._saved_preset_label(preset.name))
+            self._on_preset_selected()
             if callable(self.on_presets_changed):
                 self.on_presets_changed()
-                self.preset_var.set(self._saved_preset_label(preset.name))
             if was_saved:
                 message = f"Preset '{preset.name}' is bijgewerkt."
             else:
@@ -10347,6 +10540,8 @@ def start_gui():
             self._last_selected_notebook_tab = ""
             self.nb.bind("<<NotebookTabChanged>>", self._handle_tab_changed, add="+")
             self.custom_bom_tab: Optional[BOMCustomTab] = None
+            self._custom_bom_needs_sync = False
+            self._bom_load_in_progress = False
             self._custom_bom_placeholder = tk.Frame(
                 self.nb, background=tabs_background
             )
@@ -10437,6 +10632,10 @@ def start_gui():
 
             self._opticutter_refresh_after_id: Optional[str] = None
             self._opticutter_dirty = False
+            self._opticutter_needs_refresh = False
+            self._opticutter_analysis_stale = True
+            self._opticutter_refresh_generation = 0
+            self._opticutter_analysis_refresh_running = False
             self._opticutter_toast_window = None
             self._opticutter_toast_after_id = None
             self.opticutter_kerf_var.trace_add(
@@ -11116,10 +11315,13 @@ def start_gui():
 
             self.item_links: Dict[str, str] = {}
 
-            # Actions
+            # Actions and status
             ttk.Separator(main_footer, orient="horizontal").pack(fill="x", padx=8)
-            act = tk.Frame(main_footer)
-            act.pack(fill="x", padx=8, pady=(8, 4))
+            footer_row = tk.Frame(main_footer)
+            footer_row.pack(fill="x", padx=8, pady=(8, 8))
+
+            act = tk.Frame(footer_row)
+            act.pack(side="left", fill="x", expand=True)
             button_style = dict(
                 bg=MANUFACT_BRAND_COLOR,
                 activebackground="#F4C46C",
@@ -11146,24 +11348,63 @@ def start_gui():
                 act, text="PDF combineren", command=self._combine_pdf, **button_style
             ).pack(side="left", padx=6)
 
-            # Status
-            self.status_var = tk.StringVar(value="Klaar")
-            status_row = tk.Frame(main_footer)
-            status_row.pack(fill="x", padx=8, pady=(0, 8))
+            self.status_var = tk.StringVar(value="Klaar voor gebruik")
+            status_row = tk.Frame(footer_row)
+            status_row.pack(side="right", fill="x")
             tk.Label(
                 status_row,
                 textvariable=self.status_var,
-                anchor="w",
-            ).pack(side="left", fill="x", expand=True)
-            tk.Label(
+                anchor="e",
+            ).pack(side="left", padx=(0, 20), fill="x", expand=True)
+            self.export_progress_var = tk.DoubleVar(master=self, value=0)
+            self.export_progress = ttk.Progressbar(
+                status_row,
+                variable=self.export_progress_var,
+                maximum=100,
+                mode="determinate",
+                length=150,
+            )
+            self.export_progress_label_var = tk.StringVar(master=self, value="")
+            self.export_progress_label = tk.Label(
+                status_row,
+                textvariable=self.export_progress_label_var,
+                width=5,
+                anchor="e",
+            )
+            self.version_label = tk.Label(
                 status_row,
                 text=f"Versie {APP_VERSION}",
                 anchor="e",
-            ).pack(side="right")
+            )
+            self.version_label.pack(side="right")
             self._refresh_document_filename_controls()
             self._sync_document_filename_profile_display()
             self._update_document_filename_preview()
             self._save_settings()
+
+        def _set_export_progress_visible(self, visible: bool) -> None:
+            progress = getattr(self, "export_progress", None)
+            label = getattr(self, "export_progress_label", None)
+            if progress is None or label is None:
+                return
+            try:
+                if visible:
+                    if not progress.winfo_manager():
+                        progress.pack(side="left", padx=(0, 6))
+                    if not label.winfo_manager():
+                        label.pack(side="left", padx=(0, 12))
+                else:
+                    progress.pack_forget()
+                    label.pack_forget()
+            except tk.TclError:
+                pass
+
+        def _apply_export_progress_event(self, event: ProgressEvent) -> None:
+            percentage = event.normalized_percent()
+            self._set_export_progress_visible(True)
+            self.export_progress_var.set(percentage)
+            self.export_progress_label_var.set(f"{percentage}%")
+            self.status_var.set(event.message)
 
         def _current_client(self) -> Optional[Client]:
             if not hasattr(self, "client_var"):
@@ -12055,13 +12296,56 @@ def start_gui():
                 pady=8,
             )
             text_widget.pack(fill="both", expand=True, padx=16, pady=(0, 8))
-            text_widget.insert("1.0", "\n".join(content))
+
+            text_widget.tag_configure(
+                "question",
+                font=("TkDefaultFont", 10, "bold"),
+                foreground="#1F2937",
+                lmargin1=4,
+                lmargin2=4,
+            )
+            text_widget.tag_configure(
+                "answer",
+                font=("TkDefaultFont", 10),
+                foreground="#374151",
+                lmargin1=12,
+                lmargin2=12,
+            )
+
+            for entry in FAQ_ENTRIES:
+                text_widget.insert("end", f"Q: {entry['question']}\n", "question")
+                text_widget.insert("end", f"A: {entry['answer']}\n\n", "answer")
+
             text_widget.config(state="disabled")
 
             close_btn = tk.Button(win, text="Sluiten", command=win.destroy)
             close_btn.pack(anchor="e", padx=16, pady=(0, 12))
             win.transient(self)
             win.grab_set()
+
+        def _open_visual_quick_manual(self) -> None:
+            """Open the visual quick-start markdown file."""
+            import os
+            import tkinter as tk
+            from tkinter import messagebox
+            from pathlib import Path
+
+            doc_path = Path(__file__).resolve().parent / "docs" / "quick_start_visual.md"
+            if doc_path.exists():
+                try:
+                    os.startfile(str(doc_path))
+                    return
+                except Exception:
+                    pass
+            try:
+                import webbrowser
+                webbrowser.open(doc_path.as_uri())
+            except Exception as exc:
+                messagebox.showerror(
+                    "Fout",
+                    f"Kon de visuele quick manual niet openen.\n{doc_path}\n{exc}",
+                    parent=self,
+                )
 
         def _show_about_dialog(self) -> None:
             """Show about dialog."""
@@ -12089,7 +12373,16 @@ def start_gui():
                 self._last_selected_notebook_tab = str(tab)
                 return
 
+            # Refresh data when switching to the Bestelbon-editor tab to show new suppliers/clients/deliveries
+            manual_order_tab = getattr(self, "manual_order_tab", None)
+            if manual_order_tab is not None and selected and str(selected) == str(manual_order_tab):
+                try:
+                    manual_order_tab.refresh_data()
+                except Exception:
+                    pass
+
             self._handle_opticutter_tab_transition(previous, selected)
+            self._refresh_opticutter_if_needed(selected)
             self._last_selected_notebook_tab = str(selected or "")
 
         def _is_opticutter_tab(self, tab_id: object) -> bool:
@@ -12099,6 +12392,161 @@ def start_gui():
                 and opticutter_frame is not None
                 and str(tab_id) == str(opticutter_frame)
             )
+
+        def _apply_opticutter_analysis_state(self, analysis) -> None:
+            self.opticutter_last_analysis = analysis
+            if analysis is None or not getattr(analysis, "profiles", None):
+                self.opticutter_profile_selection_scenarios = {}
+                self.opticutter_profile_selection_choice.clear()
+                return
+
+            valid_keys = {profile.key for profile in analysis.profiles}
+            for stored_key in list(self.opticutter_profile_custom_lengths.keys()):
+                if stored_key not in valid_keys:
+                    self.opticutter_profile_custom_lengths.pop(stored_key, None)
+            for stored_key in list(self.opticutter_profile_selection_choice.keys()):
+                if stored_key not in valid_keys:
+                    self.opticutter_profile_selection_choice.pop(stored_key, None)
+
+            selection_scenarios = {}
+            for profile in analysis.profiles:
+                selection_scenarios[profile.key] = profile.scenarios
+                available_values = set(profile.scenarios.keys()) | {"input"}
+                previous_choice = self.opticutter_profile_selection_choice.get(
+                    profile.key
+                )
+                selected_value = (
+                    previous_choice
+                    if previous_choice in available_values
+                    else profile.best_choice
+                )
+                self.opticutter_profile_selection_choice[profile.key] = selected_value
+            self.opticutter_profile_selection_scenarios = selection_scenarios
+
+        def _compute_opticutter_analysis_snapshot(
+            self,
+            bom_df_snapshot: Optional["pd.DataFrame"],
+            kerf_mm: float,
+            custom_stock_mm: Optional[int],
+            manual_lengths: Dict[tuple[str, str, str], int],
+        ):
+            if bom_df_snapshot is None or bom_df_snapshot.empty:
+                return None
+            return analyse_profiles(
+                bom_df_snapshot,
+                kerf_mm=kerf_mm,
+                custom_stock_mm=custom_stock_mm,
+                manual_lengths=manual_lengths,
+            )
+
+        def _ensure_opticutter_analysis_current(self) -> None:
+            if not getattr(self, "_opticutter_analysis_stale", True):
+                return
+
+            self._opticutter_refresh_generation += 1
+            self._opticutter_analysis_refresh_running = False
+            bom_df = self.bom_df
+            bom_df_snapshot = (
+                bom_df.copy(deep=True)
+                if bom_df is not None and not bom_df.empty
+                else None
+            )
+            analysis = self._compute_opticutter_analysis_snapshot(
+                bom_df_snapshot,
+                self._get_opticutter_kerf_mm(),
+                self._get_opticutter_custom_stock_mm(),
+                dict(self.opticutter_profile_custom_lengths),
+            )
+            self._apply_opticutter_analysis_state(analysis)
+            self._opticutter_analysis_stale = False
+
+        def _start_background_opticutter_analysis_refresh(self) -> None:
+            self._opticutter_refresh_generation += 1
+            generation = self._opticutter_refresh_generation
+            self._opticutter_analysis_stale = True
+
+            bom_df = self.bom_df
+            bom_df_snapshot = (
+                bom_df.copy(deep=True)
+                if bom_df is not None and not bom_df.empty
+                else None
+            )
+            kerf_mm = self._get_opticutter_kerf_mm()
+            custom_stock_mm = self._get_opticutter_custom_stock_mm()
+            manual_lengths = dict(self.opticutter_profile_custom_lengths)
+
+            if bom_df_snapshot is None:
+                self._apply_opticutter_analysis_state(None)
+                self._opticutter_analysis_stale = False
+                self._opticutter_analysis_refresh_running = False
+                return
+
+            self._opticutter_analysis_refresh_running = True
+
+            def work() -> None:
+                try:
+                    analysis = self._compute_opticutter_analysis_snapshot(
+                        bom_df_snapshot,
+                        kerf_mm,
+                        custom_stock_mm,
+                        manual_lengths,
+                    )
+                except Exception as exc:
+                    analysis = None
+                    print(
+                        f"Kon Opticutter-analyse niet bijwerken: {exc}",
+                        file=sys.stderr,
+                    )
+
+                def apply() -> None:
+                    if generation != getattr(
+                        self, "_opticutter_refresh_generation", generation
+                    ):
+                        return
+                    self._opticutter_analysis_refresh_running = False
+                    self._apply_opticutter_analysis_state(analysis)
+                    self._opticutter_analysis_stale = False
+                    try:
+                        selected = self.nb.select()
+                    except Exception:
+                        selected = None
+                    if self._is_opticutter_tab(selected):
+                        self._opticutter_needs_refresh = False
+                        self._refresh_opticutter_table(analysis_override=analysis)
+                    else:
+                        self._opticutter_needs_refresh = True
+
+                try:
+                    self.after(0, apply)
+                except tk.TclError:
+                    pass
+
+            threading.Thread(
+                target=work,
+                name="OpticutterAnalysisRefresh",
+                daemon=True,
+            ).start()
+
+        def _refresh_opticutter_if_needed(self, selected_tab: object = None) -> None:
+            if not getattr(self, "_opticutter_needs_refresh", False):
+                return
+            tab_id = selected_tab
+            if tab_id is None:
+                try:
+                    tab_id = self.nb.select()
+                except Exception:
+                    tab_id = None
+            if not self._is_opticutter_tab(tab_id):
+                return
+            self._opticutter_needs_refresh = False
+            analysis = None
+            if not getattr(self, "_opticutter_analysis_stale", True):
+                analysis = getattr(self, "opticutter_last_analysis", None)
+            self._refresh_opticutter_table(analysis_override=analysis)
+
+        def _request_opticutter_refresh(self) -> None:
+            self._opticutter_needs_refresh = True
+            self._start_background_opticutter_analysis_refresh()
 
         def _handle_opticutter_tab_transition(
             self,
@@ -12145,6 +12593,11 @@ def start_gui():
             else:
                 self.nb.insert(insert_index, tab, text="Custom BOM")
             self.custom_bom_tab = tab
+            if self._autofill_custom_bom_enabled() and (
+                getattr(self, "_custom_bom_needs_sync", False)
+                or self.bom_df is not None
+            ):
+                self._load_current_bom_into_custom_tab(tab)
             return tab
 
         def _select_custom_bom_tab(self) -> None:
@@ -12185,31 +12638,41 @@ def start_gui():
                     pass
             return bool(getattr(self.settings, "autofill_custom_bom", True))
 
-        def _sync_custom_bom_from_main(self) -> None:
-            """Update the Custom BOM tab so it mirrors the main BOM."""
-
-            tab = getattr(self, "custom_bom_tab", None)
-            if tab is None:
-                tab = self._ensure_custom_bom_tab()
-            if not self._autofill_custom_bom_enabled():
-                return
-
+        def _load_current_bom_into_custom_tab(self, tab: "BOMCustomTab") -> None:
             df = self.bom_df
             if df is None:
-                empty = pd.DataFrame(columns=BOMCustomTab.MAIN_COLUMN_ORDER)
-            else:
-                empty = df
+                df = pd.DataFrame(columns=BOMCustomTab.MAIN_COLUMN_ORDER)
 
             try:
-                tab.load_from_main_dataframe(empty)
+                tab.load_from_main_dataframe(df)
             except Exception as exc:
                 print(
                     f"Kon custom BOM niet vullen vanuit hoofd-BOM: {exc}",
                     file=sys.stderr,
                 )
+            finally:
+                self._custom_bom_needs_sync = False
 
-        def _load_bom_from_path(self, path: str, *, mark_as_custom: bool = False) -> None:
-            df = load_bom(path)
+        def _sync_custom_bom_from_main(self) -> None:
+            """Update the Custom BOM tab so it mirrors the main BOM."""
+
+            if not self._autofill_custom_bom_enabled():
+                self._custom_bom_needs_sync = False
+                return
+
+            tab = getattr(self, "custom_bom_tab", None)
+            if tab is None:
+                self._custom_bom_needs_sync = self.bom_df is not None
+                return
+            self._load_current_bom_into_custom_tab(tab)
+
+        def _apply_loaded_bom(
+            self,
+            path: str,
+            df: "pd.DataFrame",
+            *,
+            mark_as_custom: bool = False,
+        ) -> None:
             if "Bestanden gevonden" not in df.columns:
                 df["Bestanden gevonden"] = ""
             if "Status" not in df.columns:
@@ -12227,6 +12690,10 @@ def start_gui():
             self.status_var.set(f"BOM geladen: {len(df)} rijen")
             self._sync_custom_bom_from_main()
 
+        def _load_bom_from_path(self, path: str, *, mark_as_custom: bool = False) -> None:
+            df = load_bom(path)
+            self._apply_loaded_bom(path, df, mark_as_custom=mark_as_custom)
+
         def _load_bom(self):
             from tkinter import filedialog, messagebox
 
@@ -12237,10 +12704,46 @@ def start_gui():
             )
             if not path:
                 return
-            try:
-                self._load_bom_from_path(path)
-            except Exception as e:
-                messagebox.showerror("Fout", str(e))
+            if getattr(self, "_bom_load_in_progress", False):
+                messagebox.showinfo(
+                    "BOM wordt geladen",
+                    "Er wordt al een BOM geladen. Wacht tot die klaar is.",
+                    parent=self,
+                )
+                return
+
+            self._bom_load_in_progress = True
+            self.status_var.set("BOM laden...")
+
+            def work() -> None:
+                try:
+                    df = load_bom(path)
+                except Exception as exc:
+                    error_message = str(exc)
+
+                    def on_error(message: str = error_message) -> None:
+                        self._bom_load_in_progress = False
+                        messagebox.showerror("Fout", message, parent=self)
+
+                    try:
+                        self.after(0, on_error)
+                    except tk.TclError:
+                        pass
+                    return
+
+                def on_loaded(loaded_df: "pd.DataFrame" = df) -> None:
+                    self._bom_load_in_progress = False
+                    try:
+                        self._apply_loaded_bom(path, loaded_df)
+                    except Exception as exc:
+                        messagebox.showerror("Fout", str(exc), parent=self)
+
+                try:
+                    self.after(0, on_loaded)
+                except tk.TclError:
+                    pass
+
+            threading.Thread(target=work, name="BOMLoader", daemon=True).start()
 
         def _on_custom_bom_ready(self, path: "Path", _row_count: int) -> None:
             from tkinter import messagebox
@@ -12435,7 +12938,7 @@ def start_gui():
                             context_kind="Afwerking",
                         )
 
-            self._refresh_opticutter_table()
+            self._ensure_opticutter_analysis_current()
             opticutter_analysis = getattr(self, "opticutter_last_analysis", None)
             scenarios_ready = bool(self.opticutter_profile_selection_scenarios)
 
@@ -12464,7 +12967,7 @@ def start_gui():
                         self.opticutter_profile_selection_scenarios[profile.key] = (
                             profile.scenarios
                         )
-                    self._refresh_opticutter_table()
+                    self._ensure_opticutter_analysis_current()
                     opticutter_analysis = getattr(self, "opticutter_last_analysis", None)
                     scenarios_ready = bool(self.opticutter_profile_selection_scenarios)
 
@@ -12593,7 +13096,7 @@ def start_gui():
                     return
 
                 client = self._current_client()
-                self._refresh_opticutter_table()
+                self._ensure_opticutter_analysis_current()
                 opticutter_analysis_current = getattr(
                     self, "opticutter_last_analysis", None
                 )
@@ -12759,6 +13262,18 @@ def start_gui():
 
                     self.after(0, apply)
 
+                def update_progress(event: ProgressEvent) -> None:
+                    def apply() -> None:
+                        self._apply_export_progress_event(event)
+                        if sel_frame is not None:
+                            try:
+                                if sel_frame.winfo_exists():
+                                    sel_frame.update_status(event.display_text())
+                            except tk.TclError:
+                                pass
+
+                    self.after(0, apply)
+
                 def set_busy_state(active: bool, message: Optional[str] = None) -> None:
                     def apply() -> None:
                         btn = getattr(self, "copy_per_prod_button", None)
@@ -12767,6 +13282,14 @@ def start_gui():
                                 btn.configure(state="disabled" if active else "normal")
                             except tk.TclError:
                                 pass
+                        if active:
+                            self._apply_export_progress_event(
+                                ProgressEvent(
+                                    "prepare",
+                                    message or "Export voorbereiden...",
+                                    percent=0,
+                                )
+                            )
                         if sel_frame is not None:
                             try:
                                 if sel_frame.winfo_exists():
@@ -12853,7 +13376,7 @@ def start_gui():
                             self.after(0, on_dry)
                             return
 
-                    update_status("KopiÃ«ren & bestelbonnen maken...")
+                    update_status("Kopiëren & bestelbonnen maken...")
                     if pdf_dossier_context:
                         update_status("Bon-PDF's voor PDF dossier maken...")
                     path_limit_messages: List[str] = []
@@ -12974,6 +13497,7 @@ def start_gui():
                             en1090_note=self.en1090_note_var.get(),
                             document_status_messages=document_status_lines,
                             generated_documents=generated_document_records,
+                            progress_callback=update_progress,
                         )
                         if export_state_snapshot is not None:
                             try:
@@ -13082,7 +13606,7 @@ def start_gui():
                             else str(chosen)
                         )
                         final_status = (
-                            f"Klaar. Gekopieerd: {cnt}. Leveranciers: {suppliers_text}. â†’ {bundle_dest}"
+                            f"Klaar. Gekopieerd: {cnt}. Leveranciers: {suppliers_text}. → {bundle_dest}"
                         )
                         update_status(final_status)
                         try:
@@ -13102,7 +13626,7 @@ def start_gui():
                                     f"Windows laat maximaal {_WINDOWS_MAX_PATH} tekens per pad toe; Filehopper voegt dan automatisch een korte code toe.",
                                     "",
                                 ]
-                                warning_lines.extend(f"â€¢ {msg}" for msg in path_limit_messages)
+                                warning_lines.extend(f"• {msg}" for msg in path_limit_messages)
                                 warning_lines.extend(
                                     [
                                         "",
@@ -13650,7 +14174,7 @@ def start_gui():
                 self._opticutter_selection_update_in_progress = False
                 self.opticutter_profile_selection_choice[key] = chosen
 
-        def _refresh_opticutter_table(self) -> None:
+        def _refresh_opticutter_table(self, analysis_override=None) -> None:
             after_id = getattr(self, "_opticutter_refresh_after_id", None)
             if after_id is not None:
                 try:
@@ -13691,27 +14215,49 @@ def start_gui():
 
             df = self.bom_df
             if df is None:
+                self._apply_opticutter_analysis_state(None)
+                self._opticutter_analysis_stale = False
+                self._opticutter_needs_refresh = False
                 self.opticutter_profile_selection_scenarios = {}
                 self._update_opticutter_selection_rows([])
                 return
             if df.empty:
                 if info_var is not None:
                     info_var.set("BOM is leeg. Geen profielen om te tonen.")
+                self._apply_opticutter_analysis_state(None)
+                self._opticutter_analysis_stale = False
+                self._opticutter_needs_refresh = False
                 self.opticutter_profile_selection_scenarios = {}
                 self._update_opticutter_selection_rows([])
                 return
 
-            kerf_mm = self._get_opticutter_kerf_mm()
-            custom_stock_mm = self._get_opticutter_custom_stock_mm()
-
-            manual_lengths = dict(self.opticutter_profile_custom_lengths)
-            analysis = analyse_profiles(
-                df,
-                kerf_mm=kerf_mm,
-                custom_stock_mm=custom_stock_mm,
-                manual_lengths=manual_lengths,
-            )
-            self.opticutter_last_analysis = analysis
+            if analysis_override is None:
+                self._opticutter_refresh_generation += 1
+                self._opticutter_analysis_refresh_running = False
+                kerf_mm = self._get_opticutter_kerf_mm()
+                custom_stock_mm = self._get_opticutter_custom_stock_mm()
+                analysis = analyse_profiles(
+                    df,
+                    kerf_mm=kerf_mm,
+                    custom_stock_mm=custom_stock_mm,
+                    manual_lengths=dict(self.opticutter_profile_custom_lengths),
+                )
+            else:
+                analysis = analysis_override
+                kerf_mm = getattr(analysis, "kerf_mm", self._get_opticutter_kerf_mm())
+                custom_stock_mm = getattr(
+                    analysis,
+                    "custom_stock_mm",
+                    self._get_opticutter_custom_stock_mm(),
+                )
+            self._apply_opticutter_analysis_state(analysis)
+            self._opticutter_analysis_stale = False
+            self._opticutter_needs_refresh = False
+            if analysis is None:
+                if info_var is not None:
+                    info_var.set("Geen Opticutter-analyse beschikbaar.")
+                self._update_opticutter_selection_rows([])
+                return
 
             valid_keys = {profile.key for profile in analysis.profiles}
             for stored_key in list(self.opticutter_profile_custom_lengths.keys()):
@@ -14123,7 +14669,7 @@ def start_gui():
             self.item_links.clear()
             for it in self.tree.get_children():
                 self.tree.delete(it)
-            self._refresh_opticutter_table()
+            self._request_opticutter_refresh()
             df = self.bom_df
             if df is None:
                 self.status_var.set("Geen BOM geladen.")
@@ -14270,7 +14816,7 @@ def start_gui():
                 except tk.TclError:
                     pass
 
-            self._refresh_opticutter_table()
+            self._request_opticutter_refresh()
 
 
             return "break" if event is not None else None
@@ -14483,6 +15029,24 @@ def start_gui():
                             seen_part_numbers.add(pn)
                             part_numbers_for_export.append(pn)
 
+            source_folder_snapshot = self.source_folder
+            dest_folder_snapshot = self.dest_folder
+            project_number_snapshot = self.project_number_var.get().strip()
+            project_name_snapshot = self.project_name_var.get().strip()
+            bundle_latest_snapshot = bool(self.bundle_latest_var.get())
+            bundle_dry_run_snapshot = bool(self.bundle_dry_run_var.get())
+            date_prefix_snapshot = bool(self.export_date_prefix_var.get())
+            date_suffix_snapshot = bool(self.export_date_suffix_var.get())
+
+            def update_progress(event: ProgressEvent) -> None:
+                self.after(0, lambda: self._apply_export_progress_event(event))
+
+            def phase_percent(start: int, end: int, index: int, total: int) -> int:
+                if total <= 0:
+                    return start
+                fraction = max(0.0, min(1.0, index / total))
+                return int(round(start + (end - start) * fraction))
+
             def work(
                 token_prefix_text=custom_prefix_text,
                 token_suffix_text=custom_suffix_text,
@@ -14494,14 +15058,20 @@ def start_gui():
                 export_bom_enabled=bool(self.export_bom_var.get()),
                 export_related_enabled=bool(self.export_related_files_var.get()),
             ):
-                self.status_var.set("Bundelmap voorbereiden...")
+                update_progress(
+                    ProgressEvent(
+                        "prepare",
+                        "Bundelmap voorbereiden...",
+                        percent=0,
+                    )
+                )
                 try:
                     bundle = create_export_bundle(
-                        self.dest_folder,
-                        self.project_number_var.get().strip() or None,
-                        self.project_name_var.get().strip() or None,
-                        latest_symlink="latest" if self.bundle_latest_var.get() else False,
-                        dry_run=bool(self.bundle_dry_run_var.get()),
+                        dest_folder_snapshot,
+                        project_number_snapshot or None,
+                        project_name_snapshot or None,
+                        latest_symlink="latest" if bundle_latest_snapshot else False,
+                        dry_run=bundle_dry_run_snapshot,
                     )
                 except Exception as exc:
                     def on_error():
@@ -14533,14 +15103,23 @@ def start_gui():
                             lines.append(f"Snelkoppeling: {bundle.latest_symlink}")
                         messagebox.showinfo("Testrun", "\n".join(lines), parent=self)
                         self.status_var.set(f"Testrun - doelmap: {bundle_dest}")
+                        self._apply_export_progress_event(
+                            ProgressEvent(
+                                "dry_run",
+                                f"Testrun - doelmap: {bundle_dest}",
+                                percent=100,
+                            )
+                        )
 
                     self.after(0, on_dry)
                     return
 
-                self.status_var.set("Kopiëren...")
-                idx = _build_file_index(self.source_folder, exts)
-                date_prefix = bool(self.export_date_prefix_var.get())
-                date_suffix = bool(self.export_date_suffix_var.get())
+                update_progress(
+                    ProgressEvent("scan", "Bestanden zoeken...", percent=8)
+                )
+                idx = _build_file_index(source_folder_snapshot, exts)
+                date_prefix = date_prefix_snapshot
+                date_suffix = date_suffix_snapshot
                 prefix_text_clean = (token_prefix_text or "").strip()
                 suffix_text_clean = (token_suffix_text or "").strip()
                 prefix_active = bool(token_prefix_enabled) and bool(prefix_text_clean)
@@ -14574,21 +15153,47 @@ def start_gui():
                     new_stem = "-".join([p for p in parts if p])
                     return f"{new_stem}{ext}"
                 copied_paths: set[str] = set()
-                cnt = 0
+                files_to_copy: List[str] = []
                 for pn in export_part_numbers:
                     for p in idx.get(pn, []):
                         if p in copied_paths:
                             continue
                         copied_paths.add(p)
-                        name = _export_name(os.path.basename(p))
-                        dst = os.path.join(bundle_dest, name)
-                        shutil.copy2(p, dst)
-                        cnt += 1
+                        files_to_copy.append(p)
+                total_files = len(files_to_copy)
+                if total_files:
+                    update_progress(
+                        ProgressEvent(
+                            "files",
+                            f"Bestanden kopieren... 0 van {total_files}",
+                            percent=15,
+                            done=0,
+                            total=total_files,
+                        )
+                    )
+                cnt = 0
+                for file_index, p in enumerate(files_to_copy, start=1):
+                    name = _export_name(os.path.basename(p))
+                    dst = os.path.join(bundle_dest, name)
+                    shutil.copy2(p, dst)
+                    cnt += 1
+                    update_progress(
+                        ProgressEvent(
+                            "files",
+                            f"Bestand gekopieerd... {os.path.basename(p)}",
+                            percent=phase_percent(15, 78, file_index, total_files),
+                            done=file_index,
+                            total=total_files,
+                        )
+                    )
 
                 bom_written = False
                 related_copied = 0
 
                 if export_bom_enabled:
+                    update_progress(
+                        ProgressEvent("bom", "BOM exporteren...", percent=82)
+                    )
                     if bom_df_snapshot is None:
                         def on_error():
                             messagebox.showerror(
@@ -14622,15 +15227,38 @@ def start_gui():
 
                 if export_related_enabled and bom_source:
                     try:
-                        for src_file in find_related_bom_exports(bom_source, idx):
-                            if src_file in copied_paths:
-                                continue
+                        related_exports = [
+                            src_file
+                            for src_file in find_related_bom_exports(bom_source, idx)
+                            if src_file not in copied_paths
+                        ]
+                        related_total = len(related_exports)
+                        if related_total:
+                            update_progress(
+                                ProgressEvent(
+                                    "related_files",
+                                    f"Gerelateerde BOM-bestanden kopieren... 0 van {related_total}",
+                                    percent=90,
+                                    done=0,
+                                    total=related_total,
+                                )
+                            )
+                        for related_index, src_file in enumerate(related_exports, start=1):
                             copied_paths.add(src_file)
                             transformed = _export_name(os.path.basename(src_file))
                             dst = os.path.join(bundle_dest, transformed)
                             shutil.copy2(src_file, dst)
                             related_copied += 1
-                    except Exception:
+                            update_progress(
+                                ProgressEvent(
+                                    "related_files",
+                                    f"Gerelateerd BOM-bestand gekopieerd... {os.path.basename(src_file)}",
+                                    percent=phase_percent(90, 97, related_index, related_total),
+                                    done=related_index,
+                                    total=related_total,
+                                )
+                            )
+                    except Exception as exc:
                         def on_error():
                             messagebox.showerror(
                                 "Fout",
@@ -14641,6 +15269,10 @@ def start_gui():
 
                         self.after(0, on_error)
                         return
+
+                update_progress(
+                    ProgressEvent("done", "Export afgerond.", percent=100)
+                )
 
                 def on_done():
                     status_text = f"Klaar. Gekopieerd: {cnt} → {bundle_dest}"
@@ -14738,7 +15370,7 @@ def start_gui():
             }
             sel_frame = None
 
-            self._refresh_opticutter_table()
+            self._ensure_opticutter_analysis_current()
             opticutter_analysis = getattr(self, "opticutter_last_analysis", None)
             scenarios_ready = bool(self.opticutter_profile_selection_scenarios)
 
@@ -14766,7 +15398,7 @@ def start_gui():
                     self.opticutter_profile_selection_scenarios[profile.key] = (
                         profile.scenarios
                     )
-                self._refresh_opticutter_table()
+                self._ensure_opticutter_analysis_current()
                 opticutter_analysis = getattr(self, "opticutter_last_analysis", None)
                 scenarios_ready = bool(self.opticutter_profile_selection_scenarios)
 
@@ -14817,7 +15449,7 @@ def start_gui():
                     return
                 current_bom = self.bom_df
                 client = self._current_client()
-                self._refresh_opticutter_table()
+                self._ensure_opticutter_analysis_current()
                 opticutter_analysis_current = getattr(
                     self, "opticutter_last_analysis", None
                 )
@@ -14979,6 +15611,18 @@ def start_gui():
 
                     self.after(0, apply)
 
+                def update_progress(event: ProgressEvent) -> None:
+                    def apply() -> None:
+                        self._apply_export_progress_event(event)
+                        if sel_frame is not None:
+                            try:
+                                if sel_frame.winfo_exists():
+                                    sel_frame.update_status(event.display_text())
+                            except tk.TclError:
+                                pass
+
+                    self.after(0, apply)
+
                 def set_busy_state(active: bool, message: Optional[str] = None) -> None:
                     def apply() -> None:
                         btn = getattr(self, "copy_per_prod_button", None)
@@ -14987,6 +15631,14 @@ def start_gui():
                                 btn.configure(state="disabled" if active else "normal")
                             except tk.TclError:
                                 pass
+                        if active:
+                            self._apply_export_progress_event(
+                                ProgressEvent(
+                                    "prepare",
+                                    message or "Export voorbereiden...",
+                                    percent=0,
+                                )
+                            )
                         if sel_frame is not None:
                             try:
                                 if sel_frame.winfo_exists():
@@ -15146,6 +15798,7 @@ def start_gui():
                             en1090_note=self.en1090_note_var.get(),
                             document_status_messages=document_status_lines,
                             generated_documents=generated_document_records,
+                            progress_callback=update_progress,
                         )
                         if export_state_snapshot is not None:
                             try:
@@ -15369,13 +16022,18 @@ def start_gui():
                 on_prepare_orders=self._prepare_pdf_order_documents,
             )
             self.pdf_workdossier_options_frame.grid(row=0, column=0, sticky="nsew")
+            self.pdf_workdossier_options_frame.subtabs.bind(
+                "<<NotebookTabChanged>>",
+                lambda _event: self._update_pdf_workdossier_actions_visibility(),
+            )
 
             actions = tk.Frame(frame)
+            self.pdf_workdossier_actions_frame = actions
             actions.grid(row=1, column=0, sticky="ew", pady=(10, 0))
             actions.columnconfigure(1, weight=1)
             self.pdf_workdossier_refresh_button = ttk.Button(
                 actions,
-                text="Voorbeeld vernieuwen",
+                text="Tabel bijwerken",
                 command=self._refresh_pdf_workdossier_preview,
             )
             self.pdf_workdossier_refresh_button.grid(row=0, column=0, sticky="w", padx=(0, 8))
@@ -15407,7 +16065,16 @@ def start_gui():
                 pady=6,
             )
             self.pdf_workdossier_export_button.grid(row=0, column=3, sticky="e")
+            self._update_pdf_workdossier_actions_visibility()
             self.after_idle(self._refresh_pdf_workdossier_preview)
+
+        def _update_pdf_workdossier_actions_visibility(self) -> None:
+            selected_tab = self.pdf_workdossier_options_frame.subtabs.select()
+            work_tab_id = str(self.pdf_workdossier_options_frame.work_tab)
+            if selected_tab == work_tab_id:
+                self.pdf_workdossier_actions_frame.grid()
+            else:
+                self.pdf_workdossier_actions_frame.grid_remove()
 
         def _schedule_pdf_workdossier_preview(self, *_args) -> None:
             after_id = getattr(self, "_pdf_preview_after_id", None)
@@ -15651,22 +16318,35 @@ def start_gui():
                 except tk.TclError:
                     pass
             if running:
-                self.pdf_workdossier_progress_var.set(0)
-                self.pdf_workdossier_progress_label_var.set("0%")
+                self._set_pdf_progress_display(0, "PDF's combineren... 0%")
+
+        def _set_pdf_progress_display(
+            self,
+            percentage: int,
+            status_text: str | None = None,
+        ) -> None:
+            percentage = max(0, min(100, int(percentage)))
+            self.pdf_workdossier_progress_var.set(percentage)
+            self.pdf_workdossier_progress_label_var.set(f"{percentage}%")
+            if status_text is not None:
+                self.status_var.set(status_text)
 
         def _update_pdf_progress(self, done: int, total: int, path: str = "") -> None:
             percentage = 0
             if total > 0:
-                percentage = max(0, min(100, int((done / total) * 100)))
+                # PyPDF2 still has to write the combined output after all source
+                # PDFs are appended. Keep some room so 100% means fully finished.
+                percentage = max(0, min(95, int((done / total) * 100)))
             filename = os.path.basename(path) if path else ""
+            if total > 0 and done >= total:
+                status_text = "PDF opslaan..."
+            elif filename:
+                status_text = f"PDF's samenvoegen... {percentage}% - {filename}"
+            else:
+                status_text = f"PDF's samenvoegen... {percentage}%"
 
             def apply() -> None:
-                self.pdf_workdossier_progress_var.set(percentage)
-                self.pdf_workdossier_progress_label_var.set(f"{percentage}%")
-                if filename:
-                    self.status_var.set(f"PDF's combineren... {percentage}% - {filename}")
-                else:
-                    self.status_var.set(f"PDF's combineren... {percentage}%")
+                self._set_pdf_progress_display(percentage, status_text)
 
             self.after(0, apply)
 
@@ -15743,7 +16423,7 @@ def start_gui():
                 return
 
             self._set_pdf_action_running(True)
-            self.status_var.set("PDF's combineren... 0%")
+            self._set_pdf_progress_display(0, "PDF's combineren... 0%")
 
             def work() -> None:
                 try:
@@ -15788,6 +16468,11 @@ def start_gui():
                             generated_order_documents=generated_order_documents,
                             progress_callback=self._update_pdf_progress,
                         )
+
+                    def on_finalize() -> None:
+                        self._set_pdf_progress_display(98, "PDF dossier afronden...")
+
+                    self.after(0, on_finalize)
                 except ModuleNotFoundError:
                     def on_missing_module() -> None:
                         self.status_var.set("PyPDF2 ontbreekt")
@@ -15816,11 +16501,6 @@ def start_gui():
                     return
 
                 def on_done() -> None:
-                    self.pdf_workdossier_progress_var.set(100)
-                    self.pdf_workdossier_progress_label_var.set("100%")
-                    self.status_var.set(
-                        f"Gecombineerde pdf's: {result.count} -> {result.output_dir}"
-                    )
                     output_files = list(getattr(result, "output_files", []) or [])
                     open_pdf = bool(options.get("open_pdf"))
                     target_to_open = (
@@ -15831,8 +16511,13 @@ def start_gui():
                     message = "PDF's gecombineerd.\n\n" f"Map: {result.output_dir}"
                     if len(output_files) == 1:
                         message += f"\nPDF: {output_files[0]}"
-                    self._set_pdf_action_running(False)
+                    self._set_pdf_progress_display(98, "PDF voorbeeld bijwerken...")
                     self._refresh_pdf_workdossier_preview()
+                    self._set_pdf_progress_display(
+                        100,
+                        f"Gecombineerde pdf's: {result.count} -> {result.output_dir}",
+                    )
+                    self._set_pdf_action_running(False)
                     messagebox.showinfo("Klaar", message, parent=self)
                     self._open_export_path(target_to_open)
 
