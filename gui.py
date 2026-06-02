@@ -9806,7 +9806,7 @@ def start_gui():
             ttk.Entry(
                 export_box,
                 textvariable=self.export_filename_var,
-                state="readonly",
+                state="disabled",
             ).grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=(6, 2))
             tk.Label(export_box, text="Map:").grid(
                 row=1, column=0, sticky="e", padx=(8, 6), pady=(2, 6)
@@ -9814,7 +9814,7 @@ def start_gui():
             ttk.Entry(
                 export_box,
                 textvariable=self.export_folder_var,
-                state="readonly",
+                state="disabled",
             ).grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=(2, 6))
 
             self.order_flow_frame = tk.Frame(form)
