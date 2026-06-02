@@ -1,39 +1,23 @@
 {
-  "doc_type": "Bestelbon",
-  "doc_number": "BB-001",
-  "client": "Thissen Biljarts",
-  "supplier": "Productora",
-  "delivery": "Bestelling wordt opgehaald",
-  "context_label": "Balgeleiding",
+  "doc_type": "Offerteaanvraag",
+  "doc_number": "OFF-02",
+  "client": "* Jeroen Van Dooren GCV",
+  "supplier": "Van Gils Coating - Beringen/Maasmechelen",
+  "delivery": "Geen",
+  "context_label": "Powdercoating-Bar chair",
   "context_kind": "document",
-  "remark": "P25-001-V3-p28 dient afgelast te worden.\nOnderdelen dienen gelakt te worden.",
+  "remark": "Poedercoating graag in fijn structuur",
   "items": [
     {
-      "PartNumber": "P25-001-V3-p27",
-      "Description": "Ball gutter",
-      "Materiaal": "ST235JR",
-      "Aantal": 1,
-      "Oppervlakte": 0.42,
-      "Gewicht": 3.23
-    },
-    {
-      "PartNumber": "P25-001-V3-p28",
-      "Description": "Ball box",
-      "Materiaal": "ST235JR",
-      "Aantal": 1,
-      "Oppervlakte": 0.56,
-      "Gewicht": 4.29
-    },
-    {
-      "PartNumber": "P25-001-V3-p03",
-      "Description": "Ball gutter",
-      "Materiaal": "ST235JR",
-      "Aantal": 1,
-      "Oppervlakte": 0.42,
-      "Gewicht": 3.23
+      "PartNumber": "190610_p07",
+      "Description": "Poederlakken barkruk frame RAL 3022 FS",
+      "Materiaal": "S235JR",
+      "Aantal": 4,
+      "Oppervlakte": 0.5,
+      "Gewicht": 7.8
     }
   ],
-  "total_weight": 10.75,
+  "total_weight": 7.8,
   "template": "Standaard",
   "column_layout": [
     {
