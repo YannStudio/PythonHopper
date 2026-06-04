@@ -11,7 +11,14 @@ import tkinter as tk
 from tkinter import font, messagebox, ttk
 
 from helpers import _to_str, strip_favorite_marker
-from orders import _normalize_doc_number, _prefix_for_doc_type, _sanitize_component
+from orders import (
+    _clean_vat_rate_text,
+    _format_price_decimal,
+    _normalize_doc_number,
+    _prefix_for_doc_type,
+    _price_decimal,
+    _sanitize_component,
+)
 from orders.core import calculate_order_measure_totals
 
 if TYPE_CHECKING:
@@ -94,6 +101,8 @@ class _ManualRowWidgets:
     entries: Dict[str, tk.Entry]
     remove_btn: tk.Button
     tooltips: List[_OverflowTooltip] = field(default_factory=list)
+    price_link_in_progress: bool = False
+    price_auto_field: str = ""
 
 
 DEFAULT_MANUAL_CONTEXT = "Bestelbon-editor"
@@ -525,6 +534,10 @@ class ManualOrderTab(tk.Frame):
     COLUMN_MAX_CHARS = 72
     COLUMN_SEPARATOR_COLOR = "#B9BEC7"
     COLUMN_SEPARATOR_ACTIVE_COLOR = "#6E7681"
+    PRICE_UNIT_KEY = "Eenheidsprijs"
+    PRICE_TOTAL_KEY = "Totaalprijs"
+    PRICE_COLUMN_KEYS = {PRICE_UNIT_KEY, PRICE_TOTAL_KEY}
+    VAT_RATE_OPTIONS: tuple[str, ...] = ("0", "6", "12", "21")
     COLUMN_TEMPLATES: Dict[str, List[Dict[str, object]]] = {
         "Standaard": [
             {
@@ -588,7 +601,7 @@ class ManualOrderTab(tk.Frame):
             },
             {
                 "key": "Eenheidsprijs",
-                "label": "Eenheidsprijs (€)",
+                "label": "Prijs/st.",
                 "width": 14,
                 "justify": "right",
                 "numeric": True,
@@ -598,7 +611,7 @@ class ManualOrderTab(tk.Frame):
             },
             {
                 "key": "Totaalprijs",
-                "label": "Totaalprijs (€)",
+                "label": "Totaal",
                 "width": 14,
                 "justify": "right",
                 "numeric": True,
@@ -665,7 +678,7 @@ class ManualOrderTab(tk.Frame):
             },
             {
                 "key": "Eenheidsprijs",
-                "label": "Eenheidsprijs (€)",
+                "label": "Prijs/st.",
                 "width": 14,
                 "justify": "right",
                 "numeric": True,
@@ -675,7 +688,7 @@ class ManualOrderTab(tk.Frame):
             },
             {
                 "key": "Totaalprijs",
-                "label": "Totaalprijs (€)",
+                "label": "Totaal",
                 "width": 14,
                 "justify": "right",
                 "numeric": True,
@@ -734,7 +747,7 @@ class ManualOrderTab(tk.Frame):
             },
             {
                 "key": "Eenheidsprijs",
-                "label": "Eenheidsprijs (€)",
+                "label": "Prijs/st.",
                 "width": 14,
                 "justify": "right",
                 "numeric": True,
@@ -744,7 +757,7 @@ class ManualOrderTab(tk.Frame):
             },
             {
                 "key": "Totaalprijs",
-                "label": "Totaalprijs (€)",
+                "label": "Totaal",
                 "width": 14,
                 "justify": "right",
                 "numeric": True,
@@ -1148,6 +1161,25 @@ class ManualOrderTab(tk.Frame):
         self.template_combo.bind("<<ComboboxSelected>>", _reset_template_focus, add="+")
         self.template_combo.bind("<ButtonRelease-1>", _reset_template_focus, add="+")
 
+        self.price_columns_visible_var = tk.BooleanVar(value=True)
+        tk.Checkbutton(
+            template_row,
+            text="Prijzen op document",
+            variable=self.price_columns_visible_var,
+            command=self._update_totals,
+        ).pack(side="left", padx=(16, 0))
+
+        tk.Label(template_row, text="BTW %:").pack(side="left", padx=(12, 0))
+        self.vat_rate_var = tk.StringVar(value="21")
+        self.vat_rate_combo = ttk.Combobox(
+            template_row,
+            textvariable=self.vat_rate_var,
+            values=self.VAT_RATE_OPTIONS,
+            state="normal",
+            width=5,
+        )
+        self.vat_rate_combo.pack(side="left", padx=(4, 0))
+
         self.header_container = tk.Frame(table_container)
         self.header_container.grid(row=1, column=0, columnspan=2, sticky="ew", padx=(6, 0), pady=(0, 0))
         self.header_container.columnconfigure(0, weight=1)
@@ -1159,7 +1191,7 @@ class ManualOrderTab(tk.Frame):
         v_scroll = ttk.Scrollbar(
             table_container, orient="vertical", command=self.table_canvas.yview
         )
-        v_scroll.grid(row=2, column=1, sticky="ns")
+        v_scroll.grid(row=2, column=1, sticky="ns", padx=(8, 0))
         
         h_scroll = ttk.Scrollbar(
             table_container, orient="horizontal", command=self.table_canvas.xview
@@ -1504,13 +1536,23 @@ class ManualOrderTab(tk.Frame):
             # Add tracing for currency formatting on price fields
             is_price_field = column["key"] in {"Eenheidsprijs", "Totaalprijs"}
             
-            def _on_var_change(*_args, key=column["key"], is_price=is_price_field, v=var):
+            def _on_var_change(
+                *_args,
+                key=column["key"],
+                is_price=is_price_field,
+                v=var,
+                row_widgets=widgets,
+            ):
                 # Apply currency formatting for price fields
                 if is_price:
                     current = v.get()
                     formatted = _format_currency(current)
                     if formatted != current:
                         v.set(formatted)
+                if key in self.PRICE_COLUMN_KEYS:
+                    self._on_row_price_change(row_widgets, key)
+                elif self._is_quantity_key(key):
+                    self._on_row_quantity_change(row_widgets)
                 self._update_totals()
             
             var.trace_add("write", _on_var_change)
@@ -1520,6 +1562,7 @@ class ManualOrderTab(tk.Frame):
         self.rows.append(widgets)
         self._row_grid_indices[row_list_idx] = row_idx  # Track grid row voor deze data row
         self._next_data_row += 1
+        self._on_row_quantity_change(widgets)
         
         if self.current_columns:
             first_key = self.current_columns[0]["key"]
@@ -1605,6 +1648,157 @@ class ManualOrderTab(tk.Frame):
         for _ in range(desired):
             self.add_row()
 
+    def _row_quantity(self, widgets: _ManualRowWidgets):
+        for key, var in widgets.vars.items():
+            if not self._is_quantity_key(key):
+                continue
+            quantity = _price_decimal(var.get())
+            if quantity is not None and quantity != 0:
+                return quantity
+        return None
+
+    def _on_row_quantity_change(self, widgets: _ManualRowWidgets) -> None:
+        auto_field = getattr(widgets, "price_auto_field", "")
+        unit_var = widgets.vars.get(self.PRICE_UNIT_KEY)
+        total_var = widgets.vars.get(self.PRICE_TOTAL_KEY)
+        if unit_var is None or total_var is None:
+            return
+
+        if auto_field == self.PRICE_TOTAL_KEY and unit_var.get().strip():
+            self._on_row_price_change(widgets, self.PRICE_UNIT_KEY)
+        elif auto_field == self.PRICE_UNIT_KEY and total_var.get().strip():
+            self._on_row_price_change(widgets, self.PRICE_TOTAL_KEY)
+        elif unit_var.get().strip():
+            self._on_row_price_change(widgets, self.PRICE_UNIT_KEY, force=False)
+        elif total_var.get().strip():
+            self._on_row_price_change(widgets, self.PRICE_TOTAL_KEY, force=False)
+
+    def _on_row_price_change(
+        self,
+        widgets: _ManualRowWidgets,
+        source_key: str,
+        *,
+        force: bool = True,
+    ) -> None:
+        if getattr(widgets, "price_link_in_progress", False):
+            return
+        if source_key not in self.PRICE_COLUMN_KEYS:
+            return
+
+        quantity = self._row_quantity(widgets)
+        if quantity is None:
+            return
+
+        unit_var = widgets.vars.get(self.PRICE_UNIT_KEY)
+        total_var = widgets.vars.get(self.PRICE_TOTAL_KEY)
+        if unit_var is None or total_var is None:
+            return
+
+        source_var = unit_var if source_key == self.PRICE_UNIT_KEY else total_var
+        target_key = (
+            self.PRICE_TOTAL_KEY
+            if source_key == self.PRICE_UNIT_KEY
+            else self.PRICE_UNIT_KEY
+        )
+        target_var = total_var if target_key == self.PRICE_TOTAL_KEY else unit_var
+        if widgets.price_auto_field == source_key:
+            widgets.price_auto_field = ""
+
+        source_text = source_var.get().strip()
+        target_text = target_var.get().strip()
+        target_is_auto = widgets.price_auto_field == target_key
+        if not source_text:
+            if target_is_auto and target_text:
+                widgets.price_link_in_progress = True
+                try:
+                    target_var.set("")
+                finally:
+                    widgets.price_link_in_progress = False
+                widgets.price_auto_field = ""
+            return
+
+        source_value = _price_decimal(source_text)
+        if source_value is None:
+            return
+        if target_text and not target_is_auto and not force:
+            return
+
+        calculated = (
+            source_value * quantity
+            if source_key == self.PRICE_UNIT_KEY
+            else source_value / quantity
+        )
+        calculated_text = _format_price_decimal(calculated)
+        if target_text == calculated_text:
+            widgets.price_auto_field = target_key
+            return
+
+        widgets.price_link_in_progress = True
+        try:
+            target_var.set(calculated_text)
+        finally:
+            widgets.price_link_in_progress = False
+        widgets.price_auto_field = target_key
+
+    def _price_summary_label_key(
+        self,
+        column_layout: List[Dict[str, object]],
+    ) -> str:
+        keys = [_to_str(column.get("key")).strip() for column in column_layout]
+        for candidate in ("Description", "Omschrijving", "Artikel", "ProfielType"):
+            if candidate in keys:
+                return candidate
+        for key in keys:
+            if key and key not in self.PRICE_COLUMN_KEYS:
+                return key
+        return keys[0] if keys else "Description"
+
+    def _append_vat_summary_rows(
+        self,
+        items: List[Dict[str, object]],
+        column_layout: List[Dict[str, object]],
+        vat_rate: object,
+    ) -> List[Dict[str, object]]:
+        vat_rate_text = _clean_vat_rate_text(vat_rate)
+        if not vat_rate_text or not items:
+            return items
+
+        subtotal = None
+        for item in items:
+            total = _price_decimal(item.get(self.PRICE_TOTAL_KEY))
+            if total is None:
+                continue
+            subtotal = total if subtotal is None else subtotal + total
+        if subtotal is None:
+            return items
+
+        vat_decimal = _price_decimal(vat_rate_text)
+        if vat_decimal is None:
+            return items
+
+        keys = [
+            _to_str(column.get("key")).strip()
+            for column in column_layout
+            if _to_str(column.get("key")).strip()
+        ]
+        if self.PRICE_TOTAL_KEY not in keys:
+            return items
+        label_key = self._price_summary_label_key(column_layout)
+
+        def summary_row(label: str, total) -> Dict[str, object]:
+            row = {key: "" for key in keys}
+            row[label_key] = label
+            row[self.PRICE_TOTAL_KEY] = _format_price_decimal(total)
+            return row
+
+        vat_amount = subtotal * vat_decimal / _price_decimal("100")
+        return [
+            *items,
+            summary_row("Subtotaal excl. BTW", subtotal),
+            summary_row(f"BTW {vat_rate_text}%", vat_amount),
+            summary_row("Totaal incl. BTW", subtotal + vat_amount),
+        ]
+
     # Data collection ------------------------------------------------
     def _collect_items(self) -> Dict[str, object]:
         items: List[Dict[str, object]] = []
@@ -1671,15 +1865,24 @@ class ManualOrderTab(tk.Frame):
                 parent=self,
             )
             return
+        show_prices = bool(self.price_columns_visible_var.get())
         used_keys = set(payload.get("used_columns") or set())
+        if not show_prices:
+            used_keys.difference_update(self.PRICE_COLUMN_KEYS)
         column_layout: List[Dict[str, object]] = []
         for column in self.current_columns:
             key = column.get("key")
+            if not show_prices and key in self.PRICE_COLUMN_KEYS:
+                continue
             if used_keys and key and key not in used_keys:
                 continue
             column_layout.append(dict(column))
         if not column_layout:
-            column_layout = [dict(col) for col in self.current_columns]
+            column_layout = [
+                dict(col)
+                for col in self.current_columns
+                if show_prices or col.get("key") not in self.PRICE_COLUMN_KEYS
+            ]
         if used_keys:
             original_items = list(items)
             trimmed_items: List[Dict[str, object]] = []
@@ -1703,6 +1906,17 @@ class ManualOrderTab(tk.Frame):
                 items = original_items
             else:
                 items = trimmed_items
+        if not show_prices:
+            items = [
+                {k: v for k, v in record.items() if k not in self.PRICE_COLUMN_KEYS}
+                for record in items
+            ]
+        else:
+            items = self._append_vat_summary_rows(
+                items,
+                column_layout,
+                self.vat_rate_var.get(),
+            )
         remark = self.remark_text.get("1.0", "end").strip()
         export_payload = {
             "doc_type": self.doc_type_var.get().strip() or self.DOC_TYPE_OPTIONS[0],
@@ -1719,6 +1933,8 @@ class ManualOrderTab(tk.Frame):
             "total_weight": payload["total_weight"],
             "template": self.current_template_name,
             "column_layout": column_layout,
+            "show_prices": show_prices,
+            "vat_rate": self.vat_rate_var.get().strip() if show_prices else "",
         }
         # Dump payload to temp file and to project root for easier debugging
         # when exports produce empty files. Also show a brief confirmation

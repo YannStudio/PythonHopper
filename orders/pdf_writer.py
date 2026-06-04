@@ -40,11 +40,22 @@ def _pdf_order_column_label(column: Mapping[str, object]) -> str:
     key = _to_str(column.get("key")).strip().lower()
     label = _to_str(column.get("label") or column.get("key") or "").strip()
     label_lower = label.lower()
+    label_compact = (
+        label_lower.replace("€", "")
+        .replace("(euro)", "")
+        .replace("(", "")
+        .replace(")", "")
+        .replace(" ", "")
+    )
 
     if key == "oppervlakte" or label_lower == "oppervlakte":
         return "m\u00b2"
     if key == "gewicht" or label_lower in {"gewicht", "gewicht (kg)"}:
         return "kg"
+    if key == "eenheidsprijs" or label_compact in {"eenheidsprijs", "unitprice"}:
+        return "Prijs/st."
+    if key == "totaalprijs" or label_compact in {"totaalprijs", "totalprice"}:
+        return "Totaal"
     return label or _to_str(column.get("key")).strip()
 
 
@@ -201,8 +212,13 @@ def generate_pdf_order_platypus(
     supp_lines: List[str] = []
     if supplier is not None and not is_standaard_doc:
         full_addr = core.format_supplier_address(supplier)
+        supplier_label = (
+            "Offerte aangevraagd bij:"
+            if doc_type_text_slug.startswith("offerte")
+            else "Besteld bij:"
+        )
 
-        supp_lines = [f"<b>Besteld bij:</b> {supplier.supplier}"]
+        supp_lines = [f"<b>{supplier_label}</b> {supplier.supplier}"]
         if full_addr:
             supp_lines.append(full_addr)
         supp_lines.append(f"BTW: {supplier.btw or ''}")
@@ -306,7 +322,7 @@ def generate_pdf_order_platypus(
         )
     )
     story.append(title_rule)
-    story.append(Spacer(0, 9))
+    story.append(Spacer(0, 12))
 
     left_col_width = (width - 2 * margin) * 0.58
     right_col_width = (width - 2 * margin) - left_col_width

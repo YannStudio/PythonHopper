@@ -21,6 +21,29 @@ except Exception:
     get_column_letter = None
 
 
+def _order_column_export_label(column: Dict[str, object]) -> str:
+    key = _to_str(column.get("key")).strip().lower()
+    label = _to_str(column.get("label") or column.get("key") or "").strip()
+    label_compact = (
+        label.lower()
+        .replace("€", "")
+        .replace("(euro)", "")
+        .replace("(", "")
+        .replace(")", "")
+        .replace(" ", "")
+    )
+
+    if key == "oppervlakte" or label.lower() == "oppervlakte":
+        return "m\u00b2"
+    if key == "gewicht" or label.lower() in {"gewicht", "gewicht (kg)"}:
+        return "kg"
+    if key == "eenheidsprijs" or label_compact in {"eenheidsprijs", "unitprice"}:
+        return "Prijs/st."
+    if key == "totaalprijs" or label_compact in {"totaalprijs", "totalprice"}:
+        return "Totaal"
+    return label or _to_str(column.get("key")).strip()
+
+
 def _export_bom_workbook(bom_df: pd.DataFrame, dest: str, filename: str) -> str:
     """Write the processed BOM dataframe to an Excel workbook."""
     if not filename.lower().endswith(".xlsx"):
@@ -161,7 +184,7 @@ def write_order_excel(
     if custom_layout:
         headers: List[str] = []
         for column in column_layout:
-            header = _to_str(column.get("label") or column.get("key") or "").strip()
+            header = _order_column_export_label(column)
             if not header:
                 header = column.get("key", "")
             column["label"] = header

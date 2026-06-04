@@ -78,3 +78,27 @@ def test_pdf_supplier_address_does_not_repeat_postcode_city(tmp_path):
 
     text = "\n".join(page.extract_text() or "" for page in PdfReader(str(pdf_path)).pages)
     assert text.count("2240 Zandhoven") == 1
+    assert "Offerte aangevraagd bij:" in text
+    assert "Besteld bij:" not in text
+
+
+@pytest.mark.skipif(not REPORTLAB_OK, reason="ReportLab niet beschikbaar")
+def test_pdf_bestelbon_keeps_ordered_at_supplier_label(tmp_path):
+    supplier = Supplier(supplier="Supplier BV")
+    pdf_path = tmp_path / "order.pdf"
+
+    generate_pdf_order_platypus(
+        str(pdf_path),
+        {},
+        supplier,
+        production="Bar Chair",
+        items=_one_line_items(),
+        doc_type="Bestelbon",
+        doc_number="ORD001",
+    )
+
+    from PyPDF2 import PdfReader
+
+    text = "\n".join(page.extract_text() or "" for page in PdfReader(str(pdf_path)).pages)
+    assert "Besteld bij:" in text
+    assert "Offerte aangevraagd bij:" not in text

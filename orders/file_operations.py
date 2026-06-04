@@ -593,7 +593,7 @@ def _default_priced_column_layout(context_kind: str) -> List[Dict[str, object]]:
     columns.extend(
         [
             {"key": _PRICE_UNIT_KEY, "label": "Prijs/st.", "width": 12, "justify": "right", "numeric": True, "weight": 0.9},
-            {"key": _PRICE_TOTAL_KEY, "label": "Totaalprijs", "width": 14, "justify": "right", "numeric": True, "weight": 1.0},
+            {"key": _PRICE_TOTAL_KEY, "label": "Totaal", "width": 14, "justify": "right", "numeric": True, "weight": 1.0},
         ]
     )
     return columns
@@ -1948,7 +1948,7 @@ def _build_order_excel_section_data(
     if custom_layout:
         headers: List[str] = []
         for column in column_layout:
-            header = _to_str(column.get("label") or column.get("key") or "").strip()
+            header = _order_column_export_label(column)
             if not header:
                 header = column.get("key", "")
             column["label"] = header
@@ -2043,18 +2043,41 @@ def _build_order_excel_section_data(
     return df, {"PartNumber", "Description"}, {"PartNumber", "Description"}
 
 
-def _pdf_order_column_label(column: Mapping[str, object]) -> str:
-    """Return a compact header label for PDF tables."""
+def _order_column_export_label(column: Mapping[str, object]) -> str:
+    """Return a compact header label for exported order tables."""
 
     key = _to_str(column.get("key")).strip().lower()
     label = _to_str(column.get("label") or column.get("key") or "").strip()
     label_lower = label.lower()
+    label_compact = (
+        label_lower.replace("€", "")
+        .replace("(euro)", "")
+        .replace("(", "")
+        .replace(")", "")
+        .replace(" ", "")
+    )
 
     if key == "oppervlakte" or label_lower == "oppervlakte":
         return "m\u00b2"
     if key == "gewicht" or label_lower in {"gewicht", "gewicht (kg)"}:
         return "kg"
+    if key == _PRICE_UNIT_KEY.lower() or label_compact in {
+        "eenheidsprijs",
+        "unitprice",
+    }:
+        return "Prijs/st."
+    if key == _PRICE_TOTAL_KEY.lower() or label_compact in {
+        "totaalprijs",
+        "totalprice",
+    }:
+        return "Totaal"
     return label or _to_str(column.get("key")).strip()
+
+
+def _pdf_order_column_label(column: Mapping[str, object]) -> str:
+    """Return a compact header label for PDF tables."""
+
+    return _order_column_export_label(column)
 
 
 def _order_company_lines(company_info: Mapping[str, object] | None) -> List[str]:
@@ -2682,8 +2705,13 @@ def generate_pdf_order_platypus(
     supp_lines: List[str] = []
     if supplier is not None and not is_standaard_doc:
         full_addr = format_supplier_address(supplier)
+        supplier_label = (
+            "Offerte aangevraagd bij:"
+            if doc_type_text_slug.startswith("offerte")
+            else "Besteld bij:"
+        )
 
-        supp_lines = [f"<b>Besteld bij:</b> {supplier.supplier}"]
+        supp_lines = [f"<b>{supplier_label}</b> {supplier.supplier}"]
         if full_addr:
             supp_lines.append(full_addr)
         supp_lines.append(f"BTW: {supplier.btw or ''}")
@@ -2791,7 +2819,7 @@ def generate_pdf_order_platypus(
         )
     )
     story.append(title_rule)
-    story.append(Spacer(0, 9))
+    story.append(Spacer(0, 12))
 
     left_col_width = (width - 2 * margin) * 0.58
     right_col_width = (width - 2 * margin) - left_col_width

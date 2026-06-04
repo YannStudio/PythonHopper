@@ -3,6 +3,7 @@ import orders
 
 from orders import (
     OrderDocumentSection,
+    _build_order_excel_section_data,
     _build_order_pdf_section_story,
     generate_pdf_order_platypus,
     _order_palette,
@@ -154,6 +155,74 @@ def test_order_pdf_section_compacts_custom_area_and_weight_headers():
     assert table._cellvalues[2][1].getPlainText() == "Totaal"
     assert table._cellvalues[2][5].getPlainText() == "2.00"
     assert table._cellvalues[2][6].getPlainText() == "50.00"
+
+
+def test_order_pdf_section_compacts_price_headers():
+    pytest.importorskip("reportlab")
+    from reportlab.lib.styles import ParagraphStyle
+
+    section = OrderDocumentSection(
+        context_label="Document",
+        context_kind="document",
+        items=[
+            {
+                "PartNumber": "PN-1",
+                "Description": "Onderdeel",
+                "Aantal": 4,
+                "Eenheidsprijs": "87.50",
+                "Totaalprijs": "350.00",
+            }
+        ],
+        column_layout=[
+            {"key": "PartNumber", "label": "Artikel nr.", "weight": 1.6},
+            {"key": "Description", "label": "Omschrijving", "weight": 2.4},
+            {"key": "Aantal", "label": "Aantal", "numeric": True, "justify": "right", "weight": 0.7},
+            {"key": "Eenheidsprijs", "label": "Eenheidsprijs (€)", "numeric": True, "justify": "right", "weight": 0.9},
+            {"key": "Totaalprijs", "label": "Totaalprijs (€)", "numeric": True, "justify": "right", "weight": 1.0},
+        ],
+    )
+    story = []
+
+    _build_order_pdf_section_story(
+        section,
+        story=story,
+        usable_w=500,
+        palette=_order_palette({}),
+        section_title_style=ParagraphStyle("section"),
+        show_title=False,
+    )
+
+    table = story[-1]
+    assert "Eenheidsprijs (€)" not in table._cellvalues[0]
+    assert "Totaalprijs (€)" not in table._cellvalues[0]
+    assert table._cellvalues[0][-2:] == ["Prijs/st.", "Totaal"]
+
+
+def test_order_excel_section_compacts_price_headers():
+    section = OrderDocumentSection(
+        context_label="Document",
+        context_kind="document",
+        items=[
+            {
+                "Description": "Onderdeel",
+                "Aantal": 4,
+                "Eenheidsprijs": "87.50",
+                "Totaalprijs": "350.00",
+            }
+        ],
+        column_layout=[
+            {"key": "Description", "label": "Omschrijving"},
+            {"key": "Aantal", "label": "Aantal", "numeric": True},
+            {"key": "Eenheidsprijs", "label": "Eenheidsprijs (€)", "numeric": True},
+            {"key": "Totaalprijs", "label": "Totaalprijs (€)", "numeric": True},
+        ],
+    )
+
+    df, _left_cols, _wrap_cols = _build_order_excel_section_data(section)
+
+    assert "Eenheidsprijs (€)" not in df.columns
+    assert "Totaalprijs (€)" not in df.columns
+    assert list(df.columns)[-2:] == ["Prijs/st.", "Totaal"]
 
 
 def test_single_section_pdf_compacts_custom_area_and_weight_headers(monkeypatch, tmp_path):

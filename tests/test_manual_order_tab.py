@@ -3,7 +3,12 @@ import math
 import pytest
 
 import manual_order_tab
-from manual_order_tab import _ensure_integer_quantity, ManualOrderTab, SearchableCombobox
+from manual_order_tab import (
+    _ensure_integer_quantity,
+    _ManualRowWidgets,
+    ManualOrderTab,
+    SearchableCombobox,
+)
 
 
 @pytest.mark.parametrize(
@@ -151,6 +156,74 @@ class _DummyVar:
 
     def set(self, value):
         self.value = value
+
+
+def test_manual_order_row_price_links_unit_and_total_price():
+    tab = ManualOrderTab.__new__(ManualOrderTab)
+    row = _ManualRowWidgets(
+        frame=None,
+        vars={
+            "Aantal": _DummyVar("4"),
+            "Eenheidsprijs": _DummyVar("12,50"),
+            "Totaalprijs": _DummyVar(""),
+        },
+        entries={},
+        remove_btn=None,
+    )
+
+    ManualOrderTab._on_row_price_change(tab, row, "Eenheidsprijs")
+
+    assert row.vars["Totaalprijs"].get() == "50.00"
+    assert row.price_auto_field == "Totaalprijs"
+
+    row.vars["Totaalprijs"].set("80")
+    ManualOrderTab._on_row_price_change(tab, row, "Totaalprijs")
+
+    assert row.vars["Eenheidsprijs"].get() == "20.00"
+    assert row.price_auto_field == "Eenheidsprijs"
+
+
+def test_manual_order_row_price_recalculates_when_quantity_changes():
+    tab = ManualOrderTab.__new__(ManualOrderTab)
+    row = _ManualRowWidgets(
+        frame=None,
+        vars={
+            "Aantal": _DummyVar("2"),
+            "Eenheidsprijs": _DummyVar("12.50"),
+            "Totaalprijs": _DummyVar(""),
+        },
+        entries={},
+        remove_btn=None,
+    )
+    ManualOrderTab._on_row_price_change(tab, row, "Eenheidsprijs")
+
+    row.vars["Aantal"].set("4")
+    ManualOrderTab._on_row_quantity_change(tab, row)
+
+    assert row.vars["Totaalprijs"].get() == "50.00"
+
+
+def test_manual_order_vat_summary_rows_use_total_prices():
+    tab = ManualOrderTab.__new__(ManualOrderTab)
+    layout = [
+        {"key": "Description", "label": "Omschrijving"},
+        {"key": "Aantal", "label": "Aantal"},
+        {"key": "Eenheidsprijs", "label": "Eenheidsprijs"},
+        {"key": "Totaalprijs", "label": "Totaalprijs"},
+    ]
+    items = [
+        {"Description": "A", "Aantal": 2, "Totaalprijs": "20.00"},
+        {"Description": "B", "Aantal": 1, "Totaalprijs": "5"},
+    ]
+
+    result = ManualOrderTab._append_vat_summary_rows(tab, items, layout, "21")
+
+    assert result[-3]["Description"] == "Subtotaal excl. BTW"
+    assert result[-3]["Totaalprijs"] == "25.00"
+    assert result[-2]["Description"] == "BTW 21%"
+    assert result[-2]["Totaalprijs"] == "5.25"
+    assert result[-1]["Description"] == "Totaal incl. BTW"
+    assert result[-1]["Totaalprijs"] == "30.25"
 
 
 class _DummyCombo:
