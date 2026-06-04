@@ -163,6 +163,11 @@ class Supplier:
             "product_type": "product_type",
             "category": "product_type",
             "categorie": "product_type",
+            "product description": "product_description",
+            "product_description": "product_description",
+            "product beschrijving": "product_description",
+            "productbeschrijving": "product_description",
+            "product omschrijving": "product_description",
             # favorite
             "favorite": "favorite",
             "favoriet": "favorite",
@@ -201,7 +206,13 @@ class Supplier:
             sales_email=_optional_text(norm.get("sales_email")) if ("sales_email" in norm) else None,
             phone=_optional_text(norm.get("phone")) if ("phone" in norm) else None,
             product_type=_optional_text(norm.get("product_type")) if ("product_type" in norm) else None,
-            product_description=_optional_text(norm.get("description")) if ("description" in norm) else None,
+            product_description=(
+                _optional_text(norm.get("product_description"))
+                if ("product_description" in norm)
+                else _optional_text(norm.get("description"))
+                if ("description" in norm)
+                else None
+            ),
             favorite=bool(fav),
         )
 

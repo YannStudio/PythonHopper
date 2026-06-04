@@ -1967,7 +1967,19 @@ def start_gui():
             tk.Button(filter_frame, text="Wis filters", command=self._clear_filters).pack(side="left")
             
             # Treeview with new columns
-            cols = ("Supplier", "Product type", "Beschrijving", "BTW", "E-mail", "Tel", "Adres 1", "Adres 2")
+            cols = (
+                "Supplier",
+                "Product type",
+                "Beschrijving",
+                "BTW",
+                "E-mail",
+                "Tel",
+                "Adres 1",
+                "Adres 2",
+                "Postcode",
+                "Gemeente",
+                "Land",
+            )
             self.tree = ttk.Treeview(self, columns=cols, show="headings")
             for c in cols:
                 self.tree.heading(c, text=c)
@@ -2083,6 +2095,9 @@ def start_gui():
                     s.phone or "",
                     s.adres_1 or "",
                     s.adres_2 or "",
+                    s.postcode or "",
+                    s.gemeente or "",
+                    s.land or "",
                 )
                 tag = "odd" if i % 2 else "even"
                 self.tree.insert("", "end", iid=s.supplier, values=vals, tags=(tag,))
@@ -2117,7 +2132,7 @@ def start_gui():
             )
             self.wait_window(dlg)
             if dlg.result:
-                self.db.upsert(dlg.result)
+                self.db.upsert(dlg.result, replace=True)
                 self.db.save(SUPPLIERS_DB_FILE)
                 self.refresh()
                 if self.on_change:
@@ -2269,7 +2284,7 @@ def start_gui():
             dlg = self._EditDialog(self, s)
             self.wait_window(dlg)
             if dlg.result:
-                self.db.upsert(dlg.result)
+                self.db.upsert(dlg.result, old_name=s.supplier, replace=True)
                 self.db.save(SUPPLIERS_DB_FILE)
                 self.refresh()
                 if self.on_change:
