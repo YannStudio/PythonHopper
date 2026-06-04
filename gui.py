@@ -4682,8 +4682,8 @@ def start_gui():
                     None,
                 ),
                 ("doc_entry", "Nr.", 12, None),
-                ("unit_price_entry", "Prijs/st.", 12, None),
-                ("total_price_entry", "Totaalprijs", 12, None),
+                ("unit_price_entry", "Prijs/st. (\u20ac)", 12, None),
+                ("total_price_entry", "Totaal (\u20ac)", 12, None),
                 ("vat_combo", "BTW %", 7, None),
                 ("line_price_button", "Regelprijzen", 10, None),
                 ("remark_entry", "Opmerking", 24, None),
@@ -5594,7 +5594,7 @@ def start_gui():
                 inner.grid_columnconfigure(col, weight=weight)
 
             header_font = ("TkDefaultFont", 10, "bold")
-            headers = ("Onderdeel", "St.", "Prijs/st.", "Totaalprijs")
+            headers = ("Onderdeel", "St.", "Prijs/st. (\u20ac)", "Totaal (\u20ac)")
             for col, text in enumerate(headers):
                 header_padx = (0, 18) if col == len(headers) - 1 else (0, 8)
                 tk.Label(inner, text=text, font=header_font, anchor="w").grid(

@@ -601,7 +601,7 @@ class ManualOrderTab(tk.Frame):
             },
             {
                 "key": "Eenheidsprijs",
-                "label": "Prijs/st.",
+                "label": "Prijs/st. (\u20ac)",
                 "width": 14,
                 "justify": "right",
                 "numeric": True,
@@ -611,7 +611,7 @@ class ManualOrderTab(tk.Frame):
             },
             {
                 "key": "Totaalprijs",
-                "label": "Totaal",
+                "label": "Totaal (\u20ac)",
                 "width": 14,
                 "justify": "right",
                 "numeric": True,
@@ -678,7 +678,7 @@ class ManualOrderTab(tk.Frame):
             },
             {
                 "key": "Eenheidsprijs",
-                "label": "Prijs/st.",
+                "label": "Prijs/st. (\u20ac)",
                 "width": 14,
                 "justify": "right",
                 "numeric": True,
@@ -688,7 +688,7 @@ class ManualOrderTab(tk.Frame):
             },
             {
                 "key": "Totaalprijs",
-                "label": "Totaal",
+                "label": "Totaal (\u20ac)",
                 "width": 14,
                 "justify": "right",
                 "numeric": True,
@@ -747,7 +747,7 @@ class ManualOrderTab(tk.Frame):
             },
             {
                 "key": "Eenheidsprijs",
-                "label": "Prijs/st.",
+                "label": "Prijs/st. (\u20ac)",
                 "width": 14,
                 "justify": "right",
                 "numeric": True,
@@ -757,7 +757,7 @@ class ManualOrderTab(tk.Frame):
             },
             {
                 "key": "Totaalprijs",
-                "label": "Totaal",
+                "label": "Totaal (\u20ac)",
                 "width": 14,
                 "justify": "right",
                 "numeric": True,
@@ -1164,9 +1164,11 @@ class ManualOrderTab(tk.Frame):
         self.price_columns_visible_var = tk.BooleanVar(value=True)
         tk.Checkbutton(
             template_row,
-            text="Prijzen op document",
+            text="Prijsvelden tonen",
             variable=self.price_columns_visible_var,
-            command=self._update_totals,
+            command=lambda: self.set_price_fields_visible(
+                bool(self.price_columns_visible_var.get())
+            ),
         ).pack(side="left", padx=(16, 0))
 
         tk.Label(template_row, text="BTW %:").pack(side="left", padx=(12, 0))
@@ -1289,7 +1291,9 @@ class ManualOrderTab(tk.Frame):
 
         self.rows: List[_ManualRowWidgets] = []
         self.current_template_name: str = ""
+        self._all_columns: List[Dict[str, object]] = []
         self.current_columns: List[Dict[str, object]] = []
+        self._all_row_values: List[Dict[str, str]] = []
         self._template_rows_cache: Dict[str, List[Dict[str, str]]] = {}
         self._template_layout_cache: Dict[str, List[Dict[str, object]]] = {}
         self._column_resizer_handles: List[tk.Widget] = []
@@ -1799,6 +1803,68 @@ class ManualOrderTab(tk.Frame):
             summary_row("Totaal incl. BTW", subtotal + vat_amount),
         ]
 
+    def _price_fields_visible(self) -> bool:
+        var = getattr(self, "price_columns_visible_var", None)
+        if var is None:
+            return True
+        try:
+            return bool(var.get())
+        except Exception:
+            return True
+
+    def _visible_columns_for(
+        self,
+        columns: List[Dict[str, object]],
+    ) -> List[Dict[str, object]]:
+        if self._price_fields_visible():
+            return [dict(column) for column in columns]
+        return [
+            dict(column)
+            for column in columns
+            if column.get("key") not in self.PRICE_COLUMN_KEYS
+        ]
+
+    def _merge_row_values(
+        self,
+        visible_rows: List[Dict[str, str]],
+    ) -> List[Dict[str, str]]:
+        existing = [dict(row) for row in getattr(self, "_all_row_values", [])]
+        total_rows = max(len(existing), len(visible_rows))
+        merged: List[Dict[str, str]] = []
+        for idx in range(total_rows):
+            row = dict(existing[idx]) if idx < len(existing) else {}
+            if idx < len(visible_rows):
+                row.update(visible_rows[idx])
+            merged.append(row)
+        return merged
+
+    def _restore_rows(self, rows: List[Dict[str, str]]) -> None:
+        self._clear_rows()
+        self._render_header()
+        source_rows = rows or [{}]
+        for values in source_rows:
+            self.add_row(values=values)
+        self._update_totals()
+
+    def set_price_fields_visible(self, visible: bool) -> None:
+        var = getattr(self, "price_columns_visible_var", None)
+        if var is not None:
+            try:
+                if bool(var.get()) != bool(visible):
+                    var.set(1 if visible else 0)
+            except Exception:
+                pass
+        self._all_row_values = self._merge_row_values(self._capture_rows())
+        self.current_columns = self._visible_columns_for(self._all_columns)
+        self._restore_rows(self._all_row_values)
+
+    def _has_price_values(self, rows: List[Dict[str, object]]) -> bool:
+        for row in rows:
+            for key in self.PRICE_COLUMN_KEYS:
+                if _to_str(row.get(key)).strip():
+                    return True
+        return False
+
     # Data collection ------------------------------------------------
     def _collect_items(self) -> Dict[str, object]:
         items: List[Dict[str, object]] = []
@@ -1865,14 +1931,15 @@ class ManualOrderTab(tk.Frame):
                 parent=self,
             )
             return
-        show_prices = bool(self.price_columns_visible_var.get())
+        show_price_fields = self._price_fields_visible()
         used_keys = set(payload.get("used_columns") or set())
-        if not show_prices:
+        include_prices = show_price_fields and bool(used_keys & self.PRICE_COLUMN_KEYS)
+        if not include_prices:
             used_keys.difference_update(self.PRICE_COLUMN_KEYS)
         column_layout: List[Dict[str, object]] = []
         for column in self.current_columns:
             key = column.get("key")
-            if not show_prices and key in self.PRICE_COLUMN_KEYS:
+            if not include_prices and key in self.PRICE_COLUMN_KEYS:
                 continue
             if used_keys and key and key not in used_keys:
                 continue
@@ -1881,7 +1948,7 @@ class ManualOrderTab(tk.Frame):
             column_layout = [
                 dict(col)
                 for col in self.current_columns
-                if show_prices or col.get("key") not in self.PRICE_COLUMN_KEYS
+                if include_prices or col.get("key") not in self.PRICE_COLUMN_KEYS
             ]
         if used_keys:
             original_items = list(items)
@@ -1906,7 +1973,7 @@ class ManualOrderTab(tk.Frame):
                 items = original_items
             else:
                 items = trimmed_items
-        if not show_prices:
+        if not include_prices:
             items = [
                 {k: v for k, v in record.items() if k not in self.PRICE_COLUMN_KEYS}
                 for record in items
@@ -1933,54 +2000,9 @@ class ManualOrderTab(tk.Frame):
             "total_weight": payload["total_weight"],
             "template": self.current_template_name,
             "column_layout": column_layout,
-            "show_prices": show_prices,
-            "vat_rate": self.vat_rate_var.get().strip() if show_prices else "",
+            "show_prices": include_prices,
+            "vat_rate": self.vat_rate_var.get().strip() if include_prices else "",
         }
-        # Dump payload to temp file and to project root for easier debugging
-        # when exports produce empty files. Also show a brief confirmation
-        # so the user can locate the debug file.
-        try:
-            import json, tempfile, datetime, pathlib
-            fn = f"filehopper_manual_export_payload_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-            # temp location
-            tmp = pathlib.Path(tempfile.gettempdir()) / fn
-            try:
-                with tmp.open("w", encoding="utf-8") as f:
-                    json.dump(export_payload, f, ensure_ascii=False, indent=2)
-            except Exception:
-                pass
-            # project/current working directory location (easier to find)
-            try:
-                proj = pathlib.Path.cwd()
-                proj_file = proj / "filehopper_manual_export_payload.json"
-                with proj_file.open("w", encoding="utf-8") as f:
-                    json.dump(export_payload, f, ensure_ascii=False, indent=2)
-                # Also append a short summary to a rotating debug log
-                try:
-                    log_file = proj / "filehopper_manual_export_payload_log.txt"
-                    with log_file.open("a", encoding="utf-8") as lf:
-                        lf.write(f"--- {datetime.datetime.now().isoformat()} ---\n")
-                        lf.write(f"template: {export_payload.get('template')}\n")
-                        lf.write(f"used_columns: {sorted(list(export_payload.get('column_layout') or [] ) )}\n")
-                        lf.write(f"items_count: {len(export_payload.get('items') or [])}\n")
-                        lf.write("\n")
-                except Exception:
-                    pass
-                try:
-                    from tkinter import messagebox
-
-                    messagebox.showinfo(
-                        "Debug payload opgeslagen",
-                        f"Export payload written to:\n{proj_file}\n(and temp: {tmp})",
-                        parent=self,
-                    )
-                except Exception:
-                    pass
-            except Exception:
-                pass
-        except Exception:
-            pass
-
         self._on_export(export_payload)
 
     # Internal -------------------------------------------------------
@@ -2334,24 +2356,39 @@ class ManualOrderTab(tk.Frame):
                 pass
 
     def _apply_template(self, template: str, *, store_previous: bool = True) -> None:
+        if store_previous and self.current_template_name:
+            self._template_rows_cache[self.current_template_name] = self._merge_row_values(
+                self._capture_rows()
+            )
+            self._template_layout_cache[self.current_template_name] = [
+                dict(col) for col in self._all_columns
+            ]
+
         self.current_template_name = template
         if template in self._template_layout_cache:
-            cached_layout = [dict(col) for col in self._template_layout_cache[template]]
-            for column in cached_layout:
+            full_layout = [dict(col) for col in self._template_layout_cache[template]]
+            for column in full_layout:
                 self._ensure_column_metrics(column)
-            self.current_columns = cached_layout
         else:
-            self.current_columns = self._clone_columns(template)
-        if not self.current_columns:
-            self.current_columns = self._clone_columns(self.DEFAULT_TEMPLATE)
+            full_layout = self._clone_columns(template)
+        if not full_layout:
+            full_layout = self._clone_columns(self.DEFAULT_TEMPLATE)
             self.current_template_name = self.DEFAULT_TEMPLATE
+
+        self._all_columns = full_layout
+        self.current_columns = self._visible_columns_for(self._all_columns)
+        self._all_row_values = [
+            dict(row)
+            for row in self._template_rows_cache.get(self.current_template_name, [])
+        ]
 
         # Clear rows BEFORE rendering header (so grid columns are reset)
         self._clear_rows()
         
         # Now render header and add one empty row
         self._render_header()
-        self.add_row()
+        for row_values in self._all_row_values or [{}]:
+            self.add_row(values=row_values)
         self._update_totals()
 
     def _set_column_width(self, column_index: int, desired_chars: int) -> None:

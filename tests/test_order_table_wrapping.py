@@ -195,7 +195,7 @@ def test_order_pdf_section_compacts_price_headers():
     table = story[-1]
     assert "Eenheidsprijs (€)" not in table._cellvalues[0]
     assert "Totaalprijs (€)" not in table._cellvalues[0]
-    assert table._cellvalues[0][-2:] == ["Prijs/st.", "Totaal"]
+    assert table._cellvalues[0][-2:] == ["Prijs/st. (\u20ac)", "Totaal (\u20ac)"]
 
 
 def test_order_excel_section_compacts_price_headers():
@@ -222,7 +222,103 @@ def test_order_excel_section_compacts_price_headers():
 
     assert "Eenheidsprijs (€)" not in df.columns
     assert "Totaalprijs (€)" not in df.columns
-    assert list(df.columns)[-2:] == ["Prijs/st.", "Totaal"]
+    assert list(df.columns)[-2:] == ["Prijs/st. (\u20ac)", "Totaal (\u20ac)"]
+
+
+def test_order_pdf_section_moves_vat_summary_below_table():
+    pytest.importorskip("reportlab")
+    from reportlab.lib.styles import ParagraphStyle
+
+    section = OrderDocumentSection(
+        context_label="Document",
+        context_kind="document",
+        items=[
+            {
+                "Aantal": 2,
+                "Oppervlakte": "2.00",
+                "Gewicht": "15.00",
+                "Eenheidsprijs": "5.00",
+                "Totaalprijs": "10.00",
+            },
+            {
+                "Aantal": 10,
+                "Oppervlakte": "1.00",
+                "Gewicht": "8.00",
+                "Eenheidsprijs": "0.30",
+                "Totaalprijs": "3.00",
+            },
+            {"Aantal": "Subtotaal excl. BTW", "Totaalprijs": "13.00"},
+            {"Aantal": "BTW 21%", "Totaalprijs": "2.73"},
+            {"Aantal": "Totaal incl. BTW", "Totaalprijs": "15.73"},
+        ],
+        total_surface_m2=14.0,
+        total_weight_kg=110.0,
+        column_layout=[
+            {"key": "Aantal", "label": "Aantal", "numeric": True, "justify": "right", "integer": True},
+            {"key": "Oppervlakte", "label": "Oppervlakte", "numeric": True, "justify": "right", "total_surface": True},
+            {"key": "Gewicht", "label": "Gewicht (kg)", "numeric": True, "justify": "right", "total_weight": True},
+            {"key": "Eenheidsprijs", "label": "Prijs/st. (\u20ac)", "numeric": True, "justify": "right"},
+            {"key": "Totaalprijs", "label": "Totaal (\u20ac)", "numeric": True, "justify": "right"},
+        ],
+    )
+    story = []
+
+    _build_order_pdf_section_story(
+        section,
+        story=story,
+        usable_w=500,
+        palette=_order_palette({}),
+        section_title_style=ParagraphStyle("section"),
+        show_title=False,
+    )
+
+    table = story[0]
+    assert len(table._cellvalues) == 4
+    assert table._cellvalues[3][1].getPlainText() == "Totaal"
+    assert table._cellvalues[3][2].getPlainText() == "14.00"
+    assert table._cellvalues[3][3].getPlainText() == "110.00"
+    assert table._cellvalues[3][5].getPlainText() == "13.00"
+    assert "BTW 21%" not in [
+        cell.getPlainText()
+        for row in table._cellvalues
+        for cell in row
+        if hasattr(cell, "getPlainText")
+    ]
+
+    summary_table = story[-1]
+    assert summary_table._cellvalues[0][0].getPlainText() == "BTW 21%"
+    assert summary_table._cellvalues[0][1].getPlainText() == "2.73"
+    assert summary_table._cellvalues[1][0].getPlainText() == "Totaal incl. BTW"
+    assert summary_table._cellvalues[1][1].getPlainText() == "15.73"
+
+
+def test_order_excel_section_moves_vat_summary_below_table():
+    section = OrderDocumentSection(
+        context_label="Document",
+        context_kind="document",
+        items=[
+            {"Description": "Onderdeel", "Aantal": 2, "Totaalprijs": "20.00"},
+            {"Description": "Subtotaal excl. BTW", "Totaalprijs": "20.00"},
+            {"Description": "BTW 21%", "Totaalprijs": "4.20"},
+            {"Description": "Totaal incl. BTW", "Totaalprijs": "24.20"},
+        ],
+        column_layout=[
+            {"key": "Description", "label": "Omschrijving"},
+            {"key": "Aantal", "label": "Aantal", "numeric": True},
+            {"key": "Totaalprijs", "label": "Totaal (\u20ac)", "numeric": True},
+        ],
+    )
+
+    df, _left_cols, _wrap_cols = _build_order_excel_section_data(section)
+
+    assert list(df["Omschrijving"]) == [
+        "Onderdeel",
+        "Totaal",
+        "",
+        "BTW 21%",
+        "Totaal incl. BTW",
+    ]
+    assert list(df["Totaal (\u20ac)"]) == ["20.00", "20.00", "", "4.20", "24.20"]
 
 
 def test_single_section_pdf_compacts_custom_area_and_weight_headers(monkeypatch, tmp_path):
