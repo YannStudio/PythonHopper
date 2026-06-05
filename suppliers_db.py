@@ -177,15 +177,31 @@ class SuppliersDB:
         self.suppliers.append(supplier)
         return True
 
-    def upsert(self, supplier: Supplier) -> None:
-        """Update bestaande met dezelfde naam, anders voeg toe."""
-        i = self._idx_by_name(supplier.supplier)
+    def upsert(
+        self,
+        supplier: Supplier,
+        *,
+        old_name: Optional[str] = None,
+        replace: bool = False,
+    ) -> None:
+        """Update bestaande leverancier, anders voeg toe.
+
+        By default this is a merge used by CSV imports: empty source fields do not
+        wipe existing data. Manual edits can pass replace=True to persist cleared
+        fields as well.
+        """
+
+        key = old_name or supplier.supplier
+        i = self._idx_by_name(key)
         if i >= 0:
             cur = self.suppliers[i]
             for f in asdict(supplier):
                 val = getattr(supplier, f)
-                if val not in (None, ""):
+                if replace or val not in (None, ""):
                     setattr(cur, f, val)
+            if old_name and old_name.strip().lower() != supplier.supplier.strip().lower():
+                self.suppliers.pop(i)
+                self.suppliers.append(cur)
         else:
             self.suppliers.append(supplier)
 

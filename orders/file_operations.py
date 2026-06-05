@@ -83,6 +83,12 @@ from helpers import (
 from models import Supplier, Client, DeliveryAddress, color_to_rgb, normalize_rgb_color
 from pdf_workdossier_presets import PdfWorkDossierPreset, PdfWorkDossierSection
 from progress import ProgressCallback, ProgressEvent
+from .core import (
+    calculate_order_measure_totals,
+    format_supplier_address,
+    is_order_surface_column,
+    is_order_weight_column,
+)
 from suppliers_db import SuppliersDB, SUPPLIERS_DB_FILE
 from bom import load_bom  # noqa: F401 - imported for module dependency
 
@@ -307,6 +313,7 @@ class OrderDocumentSection:
     context_kind: str
     items: List[Dict[str, object]]
     selection_key: str = ""
+    total_surface_m2: float | None = None
     total_weight_kg: float | None = None
     column_layout: Optional[List[Dict[str, object]]] = None
 
@@ -327,6 +334,7 @@ class OrderDocumentCandidate:
     doc_num_display: str
     order_remark: str | None
     items: List[Dict[str, object]]
+    total_surface_m2: float | None = None
     total_weight_kg: float | None = None
     column_layout: Optional[List[Dict[str, object]]] = None
     en1090_required: bool = False
@@ -482,6 +490,99 @@ def _pricing_subtotal(
     return None, False
 
 
+def _normalized_price_summary_label(value: object) -> str:
+    return " ".join(_to_str(value).strip().lower().split())
+
+
+def _is_price_summary_label(value: object) -> bool:
+    label = _normalized_price_summary_label(value)
+    return (
+        label == "subtotaal excl. btw"
+        or label == "btw"
+        or label.startswith("btw ")
+        or label == "totaal incl. btw"
+    )
+
+
+def _price_total_column_key(column_layout: Sequence[Mapping[str, object]]) -> str:
+    for column in column_layout:
+        key = _to_str(column.get("key")).strip()
+        if key.lower() == _PRICE_TOTAL_KEY.lower():
+            return key
+    return _PRICE_TOTAL_KEY
+
+
+def _price_summary_label_keys(
+    column_layout: Sequence[Mapping[str, object]],
+    *,
+    is_raw: bool,
+) -> List[str]:
+    candidates: List[str] = [_price_summary_label_key(is_raw)]
+    for column in column_layout:
+        key = _to_str(column.get("key")).strip()
+        if key and key not in candidates and key not in {_PRICE_UNIT_KEY, _PRICE_TOTAL_KEY}:
+            candidates.append(key)
+    return candidates
+
+
+def _split_order_price_summary_rows(
+    items: Sequence[Mapping[str, object]],
+    column_layout: Sequence[Mapping[str, object]],
+    *,
+    is_raw: bool,
+) -> tuple[List[Mapping[str, object]], object, List[tuple[str, object]]]:
+    label_keys = _price_summary_label_keys(column_layout, is_raw=is_raw)
+    total_key = _price_total_column_key(column_layout)
+    data_items: List[Mapping[str, object]] = []
+    subtotal: object = ""
+    summary_rows: List[tuple[str, object]] = []
+
+    for item in items:
+        label_text = ""
+        for key in label_keys:
+            text = _to_str(item.get(key)).strip()
+            if text:
+                label_text = text
+                break
+        normalized = _normalized_price_summary_label(label_text)
+        if normalized == "subtotaal excl. btw":
+            subtotal = item.get(total_key, item.get(_PRICE_TOTAL_KEY, ""))
+        elif normalized in {"btw", "totaal incl. btw"} or normalized.startswith("btw "):
+            summary_rows.append(
+                (label_text, item.get(total_key, item.get(_PRICE_TOTAL_KEY, "")))
+            )
+        else:
+            data_items.append(item)
+
+    return data_items, subtotal, summary_rows
+
+
+def _append_price_summary_rows_to_df(
+    df: pd.DataFrame,
+    headers: Sequence[str],
+    summary_rows: Sequence[tuple[str, object]],
+) -> pd.DataFrame:
+    if not summary_rows or not headers:
+        return df
+    price_header = next(
+        (
+            header
+            for header in headers
+            if _normalized_price_summary_label(header)
+            in {"totaal (\u20ac)", "totaalprijs", "totalprice"}
+        ),
+        headers[-1],
+    )
+    blank_row = {header: "" for header in headers}
+    rows = [blank_row]
+    for label, total in summary_rows:
+        row = {header: "" for header in headers}
+        row[headers[0]] = label
+        row[price_header] = total
+        rows.append(row)
+    return pd.concat([df, pd.DataFrame(rows)], ignore_index=True)
+
+
 def _clean_line_pricing_items(
     pricing: Mapping[str, object] | None,
 ) -> Dict[str, Dict[str, str]]:
@@ -579,13 +680,13 @@ def _default_priced_column_layout(context_kind: str) -> List[Dict[str, object]]:
             {"key": "Description", "label": "Omschrijving", "width": 32, "justify": "left", "wrap": True, "weight": 2.4},
             {"key": "Materiaal", "label": "Materiaal", "width": 16, "justify": "left", "wrap": False, "weight": 1.2},
             {"key": "Aantal", "label": "St.", "width": 8, "justify": "right", "numeric": True, "integer": True, "weight": 0.7},
-            {"key": "Oppervlakte", "label": "m2", "width": 10, "justify": "right", "numeric": True, "weight": 0.8},
+            {"key": "Oppervlakte", "label": "m2", "width": 10, "justify": "right", "numeric": True, "total_surface": True, "weight": 0.8},
             {"key": "Gewicht", "label": "kg", "width": 10, "justify": "right", "numeric": True, "total_weight": True, "weight": 0.8},
         ]
     columns.extend(
         [
-            {"key": _PRICE_UNIT_KEY, "label": "Prijs/st.", "width": 12, "justify": "right", "numeric": True, "weight": 0.9},
-            {"key": _PRICE_TOTAL_KEY, "label": "Totaalprijs", "width": 14, "justify": "right", "numeric": True, "weight": 1.0},
+            {"key": _PRICE_UNIT_KEY, "label": "Prijs/st. (\u20ac)", "width": 12, "justify": "right", "numeric": True, "weight": 0.9},
+            {"key": _PRICE_TOTAL_KEY, "label": "Totaal (\u20ac)", "width": 14, "justify": "right", "numeric": True, "weight": 1.0},
         ]
     )
     return columns
@@ -1546,6 +1647,7 @@ def _build_grouped_document_jobs(
                         context_kind=member.context_kind,
                         items=list(member.items),
                         selection_key=member.selection_key,
+                        total_surface_m2=member.total_surface_m2,
                         total_weight_kg=member.total_weight_kg,
                         column_layout=(
                             [dict(col) for col in member.column_layout]
@@ -1860,6 +1962,7 @@ def _normalize_order_sections(
     production: object,
     items: List[Dict[str, object]],
     label_kind: object,
+    total_surface_m2: float | None,
     total_weight_kg: float | None,
     column_layout: Optional[List[Dict[str, object]]],
     sections: Optional[List[OrderDocumentSection]],
@@ -1874,6 +1977,7 @@ def _normalize_order_sections(
                         context_kind=_to_str(section.context_kind) or "productie",
                         items=list(section.items or []),
                         selection_key=_to_str(section.selection_key),
+                        total_surface_m2=section.total_surface_m2,
                         total_weight_kg=section.total_weight_kg,
                         column_layout=(
                             [dict(col) for col in section.column_layout]
@@ -1889,6 +1993,7 @@ def _normalize_order_sections(
                     context_kind=_to_str(section.get("context_kind")) or "productie",
                     items=list(section.get("items") or []),
                     selection_key=_to_str(section.get("selection_key")),
+                    total_surface_m2=section.get("total_surface_m2"),
                     total_weight_kg=section.get("total_weight_kg"),
                     column_layout=(
                         [dict(col) for col in section.get("column_layout")]
@@ -1906,6 +2011,7 @@ def _normalize_order_sections(
             context_kind=_to_str(label_kind) or "productie",
             items=list(items or []),
             selection_key="",
+            total_surface_m2=total_surface_m2,
             total_weight_kg=total_weight_kg,
             column_layout=[dict(col) for col in column_layout] if column_layout else None,
         )
@@ -1931,17 +2037,22 @@ def _build_order_excel_section_data(
         [dict(col) for col in section.column_layout] if section.column_layout else []
     )
     custom_layout = bool(column_layout)
+    display_items, price_subtotal, price_summary_rows = _split_order_price_summary_rows(
+        section.items,
+        column_layout,
+        is_raw=is_raw_material_order,
+    )
 
     if custom_layout:
         headers: List[str] = []
         for column in column_layout:
-            header = _to_str(column.get("label") or column.get("key") or "").strip()
+            header = _order_column_export_label(column)
             if not header:
                 header = column.get("key", "")
             column["label"] = header
             headers.append(header)
         rows: List[Dict[str, object]] = []
-        for item in section.items:
+        for item in display_items:
             row: Dict[str, object] = {}
             for column, header in zip(column_layout, headers):
                 key = column.get("key")
@@ -1951,17 +2062,32 @@ def _build_order_excel_section_data(
                 row[header] = value
             rows.append(row)
         df = pd.DataFrame(rows, columns=headers)
+        surface_header: str | None = None
         weight_header: str | None = None
+        total_price_header: str | None = None
         for column in column_layout:
-            if column.get("total_weight"):
+            if surface_header is None and is_order_surface_column(column):
+                surface_header = column["label"]
+            if weight_header is None and is_order_weight_column(column):
                 weight_header = column["label"]
-                break
-        if weight_header and section.total_weight_kg is not None:
+            if total_price_header is None and _to_str(column.get("key")).strip().lower() == _PRICE_TOTAL_KEY.lower():
+                total_price_header = column["label"]
+        if (
+            (surface_header and section.total_surface_m2 is not None)
+            or (weight_header and section.total_weight_kg is not None)
+            or (total_price_header and _to_str(price_subtotal).strip())
+        ):
             total_row = {header: "" for header in headers}
             if headers:
                 total_row[headers[0]] = "Totaal"
-            total_row[weight_header] = _format_weight_kg(section.total_weight_kg)
+            if surface_header and section.total_surface_m2 is not None:
+                total_row[surface_header] = _format_weight_kg(section.total_surface_m2)
+            if weight_header and section.total_weight_kg is not None:
+                total_row[weight_header] = _format_weight_kg(section.total_weight_kg)
+            if total_price_header and _to_str(price_subtotal).strip():
+                total_row[total_price_header] = price_subtotal
             df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
+        df = _append_price_summary_rows_to_df(df, headers, price_summary_rows)
         left_cols = {
             _to_str(column.get("label") or column.get("key") or "").strip()
             or column.get("key", "")
@@ -1987,33 +2113,77 @@ def _build_order_excel_section_data(
             "Oppervlakte",
             "Gewicht",
         ]
-    df = pd.DataFrame(section.items, columns=df_columns)
-    if is_raw_material_order and section.total_weight_kg is not None:
+    df = pd.DataFrame(display_items, columns=df_columns)
+    if is_raw_material_order:
+        if section.total_weight_kg is not None:
+            total_row = {
+                "Profiel": "Totaal",
+                "Materiaal": "",
+                "Lengte": "",
+                "St.": "",
+                "kg": _format_weight_kg(section.total_weight_kg),
+            }
+            df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
+        return df, {"Profiel", "Materiaal"}, {"Profiel", "Materiaal"}
+
+    if section.total_surface_m2 is not None or section.total_weight_kg is not None:
         total_row = {
-            "Profiel": "Totaal",
+            "PartNumber": "Totaal",
+            "Description": "",
             "Materiaal": "",
-            "Lengte": "",
-            "St.": "",
-            "kg": _format_weight_kg(section.total_weight_kg),
+            "Aantal": "",
+            "Oppervlakte": (
+                _format_weight_kg(section.total_surface_m2)
+                if section.total_surface_m2 is not None
+                else ""
+            ),
+            "Gewicht": (
+                _format_weight_kg(section.total_weight_kg)
+                if section.total_weight_kg is not None
+                else ""
+            ),
         }
         df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
-        return df, {"Profiel", "Materiaal"}, {"Profiel", "Materiaal"}
 
     return df, {"PartNumber", "Description"}, {"PartNumber", "Description"}
 
 
-def _pdf_order_column_label(column: Mapping[str, object]) -> str:
-    """Return a compact header label for PDF tables."""
+def _order_column_export_label(column: Mapping[str, object]) -> str:
+    """Return a compact header label for exported order tables."""
 
     key = _to_str(column.get("key")).strip().lower()
     label = _to_str(column.get("label") or column.get("key") or "").strip()
     label_lower = label.lower()
+    label_compact = (
+        label_lower.replace("€", "")
+        .replace("(euro)", "")
+        .replace("\u20ac", "")
+        .replace("(", "")
+        .replace(")", "")
+        .replace(" ", "")
+    )
 
     if key == "oppervlakte" or label_lower == "oppervlakte":
         return "m\u00b2"
     if key == "gewicht" or label_lower in {"gewicht", "gewicht (kg)"}:
         return "kg"
+    if key == _PRICE_UNIT_KEY.lower() or label_compact in {
+        "eenheidsprijs",
+        "unitprice",
+    }:
+        return "Prijs/st. (\u20ac)"
+    if key == _PRICE_TOTAL_KEY.lower() or label_compact in {
+        "totaalprijs",
+        "totalprice",
+    }:
+        return "Totaal (\u20ac)"
     return label or _to_str(column.get("key")).strip()
+
+
+def _pdf_order_column_label(column: Mapping[str, object]) -> str:
+    """Return a compact header label for PDF tables."""
+
+    return _order_column_export_label(column)
 
 
 def _order_company_lines(company_info: Mapping[str, object] | None) -> List[str]:
@@ -2031,6 +2201,78 @@ def _order_company_lines(company_info: Mapping[str, object] | None) -> List[str]
     if website:
         lines.append(f"Website: {website}")
     return lines
+
+
+def _append_order_price_summary_story(
+    story: List[object],
+    summary_rows: Sequence[tuple[str, object]],
+    *,
+    usable_w: float,
+    palette: Mapping[str, str],
+) -> None:
+    if not summary_rows:
+        return
+
+    label_style = ParagraphStyle(
+        "OrderPriceSummaryLabel",
+        fontName="Helvetica",
+        fontSize=8.7,
+        leading=10.8,
+        alignment=0,
+    )
+    value_style = ParagraphStyle(
+        "OrderPriceSummaryValue",
+        fontName="Helvetica",
+        fontSize=8.7,
+        leading=10.8,
+        alignment=2,
+    )
+    data = [
+        [
+            Paragraph(escape(_to_str(label)), label_style),
+            Paragraph(escape(_num_to_2dec(total)), value_style),
+        ]
+        for label, total in summary_rows
+    ]
+    table_width = min(usable_w * 0.42, 82 * mm)
+    value_width = min(32 * mm, table_width * 0.42)
+    label_width = table_width - value_width
+    summary_tbl = Table(
+        data,
+        colWidths=[label_width, value_width],
+        hAlign="RIGHT",
+    )
+    style_cmds = [
+        ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor(ORDER_TEXT_COLOR)),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+    ]
+    if data:
+        last_row = len(data) - 1
+        style_cmds.extend(
+            [
+                ("FONTNAME", (0, last_row), (-1, last_row), "Helvetica-Bold"),
+                (
+                    "LINEABOVE",
+                    (0, last_row),
+                    (-1, last_row),
+                    0.45,
+                    colors.HexColor(ORDER_TABLE_OUTLINE_COLOR),
+                ),
+                (
+                    "BACKGROUND",
+                    (0, last_row),
+                    (-1, last_row),
+                    colors.HexColor(palette["total_fill"]),
+                ),
+            ]
+        )
+    summary_tbl.setStyle(TableStyle(style_cmds))
+    story.append(Spacer(0, 4))
+    story.append(summary_tbl)
 
 
 def _build_order_pdf_section_story(
@@ -2051,6 +2293,11 @@ def _build_order_pdf_section_story(
         [dict(col) for col in section.column_layout] if section.column_layout else []
     )
     custom_layout = bool(column_layout)
+    display_items, price_subtotal, price_summary_rows = _split_order_price_summary_rows(
+        section.items,
+        column_layout,
+        is_raw=is_raw_material_order,
+    )
     table_header_font_size = 9.5
     table_body_font_size = 8.7
     table_small_font_size = 8.2
@@ -2116,11 +2363,11 @@ def _build_order_pdf_section_story(
         col_fracs = [0.22, 0.40, 0.14, 0.06, 0.09, 0.09]
         non_empty_desc_count = sum(
             1
-            for item in section.items
+            for item in display_items
             if _clean_order_cell_text(item.get("Description", ""))
         )
-        if section.items:
-            empty_desc_ratio = 1.0 - (non_empty_desc_count / len(section.items))
+        if display_items:
+            empty_desc_ratio = 1.0 - (non_empty_desc_count / len(display_items))
         else:
             empty_desc_ratio = 0.0
         extra_pn_frac = 0.12 * max(0.0, min(1.0, empty_desc_ratio))
@@ -2139,7 +2386,7 @@ def _build_order_pdf_section_story(
                     "Helvetica",
                     table_small_font_size,
                 )
-                for item in section.items
+                for item in display_items
                 if _clean_order_cell_text(item.get("Materiaal", ""))
             ]
             value_width = (max(material_values) if material_values else 0) + 6
@@ -2179,12 +2426,17 @@ def _build_order_pdf_section_story(
     data = [head]
     total_row_index: int | None = None
     if custom_layout:
+        surface_idx: int | None = None
         weight_idx: int | None = None
+        total_price_idx: int | None = None
         for idx, column in enumerate(column_layout):
-            if column.get("total_weight"):
+            if surface_idx is None and is_order_surface_column(column):
+                surface_idx = idx
+            if weight_idx is None and is_order_weight_column(column):
                 weight_idx = idx
-                break
-        for row_offset, item in enumerate(section.items):
+            if total_price_idx is None and _to_str(column.get("key")).strip().lower() == _PRICE_TOTAL_KEY.lower():
+                total_price_idx = idx
+        for row_offset, item in enumerate(display_items):
             row_cells: List[Paragraph] = [
                 wrap_cell_html(
                     str(next_item_number + row_offset),
@@ -2213,7 +2465,11 @@ def _build_order_pdf_section_story(
                 row_cells.append(wrap_cell_html(value, small=small, align=align))
             data.append(row_cells)
 
-        if weight_idx is not None and section.total_weight_kg is not None:
+        if (
+            (surface_idx is not None and section.total_surface_m2 is not None)
+            or (weight_idx is not None and section.total_weight_kg is not None)
+            or (total_price_idx is not None and _to_str(price_subtotal).strip())
+        ):
             total_row: List[Paragraph] = [
                 wrap_cell_html("", small=True, align="CENTER")
             ]
@@ -2224,10 +2480,26 @@ def _build_order_pdf_section_story(
                 )
                 if align not in {"LEFT", "RIGHT", "CENTER"}:
                     align = "LEFT"
-                if idx == weight_idx:
+                if idx == surface_idx and section.total_surface_m2 is not None:
+                    total_row.append(
+                        wrap_cell_html(
+                            _num_to_2dec(section.total_surface_m2),
+                            small=True,
+                            align=align,
+                        )
+                    )
+                elif idx == weight_idx and section.total_weight_kg is not None:
                     total_row.append(
                         wrap_cell_html(
                             _num_to_2dec(section.total_weight_kg),
+                            small=True,
+                            align=align,
+                        )
+                    )
+                elif idx == total_price_idx and _to_str(price_subtotal).strip():
+                    total_row.append(
+                        wrap_cell_html(
+                            _num_to_2dec(price_subtotal),
                             small=True,
                             align=align,
                         )
@@ -2247,7 +2519,7 @@ def _build_order_pdf_section_story(
             data.append(total_row)
             total_row_index = len(data) - 1
     elif is_raw_material_order:
-        for row_offset, item in enumerate(section.items):
+        for row_offset, item in enumerate(display_items):
             prof = _to_str(item.get("Profiel", ""))
             mat = _to_str(item.get("Materiaal", ""))
             length_val = item.get("Lengte", "")
@@ -2286,7 +2558,7 @@ def _build_order_pdf_section_story(
             data.append(total_row)
             total_row_index = len(data) - 1
     else:
-        for row_offset, item in enumerate(section.items):
+        for row_offset, item in enumerate(display_items):
             pn = escape(_clean_order_cell_text(item.get("PartNumber", "")))
             desc_width = (
                 (standard_col_widths[1] - 10)
@@ -2313,6 +2585,30 @@ def _build_order_pdf_section_story(
                     wrap_cell_html(gew, small=True, align="RIGHT"),
                 ]
             )
+        if section.total_surface_m2 is not None or section.total_weight_kg is not None:
+            total_row = [
+                wrap_cell_html("", small=True, align="CENTER"),
+                wrap_cell_html("Totaal", small=False, align="LEFT"),
+                wrap_cell_html("", small=False, align="LEFT"),
+                wrap_cell_html("", small=True, align="RIGHT"),
+                wrap_cell_html("", small=True, align="RIGHT"),
+                wrap_cell_html(
+                    _num_to_2dec(section.total_surface_m2)
+                    if section.total_surface_m2 is not None
+                    else "",
+                    small=True,
+                    align="RIGHT",
+                ),
+                wrap_cell_html(
+                    _num_to_2dec(section.total_weight_kg)
+                    if section.total_weight_kg is not None
+                    else "",
+                    small=True,
+                    align="RIGHT",
+                ),
+            ]
+            data.append(total_row)
+            total_row_index = len(data) - 1
 
     if custom_layout and column_layout:
         weights: List[float] = []
@@ -2412,6 +2708,12 @@ def _build_order_pdf_section_story(
         )
     tbl.setStyle(TableStyle(style_cmds))
     story.append(tbl)
+    _append_order_price_summary_story(
+        story,
+        price_summary_rows,
+        usable_w=usable_w,
+        palette=palette,
+    )
 
 
 def generate_pdf_order_platypus(
@@ -2428,6 +2730,7 @@ def generate_pdf_order_platypus(
     project_name: str | None = None,
     label_kind: str = "productie",
     order_remark: str | None = None,
+    total_surface_m2: float | None = None,
     total_weight_kg: float | None = None,
     en1090_required: bool = False,
     en1090_note: Optional[str] = None,
@@ -2447,6 +2750,7 @@ def generate_pdf_order_platypus(
         production,
         items,
         label_kind,
+        total_surface_m2,
         total_weight_kg,
         column_layout,
         sections,
@@ -2504,6 +2808,15 @@ def generate_pdf_order_platypus(
     doc_type_text_slug = re.sub(r"[^0-9a-z]+", "", doc_type_text_lower)
     is_standaard_doc = doc_type_text_lower.startswith("standaard")
     primary_section = normalized_sections[0]
+    if not multiple_sections:
+        if total_surface_m2 is None:
+            total_surface_m2 = primary_section.total_surface_m2
+        if total_weight_kg is None:
+            total_weight_kg = primary_section.total_weight_kg
+        if column_layout is None and primary_section.column_layout:
+            column_layout = [dict(col) for col in primary_section.column_layout]
+        if not items and primary_section.items:
+            items = list(primary_section.items)
     production_text = _to_str(production).strip()
     label_kind_clean = (_to_str(label_kind) or "productie").strip() or "productie"
     # Per-section layout flags
@@ -2592,19 +2905,14 @@ def generate_pdf_order_platypus(
 
     supp_lines: List[str] = []
     if supplier is not None and not is_standaard_doc:
-        addr_parts = []
-        if supplier.adres_1:
-            addr_parts.append(supplier.adres_1)
-        if supplier.adres_2:
-            addr_parts.append(supplier.adres_2)
-        pc_gem = " ".join(x for x in [supplier.postcode, supplier.gemeente] if x)
-        if pc_gem:
-            addr_parts.append(pc_gem)
-        if supplier.land:
-            addr_parts.append(supplier.land)
-        full_addr = ", ".join(addr_parts)
+        full_addr = format_supplier_address(supplier)
+        supplier_label = (
+            "Offerte aangevraagd bij:"
+            if doc_type_text_slug.startswith("offerte")
+            else "Besteld bij:"
+        )
 
-        supp_lines = [f"<b>Besteld bij:</b> {supplier.supplier}"]
+        supp_lines = [f"<b>{supplier_label}</b> {supplier.supplier}"]
         if full_addr:
             supp_lines.append(full_addr)
         supp_lines.append(f"BTW: {supplier.btw or ''}")
@@ -2712,7 +3020,7 @@ def generate_pdf_order_platypus(
         )
     )
     story.append(title_rule)
-    story.append(Spacer(0, 9))
+    story.append(Spacer(0, 12))
 
     left_col_width = (width - 2 * margin) * 0.58
     right_col_width = (width - 2 * margin) - left_col_width
@@ -2759,7 +3067,14 @@ def generate_pdf_order_platypus(
                 show_title=True,
                 start_item_number=next_item_number,
             )
-            next_item_number += len(section.items)
+            section_display_items, _section_subtotal, _section_summary_rows = (
+                _split_order_price_summary_rows(
+                    section.items,
+                    section.column_layout or [],
+                    is_raw=_to_str(section.context_kind).strip().lower().startswith("brutemateriaal"),
+                )
+            )
+            next_item_number += len(section_display_items)
             if index < len(normalized_sections) - 1:
                 story.append(Spacer(0, 10))
 
@@ -2813,15 +3128,20 @@ def generate_pdf_order_platypus(
             style.alignment = {"LEFT": 0, "CENTER": 1, "RIGHT": 2}.get(align.upper(), 0)
         return Paragraph(str(val if (val is not None) else ""), style)
 
+    display_items, price_subtotal, price_summary_rows = _split_order_price_summary_rows(
+        items,
+        column_layout,
+        is_raw=is_raw_material_order,
+    )
     usable_w = width - 2 * margin
     standard_col_widths: List[float] | None = None
     if not custom_layout and not is_raw_material_order:
         col_fracs = [0.22, 0.40, 0.14, 0.06, 0.09, 0.09]
         non_empty_desc_count = sum(
-            1 for it in items if _clean_order_cell_text(it.get("Description", ""))
+            1 for it in display_items if _clean_order_cell_text(it.get("Description", ""))
         )
-        if items:
-            empty_desc_ratio = 1.0 - (non_empty_desc_count / len(items))
+        if display_items:
+            empty_desc_ratio = 1.0 - (non_empty_desc_count / len(display_items))
         else:
             empty_desc_ratio = 0.0
         extra_pn_frac = 0.12 * max(0.0, min(1.0, empty_desc_ratio))
@@ -2838,7 +3158,7 @@ def generate_pdf_order_platypus(
                     "Helvetica",
                     9,
                 )
-                for it in items
+                for it in display_items
                 if _clean_order_cell_text(it.get("Materiaal", ""))
             ]
             value_width = (max(material_values) if material_values else 0) + 6
@@ -2878,12 +3198,17 @@ def generate_pdf_order_platypus(
     data = [head]
     total_row_index: int | None = None
     if custom_layout:
+        surface_idx: int | None = None
         weight_idx: int | None = None
+        total_price_idx: int | None = None
         for idx, column in enumerate(column_layout):
-            if column.get("total_weight"):
+            if surface_idx is None and is_order_surface_column(column):
+                surface_idx = idx
+            if weight_idx is None and is_order_weight_column(column):
                 weight_idx = idx
-                break
-        for it in items:
+            if total_price_idx is None and _to_str(column.get("key")).strip().lower() == _PRICE_TOTAL_KEY.lower():
+                total_price_idx = idx
+        for it in display_items:
             row_cells: List[Paragraph] = []
             for idx, column in enumerate(column_layout):
                 key = column.get("key")
@@ -2903,15 +3228,25 @@ def generate_pdf_order_platypus(
                 row_cells.append(wrap_cell_html(value, small=small, align=align))
             data.append(row_cells)
 
-        if weight_idx is not None and total_weight_kg is not None:
+        if (
+            (surface_idx is not None and total_surface_m2 is not None)
+            or (weight_idx is not None and total_weight_kg is not None)
+            or (total_price_idx is not None and _to_str(price_subtotal).strip())
+        ):
             total_row: List[Paragraph] = []
             for idx, column in enumerate(column_layout):
                 align = _to_str(column.get("justify") or "left").strip().upper() or "LEFT"
                 if align not in {"LEFT", "RIGHT", "CENTER"}:
                     align = "LEFT"
-                if idx == weight_idx:
+                if idx == surface_idx and total_surface_m2 is not None:
+                    surface_text = _num_to_2dec(total_surface_m2)
+                    total_row.append(wrap_cell_html(surface_text, small=True, align=align))
+                elif idx == weight_idx and total_weight_kg is not None:
                     weight_text = _num_to_2dec(total_weight_kg)
                     total_row.append(wrap_cell_html(weight_text, small=True, align=align))
+                elif idx == total_price_idx and _to_str(price_subtotal).strip():
+                    subtotal_text = _num_to_2dec(price_subtotal)
+                    total_row.append(wrap_cell_html(subtotal_text, small=True, align=align))
                 elif idx == 0:
                     total_row.append(wrap_cell_html("Totaal", small=False, align="LEFT"))
                 else:
@@ -2921,7 +3256,7 @@ def generate_pdf_order_platypus(
             data.append(total_row)
             total_row_index = len(data) - 1
     elif is_raw_material_order:
-        for it in items:
+        for it in display_items:
             prof = _to_str(it.get("Profiel", ""))
             mat = _to_str(it.get("Materiaal", ""))
             length_val = it.get("Lengte", "")
@@ -2951,7 +3286,7 @@ def generate_pdf_order_platypus(
             data.append(total_row)
             total_row_index = len(data) - 1
     else:
-        for it in items:
+        for it in display_items:
             pn = escape(_clean_order_cell_text(it.get("PartNumber", "")))
             desc_width = (
                 (standard_col_widths[1] - 10) if standard_col_widths else (usable_w * 0.40)
@@ -2971,6 +3306,29 @@ def generate_pdf_order_platypus(
                     wrap_cell_html(gew, small=True, align="RIGHT"),
                 ]
             )
+        if total_surface_m2 is not None or total_weight_kg is not None:
+            total_row = [
+                wrap_cell_html("Totaal", small=False, align="LEFT"),
+                wrap_cell_html("", small=False, align="LEFT"),
+                wrap_cell_html("", small=True, align="RIGHT"),
+                wrap_cell_html("", small=True, align="RIGHT"),
+                wrap_cell_html(
+                    _num_to_2dec(total_surface_m2)
+                    if total_surface_m2 is not None
+                    else "",
+                    small=True,
+                    align="RIGHT",
+                ),
+                wrap_cell_html(
+                    _num_to_2dec(total_weight_kg)
+                    if total_weight_kg is not None
+                    else "",
+                    small=True,
+                    align="RIGHT",
+                ),
+            ]
+            data.append(total_row)
+            total_row_index = len(data) - 1
 
     if custom_layout and column_layout:
         weights: List[float] = []
@@ -3056,6 +3414,12 @@ def generate_pdf_order_platypus(
         )
     tbl.setStyle(TableStyle(style_cmds))
     story.append(tbl)
+    _append_order_price_summary_story(
+        story,
+        price_summary_rows,
+        usable_w=usable_w,
+        palette=palette,
+    )
 
     if en1090_required:
         note_text = EN1090_NOTE_TEXT if en1090_note is None else _to_str(en1090_note)
@@ -3196,6 +3560,7 @@ def write_order_excel(
     context_label: str | None = None,
     context_kind: str = "productie",
     order_remark: str | None = None,
+    total_surface_m2: float | None = None,
     total_weight_kg: float | None = None,
     en1090_required: bool = False,
     en1090_note: Optional[str] = None,
@@ -3207,9 +3572,10 @@ def write_order_excel(
     is_raw_material_order = context_kind_clean.lower().startswith("brutemateriaal")
     excel_sections = (
         _normalize_order_sections(
-            items,
             context_label or "",
+            items,
             context_kind_clean,
+            total_surface_m2,
             total_weight_kg,
             column_layout,
             sections,
@@ -3219,6 +3585,11 @@ def write_order_excel(
     )
     column_layout = [dict(col) for col in column_layout] if column_layout else []
     custom_layout = bool(column_layout)
+    display_items, price_subtotal, price_summary_rows = _split_order_price_summary_rows(
+        items,
+        column_layout,
+        is_raw=is_raw_material_order,
+    )
     df_columns: List[str] = []
     if excel_sections:
         df = pd.DataFrame()
@@ -3231,7 +3602,7 @@ def write_order_excel(
             column["label"] = header
             headers.append(header)
         rows: List[Dict[str, object]] = []
-        for item in items:
+        for item in display_items:
             row: Dict[str, object] = {}
             for column, header in zip(column_layout, headers):
                 key = column.get("key")
@@ -3241,30 +3612,64 @@ def write_order_excel(
                 row[header] = value
             rows.append(row)
         df = pd.DataFrame(rows, columns=headers)
+        surface_header: str | None = None
         weight_header: str | None = None
+        total_price_header: str | None = None
         for column in column_layout:
-            if column.get("total_weight"):
+            if surface_header is None and is_order_surface_column(column):
+                surface_header = column["label"]
+            if weight_header is None and is_order_weight_column(column):
                 weight_header = column["label"]
-                break
-        if weight_header and total_weight_kg is not None:
+            if total_price_header is None and _to_str(column.get("key")).strip().lower() == _PRICE_TOTAL_KEY.lower():
+                total_price_header = column["label"]
+        if (
+            (surface_header and total_surface_m2 is not None)
+            or (weight_header and total_weight_kg is not None)
+            or (total_price_header and _to_str(price_subtotal).strip())
+        ):
             total_row = {header: "" for header in headers}
             if headers:
                 total_row[headers[0]] = "Totaal"
-            total_row[weight_header] = _format_weight_kg(total_weight_kg)
+            if surface_header and total_surface_m2 is not None:
+                total_row[surface_header] = _format_weight_kg(total_surface_m2)
+            if weight_header and total_weight_kg is not None:
+                total_row[weight_header] = _format_weight_kg(total_weight_kg)
+            if total_price_header and _to_str(price_subtotal).strip():
+                total_row[total_price_header] = price_subtotal
             df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
+        df = _append_price_summary_rows_to_df(df, headers, price_summary_rows)
     else:
         if is_raw_material_order:
             df_columns = ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
         else:
             df_columns = ["PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht"]
-        df = pd.DataFrame(items, columns=df_columns)
-        if is_raw_material_order and total_weight_kg is not None:
+        df = pd.DataFrame(display_items, columns=df_columns)
+        if is_raw_material_order:
+            if total_weight_kg is not None:
+                total_row = {
+                    "Profiel": "Totaal",
+                    "Materiaal": "",
+                    "Lengte": "",
+                    "St.": "",
+                    "kg": _format_weight_kg(total_weight_kg),
+                }
+                df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
+        elif total_surface_m2 is not None or total_weight_kg is not None:
             total_row = {
-                "Profiel": "Totaal",
+                "PartNumber": "Totaal",
+                "Description": "",
                 "Materiaal": "",
-                "Lengte": "",
-                "St.": "",
-                "kg": _format_weight_kg(total_weight_kg),
+                "Aantal": "",
+                "Oppervlakte": (
+                    _format_weight_kg(total_surface_m2)
+                    if total_surface_m2 is not None
+                    else ""
+                ),
+                "Gewicht": (
+                    _format_weight_kg(total_weight_kg)
+                    if total_weight_kg is not None
+                    else ""
+                ),
             }
             df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
 
@@ -3331,17 +3736,7 @@ def write_order_excel(
         not is_standaard_doc or bool(supplier_name)
     )
     if include_supplier_block:
-        addr_parts = []
-        if supplier.adres_1:
-            addr_parts.append(supplier.adres_1)
-        if supplier.adres_2:
-            addr_parts.append(supplier.adres_2)
-        pc_gem = " ".join(x for x in [supplier.postcode, supplier.gemeente] if x)
-        if pc_gem:
-            addr_parts.append(pc_gem)
-        if supplier.land:
-            addr_parts.append(supplier.land)
-        full_addr = ", ".join(addr_parts)
+        full_addr = format_supplier_address(supplier)
         header_lines.extend(
             [
                 ("Leverancier", supplier.supplier),
@@ -4153,6 +4548,7 @@ def copy_per_production_and_orders(
             context_kind="Productie",
             vat_rate=vat_rate_map.get(prod, ""),
         )
+        total_surface_m2, total_weight_kg = calculate_order_measure_totals(items)
         order_candidates.append(
             OrderDocumentCandidate(
                 selection_key=make_production_selection_key(prod),
@@ -4167,6 +4563,8 @@ def copy_per_production_and_orders(
                 doc_num_display=doc_num_display,
                 order_remark=order_remark or None,
                 items=items,
+                total_surface_m2=total_surface_m2,
+                total_weight_kg=total_weight_kg,
                 column_layout=column_layout,
                 en1090_required=en1090_required,
             )
@@ -4675,6 +5073,7 @@ def copy_per_production_and_orders(
                 context_kind="Afwerking",
                 vat_rate=finish_vat_rate_map.get(finish_key, ""),
             )
+            total_surface_m2, total_weight_kg = calculate_order_measure_totals(items)
             order_candidates.append(
                 OrderDocumentCandidate(
                     selection_key=make_finish_selection_key(finish_key),
@@ -4689,6 +5088,8 @@ def copy_per_production_and_orders(
                     doc_num_display=doc_num_display,
                     order_remark=finish_remark or None,
                     items=items,
+                    total_surface_m2=total_surface_m2,
+                    total_weight_kg=total_weight_kg,
                     column_layout=column_layout,
                 )
             )

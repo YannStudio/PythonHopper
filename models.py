@@ -4,6 +4,13 @@ from typing import Any, Dict, Optional
 from helpers import _to_str
 
 
+def _optional_text(value: Any) -> Optional[str]:
+    text = _to_str(value).strip()
+    if not text or text.lower() in {"nan", "none", "null", "nat"}:
+        return None
+    return text
+
+
 def normalize_rgb_color(value: Any) -> Optional[str]:
     if value in (None, ""):
         return None
@@ -156,6 +163,11 @@ class Supplier:
             "product_type": "product_type",
             "category": "product_type",
             "categorie": "product_type",
+            "product description": "product_description",
+            "product_description": "product_description",
+            "product beschrijving": "product_description",
+            "productbeschrijving": "product_description",
+            "product omschrijving": "product_description",
             # favorite
             "favorite": "favorite",
             "favoriet": "favorite",
@@ -173,7 +185,7 @@ class Supplier:
             or d.get("Leverancier")
             or ""
         ).strip()
-        if not name or name == "-":
+        if not name or name == "-" or name.lower() == "nan":
             raise ValueError("Supplier name is missing in record.")
 
         fav = norm.get("favorite", d.get("favorite", False))
@@ -182,19 +194,25 @@ class Supplier:
 
         return Supplier(
             supplier=name,
-            description=_to_str(norm.get("description")).strip() or None if ("description" in norm) else None,
-            supplier_id=_to_str(norm.get("supplier_id")).strip() or None if ("supplier_id" in norm) else None,
-            adres_1=_to_str(norm.get("adres_1")).strip() or None if ("adres_1" in norm) else None,
-            adres_2=_to_str(norm.get("adres_2")).strip() or None if ("adres_2" in norm) else None,
-            postcode=_to_str(norm.get("postcode")).strip() or None if ("postcode" in norm) else None,
-            gemeente=_to_str(norm.get("gemeente")).strip() or None if ("gemeente" in norm) else None,
-            land=_to_str(norm.get("land")).strip() or None if ("land" in norm) else None,
-            btw=_to_str(norm.get("btw")).strip() or None if ("btw" in norm) else None,
-            contact_sales=_to_str(norm.get("contact_sales")).strip() or None if ("contact_sales" in norm) else None,
-            sales_email=_to_str(norm.get("sales_email")).strip() or None if ("sales_email" in norm) else None,
-            phone=_to_str(norm.get("phone")).strip() or None if ("phone" in norm) else None,
-            product_type=_to_str(norm.get("product_type")).strip() or None if ("product_type" in norm) else None,
-            product_description=_to_str(norm.get("description")).strip() or None if ("description" in norm) else None,
+            description=_optional_text(norm.get("description")) if ("description" in norm) else None,
+            supplier_id=_optional_text(norm.get("supplier_id")) if ("supplier_id" in norm) else None,
+            adres_1=_optional_text(norm.get("adres_1")) if ("adres_1" in norm) else None,
+            adres_2=_optional_text(norm.get("adres_2")) if ("adres_2" in norm) else None,
+            postcode=_optional_text(norm.get("postcode")) if ("postcode" in norm) else None,
+            gemeente=_optional_text(norm.get("gemeente")) if ("gemeente" in norm) else None,
+            land=_optional_text(norm.get("land")) if ("land" in norm) else None,
+            btw=_optional_text(norm.get("btw")) if ("btw" in norm) else None,
+            contact_sales=_optional_text(norm.get("contact_sales")) if ("contact_sales" in norm) else None,
+            sales_email=_optional_text(norm.get("sales_email")) if ("sales_email" in norm) else None,
+            phone=_optional_text(norm.get("phone")) if ("phone" in norm) else None,
+            product_type=_optional_text(norm.get("product_type")) if ("product_type" in norm) else None,
+            product_description=(
+                _optional_text(norm.get("product_description"))
+                if ("product_description" in norm)
+                else _optional_text(norm.get("description"))
+                if ("description" in norm)
+                else None
+            ),
             favorite=bool(fav),
         )
 

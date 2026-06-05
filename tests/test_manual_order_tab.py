@@ -3,7 +3,12 @@ import math
 import pytest
 
 import manual_order_tab
-from manual_order_tab import _ensure_integer_quantity, ManualOrderTab, SearchableCombobox
+from manual_order_tab import (
+    _ensure_integer_quantity,
+    _ManualRowWidgets,
+    ManualOrderTab,
+    SearchableCombobox,
+)
 
 
 @pytest.mark.parametrize(
@@ -56,6 +61,33 @@ def test_ensure_column_metrics_marks_integer_column():
     length_column = {"key": "Lengte", "numeric": True, "width": 10}
     ManualOrderTab._ensure_column_metrics(tab, length_column)
     assert "integer" not in length_column
+
+
+def test_collect_items_multiplies_surface_and_weight_by_quantity():
+    tab = ManualOrderTab.__new__(ManualOrderTab)
+    tab.current_columns = [
+        {"key": "Aantal", "numeric": True},
+        {"key": "Oppervlakte", "numeric": True, "total_surface": True},
+        {"key": "Gewicht", "numeric": True, "total_weight": True},
+    ]
+    tab.rows = [
+        type(
+            "Row",
+            (),
+            {
+                "vars": {
+                    "Aantal": _DummyVar("4"),
+                    "Oppervlakte": _DummyVar("0,50"),
+                    "Gewicht": _DummyVar("7,80"),
+                }
+            },
+        )()
+    ]
+
+    payload = ManualOrderTab._collect_items(tab)
+
+    assert payload["total_surface"] == pytest.approx(2.0)
+    assert payload["total_weight"] == pytest.approx(31.2)
 
 
 def test_build_document_basename_ignores_prefix_only_doc_number():
@@ -124,6 +156,200 @@ class _DummyVar:
 
     def set(self, value):
         self.value = value
+
+
+def test_manual_order_row_price_links_unit_and_total_price():
+    tab = ManualOrderTab.__new__(ManualOrderTab)
+    row = _ManualRowWidgets(
+        frame=None,
+        vars={
+            "Aantal": _DummyVar("4"),
+            "Eenheidsprijs": _DummyVar("12,50"),
+            "Totaalprijs": _DummyVar(""),
+        },
+        entries={},
+        remove_btn=None,
+    )
+
+    ManualOrderTab._on_row_price_change(tab, row, "Eenheidsprijs")
+
+    assert row.vars["Totaalprijs"].get() == "50.00"
+    assert row.price_auto_field == "Totaalprijs"
+
+    row.vars["Totaalprijs"].set("80")
+    ManualOrderTab._on_row_price_change(tab, row, "Totaalprijs")
+
+    assert row.vars["Eenheidsprijs"].get() == "20.00"
+    assert row.price_auto_field == "Eenheidsprijs"
+
+
+def test_manual_order_row_price_recalculates_when_quantity_changes():
+    tab = ManualOrderTab.__new__(ManualOrderTab)
+    row = _ManualRowWidgets(
+        frame=None,
+        vars={
+            "Aantal": _DummyVar("2"),
+            "Eenheidsprijs": _DummyVar("12.50"),
+            "Totaalprijs": _DummyVar(""),
+        },
+        entries={},
+        remove_btn=None,
+    )
+    ManualOrderTab._on_row_price_change(tab, row, "Eenheidsprijs")
+
+    row.vars["Aantal"].set("4")
+    ManualOrderTab._on_row_quantity_change(tab, row)
+
+    assert row.vars["Totaalprijs"].get() == "50.00"
+
+
+def test_manual_order_vat_summary_rows_use_total_prices():
+    tab = ManualOrderTab.__new__(ManualOrderTab)
+    layout = [
+        {"key": "Description", "label": "Omschrijving"},
+        {"key": "Aantal", "label": "Aantal"},
+        {"key": "Eenheidsprijs", "label": "Eenheidsprijs"},
+        {"key": "Totaalprijs", "label": "Totaalprijs"},
+    ]
+    items = [
+        {"Description": "A", "Aantal": 2, "Totaalprijs": "20.00"},
+        {"Description": "B", "Aantal": 1, "Totaalprijs": "5"},
+    ]
+
+    result = ManualOrderTab._append_vat_summary_rows(tab, items, layout, "21")
+
+    assert result[-3]["Description"] == "Subtotaal excl. BTW"
+    assert result[-3]["Totaalprijs"] == "25.00"
+    assert result[-2]["Description"] == "BTW 21%"
+    assert result[-2]["Totaalprijs"] == "5.25"
+    assert result[-1]["Description"] == "Totaal incl. BTW"
+    assert result[-1]["Totaalprijs"] == "30.25"
+
+
+def test_manual_order_visible_columns_hide_price_fields():
+    tab = ManualOrderTab.__new__(ManualOrderTab)
+    tab.price_columns_visible_var = _DummyVar(False)
+    columns = [
+        {"key": "Description", "label": "Omschrijving"},
+        {"key": "Aantal", "label": "Aantal"},
+        {"key": "Eenheidsprijs", "label": "Prijs/st. (\u20ac)"},
+        {"key": "Totaalprijs", "label": "Totaal (\u20ac)"},
+    ]
+
+    visible = ManualOrderTab._visible_columns_for(tab, columns)
+
+    assert [column["key"] for column in visible] == ["Description", "Aantal"]
+
+
+def test_manual_order_visible_columns_keep_price_fields():
+    tab = ManualOrderTab.__new__(ManualOrderTab)
+    tab.price_columns_visible_var = _DummyVar(True)
+    columns = [
+        {"key": "Description", "label": "Omschrijving"},
+        {"key": "Eenheidsprijs", "label": "Prijs/st. (\u20ac)"},
+        {"key": "Totaalprijs", "label": "Totaal (\u20ac)"},
+    ]
+
+    visible = ManualOrderTab._visible_columns_for(tab, columns)
+
+    assert [column["key"] for column in visible] == [
+        "Description",
+        "Eenheidsprijs",
+        "Totaalprijs",
+    ]
+
+
+def test_manual_order_apply_template_keeps_full_price_columns_when_hidden():
+    tab = ManualOrderTab.__new__(ManualOrderTab)
+    tab.current_template_name = ""
+    tab._template_rows_cache = {}
+    tab._template_layout_cache = {}
+    tab._all_columns = []
+    tab._all_row_values = []
+    tab.price_columns_visible_var = _DummyVar(False)
+    columns = [
+        {"key": "Description", "label": "Omschrijving"},
+        {"key": "Eenheidsprijs", "label": "Prijs/st. (\u20ac)"},
+        {"key": "Totaalprijs", "label": "Totaal (\u20ac)"},
+    ]
+    added_rows = []
+    tab._clone_columns = lambda _template: [dict(column) for column in columns]
+    tab._ensure_column_metrics = lambda _column: None
+    tab._clear_rows = lambda: None
+    tab._render_header = lambda: None
+    tab.add_row = lambda values=None: added_rows.append(values)
+    tab._update_totals = lambda: None
+
+    ManualOrderTab._apply_template(tab, "Standaard", store_previous=False)
+
+    assert [column["key"] for column in tab._all_columns] == [
+        "Description",
+        "Eenheidsprijs",
+        "Totaalprijs",
+    ]
+    assert [column["key"] for column in tab.current_columns] == ["Description"]
+    assert added_rows == [{}]
+
+
+class _DummyText:
+    def __init__(self, value=""):
+        self.value = value
+
+    def get(self, *_args):
+        return self.value
+
+
+class _DummySupplierCombo:
+    def commit_typed_value(self):
+        return True
+
+
+def test_manual_order_export_omits_empty_price_columns(monkeypatch):
+    monkeypatch.setattr(manual_order_tab.messagebox, "showinfo", lambda *a, **k: None)
+    monkeypatch.setattr(manual_order_tab.messagebox, "showwarning", lambda *a, **k: None)
+    tab = ManualOrderTab.__new__(ManualOrderTab)
+    tab.supplier_combo = _DummySupplierCombo()
+    tab.price_columns_visible_var = _DummyVar(True)
+    tab.vat_rate_var = _DummyVar("21")
+    tab.current_template_name = "Standaard"
+    tab.current_columns = [
+        {"key": "Description", "label": "Omschrijving"},
+        {"key": "Aantal", "label": "Aantal", "numeric": True},
+        {"key": "Eenheidsprijs", "label": "Prijs/st. (\u20ac)", "numeric": True},
+        {"key": "Totaalprijs", "label": "Totaal (\u20ac)", "numeric": True},
+    ]
+    tab.rows = [
+        _ManualRowWidgets(
+            frame=None,
+            vars={
+                "Description": _DummyVar("Onderdeel"),
+                "Aantal": _DummyVar("4"),
+                "Eenheidsprijs": _DummyVar(""),
+                "Totaalprijs": _DummyVar(""),
+            },
+            entries={},
+            remove_btn=None,
+        )
+    ]
+    tab.remark_text = _DummyText("")
+    tab.doc_type_var = _DummyVar("Bestelbon")
+    tab.doc_number_var = _DummyVar("BB001")
+    tab.client_var = _DummyVar("Klant")
+    tab.supplier_var = _DummyVar("Leverancier")
+    tab.delivery_var = _DummyVar("Geen")
+    tab.context_label_var = _DummyVar("Document")
+    captured = {}
+    tab._on_export = lambda payload: captured.setdefault("payload", payload)
+
+    ManualOrderTab._handle_export(tab)
+
+    export_payload = captured["payload"]
+    exported_keys = [column["key"] for column in export_payload["column_layout"]]
+    assert "Eenheidsprijs" not in exported_keys
+    assert "Totaalprijs" not in exported_keys
+    assert export_payload["items"] == [{"Description": "Onderdeel", "Aantal": 4}]
+    assert export_payload["show_prices"] is False
+    assert export_payload["vat_rate"] == ""
 
 
 class _DummyCombo:

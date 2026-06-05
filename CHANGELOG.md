@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.3 - 2026-06-05
+
+- PDF dossier wist na het kiezen van een volgordepreset de gearceerde comboboxselectie, zoals bij de moduskeuze.
+- Informatietekst bij de PDF dossier-modus en volgordepreset gebruikt nu dezelfde tekstkleur.
+- Bestelbon- en werkdossieruitvoer verwerkt maatvelden, totalen en plaat-/profielgegevens consequenter in Excel en PDF.
+- Lange bestelbontabellen en celteksten breken beter af, zodat totalen en details leesbaar blijven.
+- Leveranciersbeheer bewaart extra adres- en contactgegevens correct bij het bewerken.
+- Leveranciersdata en templategegevens zijn bijgewerkt.
+- GitHub Actions workflow toegevoegd voor automatische Python-tests.
+
 ## 3.2 - 2026-06-01
 
 - PDF werkdossier werkt nu in dezelfde tab in plaats van via een pop-up.

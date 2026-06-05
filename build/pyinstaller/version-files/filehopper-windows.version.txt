@@ -1,8 +1,8 @@
 # UTF-8
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(3, 2, 0, 0),
-    prodvers=(3, 2, 0, 0),
+    filevers=(3, 3, 0, 0),
+    prodvers=(3, 3, 0, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -18,11 +18,11 @@ VSVersionInfo(
           [
             StringStruct('CompanyName', 'Filehopper'),
             StringStruct('FileDescription', 'Filehopper'),
-            StringStruct('FileVersion', '3.2.0.0'),
+            StringStruct('FileVersion', '3.3.0.0'),
             StringStruct('InternalName', 'filehopper-windows'),
             StringStruct('OriginalFilename', 'filehopper-windows.exe'),
             StringStruct('ProductName', 'Filehopper'),
-            StringStruct('ProductVersion', '3.2.0.0')
+            StringStruct('ProductVersion', '3.3.0.0')
           ]
         )
       ]

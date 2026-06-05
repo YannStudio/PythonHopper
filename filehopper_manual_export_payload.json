@@ -1,60 +1,53 @@
 {
   "doc_type": "Bestelbon",
-  "doc_number": "BB-001",
+  "doc_number": "BB-222",
   "client": "* Jeroen Van Dooren GCV",
-  "supplier": "ML coating",
-  "delivery": "Bestelling wordt opgehaald",
-  "context_label": "Bar Chair-Powdercoating",
+  "supplier": "Elcee Belux",
+  "delivery": "* Jeroen Van Dooren GCV",
+  "context_label": "Bureau",
   "context_kind": "document",
-  "remark": "Poederlakken in fijn structuur.",
+  "remark": "",
   "items": [
     {
-      "PartNumber": "190610_p07",
-      "Description": "Poeder coating - Bar chair frame - RAL 3022 FS",
-      "Materiaal": "S235JR",
-      "Aantal": 4,
-      "Oppervlakte": 0.5,
-      "Gewicht": 7.8,
-      "Eenheidsprijs": 87.5,
-      "Totaalprijs": 350
+      "Aantal": 2,
+      "Oppervlakte": 2,
+      "Gewicht": 15,
+      "Eenheidsprijs": 5,
+      "Totaalprijs": 10
+    },
+    {
+      "Aantal": 10,
+      "Oppervlakte": 1,
+      "Gewicht": 8,
+      "Eenheidsprijs": 0.3,
+      "Totaalprijs": 3
+    },
+    {
+      "Aantal": "Subtotaal excl. BTW",
+      "Oppervlakte": "",
+      "Gewicht": "",
+      "Eenheidsprijs": "",
+      "Totaalprijs": "13.00"
+    },
+    {
+      "Aantal": "BTW 21%",
+      "Oppervlakte": "",
+      "Gewicht": "",
+      "Eenheidsprijs": "",
+      "Totaalprijs": "2.73"
+    },
+    {
+      "Aantal": "Totaal incl. BTW",
+      "Oppervlakte": "",
+      "Gewicht": "",
+      "Eenheidsprijs": "",
+      "Totaalprijs": "15.73"
     }
   ],
-  "total_weight": 7.8,
+  "total_surface": 14.0,
+  "total_weight": 110.0,
   "template": "Standaard",
   "column_layout": [
-    {
-      "key": "PartNumber",
-      "label": "Artikel nr.",
-      "width": 16,
-      "justify": "left",
-      "stretch": false,
-      "wrap": false,
-      "weight": 1.6,
-      "_display_chars": 16,
-      "_min_width_px": 96
-    },
-    {
-      "key": "Description",
-      "label": "Omschrijving",
-      "width": 32,
-      "justify": "left",
-      "stretch": true,
-      "wrap": true,
-      "weight": 2.6,
-      "_display_chars": 32,
-      "_min_width_px": 192
-    },
-    {
-      "key": "Materiaal",
-      "label": "Materiaal",
-      "width": 18,
-      "justify": "left",
-      "stretch": false,
-      "wrap": false,
-      "weight": 1.6,
-      "_display_chars": 18,
-      "_min_width_px": 108
-    },
     {
       "key": "Aantal",
       "label": "Aantal",
@@ -77,6 +70,7 @@
       "stretch": false,
       "wrap": false,
       "weight": 1.0,
+      "total_surface": true,
       "_display_chars": 12,
       "_min_width_px": 72
     },
@@ -95,19 +89,19 @@
     },
     {
       "key": "Eenheidsprijs",
-      "label": "Eenheidsprijs (€)",
+      "label": "Prijs/st.",
       "width": 14,
       "justify": "right",
       "numeric": true,
       "stretch": false,
       "wrap": false,
       "weight": 1.3,
-      "_display_chars": 15,
-      "_min_width_px": 90
+      "_display_chars": 14,
+      "_min_width_px": 84
     },
     {
       "key": "Totaalprijs",
-      "label": "Totaalprijs (€)",
+      "label": "Totaal",
       "width": 14,
       "justify": "right",
       "numeric": true,
@@ -117,5 +111,7 @@
       "_display_chars": 14,
       "_min_width_px": 84
     }
-  ]
+  ],
+  "show_prices": true,
+  "vat_rate": "21"
 }

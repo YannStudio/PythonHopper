@@ -1967,7 +1967,19 @@ def start_gui():
             tk.Button(filter_frame, text="Wis filters", command=self._clear_filters).pack(side="left")
             
             # Treeview with new columns
-            cols = ("Supplier", "Product type", "Beschrijving", "BTW", "E-mail", "Tel", "Adres 1", "Adres 2")
+            cols = (
+                "Supplier",
+                "Product type",
+                "Beschrijving",
+                "BTW",
+                "E-mail",
+                "Tel",
+                "Adres 1",
+                "Adres 2",
+                "Postcode",
+                "Gemeente",
+                "Land",
+            )
             self.tree = ttk.Treeview(self, columns=cols, show="headings")
             for c in cols:
                 self.tree.heading(c, text=c)
@@ -2083,6 +2095,9 @@ def start_gui():
                     s.phone or "",
                     s.adres_1 or "",
                     s.adres_2 or "",
+                    s.postcode or "",
+                    s.gemeente or "",
+                    s.land or "",
                 )
                 tag = "odd" if i % 2 else "even"
                 self.tree.insert("", "end", iid=s.supplier, values=vals, tags=(tag,))
@@ -2117,7 +2132,7 @@ def start_gui():
             )
             self.wait_window(dlg)
             if dlg.result:
-                self.db.upsert(dlg.result)
+                self.db.upsert(dlg.result, replace=True)
                 self.db.save(SUPPLIERS_DB_FILE)
                 self.refresh()
                 if self.on_change:
@@ -2269,7 +2284,7 @@ def start_gui():
             dlg = self._EditDialog(self, s)
             self.wait_window(dlg)
             if dlg.result:
-                self.db.upsert(dlg.result)
+                self.db.upsert(dlg.result, old_name=s.supplier, replace=True)
                 self.db.save(SUPPLIERS_DB_FILE)
                 self.refresh()
                 if self.on_change:
@@ -4667,8 +4682,8 @@ def start_gui():
                     None,
                 ),
                 ("doc_entry", "Nr.", 12, None),
-                ("unit_price_entry", "Prijs/st.", 12, None),
-                ("total_price_entry", "Totaalprijs", 12, None),
+                ("unit_price_entry", "Prijs/st. (\u20ac)", 12, None),
+                ("total_price_entry", "Totaal (\u20ac)", 12, None),
                 ("vat_combo", "BTW %", 7, None),
                 ("line_price_button", "Regelprijzen", 10, None),
                 ("remark_entry", "Opmerking", 24, None),
@@ -5579,7 +5594,7 @@ def start_gui():
                 inner.grid_columnconfigure(col, weight=weight)
 
             header_font = ("TkDefaultFont", 10, "bold")
-            headers = ("Onderdeel", "St.", "Prijs/st.", "Totaalprijs")
+            headers = ("Onderdeel", "St.", "Prijs/st. (\u20ac)", "Totaal (\u20ac)")
             for col, text in enumerate(headers):
                 header_padx = (0, 18) if col == len(headers) - 1 else (0, 8)
                 tk.Label(inner, text=text, font=header_font, anchor="w").grid(
@@ -9631,6 +9646,7 @@ def start_gui():
         MODE_PER_PRODUCTION = "Aparte PDF per productie"
         MODE_ALPHABETIC_SINGLE = "PDF alfabetisch (alle bestanden)"
         NO_PRESET_LABEL = "(Blanco template)"
+        INFO_TEXT_COLOR = "#5D6670"
         ROLE_LABELS = {
             "bom": "BOM",
             "drawing": "Tekening",
@@ -9714,7 +9730,7 @@ def start_gui():
                 width=26,
             )
             self.mode_combo.grid(row=0, column=1, sticky="w", pady=3)
-            self.mode_combo.bind("<<ComboboxSelected>>", lambda _e: self._sync_mode())
+            self.mode_combo.bind("<<ComboboxSelected>>", self._on_mode_selected)
             self._option_widgets.append(self.mode_combo)
 
             self.mode_info_frame = tk.Frame(form)
@@ -9731,7 +9747,7 @@ def start_gui():
                 text="Kies hoe het dossier wordt opgebouwd.",
                 anchor="w",
                 justify="left",
-                foreground="#263238",
+                foreground=self.INFO_TEXT_COLOR,
             ).pack(anchor="w")
             tk.Label(
                 self.mode_info_frame,
@@ -9742,7 +9758,7 @@ def start_gui():
                 ),
                 anchor="w",
                 justify="left",
-                foreground="#5D6670",
+                foreground=self.INFO_TEXT_COLOR,
                 wraplength=720,
             ).pack(anchor="w", pady=(2, 0))
 
@@ -9945,6 +9961,14 @@ def start_gui():
             if callable(self.on_options_changed):
                 self.on_options_changed()
 
+        def _clear_combobox_selection(self, combo: ttk.Combobox) -> None:
+            try:
+                if hasattr(combo, "selection_clear"):
+                    combo.selection_clear()
+                combo.icursor(tk.END)
+            except tk.TclError:
+                pass
+
         def _reload_presets(self, show_blank_template: bool = True) -> None:
             base_choices = [self.NO_PRESET_LABEL] if show_blank_template else []
             built_ins = [
@@ -10016,6 +10040,10 @@ def start_gui():
             self.sections_editor.set_enabled(not self._busy)
             self._notify_options_changed()
 
+        def _on_mode_selected(self, _event=None) -> None:
+            self._sync_mode()
+            self._clear_combobox_selection(self.mode_combo)
+
         def _on_preset_selected(self, _event=None) -> None:
             preset = self._preset_map.get(self.preset_var.get())
             self.include_bom_var.set(0)
@@ -10029,6 +10057,8 @@ def start_gui():
             else:
                 section_blocks = []
             self.sections_editor.set_sections(section_blocks)
+            self._clear_combobox_selection(self.preset_combo)
+            self._clear_combobox_selection(self.preset_editor_combo)
 
         def _parse_preset_from_form(self, name: str = "Aangepast") -> Optional[PdfWorkDossierPreset]:
             sections: List[PdfWorkDossierSection] = []
@@ -11513,6 +11543,8 @@ def start_gui():
                         entry["weight"] = weight
                     if column.get("total_weight"):
                         entry["total_weight"] = True
+                    if column.get("total_surface"):
+                        entry["total_surface"] = True
                     column_layout.append(entry)
 
             items = list(payload.get("items") or [])
@@ -11578,6 +11610,12 @@ def start_gui():
             }
 
             footer_note_text = self.footer_note_var.get().strip() or DEFAULT_FOOTER_NOTE
+            total_surface = payload.get("total_surface")
+            if not isinstance(total_surface, (int, float)):
+                try:
+                    total_surface = float(total_surface)
+                except Exception:
+                    total_surface = None
             total_weight = payload.get("total_weight")
             if not isinstance(total_weight, (int, float)):
                 try:
@@ -11599,6 +11637,7 @@ def start_gui():
                     context_label=context_label,
                     context_kind=context_kind,
                     order_remark=remark_text or None,
+                    total_surface_m2=total_surface if isinstance(total_surface, (int, float)) else None,
                     total_weight_kg=total_weight if isinstance(total_weight, (int, float)) else None,
                     en1090_required=False,
                     en1090_note=None,
@@ -11618,6 +11657,7 @@ def start_gui():
                     project_name=project_name or None,
                     label_kind=context_kind,
                     order_remark=remark_text or None,
+                    total_surface_m2=total_surface if isinstance(total_surface, (int, float)) else None,
                     total_weight_kg=total_weight if isinstance(total_weight, (int, float)) else None,
                     en1090_required=False,
                     en1090_note=None,

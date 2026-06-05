@@ -12,6 +12,9 @@ from en1090 import EN1090_NOTE_TEXT
 
 from . import core
 
+_PRICE_UNIT_KEY = "Eenheidsprijs"
+_PRICE_TOTAL_KEY = "Totaalprijs"
+
 try:
     from openpyxl.styles import Alignment, Font
     from openpyxl.utils import get_column_letter
@@ -19,6 +22,95 @@ except Exception:
     Alignment = None
     Font = None
     get_column_letter = None
+
+
+def _order_column_export_label(column: Dict[str, object]) -> str:
+    key = _to_str(column.get("key")).strip().lower()
+    label = _to_str(column.get("label") or column.get("key") or "").strip()
+    label_compact = (
+        label.lower()
+        .replace("€", "")
+        .replace("(euro)", "")
+        .replace("\u20ac", "")
+        .replace("(", "")
+        .replace(")", "")
+        .replace(" ", "")
+    )
+
+    if key == "oppervlakte" or label.lower() == "oppervlakte":
+        return "m\u00b2"
+    if key == "gewicht" or label.lower() in {"gewicht", "gewicht (kg)"}:
+        return "kg"
+    if key == "eenheidsprijs" or label_compact in {"eenheidsprijs", "unitprice"}:
+        return "Prijs/st. (\u20ac)"
+    if key == "totaalprijs" or label_compact in {"totaalprijs", "totalprice"}:
+        return "Totaal (\u20ac)"
+    return label or _to_str(column.get("key")).strip()
+
+
+def _normalized_price_summary_label(value: object) -> str:
+    return " ".join(_to_str(value).strip().lower().split())
+
+
+def _price_summary_label_keys(
+    column_layout: List[Dict[str, object]],
+    *,
+    is_raw: bool,
+) -> List[str]:
+    candidates = ["Profiel" if is_raw else "Description"]
+    for column in column_layout:
+        key = _to_str(column.get("key")).strip()
+        if key and key not in candidates and key not in {_PRICE_UNIT_KEY, _PRICE_TOTAL_KEY}:
+            candidates.append(key)
+    return candidates
+
+
+def _split_order_price_summary_rows(
+    items: List[Dict[str, object]],
+    column_layout: List[Dict[str, object]],
+    *,
+    is_raw: bool,
+) -> tuple[List[Dict[str, object]], object, List[tuple[str, object]]]:
+    label_keys = _price_summary_label_keys(column_layout, is_raw=is_raw)
+    data_items: List[Dict[str, object]] = []
+    subtotal: object = ""
+    summary_rows: List[tuple[str, object]] = []
+
+    for item in items:
+        label_text = ""
+        for key in label_keys:
+            text = _to_str(item.get(key)).strip()
+            if text:
+                label_text = text
+                break
+        normalized = _normalized_price_summary_label(label_text)
+        total = item.get(_PRICE_TOTAL_KEY, "")
+        if normalized == "subtotaal excl. btw":
+            subtotal = total
+        elif normalized in {"btw", "totaal incl. btw"} or normalized.startswith("btw "):
+            summary_rows.append((label_text, total))
+        else:
+            data_items.append(item)
+
+    return data_items, subtotal, summary_rows
+
+
+def _append_price_summary_rows_to_df(
+    df: pd.DataFrame,
+    headers: List[str],
+    summary_rows: List[tuple[str, object]],
+) -> pd.DataFrame:
+    if not summary_rows or not headers:
+        return df
+    price_header = headers[-1]
+    blank_row = {header: "" for header in headers}
+    rows = [blank_row]
+    for label, total in summary_rows:
+        row = {header: "" for header in headers}
+        row[headers[0]] = label
+        row[price_header] = total
+        rows.append(row)
+    return pd.concat([df, pd.DataFrame(rows)], ignore_index=True)
 
 
 def _export_bom_workbook(bom_df: pd.DataFrame, dest: str, filename: str) -> str:
@@ -147,6 +239,7 @@ def write_order_excel(
     context_label: str | None = None,
     context_kind: str = "productie",
     order_remark: str | None = None,
+    total_surface_m2: float | None = None,
     total_weight_kg: float | None = None,
     en1090_required: bool = False,
     en1090_note: Optional[str] = None,
@@ -157,16 +250,21 @@ def write_order_excel(
     is_raw_material_order = context_kind_clean.lower().startswith("brutemateriaal")
     column_layout = [dict(col) for col in column_layout] if column_layout else []
     custom_layout = bool(column_layout)
+    display_items, price_subtotal, price_summary_rows = _split_order_price_summary_rows(
+        items,
+        column_layout,
+        is_raw=is_raw_material_order,
+    )
     if custom_layout:
         headers: List[str] = []
         for column in column_layout:
-            header = _to_str(column.get("label") or column.get("key") or "").strip()
+            header = _order_column_export_label(column)
             if not header:
                 header = column.get("key", "")
             column["label"] = header
             headers.append(header)
         rows: List[Dict[str, object]] = []
-        for item in items:
+        for item in display_items:
             row: Dict[str, object] = {}
             for column, header in zip(column_layout, headers):
                 key = column.get("key")
@@ -176,30 +274,64 @@ def write_order_excel(
                 row[header] = value
             rows.append(row)
         df = pd.DataFrame(rows, columns=headers)
+        surface_header: str | None = None
         weight_header: str | None = None
+        total_price_header: str | None = None
         for column in column_layout:
-            if column.get("total_weight"):
+            if surface_header is None and core.is_order_surface_column(column):
+                surface_header = column["label"]
+            if weight_header is None and core.is_order_weight_column(column):
                 weight_header = column["label"]
-                break
-        if weight_header and total_weight_kg is not None:
+            if total_price_header is None and _to_str(column.get("key")).strip().lower() == _PRICE_TOTAL_KEY.lower():
+                total_price_header = column["label"]
+        if (
+            (surface_header and total_surface_m2 is not None)
+            or (weight_header and total_weight_kg is not None)
+            or (total_price_header and _to_str(price_subtotal).strip())
+        ):
             total_row = {header: "" for header in headers}
             if headers:
                 total_row[headers[0]] = "Totaal"
-            total_row[weight_header] = core._format_weight_kg(total_weight_kg)
+            if surface_header and total_surface_m2 is not None:
+                total_row[surface_header] = core._format_weight_kg(total_surface_m2)
+            if weight_header and total_weight_kg is not None:
+                total_row[weight_header] = core._format_weight_kg(total_weight_kg)
+            if total_price_header and _to_str(price_subtotal).strip():
+                total_row[total_price_header] = price_subtotal
             df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
+        df = _append_price_summary_rows_to_df(df, headers, price_summary_rows)
     else:
         if is_raw_material_order:
             df_columns = ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
         else:
             df_columns = ["PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht"]
-        df = pd.DataFrame(items, columns=df_columns)
-        if is_raw_material_order and total_weight_kg is not None:
+        df = pd.DataFrame(display_items, columns=df_columns)
+        if is_raw_material_order:
+            if total_weight_kg is not None:
+                total_row = {
+                    "Profiel": "Totaal",
+                    "Materiaal": "",
+                    "Lengte": "",
+                    "St.": "",
+                    "kg": core._format_weight_kg(total_weight_kg),
+                }
+                df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
+        elif total_surface_m2 is not None or total_weight_kg is not None:
             total_row = {
-                "Profiel": "Totaal",
+                "PartNumber": "Totaal",
+                "Description": "",
                 "Materiaal": "",
-                "Lengte": "",
-                "St.": "",
-                "kg": core._format_weight_kg(total_weight_kg),
+                "Aantal": "",
+                "Oppervlakte": (
+                    core._format_weight_kg(total_surface_m2)
+                    if total_surface_m2 is not None
+                    else ""
+                ),
+                "Gewicht": (
+                    core._format_weight_kg(total_weight_kg)
+                    if total_weight_kg is not None
+                    else ""
+                ),
             }
             df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
 
@@ -259,17 +391,7 @@ def write_order_excel(
         not is_standaard_doc or bool(supplier_name)
     )
     if include_supplier_block:
-        addr_parts = []
-        if supplier.adres_1:
-            addr_parts.append(supplier.adres_1)
-        if supplier.adres_2:
-            addr_parts.append(supplier.adres_2)
-        pc_gem = " ".join(x for x in [supplier.postcode, supplier.gemeente] if x)
-        if pc_gem:
-            addr_parts.append(pc_gem)
-        if supplier.land:
-            addr_parts.append(supplier.land)
-        full_addr = ", ".join(addr_parts)
+        full_addr = core.format_supplier_address(supplier)
         header_lines.extend(
             [
                 ("Leverancier", supplier.supplier),

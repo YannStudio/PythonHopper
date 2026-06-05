@@ -11,7 +11,15 @@ import tkinter as tk
 from tkinter import font, messagebox, ttk
 
 from helpers import _to_str, strip_favorite_marker
-from orders import _normalize_doc_number, _prefix_for_doc_type, _sanitize_component
+from orders import (
+    _clean_vat_rate_text,
+    _format_price_decimal,
+    _normalize_doc_number,
+    _prefix_for_doc_type,
+    _price_decimal,
+    _sanitize_component,
+)
+from orders.core import calculate_order_measure_totals
 
 if TYPE_CHECKING:
     from clients_db import ClientsDB
@@ -93,6 +101,8 @@ class _ManualRowWidgets:
     entries: Dict[str, tk.Entry]
     remove_btn: tk.Button
     tooltips: List[_OverflowTooltip] = field(default_factory=list)
+    price_link_in_progress: bool = False
+    price_auto_field: str = ""
 
 
 DEFAULT_MANUAL_CONTEXT = "Bestelbon-editor"
@@ -524,6 +534,10 @@ class ManualOrderTab(tk.Frame):
     COLUMN_MAX_CHARS = 72
     COLUMN_SEPARATOR_COLOR = "#B9BEC7"
     COLUMN_SEPARATOR_ACTIVE_COLOR = "#6E7681"
+    PRICE_UNIT_KEY = "Eenheidsprijs"
+    PRICE_TOTAL_KEY = "Totaalprijs"
+    PRICE_COLUMN_KEYS = {PRICE_UNIT_KEY, PRICE_TOTAL_KEY}
+    VAT_RATE_OPTIONS: tuple[str, ...] = ("0", "6", "12", "21")
     COLUMN_TEMPLATES: Dict[str, List[Dict[str, object]]] = {
         "Standaard": [
             {
@@ -572,6 +586,7 @@ class ManualOrderTab(tk.Frame):
                 "stretch": False,
                 "wrap": False,
                 "weight": 1.0,
+                "total_surface": True,
             },
             {
                 "key": "Gewicht",
@@ -586,7 +601,7 @@ class ManualOrderTab(tk.Frame):
             },
             {
                 "key": "Eenheidsprijs",
-                "label": "Eenheidsprijs (€)",
+                "label": "Prijs/st. (\u20ac)",
                 "width": 14,
                 "justify": "right",
                 "numeric": True,
@@ -596,7 +611,7 @@ class ManualOrderTab(tk.Frame):
             },
             {
                 "key": "Totaalprijs",
-                "label": "Totaalprijs (€)",
+                "label": "Totaal (\u20ac)",
                 "width": 14,
                 "justify": "right",
                 "numeric": True,
@@ -663,7 +678,7 @@ class ManualOrderTab(tk.Frame):
             },
             {
                 "key": "Eenheidsprijs",
-                "label": "Eenheidsprijs (€)",
+                "label": "Prijs/st. (\u20ac)",
                 "width": 14,
                 "justify": "right",
                 "numeric": True,
@@ -673,7 +688,7 @@ class ManualOrderTab(tk.Frame):
             },
             {
                 "key": "Totaalprijs",
-                "label": "Totaalprijs (€)",
+                "label": "Totaal (\u20ac)",
                 "width": 14,
                 "justify": "right",
                 "numeric": True,
@@ -732,7 +747,7 @@ class ManualOrderTab(tk.Frame):
             },
             {
                 "key": "Eenheidsprijs",
-                "label": "Eenheidsprijs (€)",
+                "label": "Prijs/st. (\u20ac)",
                 "width": 14,
                 "justify": "right",
                 "numeric": True,
@@ -742,7 +757,7 @@ class ManualOrderTab(tk.Frame):
             },
             {
                 "key": "Totaalprijs",
-                "label": "Totaalprijs (€)",
+                "label": "Totaal (\u20ac)",
                 "width": 14,
                 "justify": "right",
                 "numeric": True,
@@ -1146,6 +1161,27 @@ class ManualOrderTab(tk.Frame):
         self.template_combo.bind("<<ComboboxSelected>>", _reset_template_focus, add="+")
         self.template_combo.bind("<ButtonRelease-1>", _reset_template_focus, add="+")
 
+        self.price_columns_visible_var = tk.BooleanVar(value=True)
+        tk.Checkbutton(
+            template_row,
+            text="Prijsvelden tonen",
+            variable=self.price_columns_visible_var,
+            command=lambda: self.set_price_fields_visible(
+                bool(self.price_columns_visible_var.get())
+            ),
+        ).pack(side="left", padx=(16, 0))
+
+        tk.Label(template_row, text="BTW %:").pack(side="left", padx=(12, 0))
+        self.vat_rate_var = tk.StringVar(value="21")
+        self.vat_rate_combo = ttk.Combobox(
+            template_row,
+            textvariable=self.vat_rate_var,
+            values=self.VAT_RATE_OPTIONS,
+            state="normal",
+            width=5,
+        )
+        self.vat_rate_combo.pack(side="left", padx=(4, 0))
+
         self.header_container = tk.Frame(table_container)
         self.header_container.grid(row=1, column=0, columnspan=2, sticky="ew", padx=(6, 0), pady=(0, 0))
         self.header_container.columnconfigure(0, weight=1)
@@ -1157,7 +1193,7 @@ class ManualOrderTab(tk.Frame):
         v_scroll = ttk.Scrollbar(
             table_container, orient="vertical", command=self.table_canvas.yview
         )
-        v_scroll.grid(row=2, column=1, sticky="ns")
+        v_scroll.grid(row=2, column=1, sticky="ns", padx=(8, 0))
         
         h_scroll = ttk.Scrollbar(
             table_container, orient="horizontal", command=self.table_canvas.xview
@@ -1235,9 +1271,15 @@ class ManualOrderTab(tk.Frame):
             command=self._confirm_clear_rows,
         ).grid(row=0, column=3, sticky="w", padx=(12, 0))
 
+        totals_frame = tk.Frame(controls)
+        totals_frame.grid(row=0, column=4, sticky="e")
+        self.total_surface_var = tk.StringVar(value="Totaal opp.: —")
+        tk.Label(totals_frame, textvariable=self.total_surface_var, anchor="e").pack(
+            side="left", padx=(0, 12)
+        )
         self.total_weight_var = tk.StringVar(value="Totaal gewicht: —")
-        tk.Label(controls, textvariable=self.total_weight_var, anchor="e").grid(
-            row=0, column=4, sticky="e"
+        tk.Label(totals_frame, textvariable=self.total_weight_var, anchor="e").pack(
+            side="left"
         )
 
         footer = tk.Frame(self)
@@ -1249,7 +1291,9 @@ class ManualOrderTab(tk.Frame):
 
         self.rows: List[_ManualRowWidgets] = []
         self.current_template_name: str = ""
+        self._all_columns: List[Dict[str, object]] = []
         self.current_columns: List[Dict[str, object]] = []
+        self._all_row_values: List[Dict[str, str]] = []
         self._template_rows_cache: Dict[str, List[Dict[str, str]]] = {}
         self._template_layout_cache: Dict[str, List[Dict[str, object]]] = {}
         self._column_resizer_handles: List[tk.Widget] = []
@@ -1496,13 +1540,23 @@ class ManualOrderTab(tk.Frame):
             # Add tracing for currency formatting on price fields
             is_price_field = column["key"] in {"Eenheidsprijs", "Totaalprijs"}
             
-            def _on_var_change(*_args, key=column["key"], is_price=is_price_field, v=var):
+            def _on_var_change(
+                *_args,
+                key=column["key"],
+                is_price=is_price_field,
+                v=var,
+                row_widgets=widgets,
+            ):
                 # Apply currency formatting for price fields
                 if is_price:
                     current = v.get()
                     formatted = _format_currency(current)
                     if formatted != current:
                         v.set(formatted)
+                if key in self.PRICE_COLUMN_KEYS:
+                    self._on_row_price_change(row_widgets, key)
+                elif self._is_quantity_key(key):
+                    self._on_row_quantity_change(row_widgets)
                 self._update_totals()
             
             var.trace_add("write", _on_var_change)
@@ -1512,6 +1566,7 @@ class ManualOrderTab(tk.Frame):
         self.rows.append(widgets)
         self._row_grid_indices[row_list_idx] = row_idx  # Track grid row voor deze data row
         self._next_data_row += 1
+        self._on_row_quantity_change(widgets)
         
         if self.current_columns:
             first_key = self.current_columns[0]["key"]
@@ -1597,13 +1652,223 @@ class ManualOrderTab(tk.Frame):
         for _ in range(desired):
             self.add_row()
 
+    def _row_quantity(self, widgets: _ManualRowWidgets):
+        for key, var in widgets.vars.items():
+            if not self._is_quantity_key(key):
+                continue
+            quantity = _price_decimal(var.get())
+            if quantity is not None and quantity != 0:
+                return quantity
+        return None
+
+    def _on_row_quantity_change(self, widgets: _ManualRowWidgets) -> None:
+        auto_field = getattr(widgets, "price_auto_field", "")
+        unit_var = widgets.vars.get(self.PRICE_UNIT_KEY)
+        total_var = widgets.vars.get(self.PRICE_TOTAL_KEY)
+        if unit_var is None or total_var is None:
+            return
+
+        if auto_field == self.PRICE_TOTAL_KEY and unit_var.get().strip():
+            self._on_row_price_change(widgets, self.PRICE_UNIT_KEY)
+        elif auto_field == self.PRICE_UNIT_KEY and total_var.get().strip():
+            self._on_row_price_change(widgets, self.PRICE_TOTAL_KEY)
+        elif unit_var.get().strip():
+            self._on_row_price_change(widgets, self.PRICE_UNIT_KEY, force=False)
+        elif total_var.get().strip():
+            self._on_row_price_change(widgets, self.PRICE_TOTAL_KEY, force=False)
+
+    def _on_row_price_change(
+        self,
+        widgets: _ManualRowWidgets,
+        source_key: str,
+        *,
+        force: bool = True,
+    ) -> None:
+        if getattr(widgets, "price_link_in_progress", False):
+            return
+        if source_key not in self.PRICE_COLUMN_KEYS:
+            return
+
+        quantity = self._row_quantity(widgets)
+        if quantity is None:
+            return
+
+        unit_var = widgets.vars.get(self.PRICE_UNIT_KEY)
+        total_var = widgets.vars.get(self.PRICE_TOTAL_KEY)
+        if unit_var is None or total_var is None:
+            return
+
+        source_var = unit_var if source_key == self.PRICE_UNIT_KEY else total_var
+        target_key = (
+            self.PRICE_TOTAL_KEY
+            if source_key == self.PRICE_UNIT_KEY
+            else self.PRICE_UNIT_KEY
+        )
+        target_var = total_var if target_key == self.PRICE_TOTAL_KEY else unit_var
+        if widgets.price_auto_field == source_key:
+            widgets.price_auto_field = ""
+
+        source_text = source_var.get().strip()
+        target_text = target_var.get().strip()
+        target_is_auto = widgets.price_auto_field == target_key
+        if not source_text:
+            if target_is_auto and target_text:
+                widgets.price_link_in_progress = True
+                try:
+                    target_var.set("")
+                finally:
+                    widgets.price_link_in_progress = False
+                widgets.price_auto_field = ""
+            return
+
+        source_value = _price_decimal(source_text)
+        if source_value is None:
+            return
+        if target_text and not target_is_auto and not force:
+            return
+
+        calculated = (
+            source_value * quantity
+            if source_key == self.PRICE_UNIT_KEY
+            else source_value / quantity
+        )
+        calculated_text = _format_price_decimal(calculated)
+        if target_text == calculated_text:
+            widgets.price_auto_field = target_key
+            return
+
+        widgets.price_link_in_progress = True
+        try:
+            target_var.set(calculated_text)
+        finally:
+            widgets.price_link_in_progress = False
+        widgets.price_auto_field = target_key
+
+    def _price_summary_label_key(
+        self,
+        column_layout: List[Dict[str, object]],
+    ) -> str:
+        keys = [_to_str(column.get("key")).strip() for column in column_layout]
+        for candidate in ("Description", "Omschrijving", "Artikel", "ProfielType"):
+            if candidate in keys:
+                return candidate
+        for key in keys:
+            if key and key not in self.PRICE_COLUMN_KEYS:
+                return key
+        return keys[0] if keys else "Description"
+
+    def _append_vat_summary_rows(
+        self,
+        items: List[Dict[str, object]],
+        column_layout: List[Dict[str, object]],
+        vat_rate: object,
+    ) -> List[Dict[str, object]]:
+        vat_rate_text = _clean_vat_rate_text(vat_rate)
+        if not vat_rate_text or not items:
+            return items
+
+        subtotal = None
+        for item in items:
+            total = _price_decimal(item.get(self.PRICE_TOTAL_KEY))
+            if total is None:
+                continue
+            subtotal = total if subtotal is None else subtotal + total
+        if subtotal is None:
+            return items
+
+        vat_decimal = _price_decimal(vat_rate_text)
+        if vat_decimal is None:
+            return items
+
+        keys = [
+            _to_str(column.get("key")).strip()
+            for column in column_layout
+            if _to_str(column.get("key")).strip()
+        ]
+        if self.PRICE_TOTAL_KEY not in keys:
+            return items
+        label_key = self._price_summary_label_key(column_layout)
+
+        def summary_row(label: str, total) -> Dict[str, object]:
+            row = {key: "" for key in keys}
+            row[label_key] = label
+            row[self.PRICE_TOTAL_KEY] = _format_price_decimal(total)
+            return row
+
+        vat_amount = subtotal * vat_decimal / _price_decimal("100")
+        return [
+            *items,
+            summary_row("Subtotaal excl. BTW", subtotal),
+            summary_row(f"BTW {vat_rate_text}%", vat_amount),
+            summary_row("Totaal incl. BTW", subtotal + vat_amount),
+        ]
+
+    def _price_fields_visible(self) -> bool:
+        var = getattr(self, "price_columns_visible_var", None)
+        if var is None:
+            return True
+        try:
+            return bool(var.get())
+        except Exception:
+            return True
+
+    def _visible_columns_for(
+        self,
+        columns: List[Dict[str, object]],
+    ) -> List[Dict[str, object]]:
+        if self._price_fields_visible():
+            return [dict(column) for column in columns]
+        return [
+            dict(column)
+            for column in columns
+            if column.get("key") not in self.PRICE_COLUMN_KEYS
+        ]
+
+    def _merge_row_values(
+        self,
+        visible_rows: List[Dict[str, str]],
+    ) -> List[Dict[str, str]]:
+        existing = [dict(row) for row in getattr(self, "_all_row_values", [])]
+        total_rows = max(len(existing), len(visible_rows))
+        merged: List[Dict[str, str]] = []
+        for idx in range(total_rows):
+            row = dict(existing[idx]) if idx < len(existing) else {}
+            if idx < len(visible_rows):
+                row.update(visible_rows[idx])
+            merged.append(row)
+        return merged
+
+    def _restore_rows(self, rows: List[Dict[str, str]]) -> None:
+        self._clear_rows()
+        self._render_header()
+        source_rows = rows or [{}]
+        for values in source_rows:
+            self.add_row(values=values)
+        self._update_totals()
+
+    def set_price_fields_visible(self, visible: bool) -> None:
+        var = getattr(self, "price_columns_visible_var", None)
+        if var is not None:
+            try:
+                if bool(var.get()) != bool(visible):
+                    var.set(1 if visible else 0)
+            except Exception:
+                pass
+        self._all_row_values = self._merge_row_values(self._capture_rows())
+        self.current_columns = self._visible_columns_for(self._all_columns)
+        self._restore_rows(self._all_row_values)
+
+    def _has_price_values(self, rows: List[Dict[str, object]]) -> bool:
+        for row in rows:
+            for key in self.PRICE_COLUMN_KEYS:
+                if _to_str(row.get(key)).strip():
+                    return True
+        return False
+
     # Data collection ------------------------------------------------
     def _collect_items(self) -> Dict[str, object]:
         items: List[Dict[str, object]] = []
-        total_weight = 0.0
-        weight_found = False
         numeric_keys = {col["key"] for col in self.current_columns if col.get("numeric")}
-        weight_columns = [col["key"] for col in self.current_columns if col.get("total_weight")]
         column_usage = {
             col.get("key"): False
             for col in self.current_columns
@@ -1627,24 +1892,13 @@ class ManualOrderTab(tk.Frame):
                 else:
                     normalized = value
                 record[key] = normalized
-            if weight_columns:
-                weight_key = weight_columns[0]
-                weight_raw = raw.get(weight_key, "")
-            else:
-                weight_raw = ""
-            if weight_raw:
-                try:
-                    weight_total = float(weight_raw.replace(",", "."))
-                except Exception:
-                    weight_total = None
-                if weight_total is not None and math.isfinite(weight_total):
-                    total_weight += weight_total
-                    weight_found = True
             items.append(record)
 
+        total_surface, total_weight = calculate_order_measure_totals(items)
         return {
             "items": items,
-            "total_weight": total_weight if weight_found else None,
+            "total_surface": total_surface,
+            "total_weight": total_weight,
             "used_columns": {key for key, used in column_usage.items() if used},
         }
 
@@ -1677,15 +1931,25 @@ class ManualOrderTab(tk.Frame):
                 parent=self,
             )
             return
+        show_price_fields = self._price_fields_visible()
         used_keys = set(payload.get("used_columns") or set())
+        include_prices = show_price_fields and bool(used_keys & self.PRICE_COLUMN_KEYS)
+        if not include_prices:
+            used_keys.difference_update(self.PRICE_COLUMN_KEYS)
         column_layout: List[Dict[str, object]] = []
         for column in self.current_columns:
             key = column.get("key")
+            if not include_prices and key in self.PRICE_COLUMN_KEYS:
+                continue
             if used_keys and key and key not in used_keys:
                 continue
             column_layout.append(dict(column))
         if not column_layout:
-            column_layout = [dict(col) for col in self.current_columns]
+            column_layout = [
+                dict(col)
+                for col in self.current_columns
+                if include_prices or col.get("key") not in self.PRICE_COLUMN_KEYS
+            ]
         if used_keys:
             original_items = list(items)
             trimmed_items: List[Dict[str, object]] = []
@@ -1709,6 +1973,17 @@ class ManualOrderTab(tk.Frame):
                 items = original_items
             else:
                 items = trimmed_items
+        if not include_prices:
+            items = [
+                {k: v for k, v in record.items() if k not in self.PRICE_COLUMN_KEYS}
+                for record in items
+            ]
+        else:
+            items = self._append_vat_summary_rows(
+                items,
+                column_layout,
+                self.vat_rate_var.get(),
+            )
         remark = self.remark_text.get("1.0", "end").strip()
         export_payload = {
             "doc_type": self.doc_type_var.get().strip() or self.DOC_TYPE_OPTIONS[0],
@@ -1721,60 +1996,25 @@ class ManualOrderTab(tk.Frame):
             "context_kind": "document",
             "remark": remark,
             "items": items,
+            "total_surface": payload["total_surface"],
             "total_weight": payload["total_weight"],
             "template": self.current_template_name,
             "column_layout": column_layout,
+            "show_prices": include_prices,
+            "vat_rate": self.vat_rate_var.get().strip() if include_prices else "",
         }
-        # Dump payload to temp file and to project root for easier debugging
-        # when exports produce empty files. Also show a brief confirmation
-        # so the user can locate the debug file.
-        try:
-            import json, tempfile, datetime, pathlib
-            fn = f"filehopper_manual_export_payload_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-            # temp location
-            tmp = pathlib.Path(tempfile.gettempdir()) / fn
-            try:
-                with tmp.open("w", encoding="utf-8") as f:
-                    json.dump(export_payload, f, ensure_ascii=False, indent=2)
-            except Exception:
-                pass
-            # project/current working directory location (easier to find)
-            try:
-                proj = pathlib.Path.cwd()
-                proj_file = proj / "filehopper_manual_export_payload.json"
-                with proj_file.open("w", encoding="utf-8") as f:
-                    json.dump(export_payload, f, ensure_ascii=False, indent=2)
-                # Also append a short summary to a rotating debug log
-                try:
-                    log_file = proj / "filehopper_manual_export_payload_log.txt"
-                    with log_file.open("a", encoding="utf-8") as lf:
-                        lf.write(f"--- {datetime.datetime.now().isoformat()} ---\n")
-                        lf.write(f"template: {export_payload.get('template')}\n")
-                        lf.write(f"used_columns: {sorted(list(export_payload.get('column_layout') or [] ) )}\n")
-                        lf.write(f"items_count: {len(export_payload.get('items') or [])}\n")
-                        lf.write("\n")
-                except Exception:
-                    pass
-                try:
-                    from tkinter import messagebox
-
-                    messagebox.showinfo(
-                        "Debug payload opgeslagen",
-                        f"Export payload written to:\n{proj_file}\n(and temp: {tmp})",
-                        parent=self,
-                    )
-                except Exception:
-                    pass
-            except Exception:
-                pass
-        except Exception:
-            pass
-
         self._on_export(export_payload)
 
     # Internal -------------------------------------------------------
     def _update_totals(self) -> None:
         payload = self._collect_items()
+        total_surface = payload["total_surface"]
+        if total_surface is None:
+            surface_text = "Totaal opp.: —"
+        else:
+            surface_text = f"Totaal opp.: {total_surface:.2f} m²"
+        self.total_surface_var.set(surface_text)
+
         total_weight = payload["total_weight"]
         if total_weight is None:
             text = "Totaal gewicht: —"
@@ -2116,24 +2356,39 @@ class ManualOrderTab(tk.Frame):
                 pass
 
     def _apply_template(self, template: str, *, store_previous: bool = True) -> None:
+        if store_previous and self.current_template_name:
+            self._template_rows_cache[self.current_template_name] = self._merge_row_values(
+                self._capture_rows()
+            )
+            self._template_layout_cache[self.current_template_name] = [
+                dict(col) for col in self._all_columns
+            ]
+
         self.current_template_name = template
         if template in self._template_layout_cache:
-            cached_layout = [dict(col) for col in self._template_layout_cache[template]]
-            for column in cached_layout:
+            full_layout = [dict(col) for col in self._template_layout_cache[template]]
+            for column in full_layout:
                 self._ensure_column_metrics(column)
-            self.current_columns = cached_layout
         else:
-            self.current_columns = self._clone_columns(template)
-        if not self.current_columns:
-            self.current_columns = self._clone_columns(self.DEFAULT_TEMPLATE)
+            full_layout = self._clone_columns(template)
+        if not full_layout:
+            full_layout = self._clone_columns(self.DEFAULT_TEMPLATE)
             self.current_template_name = self.DEFAULT_TEMPLATE
+
+        self._all_columns = full_layout
+        self.current_columns = self._visible_columns_for(self._all_columns)
+        self._all_row_values = [
+            dict(row)
+            for row in self._template_rows_cache.get(self.current_template_name, [])
+        ]
 
         # Clear rows BEFORE rendering header (so grid columns are reset)
         self._clear_rows()
         
         # Now render header and add one empty row
         self._render_header()
-        self.add_row()
+        for row_values in self._all_row_values or [{}]:
+            self.add_row(values=row_values)
         self._update_totals()
 
     def _set_column_width(self, column_index: int, desired_chars: int) -> None:

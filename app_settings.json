@@ -1,8 +1,8 @@
 {
-  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Thissen/Steel block/cad/V3",
+  "source_folder": "G:/Mijn Drive/Manufact-Design/01 Appartement Belgiëlei/Bureau 2.0",
   "dest_folder": "C:/Users/jeroe/Desktop",
-  "project_number": "190610",
-  "project_name": "Bar Chair-Powdercoating",
+  "project_number": "020426",
+  "project_name": "Bureau",
   "file_extensions": [
     {
       "key": "pdf",
@@ -27,7 +27,7 @@
       "patterns": [
         ".dxf"
       ],
-      "enabled": false
+      "enabled": true
     },
     {
       "key": "dwg",
@@ -58,7 +58,7 @@
   "custom_prefix_text": "",
   "custom_suffix_enabled": false,
   "custom_suffix_text": "",
-  "document_filename_profile": "custom",
+  "document_filename_profile": "short",
   "document_filename_show_doc_type": true,
   "document_filename_show_doc_number": true,
   "document_filename_show_context": false,
