@@ -9646,6 +9646,7 @@ def start_gui():
         MODE_PER_PRODUCTION = "Aparte PDF per productie"
         MODE_ALPHABETIC_SINGLE = "PDF alfabetisch (alle bestanden)"
         NO_PRESET_LABEL = "(Blanco template)"
+        INFO_TEXT_COLOR = "#5D6670"
         ROLE_LABELS = {
             "bom": "BOM",
             "drawing": "Tekening",
@@ -9729,7 +9730,7 @@ def start_gui():
                 width=26,
             )
             self.mode_combo.grid(row=0, column=1, sticky="w", pady=3)
-            self.mode_combo.bind("<<ComboboxSelected>>", lambda _e: self._sync_mode())
+            self.mode_combo.bind("<<ComboboxSelected>>", self._on_mode_selected)
             self._option_widgets.append(self.mode_combo)
 
             self.mode_info_frame = tk.Frame(form)
@@ -9746,7 +9747,7 @@ def start_gui():
                 text="Kies hoe het dossier wordt opgebouwd.",
                 anchor="w",
                 justify="left",
-                foreground="#263238",
+                foreground=self.INFO_TEXT_COLOR,
             ).pack(anchor="w")
             tk.Label(
                 self.mode_info_frame,
@@ -9757,7 +9758,7 @@ def start_gui():
                 ),
                 anchor="w",
                 justify="left",
-                foreground="#5D6670",
+                foreground=self.INFO_TEXT_COLOR,
                 wraplength=720,
             ).pack(anchor="w", pady=(2, 0))
 
@@ -9960,6 +9961,14 @@ def start_gui():
             if callable(self.on_options_changed):
                 self.on_options_changed()
 
+        def _clear_combobox_selection(self, combo: ttk.Combobox) -> None:
+            try:
+                if hasattr(combo, "selection_clear"):
+                    combo.selection_clear()
+                combo.icursor(tk.END)
+            except tk.TclError:
+                pass
+
         def _reload_presets(self, show_blank_template: bool = True) -> None:
             base_choices = [self.NO_PRESET_LABEL] if show_blank_template else []
             built_ins = [
@@ -10031,6 +10040,10 @@ def start_gui():
             self.sections_editor.set_enabled(not self._busy)
             self._notify_options_changed()
 
+        def _on_mode_selected(self, _event=None) -> None:
+            self._sync_mode()
+            self._clear_combobox_selection(self.mode_combo)
+
         def _on_preset_selected(self, _event=None) -> None:
             preset = self._preset_map.get(self.preset_var.get())
             self.include_bom_var.set(0)
@@ -10044,6 +10057,8 @@ def start_gui():
             else:
                 section_blocks = []
             self.sections_editor.set_sections(section_blocks)
+            self._clear_combobox_selection(self.preset_combo)
+            self._clear_combobox_selection(self.preset_editor_combo)
 
         def _parse_preset_from_form(self, name: str = "Aangepast") -> Optional[PdfWorkDossierPreset]:
             sections: List[PdfWorkDossierSection] = []
