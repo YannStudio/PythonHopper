@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 APP_NAME = "Filehopper"
-APP_VERSION = "3.2"
+APP_VERSION = "3.3"
 
 
 def is_frozen() -> bool:
