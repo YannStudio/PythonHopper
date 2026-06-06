@@ -84,7 +84,11 @@ from models import Supplier, Client, DeliveryAddress, color_to_rgb, normalize_rg
 from pdf_workdossier_presets import PdfWorkDossierPreset, PdfWorkDossierSection
 from progress import ProgressCallback, ProgressEvent
 from .core import (
+    DEFAULT_FOOTER_NOTE as _CORE_DEFAULT_FOOTER_NOTE,
+    DEFAULT_ORDER_FOOTER_NOTE as _CORE_DEFAULT_ORDER_FOOTER_NOTE,
+    DEFAULT_QUOTE_FOOTER_NOTE as _CORE_DEFAULT_QUOTE_FOOTER_NOTE,
     calculate_order_measure_totals,
+    footer_note_for_doc_type,
     format_supplier_address,
     is_order_surface_column,
     is_order_weight_column,
@@ -101,11 +105,9 @@ ORDER_TABLE_GRID_COLOR = "#D5DAE1"
 ORDER_TABLE_ALT_ROW_COLOR = "#FBFCFD"
 ORDER_TOTAL_FILL_COLOR = "#FFF4FF"
 ORDER_DELIVERY_FILL_COLOR = "#FFF8FD"
-DEFAULT_FOOTER_NOTE = (
-    "Gelieve afwijkingen schriftelijk te bevestigen. "
-    "Levertermijn in overleg. Betalingsvoorwaarden: 30 dagen netto. "
-    "Vermeld onze productiereferentie bij levering."
-)
+DEFAULT_ORDER_FOOTER_NOTE = _CORE_DEFAULT_ORDER_FOOTER_NOTE
+DEFAULT_QUOTE_FOOTER_NOTE = _CORE_DEFAULT_QUOTE_FOOTER_NOTE
+DEFAULT_FOOTER_NOTE = _CORE_DEFAULT_FOOTER_NOTE
 
 STEP_EXTS = {".step", ".stp"}
 
@@ -2186,6 +2188,53 @@ def _pdf_order_column_label(column: Mapping[str, object]) -> str:
     return _order_column_export_label(column)
 
 
+def _order_title_style(styles, palette: Mapping[str, str], title: object, usable_w: float):
+    title_text = _to_str(title)
+    font_name = "Helvetica-Bold"
+    font_size = 20.0
+    try:
+        title_width = stringWidth(title_text, font_name, font_size)
+    except Exception:
+        title_width = len(title_text) * font_size * 0.55
+
+    if title_width > usable_w:
+        font_size = 18.0
+    if title_width > usable_w * 1.55:
+        font_size = 16.0
+    if title_width > usable_w * 2.2:
+        font_size = 14.5
+
+    return ParagraphStyle(
+        "OrderTitle",
+        parent=styles["Heading1"],
+        textColor=colors.HexColor(palette["accent"]),
+        fontName=font_name,
+        fontSize=font_size,
+        leading=font_size + 2.0,
+        spaceAfter=1,
+    )
+
+
+def _order_table_header_cell(
+    label: object,
+    *,
+    align: str = "LEFT",
+    text_color: str,
+    font_size: float,
+):
+    alignment = {"LEFT": 0, "CENTER": 1, "RIGHT": 2}.get(align.upper(), 0)
+    style = ParagraphStyle(
+        "OrderTableHeader",
+        fontName="Helvetica-Bold",
+        fontSize=font_size,
+        leading=font_size + 1.5,
+        alignment=alignment,
+        textColor=colors.HexColor(text_color),
+        wordWrap="CJK",
+    )
+    return Paragraph(escape(_to_str(label)), style)
+
+
 def _order_company_lines(company_info: Mapping[str, object] | None) -> List[str]:
     """Return formatted company lines for order headers."""
 
@@ -2271,7 +2320,7 @@ def _append_order_price_summary_story(
             ]
         )
     summary_tbl.setStyle(TableStyle(style_cmds))
-    story.append(Spacer(0, 4))
+    story.append(Spacer(0, 8))
     story.append(summary_tbl)
 
 
@@ -2324,13 +2373,30 @@ def _build_order_pdf_section_story(
         story.append(Spacer(0, 6))
 
     if custom_layout:
-        head = [item_column_title]
+        head = [
+            _order_table_header_cell(
+                item_column_title,
+                align="CENTER",
+                text_color=palette["accent_text"],
+                font_size=table_header_font_size,
+            )
+        ]
         for column in column_layout:
             header = _pdf_order_column_label(column)
             if not header:
                 header = column.get("key", "")
             column["label"] = header
-            head.append(header)
+            align = _to_str(column.get("justify") or "left").strip().upper() or "LEFT"
+            if align not in {"LEFT", "RIGHT", "CENTER"}:
+                align = "LEFT"
+            head.append(
+                _order_table_header_cell(
+                    header,
+                    align=align,
+                    text_color=palette["accent_text"],
+                    font_size=table_header_font_size,
+                )
+            )
     elif is_raw_material_order:
         head = [item_column_title, "Profiel", "Materiaal", "Lengte", "St.", "kg"]
     else:
@@ -2725,6 +2791,7 @@ def generate_pdf_order_platypus(
     doc_type: str = "Bestelbon",
     doc_number: str | None = None,
     footer_note: Optional[str] = None,
+    quote_footer_note: Optional[str] = None,
     delivery: DeliveryAddress | None = None,
     project_number: str | None = None,
     project_name: str | None = None,
@@ -2769,12 +2836,6 @@ def generate_pdf_order_platypus(
     width, _ = A4
     palette = _order_palette(company_info)
     styles = getSampleStyleSheet()
-    title_style = styles["Heading1"]
-    title_style.textColor = colors.HexColor(palette["accent"])
-    title_style.fontName = "Helvetica-Bold"
-    title_style.fontSize = 20
-    title_style.leading = 22
-    title_style.spaceAfter = 1
     text_style = styles["Normal"]
     text_style.fontSize = 10
     text_style.leading = 12.2
@@ -3006,6 +3067,7 @@ def generate_pdf_order_platypus(
         if multiple_sections or not production_text
         else f"{doc_type_text} {label_kind_clean}: {production_text}"
     )
+    title_style = _order_title_style(styles, palette, title, width - 2 * margin)
     story.append(Paragraph(title, title_style))
     title_rule = Table([[""]], colWidths=[width - 2 * margin], rowHeights=[2])
     title_rule.setStyle(
@@ -3087,14 +3149,7 @@ def generate_pdf_order_platypus(
                     en1090_note_html = f"<b>{en1090_note_html}</b>"
                 story.append(Paragraph(en1090_note_html, small_style))
 
-        include_footer_note = doc_type_text_lower.startswith("bestelbon")
-        if include_footer_note:
-            if footer_note is None:
-                note = DEFAULT_FOOTER_NOTE
-            else:
-                note = _to_str(footer_note)
-        else:
-            note = ""
+        note = footer_note_for_doc_type(doc_type_text, footer_note, quote_footer_note)
         if note:
             story.append(Spacer(0, 8))
             story.append(Paragraph(note, small_style))
@@ -3110,7 +3165,17 @@ def generate_pdf_order_platypus(
             if not header:
                 header = column.get("key", "")
             column["label"] = header
-            head.append(header)
+            align = _to_str(column.get("justify") or "left").strip().upper() or "LEFT"
+            if align not in {"LEFT", "RIGHT", "CENTER"}:
+                align = "LEFT"
+            head.append(
+                _order_table_header_cell(
+                    header,
+                    align=align,
+                    text_color=palette["accent_text"],
+                    font_size=9.5,
+                )
+            )
     elif is_raw_material_order:
         head = ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
     else:
@@ -3453,14 +3518,7 @@ def generate_pdf_order_platypus(
             )
             story.append(Paragraph(bruto_note, small_style))
 
-    include_footer_note = doc_type_text_lower.startswith("bestelbon")
-    if include_footer_note:
-        if footer_note is None:
-            note = DEFAULT_FOOTER_NOTE
-        else:
-            note = _to_str(footer_note)
-    else:
-        note = ""
+    note = footer_note_for_doc_type(doc_type_text, footer_note, quote_footer_note)
     if note:
         story.append(Spacer(0, 8))
         story.append(Paragraph(note, small_style))
@@ -3972,6 +4030,7 @@ def copy_per_production_and_orders(
     client: Client | None = None,
     delivery_map: Dict[str, DeliveryAddress] | None = None,
     footer_note: Optional[str] = None,
+    quote_footer_note: Optional[str] = None,
     zip_parts: bool = False,
     date_prefix_exports: bool = False,
     date_suffix_exports: bool = False,
@@ -4383,9 +4442,14 @@ def copy_per_production_and_orders(
             generated_documents.append(record)
 
     footer_note_text = (
-        DEFAULT_FOOTER_NOTE
+        None
         if footer_note is None
         else _to_str(footer_note).replace("\r\n", "\n")
+    )
+    quote_footer_note_text = (
+        None
+        if quote_footer_note is None
+        else _to_str(quote_footer_note).replace("\r\n", "\n")
     )
     company = {
         "name": client.name if client else "",
@@ -4809,6 +4873,7 @@ def copy_per_production_and_orders(
                         doc_type=opticutter_doc_type,
                         doc_number=opticutter_doc_num_display or None,
                         footer_note=footer_note_text,
+                        quote_footer_note=quote_footer_note_text,
                         delivery=delivery_for_opticutter_docs,
                         project_number=project_number,
                         project_name=project_name,
@@ -5236,6 +5301,7 @@ def copy_per_production_and_orders(
                     doc_type=job.doc_type,
                     doc_number=job.doc_num_display or None,
                     footer_note=footer_note_text,
+                    quote_footer_note=quote_footer_note_text,
                     delivery=delivery_for_docs,
                     project_number=project_number,
                     project_name=project_name,

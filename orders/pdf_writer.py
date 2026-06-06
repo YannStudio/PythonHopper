@@ -187,6 +187,7 @@ def generate_pdf_order_platypus(
     doc_type: str = "Bestelbon",
     doc_number: str | None = None,
     footer_note: Optional[str] = None,
+    quote_footer_note: Optional[str] = None,
     delivery: DeliveryAddress | None = None,
     project_number: str | None = None,
     project_name: str | None = None,
@@ -827,14 +828,7 @@ def generate_pdf_order_platypus(
             )
             story.append(Paragraph(bruto_note, small_style))
 
-    include_footer_note = doc_type_text_lower.startswith("bestelbon")
-    if include_footer_note:
-        if footer_note is None:
-            note = core.DEFAULT_FOOTER_NOTE
-        else:
-            note = _to_str(footer_note)
-    else:
-        note = ""
+    note = core.footer_note_for_doc_type(doc_type_text, footer_note, quote_footer_note)
     if note:
         story.append(Spacer(0, 8))
         story.append(Paragraph(note, small_style))

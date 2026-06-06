@@ -17,6 +17,7 @@ from manual_order_tab import ManualOrderTab
 from models import Client, DeliveryAddress, Supplier
 from orders import (
     DEFAULT_FOOTER_NOTE,
+    DEFAULT_QUOTE_FOOTER_NOTE,
     _fit_filename_within_path,
     _normalize_doc_number,
     build_document_export_basename,
@@ -99,6 +100,7 @@ def _load_app_class(extra_ns=None):
         "prepare_custom_bom_for_main": lambda df, _current: df,
         "ManualOrderTab": ManualOrderTab,
         "DEFAULT_FOOTER_NOTE": DEFAULT_FOOTER_NOTE,
+        "DEFAULT_QUOTE_FOOTER_NOTE": DEFAULT_QUOTE_FOOTER_NOTE,
         "_normalize_doc_number": _normalize_doc_number,
         "_fit_filename_within_path": _fit_filename_within_path,
         "build_document_export_basename": build_document_export_basename,
@@ -204,7 +206,8 @@ def test_manual_order_export_uses_editor_client_supplier_and_delivery(tmp_path, 
             self.dest_folder = str(tmp_path)
             self.project_number_var = DummyVar("LEI-STN")
             self.project_name_var = DummyVar("Leien-60x80")
-            self.footer_note_var = DummyVar("")
+            self.footer_note_var = DummyVar("Order footer")
+            self.quote_footer_note_var = DummyVar("Quote footer")
             self.document_display_compact_doc_number_var = DummyVar(0)
             self.status_var = DummyVar("")
 
@@ -246,3 +249,5 @@ def test_manual_order_export_uses_editor_client_supplier_and_delivery(tmp_path, 
     assert pdf["company_info"]["name"] == "Editor Client"
     assert pdf["company_info"]["website"] == "https://editor.example.com"
     assert pdf["kwargs"]["doc_number"] is None
+    assert pdf["kwargs"]["footer_note"] == "Order footer"
+    assert pdf["kwargs"]["quote_footer_note"] == "Quote footer"

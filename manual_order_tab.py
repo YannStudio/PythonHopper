@@ -534,6 +534,8 @@ class ManualOrderTab(tk.Frame):
     COLUMN_MAX_CHARS = 72
     COLUMN_SEPARATOR_COLOR = "#B9BEC7"
     COLUMN_SEPARATOR_ACTIVE_COLOR = "#6E7681"
+    ACTION_BUTTON_BG = "#FADFA8"
+    ACTION_BUTTON_ACTIVE_BG = "#F4C46C"
     PRICE_UNIT_KEY = "Eenheidsprijs"
     PRICE_TOTAL_KEY = "Totaalprijs"
     PRICE_COLUMN_KEYS = {PRICE_UNIT_KEY, PRICE_TOTAL_KEY}
@@ -801,6 +803,31 @@ class ManualOrderTab(tk.Frame):
             return base
         return fallback or "document"
 
+    @staticmethod
+    def _clear_combobox_text_selection(combo: ttk.Combobox) -> None:
+        try:
+            combo.selection_clear()
+        except Exception:
+            try:
+                combo.selection_clear(0, tk.END)
+            except Exception:
+                pass
+        try:
+            combo.icursor(tk.END)
+        except Exception:
+            pass
+
+    def _install_combobox_selection_reset(self, combo: ttk.Combobox) -> None:
+        def _reset(_event: tk.Event | None = None) -> None:
+            self._clear_combobox_text_selection(combo)
+            try:
+                combo.after_idle(lambda: self._clear_combobox_text_selection(combo))
+            except Exception:
+                pass
+
+        for sequence in ("<FocusIn>", "<<ComboboxSelected>>", "<ButtonRelease-1>"):
+            combo.bind(sequence, _reset, add="+")
+
     def __init__(
         self,
         master: tk.Misc,
@@ -870,6 +897,7 @@ class ManualOrderTab(tk.Frame):
             exportselection=False,
         )
         self.doc_type_combo.grid(row=0, column=1, sticky="w", padx=(6, 0))
+        self._install_combobox_selection_reset(self.doc_type_combo)
 
         info_spacing_px = int(self.winfo_fpixels("1c"))
         header.columnconfigure(2, minsize=info_spacing_px)
@@ -940,18 +968,8 @@ class ManualOrderTab(tk.Frame):
 
         self.doc_type_var.trace_add("write", _handle_doc_type_change)
 
-        def _reset_doc_type_focus() -> None:
-            try:
-                self.doc_type_combo.selection_clear(0, tk.END)
-            except Exception:
-                pass
-            try:
-                self.doc_type_combo.icursor(tk.END)
-            except Exception:
-                pass
-
         self.after_idle(self.doc_number_entry.focus_set)
-        self.after_idle(_reset_doc_type_focus)
+        self.after_idle(lambda: self._clear_combobox_text_selection(self.doc_type_combo))
 
         tk.Label(header, text="Bestemmingsmap:").grid(row=2, column=0, sticky="w", pady=(8, 0))
         dest_field = tk.Frame(header)
@@ -995,8 +1013,10 @@ class ManualOrderTab(tk.Frame):
             textvariable=self.client_var,
             width=field_char_width,
             state="readonly",
+            exportselection=False,
         )
         self.client_combo.pack(side="left")
+        self._install_combobox_selection_reset(self.client_combo)
         if on_manage_clients:
             tk.Button(
                 client_field,
@@ -1021,8 +1041,10 @@ class ManualOrderTab(tk.Frame):
             textvariable=self.supplier_var,
             width=field_char_width,
             state="readonly",
+            exportselection=False,
         )
         self.supplier_combo.pack(side="left")
+        self._install_combobox_selection_reset(self.supplier_combo)
         if on_manage_suppliers:
             tk.Button(
                 supplier_field,
@@ -1047,8 +1069,10 @@ class ManualOrderTab(tk.Frame):
             textvariable=self.delivery_var,
             width=field_char_width,
             state="readonly",
+            exportselection=False,
         )
         self.delivery_combo.pack(side="left")
+        self._install_combobox_selection_reset(self.delivery_combo)
         if on_manage_deliveries:
             tk.Button(
                 delivery_field,
@@ -1148,14 +1172,7 @@ class ManualOrderTab(tk.Frame):
         self.template_combo.pack(side="left", padx=(6, 0))
 
         def _reset_template_focus(_event: tk.Event | None = None) -> None:
-            try:
-                self.template_combo.selection_clear(0, tk.END)
-            except Exception:
-                pass
-            try:
-                self.template_combo.icursor(tk.END)
-            except Exception:
-                pass
+            self._clear_combobox_text_selection(self.template_combo)
 
         self.template_combo.bind("<FocusIn>", _reset_template_focus, add="+")
         self.template_combo.bind("<<ComboboxSelected>>", _reset_template_focus, add="+")
@@ -1285,9 +1302,22 @@ class ManualOrderTab(tk.Frame):
         footer = tk.Frame(self)
         footer.grid(row=2, column=0, sticky="ew", padx=4, pady=(12, 0))
         footer.columnconfigure(0, weight=1)
-        tk.Button(footer, text="Bestelbon opslaan", command=self._handle_export).grid(
-            row=0, column=1, sticky="e"
+        self.save_button = tk.Button(
+            footer,
+            text="Document opslaan",
+            command=self._handle_export,
+            bg=self.ACTION_BUTTON_BG,
+            activebackground=self.ACTION_BUTTON_ACTIVE_BG,
+            fg="black",
+            activeforeground="black",
+            highlightthickness=0,
+            highlightbackground=self.ACTION_BUTTON_BG,
+            highlightcolor=self.ACTION_BUTTON_BG,
+            takefocus=False,
+            padx=14,
+            pady=6,
         )
+        self.save_button.grid(row=0, column=1, sticky="e")
 
         self.rows: List[_ManualRowWidgets] = []
         self.current_template_name: str = ""

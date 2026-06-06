@@ -27,6 +27,7 @@ from bom import read_csv_flex, load_bom
 from orders import (
     copy_per_production_and_orders,
     DEFAULT_FOOTER_NOTE,
+    DEFAULT_QUOTE_FOOTER_NOTE,
     describe_finish_combo,
     parse_selection_key,
     _WINDOWS_MAX_PATH,
@@ -510,6 +511,11 @@ def cli_copy_per_prod(args: argparse.Namespace) -> int:
 
     settings = AppSettings.load()
     settings_note = settings.footer_note
+    settings_quote_note = getattr(
+        settings,
+        "quote_footer_note",
+        DEFAULT_QUOTE_FOOTER_NOTE,
+    )
     settings_en1090_enabled = bool(getattr(settings, "en1090_enabled", True))
     raw_en1090_note = getattr(settings, "en1090_note", EN1090_NOTE_TEXT)
     if raw_en1090_note is None:
@@ -518,6 +524,9 @@ def cli_copy_per_prod(args: argparse.Namespace) -> int:
         settings_en1090_note = _to_str(raw_en1090_note)
     settings_en1090_note = settings_en1090_note.replace("\r\n", "\n")
     footer_note = settings_note if args.note is None else args.note
+    quote_footer_note = (
+        settings_quote_note if args.quote_note is None else args.quote_note
+    )
     copy_finish_exports = (
         settings.copy_finish_exports
         if args.finish_folders is None
@@ -563,6 +572,11 @@ def cli_copy_per_prod(args: argparse.Namespace) -> int:
         client=client,
         delivery_map=delivery_map,
         footer_note=footer_note if footer_note is not None else DEFAULT_FOOTER_NOTE,
+        quote_footer_note=(
+            quote_footer_note
+            if quote_footer_note is not None
+            else DEFAULT_QUOTE_FOOTER_NOTE
+        ),
         project_number=args.project_number,
         project_name=args.project_name,
         copy_finish_exports=copy_finish_exports,
@@ -740,6 +754,11 @@ def build_parser() -> argparse.ArgumentParser:
     cpp.add_argument("--remember-defaults", action="store_true")
     cpp.add_argument(
         "--note", help="Optioneel voetnootje op de bestelbon", default=None
+    )
+    cpp.add_argument(
+        "--quote-note",
+        help="Optioneel onderschrift op offerteaanvragen",
+        default=None,
     )
     cpp.add_argument("--client", help="Gebruik opdrachtgever met deze naam")
     cpp.add_argument(

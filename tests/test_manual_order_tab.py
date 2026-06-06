@@ -147,6 +147,52 @@ def test_attach_entry_overflow_tooltip_can_store_on_row(monkeypatch):
     assert not hasattr(tab, "_header_overflow_tooltips")
 
 
+class _DummySelectionCombo:
+    def __init__(self):
+        self.clear_calls = 0
+        self.cursor = None
+        self.bindings = {}
+        self.after_idle_calls = 0
+
+    def selection_clear(self, *args):
+        if args:
+            raise AssertionError("ttk.Combobox.selection_clear expects no args")
+        self.clear_calls += 1
+
+    def icursor(self, index):
+        self.cursor = index
+
+    def bind(self, sequence, callback, add=None):
+        self.bindings[sequence] = (callback, add)
+
+    def after_idle(self, callback):
+        self.after_idle_calls += 1
+        callback()
+
+
+def test_clear_combobox_text_selection_uses_ttk_signature():
+    combo = _DummySelectionCombo()
+
+    ManualOrderTab._clear_combobox_text_selection(combo)
+
+    assert combo.clear_calls == 1
+    assert combo.cursor == manual_order_tab.tk.END
+
+
+def test_install_combobox_selection_reset_clears_after_selection():
+    tab = ManualOrderTab.__new__(ManualOrderTab)
+    combo = _DummySelectionCombo()
+
+    ManualOrderTab._install_combobox_selection_reset(tab, combo)
+    combo.bindings["<<ComboboxSelected>>"][0](object())
+
+    assert combo.bindings["<FocusIn>"][1] == "+"
+    assert combo.bindings["<ButtonRelease-1>"][1] == "+"
+    assert combo.clear_calls == 2
+    assert combo.after_idle_calls == 1
+    assert combo.cursor == manual_order_tab.tk.END
+
+
 class _DummyVar:
     def __init__(self, value=""):
         self.value = value

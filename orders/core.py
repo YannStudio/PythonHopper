@@ -32,14 +32,39 @@ ORDER_TABLE_ALT_ROW_COLOR = "#FBFCFD"
 ORDER_TOTAL_FILL_COLOR = "#FFF4FF"
 ORDER_DELIVERY_FILL_COLOR = "#FFF8FD"
 
-DEFAULT_FOOTER_NOTE = (
+DEFAULT_ORDER_FOOTER_NOTE = (
     "Gelieve afwijkingen schriftelijk te bevestigen. "
-    "Levertermijn in overleg. Betalingsvoorwaarden: 30 dagen netto. "
-    "Vermeld onze productiereferentie bij levering."
+    "Levertermijn volgens afspraak. Betalingsvoorwaarden: 30 dagen netto na correcte factuur. "
+    "Vermeld onze project- en productiereferentie op orderbevestiging, leverbon en factuur. "
+    "Levering conform tekening en specificaties; wijzigingen enkel na schriftelijke goedkeuring."
 )
+DEFAULT_QUOTE_FOOTER_NOTE = (
+    "Gelieve uw offerte te bezorgen met prijs, levertermijn, geldigheidsduur en eventuele "
+    "opmerkingen of afwijkingen ten opzichte van de aangeleverde tekening of specificatie. "
+    "Deze aanvraag houdt geen bestelling in; productie of levering start pas na onze bestelbon "
+    "of bevestiging per mail. Vermeld onze project- en productiereferentie in uw offerte."
+)
+DEFAULT_FOOTER_NOTE = DEFAULT_ORDER_FOOTER_NOTE
 
 STEP_EXTS = {".step", ".stp"}
 NO_SUPPLIER_PLACEHOLDER = "(geen)"
+
+
+def footer_note_for_doc_type(
+    doc_type: object,
+    footer_note: Optional[str] = None,
+    quote_footer_note: Optional[str] = None,
+) -> str:
+    doc_type_text = _to_str(doc_type).strip().lower()
+    if doc_type_text.startswith("bestelbon"):
+        if footer_note is None:
+            return DEFAULT_ORDER_FOOTER_NOTE
+        return _to_str(footer_note).replace("\r\n", "\n")
+    if doc_type_text.startswith("offerte"):
+        if quote_footer_note is None:
+            return DEFAULT_QUOTE_FOOTER_NOTE
+        return _to_str(quote_footer_note).replace("\r\n", "\n")
+    return ""
 
 
 def _clean_address_part(value: object) -> str:

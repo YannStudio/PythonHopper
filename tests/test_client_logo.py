@@ -10,6 +10,7 @@ from gui import _crop_logo_preview_image, _safe_make_logo_photo
 from models import Client, Supplier, normalize_rgb_color
 from orders import (
     DEFAULT_FOOTER_NOTE,
+    DEFAULT_QUOTE_FOOTER_NOTE,
     REPORTLAB_OK,
     generate_pdf_order_platypus,
     write_order_excel,
@@ -275,7 +276,7 @@ def test_generate_pdf_order_resolves_runtime_relative_logo_path(tmp_path, monkey
 
 
 @pytest.mark.skipif(not REPORTLAB_OK, reason="ReportLab niet beschikbaar")
-def test_generate_pdf_footer_note_only_for_bestelbon(tmp_path):
+def test_generate_pdf_footer_note_for_bestelbon_and_offerte(tmp_path):
     supplier = Supplier(supplier="Supplier BV")
     items = [
         {
@@ -289,6 +290,7 @@ def test_generate_pdf_footer_note_only_for_bestelbon(tmp_path):
     ]
 
     bestelbon_pdf = tmp_path / "bestelbon.pdf"
+    offerte_pdf = tmp_path / "offerte.pdf"
     standaard_pdf = tmp_path / "standaard-bon.pdf"
 
     generate_pdf_order_platypus(
@@ -299,6 +301,16 @@ def test_generate_pdf_footer_note_only_for_bestelbon(tmp_path):
         items=items,
         doc_type="Bestelbon",
         footer_note=DEFAULT_FOOTER_NOTE,
+    )
+    generate_pdf_order_platypus(
+        str(offerte_pdf),
+        {},
+        supplier,
+        production="PROD-1",
+        items=items,
+        doc_type="Offerteaanvraag",
+        footer_note=DEFAULT_FOOTER_NOTE,
+        quote_footer_note=DEFAULT_QUOTE_FOOTER_NOTE,
     )
     generate_pdf_order_platypus(
         str(standaard_pdf),
@@ -315,12 +327,18 @@ def test_generate_pdf_footer_note_only_for_bestelbon(tmp_path):
     bestelbon_text = "\n".join(
         page.extract_text() or "" for page in PdfReader(str(bestelbon_pdf)).pages
     )
+    offerte_text = "\n".join(
+        page.extract_text() or "" for page in PdfReader(str(offerte_pdf)).pages
+    )
     standaard_text = "\n".join(
         page.extract_text() or "" for page in PdfReader(str(standaard_pdf)).pages
     )
 
     assert "Gelieve afwijkingen schriftelijk te bevestigen." in bestelbon_text
+    assert "geen bestelling" in offerte_text
+    assert "Gelieve afwijkingen schriftelijk te bevestigen." not in offerte_text
     assert "Gelieve afwijkingen schriftelijk te bevestigen." not in standaard_text
+    assert "geen bestelling" not in standaard_text
 
 
 @pytest.mark.skipif(not REPORTLAB_OK, reason="ReportLab niet beschikbaar")

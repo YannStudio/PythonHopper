@@ -5,10 +5,21 @@ from orders import (
     OrderDocumentSection,
     _build_order_excel_section_data,
     _build_order_pdf_section_story,
+    _order_title_style,
     generate_pdf_order_platypus,
     _order_palette,
     _wrap_words_to_lines,
 )
+
+
+def _cell_text(cell):
+    if hasattr(cell, "getPlainText"):
+        return cell.getPlainText()
+    return cell
+
+
+def _row_texts(row):
+    return [_cell_text(cell) for cell in row]
 
 
 def test_wrap_words_to_lines_limits_description_height():
@@ -150,8 +161,9 @@ def test_order_pdf_section_compacts_custom_area_and_weight_headers():
     )
 
     table = story[-1]
-    assert table._cellvalues[0][5] == "m\u00b2"
-    assert table._cellvalues[0][6] == "kg"
+    header = _row_texts(table._cellvalues[0])
+    assert header[5] == "m\u00b2"
+    assert header[6] == "kg"
     assert table._cellvalues[2][1].getPlainText() == "Totaal"
     assert table._cellvalues[2][5].getPlainText() == "2.00"
     assert table._cellvalues[2][6].getPlainText() == "50.00"
@@ -193,9 +205,12 @@ def test_order_pdf_section_compacts_price_headers():
     )
 
     table = story[-1]
-    assert "Eenheidsprijs (€)" not in table._cellvalues[0]
-    assert "Totaalprijs (€)" not in table._cellvalues[0]
-    assert table._cellvalues[0][-2:] == ["Prijs/st. (\u20ac)", "Totaal (\u20ac)"]
+    header = _row_texts(table._cellvalues[0])
+    assert "Eenheidsprijs (€)" not in header
+    assert "Totaalprijs (€)" not in header
+    assert header[-2:] == ["Prijs/st. (\u20ac)", "Totaal (\u20ac)"]
+    assert table._cellvalues[0][-2].style.alignment == 2
+    assert table._cellvalues[0][-1].style.alignment == 2
 
 
 def test_order_excel_section_compacts_price_headers():
@@ -286,10 +301,36 @@ def test_order_pdf_section_moves_vat_summary_below_table():
     ]
 
     summary_table = story[-1]
+    assert getattr(story[-2], "height", None) == 8
     assert summary_table._cellvalues[0][0].getPlainText() == "BTW 21%"
     assert summary_table._cellvalues[0][1].getPlainText() == "2.73"
     assert summary_table._cellvalues[1][0].getPlainText() == "Totaal incl. BTW"
     assert summary_table._cellvalues[1][1].getPlainText() == "15.73"
+
+
+def test_pdf_order_title_scales_down_for_long_descriptions():
+    pytest.importorskip("reportlab")
+    from reportlab.lib.styles import getSampleStyleSheet
+
+    palette = _order_palette({})
+    styles = getSampleStyleSheet()
+
+    normal_style = _order_title_style(
+        styles,
+        palette,
+        "Offerteaanvraag document: Bureau",
+        usable_w=500,
+    )
+    long_style = _order_title_style(
+        styles,
+        palette,
+        "Offerteaanvraag document: Bureau inrichting met extra lange omschrijving",
+        usable_w=500,
+    )
+
+    assert normal_style.fontSize == 20.0
+    assert long_style.fontSize < normal_style.fontSize
+    assert long_style.leading == long_style.fontSize + 2.0
 
 
 def test_order_excel_section_moves_vat_summary_below_table():
@@ -406,13 +447,14 @@ def test_single_section_pdf_compacts_custom_area_and_weight_headers(monkeypatch,
     order_table = next(
         table
         for table in tables
-        if table._cellvalues and "Artikel nr." in table._cellvalues[0]
+        if table._cellvalues and "Artikel nr." in _row_texts(table._cellvalues[0])
     )
 
-    assert "Oppervlakte" not in order_table._cellvalues[0]
-    assert "Gewicht (kg)" not in order_table._cellvalues[0]
-    assert order_table._cellvalues[0][4] == "m\u00b2"
-    assert order_table._cellvalues[0][5] == "kg"
+    header = _row_texts(order_table._cellvalues[0])
+    assert "Oppervlakte" not in header
+    assert "Gewicht (kg)" not in header
+    assert header[4] == "m\u00b2"
+    assert header[5] == "kg"
     assert order_table._cellvalues[2][0].getPlainText() == "Totaal"
     assert order_table._cellvalues[2][4].getPlainText() == "0.42"
     assert order_table._cellvalues[2][5].getPlainText() == "3.23"

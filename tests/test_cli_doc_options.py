@@ -38,6 +38,8 @@ def test_cli_doc_options_parsing(monkeypatch, tmp_path):
     captured = {}
 
     settings = AppSettings()
+    settings.footer_note = "Order footer"
+    settings.quote_footer_note = "Quote footer"
     settings.en1090_enabled = False
     settings.en1090_note = "Custom EN 1090\r\nNote"
     settings.document_filename_profile = "custom"
@@ -68,6 +70,8 @@ def test_cli_doc_options_parsing(monkeypatch, tmp_path):
     assert captured["en1090_enabled"] is False
     assert captured["en1090_note"] == "Custom EN 1090\nNote"
     assert captured["en1090_overrides"] is None
+    assert captured["footer_note"] == "Order footer"
+    assert captured["quote_footer_note"] == "Quote footer"
     assert captured["document_filename_profile"] == "custom"
     assert captured["document_filename_show_doc_type"] is False
     assert captured["document_filename_show_doc_number"] is True

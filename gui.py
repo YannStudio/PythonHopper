@@ -65,6 +65,7 @@ from bom_sync import prepare_custom_bom_for_main
 from orders import (
     copy_per_production_and_orders,
     DEFAULT_FOOTER_NOTE,
+    DEFAULT_QUOTE_FOOTER_NOTE,
     MIAMI_PINK,
     ORDER_MUTED_TEXT_COLOR,
     ORDER_RULE_COLOR,
@@ -8217,31 +8218,40 @@ def start_gui():
             )
             footer_frame.grid(row=1, column=0, sticky="nsew")
             footer_frame.columnconfigure(0, weight=1)
-            footer_frame.rowconfigure(1, weight=1)
+            footer_frame.rowconfigure(2, weight=1)
+            footer_frame.rowconfigure(4, weight=1)
 
             tk.Label(
                 footer_frame,
-                text="Bestelbon/offerte onderschrift",
+                text="Onderschriften",
                 background=self._settings_card_bg,
                 foreground=self._settings_text,
                 font=("TkDefaultFont", 10, "bold"),
                 anchor="w",
-            ).grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 6))
+            ).grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 4))
+
+            tk.Label(
+                footer_frame,
+                text="Bestelbon onderschrift",
+                background=self._settings_card_bg,
+                foreground=self._settings_text,
+                anchor="w",
+            ).grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 3))
 
             footer_text_container = tk.Frame(footer_frame, background=self._settings_card_bg)
             footer_text_container.grid(
-                row=1,
+                row=2,
                 column=0,
                 sticky="nsew",
                 padx=12,
-                pady=(0, 4),
+                pady=(0, 8),
             )
             footer_text_container.columnconfigure(0, weight=1)
             footer_text_container.rowconfigure(0, weight=1)
 
             self.footer_note_text = tk.Text(
                 footer_text_container,
-                height=5,
+                height=4,
                 wrap="word",
                 font=("TkDefaultFont", 10),
             )
@@ -8254,17 +8264,56 @@ def start_gui():
             )
             footer_scrollbar.grid(row=0, column=1, sticky="ns")
             self.footer_note_text.configure(yscrollcommand=footer_scrollbar.set)
-            self._reload_footer_note()
+
+            tk.Label(
+                footer_frame,
+                text="Offerteaanvraag onderschrift",
+                background=self._settings_card_bg,
+                foreground=self._settings_text,
+                anchor="w",
+            ).grid(row=3, column=0, sticky="ew", padx=12, pady=(0, 3))
+
+            quote_footer_text_container = tk.Frame(
+                footer_frame, background=self._settings_card_bg
+            )
+            quote_footer_text_container.grid(
+                row=4,
+                column=0,
+                sticky="nsew",
+                padx=12,
+                pady=(0, 4),
+            )
+            quote_footer_text_container.columnconfigure(0, weight=1)
+            quote_footer_text_container.rowconfigure(0, weight=1)
+
+            self.quote_footer_note_text = tk.Text(
+                quote_footer_text_container,
+                height=4,
+                wrap="word",
+                font=("TkDefaultFont", 10),
+            )
+            self.quote_footer_note_text.grid(row=0, column=0, sticky="nsew")
+
+            quote_footer_scrollbar = tk.Scrollbar(
+                quote_footer_text_container,
+                orient="vertical",
+                command=self.quote_footer_note_text.yview,
+            )
+            quote_footer_scrollbar.grid(row=0, column=1, sticky="ns")
+            self.quote_footer_note_text.configure(
+                yscrollcommand=quote_footer_scrollbar.set
+            )
+            self._reload_footer_notes()
 
             footer_btns = tk.Frame(footer_frame, background=self._settings_card_bg)
-            footer_btns.grid(row=2, column=0, sticky="e", padx=12, pady=(4, 10))
-            tk.Button(footer_btns, text="Opslaan", command=self._save_footer_note).pack(
+            footer_btns.grid(row=5, column=0, sticky="e", padx=12, pady=(4, 10))
+            tk.Button(footer_btns, text="Opslaan", command=self._save_footer_notes).pack(
                 side="left", padx=4
             )
             tk.Button(
                 footer_btns,
                 text="Reset naar standaard",
-                command=self._reset_footer_note,
+                command=self._reset_footer_notes,
             ).pack(side="left", padx=4)
 
             extensions_frame = _section(
@@ -8780,24 +8829,37 @@ def start_gui():
                     values=(status, ext.label, patterns),
                 )
 
-        def _reload_footer_note(self) -> None:
+        def _reload_footer_notes(self) -> None:
             text = self.app.footer_note_var.get()
             self.footer_note_text.delete("1.0", "end")
             if text:
                 self.footer_note_text.insert("1.0", text)
+            quote_text = self.app.quote_footer_note_var.get()
+            self.quote_footer_note_text.delete("1.0", "end")
+            if quote_text:
+                self.quote_footer_note_text.insert("1.0", quote_text)
 
         def _current_footer_text(self) -> str:
             raw = self.footer_note_text.get("1.0", "end-1c")
             return raw.replace("\r\n", "\n")
 
-        def _save_footer_note(self) -> None:
-            note = self._current_footer_text().strip()
-            self.app.update_footer_note(note)
-            self._reload_footer_note()
+        def _current_quote_footer_text(self) -> str:
+            raw = self.quote_footer_note_text.get("1.0", "end-1c")
+            return raw.replace("\r\n", "\n")
 
-        def _reset_footer_note(self) -> None:
-            self.app.update_footer_note(DEFAULT_FOOTER_NOTE)
-            self._reload_footer_note()
+        def _save_footer_notes(self) -> None:
+            self.app.update_footer_notes(
+                self._current_footer_text().strip(),
+                self._current_quote_footer_text().strip(),
+            )
+            self._reload_footer_notes()
+
+        def _reset_footer_notes(self) -> None:
+            self.app.update_footer_notes(
+                DEFAULT_FOOTER_NOTE,
+                DEFAULT_QUOTE_FOOTER_NOTE,
+            )
+            self._reload_footer_notes()
 
         def _reload_en1090_note(self) -> None:
             text = self.app.en1090_note_var.get()
@@ -10467,6 +10529,20 @@ def start_gui():
             self.footer_note_var = tk.StringVar(
                 master=self, value=self.settings.footer_note or ""
             )
+            raw_quote_footer_note = getattr(
+                self.settings,
+                "quote_footer_note",
+                DEFAULT_QUOTE_FOOTER_NOTE,
+            )
+            quote_footer_note_text = (
+                DEFAULT_QUOTE_FOOTER_NOTE
+                if raw_quote_footer_note is None
+                else _to_str(raw_quote_footer_note)
+            ).replace("\r\n", "\n")
+            self.quote_footer_note_var = tk.StringVar(
+                master=self,
+                value=quote_footer_note_text,
+            )
 
             self.source_folder = self.source_folder_var.get().strip()
             self.dest_folder = self.dest_folder_var.get().strip()
@@ -11609,7 +11685,6 @@ def start_gui():
                 "logo_crop": client.logo_crop if client else None,
             }
 
-            footer_note_text = self.footer_note_var.get().strip() or DEFAULT_FOOTER_NOTE
             total_surface = payload.get("total_surface")
             if not isinstance(total_surface, (int, float)):
                 try:
@@ -11651,7 +11726,8 @@ def start_gui():
                     items,
                     doc_type=doc_type,
                     doc_number=doc_number_display or None,
-                    footer_note=footer_note_text,
+                    footer_note=self.footer_note_var.get(),
+                    quote_footer_note=self.quote_footer_note_var.get(),
                     delivery=delivery,
                     project_number=project_number or None,
                     project_name=project_name or None,
@@ -11822,6 +11898,9 @@ def start_gui():
                 self.autofill_custom_bom_var.get()
             )
             self.settings.footer_note = self.footer_note_var.get().replace("\r\n", "\n")
+            self.settings.quote_footer_note = (
+                self.quote_footer_note_var.get().replace("\r\n", "\n")
+            )
             self.settings.en1090_enabled = bool(self.en1090_enabled_var.get())
             self.settings.en1090_note = self.en1090_note_var.get().replace("\r\n", "\n")
             for ext in self.settings.file_extensions:
@@ -12084,6 +12163,28 @@ def start_gui():
             self._suspend_save = True
             try:
                 self.footer_note_var.set(normalized)
+            finally:
+                self._suspend_save = prev
+            self._save_settings()
+
+        def update_quote_footer_note(self, text: str) -> None:
+            normalized = (text or "").replace("\r\n", "\n")
+            prev = getattr(self, "_suspend_save", False)
+            self._suspend_save = True
+            try:
+                self.quote_footer_note_var.set(normalized)
+            finally:
+                self._suspend_save = prev
+            self._save_settings()
+
+        def update_footer_notes(self, order_text: str, quote_text: str) -> None:
+            normalized_order = (order_text or "").replace("\r\n", "\n")
+            normalized_quote = (quote_text or "").replace("\r\n", "\n")
+            prev = getattr(self, "_suspend_save", False)
+            self._suspend_save = True
+            try:
+                self.footer_note_var.set(normalized_order)
+                self.quote_footer_note_var.set(normalized_quote)
             finally:
                 self._suspend_save = prev
             self._save_settings()
@@ -13440,6 +13541,7 @@ def start_gui():
                             client=client,
                             delivery_map=production_delivery_map,
                             footer_note=self.footer_note_var.get(),
+                            quote_footer_note=self.quote_footer_note_var.get(),
                             zip_parts=(
                                 False if pdf_dossier_context else bool(self.zip_var.get())
                             ),
@@ -15765,6 +15867,7 @@ def start_gui():
                             client=client,
                             delivery_map=production_delivery_map,
                             footer_note=self.footer_note_var.get(),
+                            quote_footer_note=self.quote_footer_note_var.get(),
                             zip_parts=bool(self.zip_var.get()),
                             date_prefix_exports=bool(self.export_date_prefix_var.get()),
                             date_suffix_exports=bool(self.export_date_suffix_var.get()),
