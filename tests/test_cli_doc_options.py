@@ -80,3 +80,61 @@ def test_cli_doc_options_parsing(monkeypatch, tmp_path):
     assert captured["document_filename_compact_doc_number"] is True
     assert captured["document_filename_separator"] == "none"
     assert captured["document_display_compact_doc_number"] is True
+
+
+def test_cli_copy_per_prod_passes_spare_part_groups(monkeypatch, tmp_path):
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "copy-per-prod",
+            "--source",
+            str(tmp_path / "src"),
+            "--dest",
+            str(tmp_path / "dst"),
+            "--bom",
+            str(tmp_path / "bom.xlsx"),
+            "--exts",
+            "pdf",
+        ]
+    )
+
+    (tmp_path / "src").mkdir()
+    (tmp_path / "dst").mkdir()
+    df = pd.DataFrame(
+        [
+            {
+                "PartNumber": "PN1",
+                "Description": "Spare rail",
+                "Production": "Spare Parts",
+                "Aantal": 2,
+                "Supplier": "Herbaroof",
+                "Supplier code": "ND SM-25",
+                "Manufacturer": "Herbaroof",
+                "Manufacturer code": "MF-25",
+            }
+        ]
+    )
+    monkeypatch.setattr(cli, "load_bom", lambda path: df)
+
+    sdb = SuppliersDB([Supplier.from_any({"supplier": "Herbaroof"})])
+    monkeypatch.setattr(SuppliersDB, "load", classmethod(lambda cls, path: sdb))
+    cdb = ClientsDB([])
+    monkeypatch.setattr(ClientsDB, "load", classmethod(lambda cls, path: cdb))
+    ddb = DeliveryAddressesDB([])
+    monkeypatch.setattr(DeliveryAddressesDB, "load", classmethod(lambda cls, path: ddb))
+    monkeypatch.setattr(AppSettings, "load", classmethod(lambda cls, path=None: AppSettings()))
+
+    captured = {}
+
+    def fake_copy(*args, **kwargs):
+        captured.update(kwargs)
+        return 0, {}
+
+    monkeypatch.setattr(cli, "copy_per_production_and_orders", fake_copy)
+    cli_copy_per_prod(args)
+
+    groups = captured["spare_part_groups"]
+    assert [group["key"] for group in groups] == ["full", "supplier--herbaroof"]
+    supplier_group = groups[1]
+    assert supplier_group["default_supplier"] == "Herbaroof"
+    assert supplier_group["items"][0]["Supplier code"] == "ND SM-25"

@@ -35,6 +35,7 @@ from orders import (
 from app_settings import AppSettings
 from opticutter import analyse_profiles
 from en1090 import EN1090_NOTE_TEXT, normalize_en1090_key
+from spare_parts import collect_spare_part_groups
 
 DEFAULT_ALLOWED_EXTS = "pdf,dxf,dwg,step,stp"
 
@@ -355,6 +356,17 @@ def cli_copy(args: argparse.Namespace) -> int:
 def cli_copy_per_prod(args: argparse.Namespace) -> int:
     exts = parse_exts(args.exts, args.allowed_exts)
     df = load_bom(args.bom)
+    spare_part_groups = [
+        group.to_mapping() for group in collect_spare_part_groups(df)
+    ]
+    spare_part_label_lookup = {
+        _to_str(group.get("key")).strip(): (
+            _to_str(group.get("display_label")).strip()
+            or _to_str(group.get("label")).strip()
+        )
+        for group in spare_part_groups
+        if _to_str(group.get("key")).strip()
+    }
     db = SuppliersDB.load(SUPPLIERS_DB_FILE)
     finish_meta_lookup: Dict[str, Dict[str, str]] = {}
     finish_lookup: Dict[str, str] = {}
@@ -619,6 +631,7 @@ def cli_copy_per_prod(args: argparse.Namespace) -> int:
         path_limit_warnings=path_limit_warnings,
         opticutter_analysis=opticutter_analysis,
         opticutter_choices={},
+        spare_part_groups=spare_part_groups or None,
         en1090_overrides=en1090_override_map,
         en1090_enabled=settings_en1090_enabled,
         en1090_note=settings_en1090_note,
@@ -632,6 +645,9 @@ def cli_copy_per_prod(args: argparse.Namespace) -> int:
         elif kind == "opticutter":
             display = f"{ident} (brutemateriaal)"
             prefix = "Brutemateriaal"
+        elif kind == "sparepart":
+            display = spare_part_label_lookup.get(ident, ident)
+            prefix = "Spare parts"
         else:
             display = ident
             prefix = "Productie"
