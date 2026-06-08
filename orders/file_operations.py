@@ -72,6 +72,7 @@ from opticutter import (
     parse_length_to_mm,
     prepare_opticutter_export,
 )
+from spare_parts import is_spare_parts_production
 
 import step_previews
 from helpers import (
@@ -665,9 +666,24 @@ def _line_pricing_for_item(
     return None
 
 
+def _spare_part_column_layout() -> List[Dict[str, object]]:
+    """Return the order table layout for spare-parts documents."""
+
+    return [
+        {"key": "PartNumber", "label": "Artikel nr.", "width": 16, "justify": "left", "wrap": True, "weight": 1.25},
+        {"key": "Description", "label": "Omschrijving", "width": 28, "justify": "left", "wrap": True, "weight": 2.2},
+        {"key": "Aantal", "label": "St.", "width": 8, "justify": "right", "numeric": True, "integer": True, "weight": 0.55},
+        {"key": "Supplier", "label": "Supplier", "width": 18, "justify": "left", "wrap": True, "weight": 1.2},
+        {"key": "Supplier code", "label": "Supplier code", "width": 18, "justify": "left", "wrap": True, "weight": 1.25},
+        {"key": "Manufacturer", "label": "Fabrikant", "width": 18, "justify": "left", "wrap": True, "weight": 1.2},
+        {"key": "Manufacturer code", "label": "Fabrikant code", "width": 18, "justify": "left", "wrap": True, "weight": 1.25},
+    ]
+
+
 def _default_priced_column_layout(context_kind: str) -> List[Dict[str, object]]:
     context_kind_clean = (_to_str(context_kind) or "productie").strip().lower()
     is_raw = context_kind_clean.startswith("brutemateriaal")
+    is_spare = context_kind_clean.startswith("spare")
     if is_raw:
         columns = [
             {"key": "Profiel", "label": "Profiel", "width": 20, "justify": "left", "wrap": True, "weight": 2.0},
@@ -676,6 +692,8 @@ def _default_priced_column_layout(context_kind: str) -> List[Dict[str, object]]:
             {"key": "St.", "label": "St.", "width": 8, "justify": "right", "numeric": True, "integer": True, "weight": 0.7},
             {"key": "kg", "label": "kg", "width": 10, "justify": "right", "numeric": True, "total_weight": True, "weight": 0.8},
         ]
+    elif is_spare:
+        columns = _spare_part_column_layout()
     else:
         columns = [
             {"key": "PartNumber", "label": "PartNumber", "width": 22, "justify": "left", "wrap": True, "weight": 1.8},
@@ -692,7 +710,6 @@ def _default_priced_column_layout(context_kind: str) -> List[Dict[str, object]]:
         ]
     )
     return columns
-
 
 def _apply_order_pricing(
     items: List[Dict[str, object]],
@@ -1503,7 +1520,9 @@ def _should_place_remark_in_delivery_block(
 FINISH_KEY_PREFIX = "finish::"
 PRODUCTION_KEY_PREFIX = "production::"
 OPTICUTTER_KEY_PREFIX = "opticutter::"
+SPARE_PART_KEY_PREFIX = "sparepart::"
 OPTICUTTER_DEFAULT_SUFFIX = "::Opticutter"
+SPARE_PART_DEFAULT_PREFIX = "Spare Parts::"
 
 
 def _normalize_finish_folder(value: object) -> str:
@@ -1529,6 +1548,8 @@ def _selection_key(kind: str, identifier: str) -> str:
         return f"{FINISH_KEY_PREFIX}{identifier}"
     if kind == "opticutter":
         return f"{OPTICUTTER_KEY_PREFIX}{identifier}"
+    if kind == "sparepart":
+        return f"{SPARE_PART_KEY_PREFIX}{identifier}"
     return f"{PRODUCTION_KEY_PREFIX}{identifier}"
 
 
@@ -1550,6 +1571,12 @@ def make_opticutter_selection_key(name: str) -> str:
     return _selection_key("opticutter", name)
 
 
+def make_spare_part_selection_key(group_key: str) -> str:
+    """Return a stable selection key for a spare-parts order group."""
+
+    return _selection_key("sparepart", group_key)
+
+
 def make_opticutter_default_key(name: str) -> str:
     """Return the SuppliersDB default key for Opticutter raw material orders."""
 
@@ -1557,8 +1584,15 @@ def make_opticutter_default_key(name: str) -> str:
     return f"{base}{OPTICUTTER_DEFAULT_SUFFIX}" if base else OPTICUTTER_DEFAULT_SUFFIX
 
 
+def make_spare_part_default_key(group_key: str) -> str:
+    """Return the SuppliersDB default key for a spare-parts order group."""
+
+    base = _to_str(group_key)
+    return f"{SPARE_PART_DEFAULT_PREFIX}{base}" if base else SPARE_PART_DEFAULT_PREFIX.rstrip(":")
+
+
 def parse_selection_key(key: str) -> Tuple[str, str]:
-    """Return the kind (``"production"``/``"finish"``) and identifier."""
+    """Return the selection kind and identifier."""
 
     if key.startswith(FINISH_KEY_PREFIX):
         return "finish", key[len(FINISH_KEY_PREFIX) :]
@@ -1566,6 +1600,8 @@ def parse_selection_key(key: str) -> Tuple[str, str]:
         return "production", key[len(PRODUCTION_KEY_PREFIX) :]
     if key.startswith(OPTICUTTER_KEY_PREFIX):
         return "opticutter", key[len(OPTICUTTER_KEY_PREFIX) :]
+    if key.startswith(SPARE_PART_KEY_PREFIX):
+        return "sparepart", key[len(SPARE_PART_KEY_PREFIX) :]
     # Fallback for legacy keys without explicit prefix.
     return "production", key
 
@@ -1581,7 +1617,11 @@ def _clean_document_group_map(
             continue
         follower_kind, _ = parse_selection_key(follower)
         master_kind, _ = parse_selection_key(master)
-        if follower_kind != master_kind or follower_kind not in {"production", "finish"}:
+        if follower_kind != master_kind or follower_kind not in {
+            "production",
+            "finish",
+            "sparepart",
+        }:
             continue
         cleaned[follower] = master
     return cleaned
@@ -4017,6 +4057,44 @@ def pick_supplier_for_finish(
     return Supplier(supplier=NO_SUPPLIER_PLACEHOLDER)
 
 
+
+
+def pick_supplier_for_spare_part_group(
+    group_key: str,
+    default_supplier: str,
+    db: SuppliersDB,
+    override_map: Dict[str, str],
+    suppliers_sorted: List[Supplier] | None = None,
+) -> Supplier:
+    """Select a supplier for a spare-parts order group."""
+
+    name = override_map.get(group_key)
+    sups = suppliers_sorted if suppliers_sorted is not None else db.suppliers_sorted()
+    if name is not None:
+        if not name.strip():
+            return Supplier(supplier="")
+        for s in sups:
+            if s.supplier.lower() == name.lower():
+                return s
+        return Supplier(supplier=name)
+
+    default = db.get_default(make_spare_part_default_key(group_key))
+    if default:
+        for s in sups:
+            if s.supplier.lower() == default.lower():
+                return s
+        return Supplier(supplier=default)
+
+    default_supplier = _to_str(default_supplier).strip()
+    if default_supplier:
+        for s in sups:
+            if s.supplier.lower() == default_supplier.lower():
+                return s
+        return Supplier(supplier=default_supplier)
+
+    return Supplier(supplier="")
+
+
 def copy_per_production_and_orders(
     source: str,
     dest: str,
@@ -4071,12 +4149,21 @@ def copy_per_production_and_orders(
     pricing_map: Mapping[str, Mapping[str, object]] | None = None,
     finish_pricing_map: Mapping[str, Mapping[str, object]] | None = None,
     opticutter_pricing_map: Mapping[str, Mapping[str, object]] | None = None,
+    spare_part_pricing_map: Mapping[str, Mapping[str, object]] | None = None,
     vat_rate_map: Mapping[str, object] | None = None,
     finish_vat_rate_map: Mapping[str, object] | None = None,
     opticutter_vat_rate_map: Mapping[str, object] | None = None,
+    spare_part_vat_rate_map: Mapping[str, object] | None = None,
     production_export_filter: Mapping[str, bool] | None = None,
     finish_export_filter: Mapping[str, bool] | None = None,
     opticutter_export_filter: Mapping[str, bool] | None = None,
+    spare_part_groups: Sequence[Mapping[str, object]] | None = None,
+    spare_part_override_map: Dict[str, str] | None = None,
+    spare_part_doc_type_map: Dict[str, str] | None = None,
+    spare_part_doc_num_map: Dict[str, str] | None = None,
+    spare_part_delivery_map: Dict[str, DeliveryAddress | None] | None = None,
+    spare_part_remarks_map: Dict[str, str] | None = None,
+    spare_part_export_filter: Mapping[str, bool] | None = None,
     en1090_enabled: bool = True,
     en1090_overrides: Mapping[str, bool] | None = None,
     en1090_note: Optional[str] = None,
@@ -4216,12 +4303,28 @@ def copy_per_production_and_orders(
         for key, value in (opticutter_remarks_map or {}).items()
         if _to_str(value).strip()
     }
+    spare_part_groups = [
+        dict(group)
+        for group in (spare_part_groups or [])
+        if isinstance(group, Mapping) and _to_str(group.get("key")).strip()
+    ]
+    spare_part_override_map = spare_part_override_map or {}
+    spare_part_doc_type_map = spare_part_doc_type_map or {}
+    spare_part_doc_num_map = spare_part_doc_num_map or {}
+    spare_part_delivery_map = spare_part_delivery_map or {}
+    spare_part_remarks_map = {
+        key: _to_str(value).strip()
+        for key, value in (spare_part_remarks_map or {}).items()
+        if _to_str(value).strip()
+    }
     pricing_map = pricing_map or {}
     finish_pricing_map = finish_pricing_map or {}
     opticutter_pricing_map = opticutter_pricing_map or {}
+    spare_part_pricing_map = spare_part_pricing_map or {}
     vat_rate_map = vat_rate_map or {}
     finish_vat_rate_map = finish_vat_rate_map or {}
     opticutter_vat_rate_map = opticutter_vat_rate_map or {}
+    spare_part_vat_rate_map = spare_part_vat_rate_map or {}
     remarks_clean: Dict[str, str] = {}
     for key, value in (remarks_map or {}).items():
         text = _to_str(value).strip()
@@ -4249,6 +4352,7 @@ def copy_per_production_and_orders(
     production_export_filter = _clean_export_filter(production_export_filter)
     finish_export_filter = _clean_export_filter(finish_export_filter)
     opticutter_export_filter = _clean_export_filter(opticutter_export_filter)
+    spare_part_export_filter = _clean_export_filter(spare_part_export_filter)
 
     def _normalized_production_name(value: object) -> str:
         return _to_str(value).strip() or "_Onbekend"
@@ -4576,6 +4680,16 @@ def copy_per_production_and_orders(
 
         if zf is not None:
             zf.close()
+
+        if spare_part_groups and is_spare_parts_production(prod):
+            _emit_progress(
+                "productions",
+                f"Productie verwerkt... {prod}",
+                percent=_phase_percent(8, 45, prod_index, production_total),
+                done=prod_index,
+                total=production_total,
+            )
+            continue
 
         supplier = pick_supplier_for_production(
             prod, db, override_map, suppliers_sorted=suppliers_sorted
@@ -5167,6 +5281,140 @@ def copy_per_production_and_orders(
             )
             continue
 
+
+    if spare_part_groups:
+        spare_part_doc_total = len(spare_part_groups)
+        _emit_progress(
+            "spare_parts",
+            f"Spare-partsbonnen voorbereiden... 0 van {spare_part_doc_total}",
+            percent=65,
+            done=0,
+            total=spare_part_doc_total,
+        )
+        for spare_index, group in enumerate(spare_part_groups, start=1):
+            group_key = _to_str(group.get("key")).strip()
+            group_label = _to_str(group.get("label")).strip() or group_key
+            display_label = (
+                _to_str(group.get("display_label")).strip()
+                or f"Spare Parts - {group_label}"
+            )
+            _emit_progress(
+                "spare_parts",
+                f"Spare-partsbon voorbereiden... {group_label}",
+                percent=_phase_percent(65, 66, spare_index - 1, spare_part_doc_total),
+                done=spare_index - 1,
+                total=spare_part_doc_total,
+            )
+            if spare_part_export_filter and not spare_part_export_filter.get(group_key, True):
+                _append_document_status(
+                    f"Spare-partsgroep '{group_label}' overgeslagen: export uitgeschakeld."
+                )
+                continue
+
+            raw_items = group.get("items") or []
+            items: List[Dict[str, object]] = []
+            for raw_item in raw_items:
+                if not isinstance(raw_item, Mapping):
+                    continue
+                item = {
+                    "PartNumber": raw_item.get("PartNumber", ""),
+                    "Description": raw_item.get("Description", ""),
+                    "Aantal": _parse_qty(raw_item.get("Aantal", raw_item.get("quantity", ""))),
+                    "Materiaal": raw_item.get("Materiaal", raw_item.get("Material", "")),
+                    "Supplier": raw_item.get("Supplier", ""),
+                    "Supplier code": raw_item.get("Supplier code", ""),
+                    "Manufacturer": raw_item.get("Manufacturer", ""),
+                    "Manufacturer code": raw_item.get("Manufacturer code", ""),
+                }
+                line_key = _to_str(raw_item.get("key")).strip()
+                if not line_key:
+                    line_key = build_order_pricing_item_key(
+                        item,
+                        context_kind="Spare parts",
+                    )
+                item[_LINE_PRICE_KEY] = line_key
+                items.append(item)
+
+            if not items:
+                _append_document_status(
+                    f"Spare-partsgroep '{group_label}' overgeslagen: geen onderdelen gevonden."
+                )
+                continue
+
+            supplier = pick_supplier_for_spare_part_group(
+                group_key,
+                _to_str(group.get("default_supplier")).strip(),
+                db,
+                spare_part_override_map,
+                suppliers_sorted=suppliers_sorted,
+            )
+            spare_sel_key = make_spare_part_selection_key(group_key)
+            chosen[spare_sel_key] = supplier.supplier
+            if remember_defaults and supplier.supplier not in (
+                "",
+                "Onbekend",
+                NO_SUPPLIER_PLACEHOLDER,
+            ):
+                db.set_default(make_spare_part_default_key(group_key), supplier.supplier)
+
+            raw_doc_type = spare_part_doc_type_map.get(
+                group_key,
+                group.get("default_doc_type") or "Bestelbon",
+            )
+            doc_type = _to_str(raw_doc_type).strip() or "Bestelbon"
+            doc_num = _normalize_doc_number(
+                spare_part_doc_num_map.get(group_key, ""), doc_type
+            )
+            prefix = _prefix_for_doc_type(doc_type)
+            if doc_num and prefix and doc_num.upper() == prefix.upper():
+                doc_num = ""
+            elif doc_num and prefix and not doc_num.upper().startswith(prefix.upper()):
+                doc_num = f"{prefix}{doc_num}"
+            doc_num_display = format_document_number_for_display(
+                doc_num,
+                doc_type,
+                compact=document_display_compact_doc_number,
+            )
+            folder_name = (
+                "Spare Parts"
+                if bool(group.get("is_full_list"))
+                else f"Spare Parts-{_normalize_finish_folder(group_label)}"
+            )
+            target_dir = os.path.join(dest, folder_name)
+            os.makedirs(target_dir, exist_ok=True)
+            order_remark = spare_part_remarks_map.get(group_key, "")
+            priced_items, priced_layout = _apply_order_pricing(
+                items,
+                spare_part_pricing_map.get(group_key),
+                context_kind="Spare parts",
+                vat_rate=spare_part_vat_rate_map.get(group_key, ""),
+            )
+            column_layout = priced_layout or _spare_part_column_layout()
+            order_candidates.append(
+                OrderDocumentCandidate(
+                    selection_key=spare_sel_key,
+                    context_label=display_label,
+                    context_kind="Spare parts",
+                    filename_context=folder_name,
+                    target_dir=target_dir,
+                    supplier=supplier,
+                    delivery=spare_part_delivery_map.get(group_key),
+                    doc_type=doc_type,
+                    doc_num=doc_num,
+                    doc_num_display=doc_num_display,
+                    order_remark=order_remark or None,
+                    items=priced_items,
+                    column_layout=column_layout,
+                )
+            )
+            _emit_progress(
+                "spare_parts",
+                f"Spare-partsbon voorbereid... {group_label}",
+                percent=_phase_percent(65, 66, spare_index, spare_part_doc_total),
+                done=spare_index,
+                total=spare_part_doc_total,
+            )
+
     if order_candidates:
         document_jobs = _build_grouped_document_jobs(
             order_candidates,
@@ -5194,6 +5442,7 @@ def copy_per_production_and_orders(
                 delivery_for_docs = None
             group_summary = _order_group_summary_text(job.sections)
             is_finish_job = primary_section.context_kind.strip().lower() == "afwerking"
+            is_spare_part_job = primary_section.context_kind.strip().lower() == "spare parts"
             if not (supplier_name_clean or job_is_standaard):
                 if is_finish_job:
                     if len(job.sections) > 1 and group_summary:
@@ -5204,6 +5453,10 @@ def copy_per_production_and_orders(
                         _append_document_status(
                             f"Afwerking '{primary_section.context_label}' overgeslagen: geen leverancier gekozen."
                         )
+                elif is_spare_part_job:
+                    _append_document_status(
+                        f"Spare-partsgroep '{primary_section.context_label}' overgeslagen: geen leverancier gekozen."
+                    )
                 continue
 
             context_label = _to_str(primary_section.context_label).strip()
@@ -5515,7 +5768,7 @@ def _order_document_sort_key(
     label: str,
     path: str,
 ) -> Tuple[int, str, Tuple[Tuple[int, object], ...]]:
-    rank = {"production": 0, "finish": 1, "opticutter": 2}.get(kind, 3)
+    rank = {"production": 0, "sparepart": 1, "finish": 2, "opticutter": 3}.get(kind, 4)
     return (rank, _pdf_match_text(label), _natural_pdf_name_key(path))
 
 

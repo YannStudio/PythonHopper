@@ -225,6 +225,7 @@ def _format_selection_key(key: str) -> str:
         "production": "Productie",
         "finish": "Afwerking",
         "opticutter": "Brutemateriaal",
+        "sparepart": "Spare parts",
     }
     label = labels.get(prefix, prefix or "Selectie")
     return f"{label}: {identifier}"

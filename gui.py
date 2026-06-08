@@ -87,6 +87,8 @@ from orders import (
     make_production_selection_key,
     make_opticutter_selection_key,
     make_opticutter_default_key,
+    make_spare_part_selection_key,
+    make_spare_part_default_key,
     compute_opticutter_order_details,
     parse_selection_key,
     _WINDOWS_MAX_PATH,
@@ -99,6 +101,7 @@ from orders import (
     write_order_excel,
     generate_pdf_order_platypus,
 )
+from spare_parts import collect_spare_part_groups, is_spare_parts_production
 from progress import ProgressEvent
 from export_session_log import (
     EXPORT_SESSION_LOG_FILENAME,
@@ -4034,6 +4037,7 @@ def start_gui():
             on_manage_presets=None,
             opticutter_details: Dict[str, "OpticutterOrderComputation"] | None = None,
             selection_items: Optional[Dict[str, List[Dict[str, object]]]] = None,
+            spare_part_groups: Optional[List[Dict[str, object]]] = None,
             initial_state: Optional["SupplierSelectionState"] = None,
             en1090_enabled: bool = True,
             en1090_getter=None,
@@ -4053,6 +4057,7 @@ def start_gui():
             self.on_manage_presets = on_manage_presets
             self.opticutter_details = opticutter_details or {}
             self.selection_items = selection_items or {}
+            self.spare_part_groups = spare_part_groups or []
             self._en1090_enabled = bool(en1090_enabled)
             self._preview_supplier: Optional[Supplier] = None
             self._active_key: Optional[str] = None  # laatst gefocuste rij
@@ -4795,7 +4800,8 @@ def start_gui():
                 )
                 self.group_combos[sel_key] = group_combo
 
-                doc_var = tk.StringVar(value="Bestelbon")
+                default_doc_type = _to_str(metadata.get("default_doc_type")).strip() or "Bestelbon"
+                doc_var = tk.StringVar(value=default_doc_type)
                 self.doc_vars[sel_key] = doc_var
                 doc_combo = ttk.Combobox(
                     row,
@@ -5021,6 +5027,55 @@ def start_gui():
                             "identifier": prod,
                             "display": f"{prod} – Brutemateriaal",
                             "summary": summary_text,
+                        },
+                    )
+
+            if self.spare_part_groups:
+                ttk.Separator(left, orient="horizontal").pack(fill="x", pady=(12, 6))
+                spare_header = tk.Frame(left)
+                spare_header.pack(fill="x")
+                tk.Label(
+                    spare_header,
+                    text="Spare parts",
+                    width=self.LABEL_COLUMN_WIDTH,
+                    anchor="w",
+                    background=left.cget("bg"),
+                    font=("TkDefaultFont", 10, "bold"),
+                ).pack(side="left", padx=(0, 6))
+                for group in self.spare_part_groups:
+                    group_key = _to_str(group.get("key")).strip()
+                    if not group_key:
+                        continue
+                    display_label = (
+                        _to_str(group.get("display_label")).strip()
+                        or _to_str(group.get("label")).strip()
+                        or group_key
+                    )
+                    item_count = group.get("item_count")
+                    missing_count = group.get("missing_count")
+                    label_bits = [display_label]
+                    try:
+                        count_value = int(item_count)
+                    except Exception:
+                        count_value = 0
+                    if count_value:
+                        label_bits.append(f"({count_value})")
+                    try:
+                        missing_value = int(missing_count)
+                    except Exception:
+                        missing_value = 0
+                    if missing_value:
+                        label_bits.append(f"- {missing_value} mist data")
+                    label_text = " ".join(label_bits)
+                    add_row(
+                        label_text,
+                        make_spare_part_selection_key(group_key),
+                        {
+                            "kind": "sparepart",
+                            "identifier": group_key,
+                            "display": display_label,
+                            "default_supplier": _to_str(group.get("default_supplier")).strip(),
+                            "default_doc_type": _to_str(group.get("default_doc_type")).strip() or "Bestelbon",
                         },
                     )
 
@@ -6932,14 +6987,14 @@ def start_gui():
 
             if "::" in key:
                 prefix, identifier = key.split("::", 1)
-                if prefix in ("production", "finish", "opticutter"):
+                if prefix in ("production", "finish", "opticutter", "sparepart"):
                     return prefix, identifier
 
             return "production", key
 
         @staticmethod
         def _is_groupable_kind(kind: str) -> bool:
-            return kind in {"production", "finish"}
+            return kind in {"production", "finish", "sparepart"}
 
         @staticmethod
         def _group_code_from_index(index):
@@ -7152,13 +7207,13 @@ def start_gui():
         ) -> Dict[str, str]:
             raw_links = dict(raw_group_links or {})
             sanitized: Dict[str, str] = {}
-            seen_by_kind: Dict[str, List[str]] = {"production": [], "finish": []}
+            seen_by_kind: Dict[str, List[str]] = {"production": [], "finish": [], "sparepart": []}
 
             for sel_key, _combo in self.rows:
                 kind, _identifier = self._parse_selection_key(sel_key)
                 if not self._is_groupable_kind(kind):
                     continue
-                allowed_masters = seen_by_kind[kind]
+                allowed_masters = seen_by_kind.setdefault(kind, [])
                 raw_master = _to_str(raw_links.get(sel_key)).strip()
                 if raw_master and raw_master in allowed_masters:
                     root = self._resolve_group_root(raw_master, sanitized)
@@ -7401,6 +7456,12 @@ def start_gui():
                     name = self.db.get_default(identifier)
                 elif kind == "opticutter":
                     name = self.db.get_default(make_opticutter_default_key(identifier))
+                elif kind == "sparepart":
+                    name = self.db.get_default(make_spare_part_default_key(identifier))
+                    if not name:
+                        name = _to_str(
+                            self.row_meta.get(sel_key, {}).get("default_supplier")
+                        ).strip()
                 else:
                     name = self.db.get_default_finish(identifier)
                 if typed:
@@ -10684,6 +10745,11 @@ def start_gui():
             self.opticutter_frame = tk.Frame(self.nb)
             self.opticutter_frame.configure(padx=12, pady=12)
             self.nb.add(self.opticutter_frame, text="Opticutter")
+            self.spare_parts_frame = tk.Frame(self.nb)
+            self.spare_parts_frame.configure(padx=12, pady=12)
+            self._spare_parts_group_records: Dict[str, object] = {}
+            self._build_spare_parts_tab()
+            self.nb.add(self.spare_parts_frame, text="Spare parts")
 
             opticutter_header = tk.Frame(self.opticutter_frame)
             opticutter_header.pack(fill="x", pady=(0, 8))
@@ -11486,7 +11552,255 @@ def start_gui():
             self._refresh_document_filename_controls()
             self._sync_document_filename_profile_display()
             self._update_document_filename_preview()
+            self._refresh_spare_parts_tab()
             self._save_settings()
+
+        def _build_spare_parts_tab(self) -> None:
+            frame = self.spare_parts_frame
+            frame.grid_columnconfigure(0, weight=0)
+            frame.grid_columnconfigure(1, weight=1)
+            frame.grid_rowconfigure(1, weight=1)
+
+            toolbar = tk.Frame(frame)
+            toolbar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+            toolbar.grid_columnconfigure(0, weight=1)
+            self.spare_parts_status_var = tk.StringVar(
+                master=self, value="Geen BOM geladen."
+            )
+            tk.Label(
+                toolbar,
+                textvariable=self.spare_parts_status_var,
+                anchor="w",
+            ).grid(row=0, column=0, sticky="ew")
+            tk.Button(
+                toolbar,
+                text="Bestelbonnen klaarmaken",
+                command=self._open_spare_parts_order_flow,
+                bg=MANUFACT_BRAND_COLOR,
+                activebackground="#F4C46C",
+                fg="black",
+                activeforeground="black",
+                padx=12,
+                pady=5,
+                takefocus=False,
+            ).grid(row=0, column=1, sticky="e", padx=(8, 0))
+
+            groups_frame = tk.LabelFrame(frame, text="Groepen", labelanchor="n")
+            groups_frame.grid(row=1, column=0, sticky="nsw", padx=(0, 8))
+            groups_frame.grid_rowconfigure(0, weight=1)
+            groups_frame.grid_columnconfigure(0, weight=1)
+            group_columns = ("label", "route", "count", "missing")
+            self.spare_parts_groups_tree = ttk.Treeview(
+                groups_frame,
+                columns=group_columns,
+                show="headings",
+                height=14,
+            )
+            group_headers = {
+                "label": "Groep",
+                "route": "Route",
+                "count": "Aantal",
+                "missing": "Mist",
+            }
+            group_widths = {
+                "label": 190,
+                "route": 110,
+                "count": 58,
+                "missing": 48,
+            }
+            for column in group_columns:
+                anchor = "e" if column in {"count", "missing"} else "w"
+                self.spare_parts_groups_tree.heading(
+                    column, text=group_headers[column], anchor=anchor
+                )
+                self.spare_parts_groups_tree.column(
+                    column, width=group_widths[column], anchor=anchor, stretch=False
+                )
+            group_scroll = ttk.Scrollbar(
+                groups_frame,
+                orient="vertical",
+                command=self.spare_parts_groups_tree.yview,
+            )
+            self.spare_parts_groups_tree.configure(yscrollcommand=group_scroll.set)
+            self.spare_parts_groups_tree.grid(row=0, column=0, sticky="nsew")
+            group_scroll.grid(row=0, column=1, sticky="ns")
+            self.spare_parts_groups_tree.bind(
+                "<<TreeviewSelect>>", self._on_spare_parts_group_select
+            )
+
+            items_frame = tk.LabelFrame(frame, text="Onderdelen", labelanchor="n")
+            items_frame.grid(row=1, column=1, sticky="nsew")
+            items_frame.grid_rowconfigure(0, weight=1)
+            items_frame.grid_columnconfigure(0, weight=1)
+            item_columns = (
+                "part",
+                "description",
+                "qty",
+                "supplier",
+                "supplier_code",
+                "manufacturer",
+                "manufacturer_code",
+                "status",
+            )
+            self.spare_parts_items_tree = ttk.Treeview(
+                items_frame,
+                columns=item_columns,
+                show="headings",
+                height=14,
+            )
+            item_headers = {
+                "part": "Artikel nr.",
+                "description": "Omschrijving",
+                "qty": "Aantal",
+                "supplier": "Supplier",
+                "supplier_code": "Supplier code",
+                "manufacturer": "Fabrikant",
+                "manufacturer_code": "Fabrikant code",
+                "status": "Status",
+            }
+            item_widths = {
+                "part": 100,
+                "description": 220,
+                "qty": 58,
+                "supplier": 120,
+                "supplier_code": 120,
+                "manufacturer": 120,
+                "manufacturer_code": 120,
+                "status": 135,
+            }
+            for column in item_columns:
+                anchor = "e" if column == "qty" else "w"
+                self.spare_parts_items_tree.heading(
+                    column, text=item_headers[column], anchor=anchor
+                )
+                self.spare_parts_items_tree.column(
+                    column, width=item_widths[column], anchor=anchor
+                )
+            item_scroll_y = ttk.Scrollbar(
+                items_frame,
+                orient="vertical",
+                command=self.spare_parts_items_tree.yview,
+            )
+            item_scroll_x = ttk.Scrollbar(
+                items_frame,
+                orient="horizontal",
+                command=self.spare_parts_items_tree.xview,
+            )
+            self.spare_parts_items_tree.configure(
+                yscrollcommand=item_scroll_y.set,
+                xscrollcommand=item_scroll_x.set,
+            )
+            self.spare_parts_items_tree.grid(row=0, column=0, sticky="nsew")
+            item_scroll_y.grid(row=0, column=1, sticky="ns")
+            item_scroll_x.grid(row=1, column=0, sticky="ew")
+
+        def _spare_part_groups_for_current_bom(self):
+            bom_df = getattr(self, "bom_df", None)
+            if bom_df is None or getattr(bom_df, "empty", True):
+                return []
+            try:
+                return collect_spare_part_groups(bom_df)
+            except Exception as exc:
+                print(f"Kon spare-parts-lijst niet opbouwen: {exc}", file=sys.stderr)
+                return []
+
+        def _refresh_spare_parts_tab(self) -> None:
+            group_tree = getattr(self, "spare_parts_groups_tree", None)
+            item_tree = getattr(self, "spare_parts_items_tree", None)
+            status_var = getattr(self, "spare_parts_status_var", None)
+            if group_tree is None or item_tree is None or status_var is None:
+                return
+
+            for item_id in group_tree.get_children():
+                group_tree.delete(item_id)
+            for item_id in item_tree.get_children():
+                item_tree.delete(item_id)
+            self._spare_parts_group_records = {}
+
+            groups = self._spare_part_groups_for_current_bom()
+            if not groups:
+                status_var.set("Geen spare parts in de huidige BOM.")
+                return
+
+            full_group = groups[0]
+            status_var.set(
+                f"{full_group.item_count} spare parts, "
+                f"{sum(1 for group in groups[1:] if group.item_count)} groepen."
+            )
+            for group in groups:
+                group_key = _to_str(group.key).strip()
+                if not group_key:
+                    continue
+                self._spare_parts_group_records[group_key] = group
+                route_label = {
+                    "full": "Lijst",
+                    "supplier": "Leverancier",
+                    "manufacturer": "Fabrikant",
+                    "unassigned": "Open",
+                }.get(group.route_source, group.route_source)
+                group_tree.insert(
+                    "",
+                    "end",
+                    iid=group_key,
+                    values=(
+                        group.label,
+                        route_label,
+                        group.item_count,
+                        group.missing_count or "",
+                    ),
+                )
+            first_id = group_tree.get_children()[0]
+            group_tree.selection_set(first_id)
+            group_tree.focus(first_id)
+            self._populate_spare_parts_items(first_id)
+
+        def _populate_spare_parts_items(self, group_key: str) -> None:
+            item_tree = getattr(self, "spare_parts_items_tree", None)
+            if item_tree is None:
+                return
+            for item_id in item_tree.get_children():
+                item_tree.delete(item_id)
+            group = getattr(self, "_spare_parts_group_records", {}).get(group_key)
+            if group is None:
+                return
+            for index, item in enumerate(group.items):
+                item_tree.insert(
+                    "",
+                    "end",
+                    iid=f"{group_key}-{index}",
+                    values=(
+                        item.part_number,
+                        item.description,
+                        item.quantity,
+                        item.supplier,
+                        item.supplier_code,
+                        item.manufacturer,
+                        item.manufacturer_code,
+                        item.status,
+                    ),
+                )
+
+        def _on_spare_parts_group_select(self, _event=None) -> None:
+            group_tree = getattr(self, "spare_parts_groups_tree", None)
+            if group_tree is None:
+                return
+            selected = group_tree.selection()
+            if selected:
+                self._populate_spare_parts_items(selected[0])
+
+        def _open_spare_parts_order_flow(self) -> None:
+            from tkinter import messagebox
+
+            if not self._ensure_bom_loaded():
+                return
+            if not self._spare_part_groups_for_current_bom():
+                messagebox.showinfo(
+                    "Spare parts",
+                    "Geen spare parts gevonden in de huidige BOM.",
+                    parent=self,
+                )
+                return
+            self._show_supplier_selection_tab(select_tab=True, prompt_opticutter=True)
 
         def _set_export_progress_visible(self, visible: bool) -> None:
             progress = getattr(self, "export_progress", None)
@@ -12828,6 +13142,9 @@ def start_gui():
             else:
                 self.bom_source_path = os.path.abspath(path)
             self._refresh_tree()
+            refresh_spare_parts = getattr(self, "_refresh_spare_parts_tab", None)
+            if callable(refresh_spare_parts):
+                refresh_spare_parts()
             self.status_var.set(f"BOM geladen: {len(df)} rijen")
             self._sync_custom_bom_from_main()
 
@@ -12941,6 +13258,9 @@ def start_gui():
             if not file_status_refreshed:
                 self._refresh_tree()
             self._sync_custom_bom_from_main()
+            refresh_spare_parts = getattr(self, "_refresh_spare_parts_tab", None)
+            if callable(refresh_spare_parts):
+                refresh_spare_parts()
             self.nb.select(self.main_frame)
             selection_frame = getattr(self, "sel_frame", None)
             selection_refreshed = False
@@ -12974,12 +13294,21 @@ def start_gui():
                 return None
 
             bom_df = self.bom_df
+            spare_part_groups = [
+                group.to_mapping() for group in collect_spare_part_groups(bom_df)
+            ]
             prods = sorted(
                 set(
                     (str(r.get("Production") or "").strip() or "_Onbekend")
                     for _, r in bom_df.iterrows()
                 )
             )
+            if spare_part_groups:
+                prods = [
+                    prod
+                    for prod in prods
+                    if not is_spare_parts_production(prod)
+                ]
             finish_meta_map: Dict[str, Dict[str, str]] = {}
             finish_part_numbers: Dict[str, set[str]] = defaultdict(set)
             for _, row in bom_df.iterrows():
@@ -13063,11 +13392,12 @@ def start_gui():
 
             for _, row in bom_df.iterrows():
                 prod = _to_str(row.get("Production")).strip() or "_Onbekend"
-                _append_order_line_item(
-                    make_production_selection_key(prod),
-                    row,
-                    context_kind="Productie",
-                )
+                if not (spare_part_groups and is_spare_parts_production(prod)):
+                    _append_order_line_item(
+                        make_production_selection_key(prod),
+                        row,
+                        context_kind="Productie",
+                    )
                 finish_text = _to_str(row.get("Finish")).strip()
                 if finish_text:
                     meta = describe_finish_combo(row.get("Finish"), row.get("RAL color"))
@@ -13078,6 +13408,12 @@ def start_gui():
                             row,
                             context_kind="Afwerking",
                         )
+
+            for group in spare_part_groups:
+                sel_key = make_spare_part_selection_key(group.get("key", ""))
+                for item in group.get("items") or []:
+                    if isinstance(item, Mapping):
+                        selection_items[sel_key].append(dict(item))
 
             self._ensure_opticutter_analysis_current()
             opticutter_analysis = getattr(self, "opticutter_last_analysis", None)
@@ -13156,6 +13492,7 @@ def start_gui():
                 "prods": prods,
                 "finish_entries": finish_entries,
                 "finish_label_lookup": finish_label_lookup,
+                "spare_part_groups": spare_part_groups,
                 "selection_items": dict(selection_items),
                 "opticutter_details": opticutter_details,
                 "opticutter_notice_message": opticutter_notice_message,
@@ -13180,6 +13517,15 @@ def start_gui():
             prods = list(payload.get("prods") or [])
             finish_entries = list(payload.get("finish_entries") or [])
             finish_label_lookup = dict(payload.get("finish_label_lookup") or {})
+            spare_part_groups = list(payload.get("spare_part_groups") or [])
+            spare_part_label_lookup = {
+                _to_str(group.get("key")).strip(): (
+                    _to_str(group.get("display_label")).strip()
+                    or _to_str(group.get("label")).strip()
+                )
+                for group in spare_part_groups
+                if isinstance(group, Mapping) and _to_str(group.get("key")).strip()
+            }
             selection_items = dict(payload.get("selection_items") or {})
             opticutter_details = dict(payload.get("opticutter_details") or {})
             opticutter_notice_message = _to_str(
@@ -13256,22 +13602,28 @@ def start_gui():
                 prod_override_map: Dict[str, str] = {}
                 finish_override_map: Dict[str, str] = {}
                 opticutter_override_map: Dict[str, str] = {}
+                spare_part_override_map: Dict[str, str] = {}
                 production_pricing_map: Dict[str, Dict[str, object]] = {}
                 finish_pricing_map: Dict[str, Dict[str, object]] = {}
                 opticutter_pricing_map: Dict[str, Dict[str, object]] = {}
+                spare_part_pricing_map: Dict[str, Dict[str, object]] = {}
                 production_vat_rate_map: Dict[str, str] = {}
                 finish_vat_rate_map: Dict[str, str] = {}
                 opticutter_vat_rate_map: Dict[str, str] = {}
+                spare_part_vat_rate_map: Dict[str, str] = {}
                 export_flags = export_flags or {}
                 prod_export_filter: Dict[str, bool] = {}
                 finish_export_filter: Dict[str, bool] = {}
                 opticutter_export_filter: Dict[str, bool] = {}
+                spare_part_export_filter: Dict[str, bool] = {}
                 for key, value in sel_map.items():
                     kind, identifier = parse_selection_key(key)
                     if kind == "finish":
                         finish_override_map[identifier] = value
                     elif kind == "opticutter":
                         opticutter_override_map[identifier] = value
+                    elif kind == "sparepart":
+                        spare_part_override_map[identifier] = value
                     else:
                         prod_override_map[identifier] = value
                 for key, enabled in export_flags.items():
@@ -13281,6 +13633,8 @@ def start_gui():
                         target = finish_export_filter
                     elif kind == "opticutter":
                         target = opticutter_export_filter
+                    elif kind == "sparepart":
+                        target = spare_part_export_filter
                     else:
                         target = prod_export_filter
                     target[identifier] = bool(enabled)
@@ -13299,6 +13653,8 @@ def start_gui():
                         finish_pricing_map[identifier] = clean_value
                     elif kind == "opticutter":
                         opticutter_pricing_map[identifier] = clean_value
+                    elif kind == "sparepart":
+                        spare_part_pricing_map[identifier] = clean_value
                     else:
                         production_pricing_map[identifier] = clean_value
 
@@ -13312,36 +13668,45 @@ def start_gui():
                         finish_vat_rate_map[identifier] = clean_rate
                     elif kind == "opticutter":
                         opticutter_vat_rate_map[identifier] = clean_rate
+                    elif kind == "sparepart":
+                        spare_part_vat_rate_map[identifier] = clean_rate
                     else:
                         production_vat_rate_map[identifier] = clean_rate
 
                 doc_type_map: Dict[str, str] = {}
                 finish_doc_type_map: Dict[str, str] = {}
                 opticutter_doc_type_map: Dict[str, str] = {}
+                spare_part_doc_type_map: Dict[str, str] = {}
                 for key, value in doc_map.items():
                     kind, identifier = parse_selection_key(key)
                     if kind == "finish":
                         finish_doc_type_map[identifier] = value
                     elif kind == "opticutter":
                         opticutter_doc_type_map[identifier] = value
+                    elif kind == "sparepart":
+                        spare_part_doc_type_map[identifier] = value
                     else:
                         doc_type_map[identifier] = value
 
                 prod_doc_num_map: Dict[str, str] = {}
                 finish_doc_num_map: Dict[str, str] = {}
                 opticutter_doc_num_map: Dict[str, str] = {}
+                spare_part_doc_num_map: Dict[str, str] = {}
                 for key, value in doc_num_map.items():
                     kind, identifier = parse_selection_key(key)
                     if kind == "finish":
                         finish_doc_num_map[identifier] = value
                     elif kind == "opticutter":
                         opticutter_doc_num_map[identifier] = value
+                    elif kind == "sparepart":
+                        spare_part_doc_num_map[identifier] = value
                     else:
                         prod_doc_num_map[identifier] = value
 
                 production_delivery_map: Dict[str, DeliveryAddress | None] = {}
                 finish_delivery_map: Dict[str, DeliveryAddress | None] = {}
                 opticutter_delivery_map: Dict[str, DeliveryAddress | None] = {}
+                spare_part_delivery_map: Dict[str, DeliveryAddress | None] = {}
                 for key, name in delivery_map_raw.items():
                     resolved = self._resolve_delivery_choice(name, client)
                     kind, identifier = parse_selection_key(key)
@@ -13349,12 +13714,15 @@ def start_gui():
                         finish_delivery_map[identifier] = resolved
                     elif kind == "opticutter":
                         opticutter_delivery_map[identifier] = resolved
+                    elif kind == "sparepart":
+                        spare_part_delivery_map[identifier] = resolved
                     else:
                         production_delivery_map[identifier] = resolved
 
                 production_remarks_map: Dict[str, str] = {}
                 finish_remarks_map: Dict[str, str] = {}
                 opticutter_remarks_map: Dict[str, str] = {}
+                spare_part_remarks_map: Dict[str, str] = {}
                 for key, text in remarks_map_raw.items():
                     clean_text = text.strip()
                     if not clean_text:
@@ -13364,6 +13732,8 @@ def start_gui():
                         finish_remarks_map[identifier] = clean_text
                     elif kind == "opticutter":
                         opticutter_remarks_map[identifier] = clean_text
+                    elif kind == "sparepart":
+                        spare_part_remarks_map[identifier] = clean_text
                     else:
                         production_remarks_map[identifier] = clean_text
 
@@ -13617,12 +13987,20 @@ def start_gui():
                             opticutter_doc_num_map=opticutter_doc_num_map,
                             opticutter_delivery_map=opticutter_delivery_map,
                             opticutter_remarks_map=opticutter_remarks_map,
+                            spare_part_groups=spare_part_groups,
+                            spare_part_override_map=spare_part_override_map,
+                            spare_part_doc_type_map=spare_part_doc_type_map,
+                            spare_part_doc_num_map=spare_part_doc_num_map,
+                            spare_part_delivery_map=spare_part_delivery_map,
+                            spare_part_remarks_map=spare_part_remarks_map,
                             pricing_map=production_pricing_map or None,
                             finish_pricing_map=finish_pricing_map or None,
                             opticutter_pricing_map=opticutter_pricing_map or None,
+                            spare_part_pricing_map=spare_part_pricing_map or None,
                             vat_rate_map=production_vat_rate_map or None,
                             finish_vat_rate_map=finish_vat_rate_map or None,
                             opticutter_vat_rate_map=opticutter_vat_rate_map or None,
+                            spare_part_vat_rate_map=spare_part_vat_rate_map or None,
                             production_export_filter=(
                                 prod_export_filter if prod_export_filter else None
                             ),
@@ -13632,6 +14010,11 @@ def start_gui():
                             opticutter_export_filter=(
                                 opticutter_export_filter
                                 if opticutter_export_filter
+                                else None
+                            ),
+                            spare_part_export_filter=(
+                                spare_part_export_filter
+                                if spare_part_export_filter
                                 else None
                             ),
                             en1090_overrides=en1090_override_map or None,
@@ -13738,6 +14121,9 @@ def start_gui():
                             elif kind == "opticutter":
                                 label = identifier
                                 prefix = "Brutemateriaal"
+                            elif kind == "sparepart":
+                                label = spare_part_label_lookup.get(identifier, identifier)
+                                prefix = "Spare parts"
                             else:
                                 label = identifier
                                 prefix = "Productie"
@@ -13869,6 +14255,7 @@ def start_gui():
                     on_manage_presets=lambda: self.nb.select(self.preset_rules_frame),
                     opticutter_details=opticutter_details,
                     selection_items=selection_items,
+                    spare_part_groups=spare_part_groups,
                     initial_state=previous_state,
                     en1090_enabled=bool(self.en1090_enabled_var.get()),
                     en1090_getter=self._get_en1090_preference,
@@ -15020,6 +15407,9 @@ def start_gui():
             self.bom_source_path = None
             self._refresh_tree()
             self._sync_custom_bom_from_main()
+            refresh_spare_parts = getattr(self, "_refresh_spare_parts_tab", None)
+            if callable(refresh_spare_parts):
+                refresh_spare_parts()
             self.status_var.set("BOM gewist.")
 
         def _on_tree_click(self, event):

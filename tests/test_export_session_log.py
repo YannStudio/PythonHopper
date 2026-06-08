@@ -282,6 +282,22 @@ def test_export_log_compatibility_detects_bom_and_selection_differences():
     assert "Productie: Roof" in message
 
 
+def test_export_log_compatibility_formats_spare_part_keys():
+    payload = build_export_session_log(
+        project_number="20250165",
+        project_name="Piva",
+        client_name="Tecno Art bvba",
+        bom_source_path="C:/tmp/bom.xlsx",
+        bom_df=pd.DataFrame([{"PartNumber": "A", "Production": "Spare Parts"}]),
+        state={"selections": {"sparepart::supplier--herbaroof": "Herbaroof"}},
+    )
+
+    summary = summarize_export_log_compatibility(payload, set())
+    message = format_export_log_compatibility_message(summary)
+
+    assert "Spare parts: supplier--herbaroof" in message
+
+
 def test_resolve_export_document_path_stays_inside_export_dir(tmp_path):
     log_path = tmp_path / "bundle" / EXPORT_SESSION_LOG_FILENAME
     log_path.parent.mkdir()

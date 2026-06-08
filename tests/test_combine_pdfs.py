@@ -12,6 +12,7 @@ from orders import (
     combine_workdossier_pdf_from_source,
     make_finish_selection_key,
     make_production_selection_key,
+    make_spare_part_selection_key,
 )
 from pdf_workdossier_presets import PdfWorkDossierPreset, PdfWorkDossierSection
 
@@ -455,8 +456,8 @@ def test_workdossier_appends_bon_pdfs_without_drawings_at_end(tmp_path):
             "path": "Spare parts/Standaard bon_Spare parts.pdf",
             "kind": "order",
             "format": "pdf",
-            "selection_key": make_production_selection_key("Spare parts"),
-            "context_kind": "Productie",
+            "selection_key": make_spare_part_selection_key("full"),
+            "context_kind": "Spare parts",
             "context_label": "Spare parts",
             "doc_type": "Standaardbon",
         },
