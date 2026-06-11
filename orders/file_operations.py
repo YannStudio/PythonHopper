@@ -677,6 +677,8 @@ def _spare_part_column_layout() -> List[Dict[str, object]]:
         {"key": "Supplier code", "label": "Supplier code", "width": 18, "justify": "left", "wrap": True, "weight": 1.25},
         {"key": "Manufacturer", "label": "Fabrikant", "width": 18, "justify": "left", "wrap": True, "weight": 1.2},
         {"key": "Manufacturer code", "label": "Fabrikant code", "width": 18, "justify": "left", "wrap": True, "weight": 1.25},
+        {"key": "Bestelgroep", "label": "Bestelgroep", "width": 16, "justify": "left", "wrap": True, "weight": 1.0},
+        {"key": "Status", "label": "Status", "width": 16, "justify": "left", "wrap": True, "weight": 0.95},
     ]
 
 
@@ -5325,6 +5327,8 @@ def copy_per_production_and_orders(
                     "Supplier code": raw_item.get("Supplier code", ""),
                     "Manufacturer": raw_item.get("Manufacturer", ""),
                     "Manufacturer code": raw_item.get("Manufacturer code", ""),
+                    "Bestelgroep": raw_item.get("Bestelgroep", ""),
+                    "Status": raw_item.get("Status", ""),
                 }
                 line_key = _to_str(raw_item.get("key")).strip()
                 if not line_key:

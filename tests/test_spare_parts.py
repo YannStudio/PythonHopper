@@ -9,12 +9,14 @@ from orders import (
     parse_selection_key,
 )
 from spare_parts import (
+    SPARE_PARTS_CUSTOM_SOURCE,
     SPARE_PARTS_FULL_LIST_KEY,
     SPARE_PARTS_UNASSIGNED_KEY,
     build_spare_part_groups,
     collect_spare_part_groups,
     collect_spare_part_items,
     is_spare_parts_production,
+    make_custom_spare_part_group_key,
 )
 from suppliers_db import SuppliersDB
 
@@ -106,6 +108,45 @@ def test_spare_part_groups_track_unassigned_and_missing_codes():
     assert by_key[SPARE_PARTS_UNASSIGNED_KEY].missing_count == 1
 
 
+def test_spare_part_groups_accept_manual_overrides_without_mutating_bom():
+    df = pd.DataFrame(
+        [
+            {
+                "PartNumber": "A",
+                "Production": "Spare Parts",
+                "Supplier": "Herbaroof",
+                "Supplier code": "H-1",
+            },
+            {
+                "PartNumber": "B",
+                "Production": "Spare Parts",
+                "Manufacturer": "Maker B",
+                "Manufacturer code": "M-2",
+            },
+        ]
+    )
+    items = collect_spare_part_items(df)
+    custom_key = make_custom_spare_part_group_key("Electro")
+    overrides = {
+        items[0].identity_key: "Electro",
+        items[1].identity_key: "Nog toe te wijzen",
+    }
+
+    groups = build_spare_part_groups(items, group_overrides=overrides)
+    by_key = {group.key: group for group in groups}
+
+    assert by_key[custom_key].route_source == SPARE_PARTS_CUSTOM_SOURCE
+    assert by_key[custom_key].label == "Electro"
+    assert by_key[custom_key].items == [items[0]]
+    assert by_key[SPARE_PARTS_UNASSIGNED_KEY].items == [items[1]]
+    full_items = by_key[SPARE_PARTS_FULL_LIST_KEY].to_mapping()["items"]
+    assert [item["Bestelgroep"] for item in full_items] == [
+        "Electro",
+        "Nog toe te wijzen",
+    ]
+    assert list(df["Production"]) == ["Spare Parts", "Spare Parts"]
+
+
 def test_spare_part_selection_key_roundtrip():
     key = make_spare_part_selection_key("supplier--herbaroof")
 
@@ -187,5 +228,70 @@ def test_spare_part_groups_export_full_list_and_supplier_order(tmp_path):
     ]
     assert "Supplier code" in values
     assert "Fabrikant code" in values
+    assert "Bestelgroep" in values
+    assert "Status" in values
     assert "ND SM-25" in values
     assert "MF-30" in values
+
+
+def test_spare_part_manual_group_is_used_for_export_without_mutating_bom(tmp_path):
+    src = tmp_path / "src"
+    dest = tmp_path / "dest"
+    src.mkdir()
+    dest.mkdir()
+    (src / "PN1.pdf").write_text("one", encoding="utf-8")
+    db = SuppliersDB(storage_path=tmp_path / "suppliers_db.json")
+    db.upsert(Supplier.from_any({"supplier": "RS Components"}))
+    bom_df = pd.DataFrame(
+        [
+            {
+                "PartNumber": "PN1",
+                "Description": "Spare cable",
+                "Production": "Spare Parts",
+                "Aantal": 3,
+                "Supplier": "RS Components",
+                "Supplier code": "RS-1",
+                "Manufacturer": "Maker",
+                "Manufacturer code": "M-1",
+            }
+        ]
+    )
+    items = collect_spare_part_items(bom_df)
+    custom_group_key = make_custom_spare_part_group_key("Electro")
+    groups = [
+        group.to_mapping()
+        for group in collect_spare_part_groups(
+            bom_df,
+            group_overrides={items[0].identity_key: "Electro"},
+        )
+    ]
+
+    _copied, chosen = copy_per_production_and_orders(
+        str(src),
+        str(dest),
+        bom_df,
+        [".pdf"],
+        db,
+        {},
+        {},
+        {},
+        True,
+        spare_part_groups=groups,
+        spare_part_override_map={custom_group_key: "RS Components"},
+    )
+
+    assert chosen[make_spare_part_selection_key(custom_group_key)] == "RS Components"
+    assert list(bom_df["Production"]) == ["Spare Parts"]
+    custom_docs = list(
+        (dest / "Spare Parts-Electro").glob("Bestelbon*Spare*Parts-Electro*.xlsx")
+    )
+    assert custom_docs
+    workbook = load_workbook(custom_docs[0])
+    values = [
+        value
+        for row in workbook.active.iter_rows(values_only=True)
+        for value in row
+        if value is not None
+    ]
+    assert "Bestelgroep" in values
+    assert "Electro" in values

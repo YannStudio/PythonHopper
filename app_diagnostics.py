@@ -18,6 +18,7 @@ from delivery_addresses_db import DELIVERY_DB_FILE, DeliveryAddressesDB
 from helpers import validate_vat
 from order_presets_db import ORDER_PRESETS_DB_FILE, OrderPresetsDB
 from pdf_workdossier_presets import PDF_WORKDOSSIER_PRESETS_DB_FILE
+from spare_part_presets import SPARE_PART_PRESETS_DB_FILE
 from suppliers_db import SUPPLIERS_DB_FILE, SuppliersDB
 
 
@@ -64,6 +65,7 @@ def data_file_specs() -> list[_DataFileSpec]:
         _DataFileSpec("Klanten", "clients_db.json", Path(CLIENTS_DB_FILE), "clients"),
         _DataFileSpec("Leveradressen", "delivery_addresses_db.json", Path(DELIVERY_DB_FILE), "addresses"),
         _DataFileSpec("Order-presets", "order_presets.json", Path(ORDER_PRESETS_DB_FILE), "rules"),
+        _DataFileSpec("Spare-part presets", "spare_part_presets.json", Path(SPARE_PART_PRESETS_DB_FILE), "rules"),
         _DataFileSpec("PDF-werkdossier presets", "pdf_workdossier_presets.json", Path(PDF_WORKDOSSIER_PRESETS_DB_FILE), "presets"),
         _DataFileSpec("Instellingen", "app_settings.json", Path(SETTINGS_FILE), ""),
     ]

@@ -2,6 +2,7 @@
 
 ## 3.3 - 2026-06-05
 
+- Spare-parts-regels in de BOM krijgen een eigen flow met volledige monteurslijst, groepering per leverancier/fabrikant en bestelgerichte codes op bonnen en exports.
 - PDF dossier wist na het kiezen van een volgordepreset de gearceerde comboboxselectie, zoals bij de moduskeuze.
 - Informatietekst bij de PDF dossier-modus en volgordepreset gebruikt nu dezelfde tekstkleur.
 - Bestelbon- en werkdossieruitvoer verwerkt maatvelden, totalen en plaat-/profielgegevens consequenter in Excel en PDF.

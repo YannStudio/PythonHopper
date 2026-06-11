@@ -1600,11 +1600,7 @@
     }
   ],
   "defaults_by_production": {
-    "Cutting": "Atelier Wietse",
-    "Sheet milling": "Productora",
-    "Lasercutting": "Productora"
+    "Sheetmetal": "Productora"
   },
-  "defaults_by_finish": {
-    "Finish-Powder coating-RAL 6021": "ML Coating"
-  }
+  "defaults_by_finish": {}
 }

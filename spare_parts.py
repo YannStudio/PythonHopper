@@ -15,6 +15,7 @@ SPARE_PARTS_FULL_LIST_KEY = "full"
 SPARE_PARTS_FULL_LIST_LABEL = "Volledige lijst"
 SPARE_PARTS_UNASSIGNED_KEY = "unassigned"
 SPARE_PARTS_UNASSIGNED_LABEL = "Nog toe te wijzen"
+SPARE_PARTS_CUSTOM_SOURCE = "custom"
 
 SUPPLIER_FIELDS = ("Supplier", "Leverancier")
 SUPPLIER_CODE_FIELDS = (
@@ -55,12 +56,8 @@ class SparePartItem:
             return "Mist code"
         return "OK"
 
-    def to_order_item(self) -> dict[str, object]:
-        label = " - ".join(
-            part
-            for part in (self.part_number, self.description, self.manufacturer_code)
-            if part
-        )
+    @property
+    def identity_key(self) -> str:
         key = "sparepart:" + "|".join(
             _to_str(part).strip()
             for part in (
@@ -72,6 +69,19 @@ class SparePartItem:
             )
             if _to_str(part).strip()
         )
+        return key
+
+    def to_order_item(
+        self,
+        *,
+        group_label: str = "",
+        group_key: str = "",
+    ) -> dict[str, object]:
+        label = " - ".join(
+            part
+            for part in (self.part_number, self.description, self.manufacturer_code)
+            if part
+        )
         return {
             "PartNumber": self.part_number,
             "Description": self.description,
@@ -81,8 +91,11 @@ class SparePartItem:
             "Supplier code": self.supplier_code,
             "Manufacturer": self.manufacturer,
             "Manufacturer code": self.manufacturer_code,
-            "key": key,
-            "label": label or key,
+            "Bestelgroep": group_label,
+            "Bestelgroep key": group_key,
+            "Status": self.status,
+            "key": self.identity_key,
+            "label": label or self.identity_key,
             "quantity": self.quantity,
         }
 
@@ -97,6 +110,8 @@ class SparePartGroup:
     is_full_list: bool = False
     default_supplier: str = ""
     default_doc_type: str = "Bestelbon"
+    item_group_labels: dict[str, str] = field(default_factory=dict)
+    item_group_keys: dict[str, str] = field(default_factory=dict)
 
     @property
     def display_label(self) -> str:
@@ -111,6 +126,15 @@ class SparePartGroup:
         return sum(1 for item in self.items if item.status != "OK")
 
     def to_mapping(self) -> dict[str, object]:
+        mapped_items = []
+        for item in self.items:
+            item_key = item.identity_key
+            mapped_items.append(
+                item.to_order_item(
+                    group_label=self.item_group_labels.get(item_key, self.label),
+                    group_key=self.item_group_keys.get(item_key, self.key),
+                )
+            )
         return {
             "key": self.key,
             "label": self.label,
@@ -122,7 +146,7 @@ class SparePartGroup:
             "default_doc_type": self.default_doc_type,
             "item_count": self.item_count,
             "missing_count": self.missing_count,
-            "items": [item.to_order_item() for item in self.items],
+            "items": mapped_items,
         }
 
 
@@ -139,6 +163,10 @@ def _slug(value: object) -> str:
     normalized = _normalize_label(value)
     slug = re.sub(r"[^0-9a-z]+", "-", normalized).strip("-")
     return slug or "onbekend"
+
+
+def make_custom_spare_part_group_key(label: object) -> str:
+    return f"{SPARE_PARTS_CUSTOM_SOURCE}--{_slug(label)}"
 
 
 def is_spare_parts_production(value: object) -> bool:
@@ -202,13 +230,31 @@ def build_spare_part_groups(
     items: Sequence[SparePartItem],
     *,
     include_full_list: bool = True,
+    group_overrides: Mapping[str, str] | None = None,
 ) -> list[SparePartGroup]:
     if not items:
         return []
 
     groups_by_key: dict[str, SparePartGroup] = {}
+    item_group_labels: dict[str, str] = {}
+    item_group_keys: dict[str, str] = {}
+    group_overrides = group_overrides or {}
     for item in items:
-        if item.supplier:
+        item_key = item.identity_key
+        override_label = _to_str(group_overrides.get(item_key)).strip()
+        if override_label:
+            if _normalize_label(override_label) == _normalize_label(
+                SPARE_PARTS_UNASSIGNED_LABEL
+            ):
+                source = "unassigned"
+                route_name = SPARE_PARTS_UNASSIGNED_LABEL
+                key = SPARE_PARTS_UNASSIGNED_KEY
+            else:
+                source = SPARE_PARTS_CUSTOM_SOURCE
+                route_name = override_label
+                key = make_custom_spare_part_group_key(route_name)
+            default_supplier = ""
+        elif item.supplier:
             source = "supplier"
             route_name = item.supplier
             key = f"supplier--{_slug(route_name)}"
@@ -224,6 +270,8 @@ def build_spare_part_groups(
             key = SPARE_PARTS_UNASSIGNED_KEY
             default_supplier = ""
 
+        item_group_labels[item_key] = route_name
+        item_group_keys[item_key] = key
         group = groups_by_key.get(key)
         if group is None:
             group = SparePartGroup(
@@ -239,8 +287,12 @@ def build_spare_part_groups(
     groups = sorted(
         groups_by_key.values(),
         key=lambda group: (
-            group.route_source == "unassigned",
-            group.route_source,
+            {
+                "supplier": 0,
+                SPARE_PARTS_CUSTOM_SOURCE: 1,
+                "manufacturer": 2,
+                "unassigned": 3,
+            }.get(group.route_source, 4),
             group.label.casefold(),
         ),
     )
@@ -255,11 +307,19 @@ def build_spare_part_groups(
                 items=list(items),
                 is_full_list=True,
                 default_doc_type="Standaard bon",
+                item_group_labels=dict(item_group_labels),
+                item_group_keys=dict(item_group_keys),
             ),
         )
     return groups
 
 
-def collect_spare_part_groups(source: object) -> list[SparePartGroup]:
-    return build_spare_part_groups(collect_spare_part_items(source))
-
+def collect_spare_part_groups(
+    source: object,
+    *,
+    group_overrides: Mapping[str, str] | None = None,
+) -> list[SparePartGroup]:
+    return build_spare_part_groups(
+        collect_spare_part_items(source),
+        group_overrides=group_overrides,
+    )
