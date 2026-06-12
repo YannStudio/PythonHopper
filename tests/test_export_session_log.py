@@ -352,6 +352,37 @@ def test_export_log_compatibility_formats_spare_part_keys():
     assert "Spare parts: supplier--herbaroof" in message
 
 
+def test_export_log_compatibility_marks_logged_spare_part_groups_restorable():
+    payload = build_export_session_log(
+        project_number="20250165",
+        project_name="Piva",
+        client_name="Tecno Art bvba",
+        bom_source_path="C:/tmp/bom.xlsx",
+        bom_df=pd.DataFrame([{"PartNumber": "PN1", "Production": "Spare Parts"}]),
+        state={"selections": {"sparepart::custom--electro": "ElectroShop"}},
+        spare_parts={
+            "group_overrides": {"sparepart:0|PN1": "Electro"},
+            "groups": [
+                {
+                    "key": "custom--electro",
+                    "label": "Electro",
+                    "display_label": "Spare Parts - Electro",
+                    "route_source": "custom",
+                    "item_count": 1,
+                }
+            ],
+        },
+    )
+
+    summary = summarize_export_log_compatibility(payload, set())
+    message = format_export_log_compatibility_message(summary)
+
+    assert summary["missing_keys"] == []
+    assert summary["restorable_spare_part_keys"] == ["sparepart::custom--electro"]
+    assert "via de verdeling hersteld kunnen worden" in message
+    assert "Spare parts: custom--electro" in message
+
+
 def test_resolve_export_document_path_stays_inside_export_dir(tmp_path):
     log_path = tmp_path / "bundle" / EXPORT_SESSION_LOG_FILENAME
     log_path.parent.mkdir()

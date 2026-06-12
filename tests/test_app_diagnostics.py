@@ -10,6 +10,7 @@ from clients_db import ClientsDB
 from data_storage import write_json_with_backup
 from models import Client, Supplier
 from order_presets_db import OrderPresetRule, OrderPresetsDB
+from spare_part_presets import SparePartPresetRule, SparePartPresetsDB
 from suppliers_db import SuppliersDB
 
 
@@ -61,6 +62,41 @@ def test_diagnostic_report_flags_invalid_json_and_missing_preset_supplier(
 
     assert by_name["suppliers_db.json"].status == "Ongeldige JSON"
     assert any("onbekende leverancier" in warning for warning in report.warnings)
+
+
+def test_diagnostic_report_flags_spare_part_preset_issues(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    SparePartPresetsDB(
+        [
+            SparePartPresetRule(
+                name="RS",
+                match_field="supplier",
+                match_type="exact",
+                pattern="",
+                target_group="Electro",
+            ),
+            SparePartPresetRule(
+                name="RS duplicate",
+                match_field="supplier",
+                match_type="exact",
+                pattern="RS Components",
+                target_group="Electro",
+            ),
+            SparePartPresetRule(
+                name="RS overlap",
+                match_field="supplier",
+                match_type="exact",
+                pattern="RS Components",
+                target_group="Pneumatica",
+            ),
+        ]
+    ).save("spare_part_presets.json")
+
+    report = build_diagnostic_report(AppSettings())
+
+    assert any("geen matchwaarde" in warning for warning in report.warnings)
+    assert any("Overlappende actieve spare-part presets" in warning for warning in report.warnings)
 
 
 def test_create_data_file_backups_uses_existing_files(tmp_path, monkeypatch):

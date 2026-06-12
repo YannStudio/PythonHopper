@@ -298,6 +298,22 @@ def summarize_export_log_compatibility(
     matched = incoming_keys & current_keys
     missing = incoming_keys - current_keys
     new = current_keys - incoming_keys
+    spare_parts_info = normalize_spare_parts_info(
+        payload.get("spare_parts", {}) if isinstance(payload, Mapping) else {}
+    )
+    logged_spare_part_group_keys = {
+        f"sparepart::{group.get('key')}"
+        for group in spare_parts_info.get("groups", [])
+        if _to_str(group.get("key")).strip()
+    }
+    restorable_spare_part_keys = set()
+    if spare_parts_info.get("group_overrides"):
+        restorable_spare_part_keys = {
+            key
+            for key in missing
+            if key.startswith("sparepart::") and key in logged_spare_part_group_keys
+        }
+        missing -= restorable_spare_part_keys
 
     log_bom = payload.get("bom", {}) if isinstance(payload, Mapping) else {}
     current_bom = _bom_fingerprint(current_bom_df) if current_bom_df is not None else {}
@@ -320,6 +336,10 @@ def summarize_export_log_compatibility(
         "current_keys": sorted(current_keys, key=str.lower),
         "matched_keys": sorted(matched, key=str.lower),
         "missing_keys": sorted(missing, key=str.lower),
+        "restorable_spare_part_keys": sorted(
+            restorable_spare_part_keys,
+            key=str.lower,
+        ),
         "new_keys": sorted(new, key=str.lower),
         "bom_changed": bom_changed,
         "log_bom": dict(log_bom) if isinstance(log_bom, Mapping) else {},
@@ -369,6 +389,10 @@ def format_export_log_compatibility_message(
     _append_key_block(
         "Regels uit de exportlog die niet op deze bestelbonpagina staan",
         summary.get("missing_keys"),
+    )
+    _append_key_block(
+        "Spare-partsgroepen uit de exportlog die via de verdeling hersteld kunnen worden",
+        summary.get("restorable_spare_part_keys"),
     )
     _append_key_block(
         "Nieuwe regels op deze bestelbonpagina zonder exportlogwaarden",

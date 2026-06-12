@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass, field
+from itertools import combinations
 from typing import Iterable, Mapping, Sequence
 
 from helpers import _to_str
@@ -59,7 +60,7 @@ class SparePartItem:
     @property
     def identity_key(self) -> str:
         key = "sparepart:" + "|".join(
-            _to_str(part).strip()
+            _identity_part(part)
             for part in (
                 self.row_index,
                 self.part_number,
@@ -67,9 +68,17 @@ class SparePartItem:
                 self.manufacturer_code,
                 self.supplier_code,
             )
-            if _to_str(part).strip()
         )
         return key
+
+    @property
+    def match_key(self) -> str:
+        return _spare_part_match_key(
+            self.part_number,
+            self.description,
+            self.manufacturer_code,
+            self.supplier_code,
+        )
 
     def to_order_item(
         self,
@@ -165,8 +174,113 @@ def _slug(value: object) -> str:
     return slug or "onbekend"
 
 
+def _identity_part(value: object) -> str:
+    return _to_str(value).strip().replace("|", "/")
+
+
 def make_custom_spare_part_group_key(label: object) -> str:
     return f"{SPARE_PARTS_CUSTOM_SOURCE}--{_slug(label)}"
+
+
+def _spare_part_match_key(
+    part_number: object,
+    description: object,
+    manufacturer_code: object,
+    supplier_code: object,
+) -> str:
+    parts = [
+        _normalize_label(part_number),
+        _normalize_label(description),
+        _normalize_label(manufacturer_code),
+        _normalize_label(supplier_code),
+    ]
+    if not any(parts):
+        return ""
+    return "|".join(parts)
+
+
+def spare_part_identity_match_key(identity_key: object) -> str:
+    candidates = _spare_part_identity_match_keys(identity_key)
+    return sorted(candidates)[0] if candidates else ""
+
+
+def _spare_part_identity_match_keys(identity_key: object) -> set[str]:
+    text = _to_str(identity_key).strip()
+    prefix = "sparepart:"
+    if not text.startswith(prefix):
+        return set()
+    parts = text[len(prefix) :].split("|")
+    if parts:
+        parts = parts[1:]
+    if not parts:
+        return set()
+    if len(parts) >= 4:
+        match_key = _spare_part_match_key(parts[0], parts[1], parts[2], parts[3])
+        return {match_key} if match_key else set()
+
+    # Legacy exportlogs skipped empty fields in identity_key. Rebuild all ordered
+    # position candidates and let the caller require a unique current-row match.
+    candidates: set[str] = set()
+    for positions in combinations(range(4), len(parts)):
+        values = ["", "", "", ""]
+        for position, value in zip(positions, parts):
+            values[position] = value
+        match_key = _spare_part_match_key(values[0], values[1], values[2], values[3])
+        if match_key:
+            candidates.add(match_key)
+    return candidates
+
+
+def match_spare_part_group_overrides(
+    items: Sequence[SparePartItem],
+    group_overrides: Mapping[str, str] | None,
+) -> dict[str, str]:
+    """Return exportlog group overrides matched to the current BOM spare parts."""
+
+    if not items or not group_overrides:
+        return {}
+
+    current_keys = {item.identity_key for item in items}
+    matched: dict[str, str] = {}
+    fallback_overrides: list[tuple[str, str]] = []
+    for raw_key, raw_label in group_overrides.items():
+        key = _to_str(raw_key).strip()
+        label = _to_str(raw_label).strip()
+        if not key or not label:
+            continue
+        if key in current_keys:
+            matched[key] = label
+        else:
+            fallback_overrides.append((key, label))
+
+    if not fallback_overrides:
+        return matched
+
+    unique_by_match_key: dict[str, str] = {}
+    duplicate_match_keys: set[str] = set()
+    for item in items:
+        match_key = item.match_key
+        if not match_key:
+            continue
+        if match_key in unique_by_match_key:
+            duplicate_match_keys.add(match_key)
+            continue
+        unique_by_match_key[match_key] = item.identity_key
+    for match_key in duplicate_match_keys:
+        unique_by_match_key.pop(match_key, None)
+
+    for old_key, label in fallback_overrides:
+        candidate_current_keys = {
+            unique_by_match_key[match_key]
+            for match_key in _spare_part_identity_match_keys(old_key)
+            if match_key in unique_by_match_key
+        }
+        if len(candidate_current_keys) != 1:
+            continue
+        current_key = next(iter(candidate_current_keys))
+        if current_key not in matched:
+            matched[current_key] = label
+    return matched
 
 
 def is_spare_parts_production(value: object) -> bool:

@@ -111,6 +111,7 @@ from spare_parts import (
     collect_spare_part_groups,
     collect_spare_part_items,
     is_spare_parts_production,
+    match_spare_part_group_overrides,
     summarize_spare_part_warnings,
 )
 from progress import ProgressEvent
@@ -11747,15 +11748,26 @@ def start_gui():
                 self._spare_part_preset_override_keys.clear()
                 return
             try:
-                valid_keys = {
-                    item.identity_key for item in collect_spare_part_items(self.bom_df)
-                }
+                items = collect_spare_part_items(self.bom_df)
             except Exception:
                 return
-            for key in list(self._spare_part_group_overrides):
-                if key not in valid_keys:
-                    self._spare_part_group_overrides.pop(key, None)
-            self._spare_part_preset_override_keys.intersection_update(valid_keys)
+            valid_keys = {item.identity_key for item in items}
+            matched_overrides = match_spare_part_group_overrides(
+                items,
+                self._spare_part_group_overrides,
+            )
+            self._spare_part_group_overrides.clear()
+            self._spare_part_group_overrides.update(matched_overrides)
+
+            preset_keys = {
+                _to_str(key).strip(): "__preset__"
+                for key in self._spare_part_preset_override_keys
+                if _to_str(key).strip()
+            }
+            matched_preset_keys = match_spare_part_group_overrides(items, preset_keys)
+            self._spare_part_preset_override_keys = {
+                key for key in matched_preset_keys if key in valid_keys
+            }
 
         def _spare_part_export_log_info(
             self,
@@ -11804,12 +11816,7 @@ def start_gui():
             if not overrides:
                 return 0
             items = self._spare_part_items_for_current_bom()
-            valid_keys = {item.identity_key for item in items}
-            matched = {
-                key: label
-                for key, label in overrides.items()
-                if key in valid_keys and _to_str(label).strip()
-            }
+            matched = match_spare_part_group_overrides(items, overrides)
             if not matched:
                 return 0
             self._spare_part_group_overrides.update(matched)

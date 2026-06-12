@@ -17,6 +17,8 @@ from spare_parts import (
     collect_spare_part_items,
     is_spare_parts_production,
     make_custom_spare_part_group_key,
+    match_spare_part_group_overrides,
+    spare_part_identity_match_key,
     summarize_spare_part_warnings,
 )
 from suppliers_db import SuppliersDB
@@ -56,6 +58,21 @@ def test_collect_spare_parts_reads_supplier_and_manufacturer_fields():
     assert items[0].supplier == "Herbaroof"
     assert items[0].manufacturer_code == "ND SM-25"
     assert items[0].status == "OK"
+
+
+def test_spare_part_identity_key_keeps_empty_field_positions():
+    item = collect_spare_part_items(
+        [
+            {
+                "PartNumber": "PN1",
+                "Production": "Spare Parts",
+                "Supplier code": "RS-204",
+            }
+        ]
+    )[0]
+
+    assert item.identity_key == "sparepart:0|PN1|||RS-204"
+    assert spare_part_identity_match_key(item.identity_key) == item.match_key
 
 
 def test_spare_part_groups_prefer_supplier_and_keep_full_list():
@@ -173,6 +190,111 @@ def test_spare_part_groups_accept_manual_overrides_without_mutating_bom():
         "Nog toe te wijzen",
     ]
     assert list(df["Production"]) == ["Spare Parts", "Spare Parts"]
+
+
+def test_spare_part_override_matching_accepts_shifted_row_index():
+    old_items = collect_spare_part_items(
+        pd.DataFrame(
+            [
+                {
+                    "PartNumber": "PN1",
+                    "Description": "Sensor kabel",
+                    "Production": "Spare Parts",
+                    "Supplier code": "RS-204",
+                    "Manufacturer code": "M-42",
+                }
+            ],
+            index=[10],
+        )
+    )
+    new_items = collect_spare_part_items(
+        pd.DataFrame(
+            [
+                {
+                    "PartNumber": "PN1",
+                    "Description": "Sensor kabel",
+                    "Production": "Spare Parts",
+                    "Supplier code": "RS-204",
+                    "Manufacturer code": "M-42",
+                }
+            ],
+            index=[22],
+        )
+    )
+
+    matched = match_spare_part_group_overrides(
+        new_items,
+        {old_items[0].identity_key: "Electro"},
+    )
+
+    assert spare_part_identity_match_key(old_items[0].identity_key)
+    assert matched == {new_items[0].identity_key: "Electro"}
+
+
+def test_spare_part_override_matching_accepts_legacy_keys_with_empty_fields():
+    new_items = collect_spare_part_items(
+        pd.DataFrame(
+            [
+                {
+                    "PartNumber": "PN1",
+                    "Production": "Spare Parts",
+                    "Supplier code": "RS-204",
+                    "Manufacturer code": "M-42",
+                }
+            ],
+            index=[22],
+        )
+    )
+    legacy_key = "sparepart:10|PN1|M-42|RS-204"
+
+    matched = match_spare_part_group_overrides(new_items, {legacy_key: "Electro"})
+
+    assert matched == {new_items[0].identity_key: "Electro"}
+
+
+def test_spare_part_override_matching_skips_ambiguous_shifted_rows():
+    old_items = collect_spare_part_items(
+        pd.DataFrame(
+            [
+                {
+                    "PartNumber": "PN1",
+                    "Description": "Sensor kabel",
+                    "Production": "Spare Parts",
+                    "Supplier code": "RS-204",
+                    "Manufacturer code": "M-42",
+                }
+            ],
+            index=[10],
+        )
+    )
+    new_items = collect_spare_part_items(
+        pd.DataFrame(
+            [
+                {
+                    "PartNumber": "PN1",
+                    "Description": "Sensor kabel",
+                    "Production": "Spare Parts",
+                    "Supplier code": "RS-204",
+                    "Manufacturer code": "M-42",
+                },
+                {
+                    "PartNumber": "PN1",
+                    "Description": "Sensor kabel",
+                    "Production": "Spare Parts",
+                    "Supplier code": "RS-204",
+                    "Manufacturer code": "M-42",
+                },
+            ],
+            index=[22, 23],
+        )
+    )
+
+    matched = match_spare_part_group_overrides(
+        new_items,
+        {old_items[0].identity_key: "Electro"},
+    )
+
+    assert matched == {}
 
 
 def test_spare_part_selection_key_roundtrip():

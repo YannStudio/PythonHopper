@@ -5,6 +5,11 @@
 - Spare-parts-regels in de BOM krijgen een eigen flow met volledige monteurslijst, groepering per leverancier/fabrikant en bestelgerichte codes op bonnen en exports.
 - Spare-parts-groepen kunnen nu met beheerbare presets voorbereid worden; exportlogs bewaren en herstellen ook de spare-part-verdeling.
 - Spare-part bestelbonnen/offerteaanvragen zonder leverancier geven nu een bevestiging vlak voor export.
+- Exportlog-controle toont herstelbare custom spare-partgroepen nu apart van echt ontbrekende bestelbonregels.
+- Spare-partsverdelingen uit exportlogs worden robuuster hersteld wanneer BOM-rijindexen verschuiven.
+- Spare-part identity keys bewaren lege veldposities, zodat toekomstig exportlog-herstel minder ambigu is.
+- Handmatige en preset spare-partgroepen blijven beter behouden bij het verversen van een BOM met verschoven rijindexen.
+- Diagnostiek waarschuwt nu ook voor lege of overlappende spare-part presetregels.
 - PDF dossier wist na het kiezen van een volgordepreset de gearceerde comboboxselectie, zoals bij de moduskeuze.
 - Informatietekst bij de PDF dossier-modus en volgordepreset gebruikt nu dezelfde tekstkleur.
 - Bestelbon- en werkdossieruitvoer verwerkt maatvelden, totalen en plaat-/profielgegevens consequenter in Excel en PDF.

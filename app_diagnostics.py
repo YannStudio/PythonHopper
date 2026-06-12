@@ -18,7 +18,7 @@ from delivery_addresses_db import DELIVERY_DB_FILE, DeliveryAddressesDB
 from helpers import validate_vat
 from order_presets_db import ORDER_PRESETS_DB_FILE, OrderPresetsDB
 from pdf_workdossier_presets import PDF_WORKDOSSIER_PRESETS_DB_FILE
-from spare_part_presets import SPARE_PART_PRESETS_DB_FILE
+from spare_part_presets import SPARE_PART_PRESETS_DB_FILE, SparePartPresetsDB
 from suppliers_db import SUPPLIERS_DB_FILE, SuppliersDB
 
 
@@ -201,11 +201,13 @@ def _validate_data(settings: AppSettings) -> list[str]:
     clients_db = ClientsDB.load(CLIENTS_DB_FILE)
     delivery_db = DeliveryAddressesDB.load(DELIVERY_DB_FILE)
     presets_db = OrderPresetsDB.load(ORDER_PRESETS_DB_FILE)
+    spare_part_presets_db = SparePartPresetsDB.load(SPARE_PART_PRESETS_DB_FILE)
 
     warnings.extend(_validate_suppliers(suppliers_db))
     warnings.extend(_validate_clients(clients_db))
     warnings.extend(_validate_delivery_addresses(delivery_db))
     warnings.extend(_validate_presets(presets_db, suppliers_db, clients_db))
+    warnings.extend(_validate_spare_part_presets(spare_part_presets_db))
     warnings.extend(_validate_export_folders(settings))
 
     return warnings
@@ -299,6 +301,50 @@ def _validate_presets(
         client = (rule.client or "").strip()
         if client and client.casefold() not in clients:
             warnings.append(f"Order-preset '{rule.name}' verwijst naar onbekende klant: {client}")
+    return warnings
+
+
+def _validate_spare_part_presets(presets_db: SparePartPresetsDB) -> list[str]:
+    warnings: list[str] = []
+    seen_names: set[str] = set()
+    duplicate_names: set[str] = set()
+    active_signatures: dict[tuple[str, str, str], str] = {}
+
+    for rule in presets_db.rules:
+        name = (rule.name or "").strip()
+        name_key = name.casefold()
+        if not name:
+            warnings.append("Spare-part preset zonder naam gevonden.")
+        elif name_key in seen_names:
+            duplicate_names.add(name)
+        else:
+            seen_names.add(name_key)
+
+        if not (rule.pattern or "").strip():
+            warnings.append(f"Spare-part preset '{name or '?'}' heeft geen matchwaarde.")
+        if not (rule.target_group or "").strip():
+            warnings.append(f"Spare-part preset '{name or '?'}' heeft geen doelgroep.")
+
+        if not rule.enabled:
+            continue
+        signature = (
+            (rule.match_field or "").strip().casefold(),
+            (rule.match_type or "").strip().casefold(),
+            (rule.pattern or "").strip().casefold(),
+        )
+        if not all(signature):
+            continue
+        previous = active_signatures.get(signature)
+        if previous and previous != name:
+            warnings.append(
+                "Overlappende actieve spare-part presets gevonden: "
+                f"{previous} en {name or '?'}"
+            )
+        else:
+            active_signatures[signature] = name or "?"
+
+    for name in sorted(duplicate_names):
+        warnings.append(f"Dubbele spare-part presetnaam gevonden: {name}")
     return warnings
 
 
