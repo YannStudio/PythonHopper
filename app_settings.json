@@ -1,8 +1,8 @@
 {
   "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Slimp/00. Projecten/2026/P26-017 - Deurframe",
-  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Slimp/00. Projecten/2026/P26-017 - Deurframe",
-  "project_number": "P26-017",
-  "project_name": "Deurkader",
+  "dest_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/Interne projecten/00 - Stock bestelbonnen",
+  "project_number": "Stock",
+  "project_name": "Uurroosterkaders De Lijn",
   "file_extensions": [
     {
       "key": "pdf",
@@ -58,7 +58,7 @@
   "custom_prefix_text": "",
   "custom_suffix_enabled": false,
   "custom_suffix_text": "",
-  "document_filename_profile": "short",
+  "document_filename_profile": "compact",
   "document_filename_show_doc_type": true,
   "document_filename_show_doc_number": true,
   "document_filename_show_context": false,

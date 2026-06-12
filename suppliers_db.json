@@ -1597,6 +1597,23 @@
       "product_type": "Hout",
       "product_description": "Aannemer",
       "favorite": false
+    },
+    {
+      "supplier": "AMR² Bvba",
+      "description": "Draaiwerk",
+      "supplier_id": null,
+      "adres_1": "Vaartstraat 17 Bus 2",
+      "adres_2": "2240 Zandhoven",
+      "postcode": "2240",
+      "gemeente": "Zandhoven",
+      "land": "Belgie",
+      "btw": "BE0840953475",
+      "contact_sales": "Michael Oosterlynck",
+      "sales_email": "info@amrservice.be",
+      "phone": "03 320 99 10",
+      "product_type": "Draaiwerk",
+      "product_description": "Draaiwerk",
+      "favorite": false
     }
   ],
   "defaults_by_production": {
