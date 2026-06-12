@@ -314,6 +314,50 @@ def build_spare_part_groups(
     return groups
 
 
+def summarize_spare_part_warnings(groups: Sequence[SparePartGroup]) -> list[str]:
+    if not groups:
+        return []
+
+    full_group = next((group for group in groups if group.is_full_list), None)
+    items = list(full_group.items if full_group is not None else [])
+    if not items:
+        seen: set[str] = set()
+        for group in groups:
+            for item in group.items:
+                key = item.identity_key
+                if key in seen:
+                    continue
+                seen.add(key)
+                items.append(item)
+
+    warnings: list[str] = []
+    without_route = sum(1 for item in items if not (item.supplier or item.manufacturer))
+    without_code = sum(
+        1 for item in items if not (item.supplier_code or item.manufacturer_code)
+    )
+    unassigned = next(
+        (group.item_count for group in groups if group.key == SPARE_PARTS_UNASSIGNED_KEY),
+        0,
+    )
+    groups_without_supplier = sum(
+        1
+        for group in groups
+        if not group.is_full_list
+        and group.route_source != "supplier"
+        and not group.default_supplier
+    )
+
+    if unassigned:
+        warnings.append(f"{unassigned} nog toe te wijzen")
+    if without_route:
+        warnings.append(f"{without_route} zonder leverancier/fabrikant")
+    if without_code:
+        warnings.append(f"{without_code} zonder supplier/fabrikantcode")
+    if groups_without_supplier:
+        warnings.append(f"{groups_without_supplier} groep(en) zonder standaardleverancier")
+    return warnings
+
+
 def collect_spare_part_groups(
     source: object,
     *,

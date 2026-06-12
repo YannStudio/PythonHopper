@@ -244,6 +244,62 @@ def test_preset_status_message_and_indicator_are_exposed_per_row():
     assert "leverancier" in message
 
 
+def test_spare_part_export_warnings_require_supplier_for_order_documents():
+    class DummySel:
+        _spare_part_export_warnings = SupplierSelectionFrame._spare_part_export_warnings
+
+        def __init__(self):
+            self.rows = [
+                ("sparepart::custom--electro", None),
+                ("sparepart::full", None),
+                ("sparepart::supplier--rs", None),
+                ("production::Laser", None),
+            ]
+            self.row_meta = {
+                "sparepart::custom--electro": {
+                    "kind": "sparepart",
+                    "display": "Spare Parts - Electro",
+                },
+                "sparepart::full": {
+                    "kind": "sparepart",
+                    "display": "Spare Parts - Volledige lijst",
+                },
+                "sparepart::supplier--rs": {
+                    "kind": "sparepart",
+                    "display": "Spare Parts - RS",
+                },
+                "production::Laser": {
+                    "kind": "production",
+                    "display": "Laser",
+                },
+            }
+
+    sel = DummySel()
+
+    warnings = sel._spare_part_export_warnings(
+        {
+            "sparepart::custom--electro": "",
+            "sparepart::full": "",
+            "sparepart::supplier--rs": "RS Components",
+            "production::Laser": "",
+        },
+        {
+            "sparepart::custom--electro": "Bestelbon",
+            "sparepart::full": "Standaard bon",
+            "sparepart::supplier--rs": "Offerteaanvraag",
+            "production::Laser": "Bestelbon",
+        },
+        {
+            "sparepart::custom--electro": True,
+            "sparepart::full": True,
+            "sparepart::supplier--rs": True,
+            "production::Laser": True,
+        },
+    )
+
+    assert warnings == ["Spare Parts - Electro: Bestelbon zonder leverancier"]
+
+
 def test_supplier_selection_frame_uses_scrollable_rows_canvas():
     source = pathlib.Path("gui.py").read_text(encoding="utf-8")
     mod = ast.parse(source)

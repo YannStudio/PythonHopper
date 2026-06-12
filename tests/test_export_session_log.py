@@ -10,6 +10,7 @@ from export_session_log import (
     format_export_log_compatibility_message,
     load_export_session_log,
     merge_order_state_sections,
+    normalize_spare_parts_info,
     resolve_export_document_path,
     state_keys_for_import_sections,
     summarize_export_log_compatibility,
@@ -71,6 +72,19 @@ def test_export_session_log_roundtrip(tmp_path):
         ],
         status_messages=["Bestelbon opgeslagen.", "Bestelbon opgeslagen.", ""],
         path_limit_warnings=["pad ingekort"],
+        spare_parts={
+            "group_overrides": {"sparepart:1|PN1": "Electro"},
+            "groups": [
+                {
+                    "key": "custom--electro",
+                    "label": "Electro",
+                    "display_label": "Spare Parts - Electro",
+                    "route_source": "custom",
+                    "item_count": "2",
+                    "missing_count": 1,
+                }
+            ],
+        },
     )
     path = write_export_session_log(tmp_path, payload)
 
@@ -102,6 +116,46 @@ def test_export_session_log_roundtrip(tmp_path):
     ]
     assert loaded["export"]["status_messages"] == ["Bestelbon opgeslagen."]
     assert loaded["export"]["path_limit_warnings"] == ["pad ingekort"]
+    assert loaded["spare_parts"]["group_overrides"] == {"sparepart:1|PN1": "Electro"}
+    assert loaded["spare_parts"]["groups"][0]["key"] == "custom--electro"
+    assert loaded["spare_parts"]["groups"][0]["item_count"] == 2
+
+
+def test_normalize_spare_parts_info_keeps_overrides_and_group_summaries():
+    info = normalize_spare_parts_info(
+        {
+            "group_overrides": {
+                "sparepart:1|PN1": "Electro",
+                "": "Ignored",
+                "sparepart:2|PN2": " ",
+            },
+            "groups": [
+                {
+                    "key": "custom--electro",
+                    "label": "Electro",
+                    "display_label": "Spare Parts - Electro",
+                    "route_source": "custom",
+                    "item_count": "4",
+                    "missing_count": "1",
+                    "items": [{"large": "payload"}],
+                },
+                {"key": ""},
+                {"key": "custom--electro", "label": "Duplicate"},
+            ],
+        }
+    )
+
+    assert info["group_overrides"] == {"sparepart:1|PN1": "Electro"}
+    assert info["groups"] == [
+        {
+            "key": "custom--electro",
+            "label": "Electro",
+            "display_label": "Spare Parts - Electro",
+            "route_source": "custom",
+            "item_count": 4,
+            "missing_count": 1,
+        }
+    ]
 
 
 def test_convert_offers_to_orders_clears_off_numbers():

@@ -113,6 +113,55 @@ def normalize_export_info(value: Any) -> Dict[str, Any]:
     }
 
 
+def _clean_spare_part_group_summaries(values: Any) -> list[Dict[str, Any]]:
+    if not isinstance(values, IterableABC) or isinstance(values, (str, bytes, Mapping)):
+        return []
+    cleaned: list[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for value in values:
+        if not isinstance(value, Mapping):
+            continue
+        key = _to_str(value.get("key")).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        record: Dict[str, Any] = {"key": key}
+        for field in (
+            "label",
+            "display_label",
+            "route_name",
+            "route_source",
+            "default_supplier",
+            "default_doc_type",
+        ):
+            text = _to_str(value.get(field)).strip()
+            if text:
+                record[field] = text
+        for field in ("item_count", "missing_count"):
+            try:
+                record[field] = int(value.get(field, 0) or 0)
+            except (TypeError, ValueError):
+                record[field] = 0
+        if bool(value.get("is_full_list")):
+            record["is_full_list"] = True
+        cleaned.append(record)
+    return cleaned
+
+
+def normalize_spare_parts_info(value: Any) -> Dict[str, Any]:
+    source = value if isinstance(value, Mapping) else {}
+    overrides_raw = _clean_mapping(source.get("group_overrides", {}))
+    overrides = {
+        key: _to_str(label).strip()
+        for key, label in overrides_raw.items()
+        if _to_str(label).strip()
+    }
+    return {
+        "group_overrides": overrides,
+        "groups": _clean_spare_part_group_summaries(source.get("groups", [])),
+    }
+
+
 def resolve_export_document_path(
     export_log_path: str | os.PathLike[str],
     record: Mapping[str, Any],
@@ -389,6 +438,7 @@ def build_export_session_log(
     generated_documents: Any = None,
     status_messages: Any = None,
     path_limit_warnings: Any = None,
+    spare_parts: Any = None,
 ) -> Dict[str, Any]:
     source_path = _to_str(bom_source_path).strip()
     return {
@@ -409,6 +459,7 @@ def build_export_session_log(
             **_bom_fingerprint(bom_df),
         },
         "order_state": normalize_state_dict(state or {}),
+        "spare_parts": normalize_spare_parts_info(spare_parts),
         "export": normalize_export_info(
             {
                 "generated_documents": generated_documents,
@@ -460,5 +511,6 @@ def load_export_session_log(path: str | os.PathLike[str]) -> Dict[str, Any]:
         raise ValueError(f"Niet-ondersteunde exportlog versie: {version!r}.")
     state = data.get("order_state", {})
     data["order_state"] = normalize_state_dict(state)
+    data["spare_parts"] = normalize_spare_parts_info(data.get("spare_parts", {}))
     data["export"] = normalize_export_info(data.get("export", {}))
     return dict(data)

@@ -43,6 +43,42 @@ Leveranciersgroepen krijgen voorrang op fabrikantgroepen. Dat houdt de bestelstr
 
 Handmatige groepskeuzes blijven in de app-state zolang de huidige BOM actief is. Ze wijzigen de originele BOM-kolom `Production` niet.
 
+## Presets
+
+Gebruik `Preset toevoegen` of `Presets beheren` om terugkerende spare-part-regels automatisch naar een bestelgroep te sturen. De presetbeheerder laat regels bekijken, bewerken, aan/uit zetten en verwijderen. De eerste versie ondersteunt deze matchvelden:
+
+- `Supplier`
+- `Supplier code`
+- `Manufacturer`
+- `Manufacturer code`
+
+Mogelijke matchtypes:
+
+- `Exact`
+- `Bevat`
+- `Begint met`
+
+Voorbeelden:
+
+- `Manufacturer = Herbaroof` -> doelgroep `Herbaroof`.
+- `Supplier bevat RS Components` -> doelgroep `Electro`.
+- `Manufacturer code begint met XYZ` -> doelgroep `Pneumatica`.
+
+Gebruik `Presets toepassen` om actieve regels op de huidige BOM toe te passen. Filehopper wist daarbij eerst eerdere presetresultaten en berekent ze opnieuw, terwijl handmatige groepskeuzes behouden blijven. De presets worden opgeslagen in `spare_part_presets.json`. Een preset wijzigt alleen de interne spare-part-groepering; de BOM-kolom `Production` blijft `Spare Parts`.
+
+## Waarschuwingen
+
+De Spare parts-tab toont een korte waarschuwing wanneer er regels zijn:
+
+- in `Nog toe te wijzen`;
+- zonder `Supplier` en zonder `Manufacturer`;
+- zonder `Supplier code` en zonder `Manufacturer code`;
+- in een bestelgroep zonder standaardleverancier.
+
+Deze meldingen zijn adviserend. Ze blokkeren de export niet, behalve wanneer de gewone bestelbonnenflow zelf onvoldoende gegevens heeft om een document te maken.
+
+Vlak voor het bevestigen van de bestelbonnenflow toont Filehopper nog een bevestiging wanneer een geselecteerd spare-part document van het type `Bestelbon` of `Offerteaanvraag` geen leverancier heeft. `Standaard bon` voor de volledige monteurslijst blijft zonder leverancier mogelijk.
+
 ## Documenten en export
 
 Spare-parts-documenten gebruiken een eigen tabelindeling met bestelgerichte kolommen:
@@ -57,7 +93,7 @@ Spare-parts-documenten gebruiken een eigen tabelindeling met bestelgerichte kolo
 - Bestelgroep
 - Status
 
-Prijsvelden worden alleen toegevoegd wanneer er prijsgegevens ingevuld zijn. De exportlog bewaart de keuzes met `sparepart::...` selectiekeys, zodat dezelfde instellingen later opnieuw toegepast kunnen worden.
+Prijsvelden worden alleen toegevoegd wanneer er prijsgegevens ingevuld zijn. De exportlog bewaart de keuzes met `sparepart::...` selectiekeys en schrijft ook de spare-part-verdeling weg. Bij het herladen van een exportlog kan `Spare-parts verdeling` mee geimporteerd worden, zodat custom groepen zoals `Electro` opnieuw als aparte bestelbonselecties verschijnen.
 
 ## Praktische afspraken
 

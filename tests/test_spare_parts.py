@@ -17,6 +17,7 @@ from spare_parts import (
     collect_spare_part_items,
     is_spare_parts_production,
     make_custom_spare_part_group_key,
+    summarize_spare_part_warnings,
 )
 from suppliers_db import SuppliersDB
 
@@ -106,6 +107,33 @@ def test_spare_part_groups_track_unassigned_and_missing_codes():
     assert by_key["supplier--electro"].missing_count == 1
     assert by_key[SPARE_PARTS_UNASSIGNED_KEY].label == "Nog toe te wijzen"
     assert by_key[SPARE_PARTS_UNASSIGNED_KEY].missing_count == 1
+
+
+def test_spare_part_warnings_summarize_open_data_and_supplier_gaps():
+    items = collect_spare_part_items(
+        [
+            {
+                "PartNumber": "A",
+                "Production": "Spare Parts",
+                "Supplier": "Electro",
+            },
+            {
+                "PartNumber": "B",
+                "Production": "Spare Parts",
+                "Manufacturer": "Maker",
+                "Manufacturer code": "M-1",
+            },
+            {"PartNumber": "C", "Production": "Spare Parts"},
+        ]
+    )
+    groups = build_spare_part_groups(items)
+
+    warnings = summarize_spare_part_warnings(groups)
+
+    assert "1 nog toe te wijzen" in warnings
+    assert "1 zonder leverancier/fabrikant" in warnings
+    assert "2 zonder supplier/fabrikantcode" in warnings
+    assert "2 groep(en) zonder standaardleverancier" in warnings
 
 
 def test_spare_part_groups_accept_manual_overrides_without_mutating_bom():

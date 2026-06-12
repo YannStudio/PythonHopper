@@ -108,6 +108,35 @@ def test_spare_part_presets_db_save_and_load(tmp_path):
     assert loaded.rules[0].match_type == "startswith"
 
 
+def test_spare_part_presets_db_can_rename_and_remove_rule():
+    db = SparePartPresetsDB(
+        [
+            SparePartPresetRule(
+                name="Old",
+                match_field="supplier",
+                pattern="RS",
+                target_group="Electro",
+            )
+        ]
+    )
+
+    db.upsert(
+        SparePartPresetRule(
+            name="New",
+            match_field="manufacturer",
+            pattern="Festo",
+            target_group="Pneumatica",
+        ),
+        old_name="Old",
+    )
+
+    assert db.get("Old") is None
+    assert db.get("New").target_group == "Pneumatica"
+    assert db.remove("New") is True
+    assert db.remove("New") is False
+    assert db.rules == []
+
+
 def test_spare_part_preset_normalizers_have_stable_defaults():
     assert normalize_spare_part_preset_field("Supplier code") == "supplier_code"
     assert normalize_spare_part_preset_field("unknown") == "manufacturer"
