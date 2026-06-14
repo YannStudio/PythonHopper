@@ -5296,13 +5296,19 @@ def copy_per_production_and_orders(
         for spare_index, group in enumerate(spare_part_groups, start=1):
             group_key = _to_str(group.get("key")).strip()
             group_label = _to_str(group.get("label")).strip() or group_key
+            is_full_spare_list = bool(group.get("is_full_list"))
             display_label = (
                 _to_str(group.get("display_label")).strip()
                 or f"Spare Parts - {group_label}"
             )
+            document_label = (
+                _to_str(group.get("document_label")).strip()
+                or ("Klaarleglijst" if is_full_spare_list else display_label)
+            )
+            progress_label = "Spare-partslijst" if is_full_spare_list else "Spare-partsbon"
             _emit_progress(
                 "spare_parts",
-                f"Spare-partsbon voorbereiden... {group_label}",
+                f"{progress_label} voorbereiden... {group_label}",
                 percent=_phase_percent(65, 66, spare_index - 1, spare_part_doc_total),
                 done=spare_index - 1,
                 total=spare_part_doc_total,
@@ -5381,8 +5387,11 @@ def copy_per_production_and_orders(
             )
             folder_name = (
                 "Spare Parts"
-                if bool(group.get("is_full_list"))
+                if is_full_spare_list
                 else f"Spare Parts-{_normalize_finish_folder(group_label)}"
+            )
+            filename_context = (
+                "Spare Parts klaarleglijst" if is_full_spare_list else folder_name
             )
             target_dir = os.path.join(dest, folder_name)
             os.makedirs(target_dir, exist_ok=True)
@@ -5397,9 +5406,9 @@ def copy_per_production_and_orders(
             order_candidates.append(
                 OrderDocumentCandidate(
                     selection_key=spare_sel_key,
-                    context_label=display_label,
+                    context_label=document_label,
                     context_kind="Spare parts",
-                    filename_context=folder_name,
+                    filename_context=filename_context,
                     target_dir=target_dir,
                     supplier=supplier,
                     delivery=spare_part_delivery_map.get(group_key),
@@ -5413,7 +5422,7 @@ def copy_per_production_and_orders(
             )
             _emit_progress(
                 "spare_parts",
-                f"Spare-partsbon voorbereid... {group_label}",
+                f"{progress_label} voorbereid... {group_label}",
                 percent=_phase_percent(65, 66, spare_index, spare_part_doc_total),
                 done=spare_index,
                 total=spare_part_doc_total,

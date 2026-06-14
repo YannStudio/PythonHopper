@@ -262,7 +262,8 @@ def test_spare_part_export_warnings_require_supplier_for_order_documents():
                 },
                 "sparepart::full": {
                     "kind": "sparepart",
-                    "display": "Spare Parts - Volledige lijst",
+                    "display": "Spare Parts - Klaarleglijst",
+                    "is_full_list": True,
                 },
                 "sparepart::supplier--rs": {
                     "kind": "sparepart",
@@ -285,7 +286,7 @@ def test_spare_part_export_warnings_require_supplier_for_order_documents():
         },
         {
             "sparepart::custom--electro": "Bestelbon",
-            "sparepart::full": "Standaard bon",
+            "sparepart::full": "Bestelbon",
             "sparepart::supplier--rs": "Offerteaanvraag",
             "production::Laser": "Bestelbon",
         },

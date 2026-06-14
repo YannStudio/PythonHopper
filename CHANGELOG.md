@@ -9,6 +9,9 @@
 - Spare-partsverdelingen uit exportlogs worden robuuster hersteld wanneer BOM-rijindexen verschuiven.
 - Spare-part identity keys bewaren lege veldposities, zodat toekomstig exportlog-herstel minder ambigu is.
 - Handmatige en preset spare-partgroepen blijven beter behouden bij het verversen van een BOM met verschoven rijindexen.
+- De volledige spare-partlijst wordt in UI/export duidelijker als klaarleglijst benoemd.
+- De spare-part klaarleglijst gedraagt zich in de Bestelbonnen-flow niet meer als leveranciersbon.
+- De spare-part klaarleglijst kan niet meer als gekoppelde bon of groepsmaster gebruikt worden.
 - Diagnostiek waarschuwt nu ook voor lege of overlappende spare-part presetregels.
 - PDF dossier wist na het kiezen van een volgordepreset de gearceerde comboboxselectie, zoals bij de moduskeuze.
 - Informatietekst bij de PDF dossier-modus en volgordepreset gebruikt nu dezelfde tekstkleur.

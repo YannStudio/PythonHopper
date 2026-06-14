@@ -1,7 +1,7 @@
 import ast
 import pathlib
 import types
-from typing import Dict, List, Optional
+from typing import Dict, List, Mapping, Optional
 
 from helpers import _to_str
 from models import Client, DeliveryAddress, Supplier
@@ -44,6 +44,7 @@ def _load_supplier_frame():
         "ttk": ttk_stub,
         "List": List,
         "Dict": Dict,
+        "Mapping": Mapping,
         "Optional": Optional,
         "Supplier": Supplier,
         "Client": Client,
@@ -62,6 +63,8 @@ SupplierSelectionFrame = _load_supplier_frame()
 class DummySel:
     _parse_selection_key = staticmethod(SupplierSelectionFrame._parse_selection_key)
     _is_groupable_kind = staticmethod(SupplierSelectionFrame._is_groupable_kind)
+    _is_full_spare_part_row = SupplierSelectionFrame._is_full_spare_part_row
+    _is_groupable_selection_key = SupplierSelectionFrame._is_groupable_selection_key
     _resolve_group_root = staticmethod(SupplierSelectionFrame._resolve_group_root)
     _group_code_from_index = staticmethod(SupplierSelectionFrame._group_code_from_index)
     _base_row_label = SupplierSelectionFrame._base_row_label
@@ -70,6 +73,8 @@ class DummySel:
     _group_followers_by_root = SupplierSelectionFrame._group_followers_by_root
     _group_row_label = SupplierSelectionFrame._group_row_label
     _group_visual_spec = SupplierSelectionFrame._group_visual_spec
+    _sanitize_group_links = SupplierSelectionFrame._sanitize_group_links
+    _available_group_roots = SupplierSelectionFrame._available_group_roots
 
     GROUP_ACCENT_COLORS = SupplierSelectionFrame.GROUP_ACCENT_COLORS
 
@@ -122,3 +127,41 @@ def test_group_visual_spec_marks_master_and_follower_with_same_group():
 
     assert separate["grouped"] is False
     assert separate["text"] == "Lassen"
+
+
+def test_spare_part_full_list_is_not_a_group_master():
+    sel = DummySel()
+    sel.rows = [
+        ("sparepart::full", None),
+        ("sparepart::supplier--rs", None),
+        ("sparepart::custom--electro", None),
+    ]
+    sel.row_meta = {
+        "sparepart::full": {
+            "base_display": "Spare Parts - Klaarleglijst",
+            "is_full_list": True,
+        },
+        "sparepart::supplier--rs": {"base_display": "Spare Parts - RS"},
+        "sparepart::custom--electro": {"base_display": "Spare Parts - Electro"},
+    }
+
+    assert sel._available_group_roots("sparepart::supplier--rs", {}) == []
+    assert (
+        sel._sanitize_group_links(
+            {"sparepart::supplier--rs": "sparepart::full"}
+        )
+        == {}
+    )
+    assert sel._available_group_roots("sparepart::custom--electro", {}) == [
+        "sparepart::supplier--rs"
+    ]
+    assert sel._sanitize_group_links(
+        {"sparepart::custom--electro": "sparepart::supplier--rs"}
+    ) == {"sparepart::custom--electro": "sparepart::supplier--rs"}
+    assert (
+        sel._group_row_label(
+            "sparepart::supplier--rs",
+            {"sparepart::custom--electro": "sparepart::supplier--rs"},
+        )
+        == "Bon A - Spare Parts - RS"
+    )

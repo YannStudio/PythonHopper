@@ -10,6 +10,8 @@ from orders import (
 )
 from spare_parts import (
     SPARE_PARTS_CUSTOM_SOURCE,
+    SPARE_PARTS_FULL_LIST_DISPLAY_LABEL,
+    SPARE_PARTS_FULL_LIST_DOCUMENT_LABEL,
     SPARE_PARTS_FULL_LIST_KEY,
     SPARE_PARTS_UNASSIGNED_KEY,
     build_spare_part_groups,
@@ -100,6 +102,9 @@ def test_spare_part_groups_prefer_supplier_and_keep_full_list():
     assert groups[0].key == SPARE_PARTS_FULL_LIST_KEY
     assert groups[0].is_full_list is True
     assert groups[0].default_doc_type == "Standaard bon"
+    assert groups[0].display_label == SPARE_PARTS_FULL_LIST_DISPLAY_LABEL
+    assert groups[0].document_label == SPARE_PARTS_FULL_LIST_DOCUMENT_LABEL
+    assert groups[0].to_mapping()["document_label"] == SPARE_PARTS_FULL_LIST_DOCUMENT_LABEL
     assert groups[0].item_count == 2
     route_groups = {group.key: group for group in groups[1:]}
     assert route_groups["supplier--herbaroof"].default_supplier == "Herbaroof"
@@ -341,6 +346,8 @@ def test_spare_part_groups_export_full_list_and_supplier_order(tmp_path):
     )
     groups = [group.to_mapping() for group in collect_spare_part_groups(bom_df)]
 
+    generated_documents = []
+
     copied, chosen = copy_per_production_and_orders(
         str(src),
         str(dest),
@@ -353,6 +360,7 @@ def test_spare_part_groups_export_full_list_and_supplier_order(tmp_path):
         True,
         spare_part_groups=groups,
         spare_part_override_map={"supplier--herbaroof": "Herbaroof"},
+        generated_documents=generated_documents,
     )
 
     assert copied == 2
@@ -368,6 +376,14 @@ def test_spare_part_groups_export_full_list_and_supplier_order(tmp_path):
     )
     assert full_docs
     assert supplier_docs
+    assert any("Spare Parts klaarleglijst" in path.name for path in full_docs)
+    full_records = [
+        record
+        for record in generated_documents
+        if record.get("selection_key") == make_spare_part_selection_key(SPARE_PARTS_FULL_LIST_KEY)
+    ]
+    assert full_records
+    assert {record.get("context_label") for record in full_records} == {"Klaarleglijst"}
 
     workbook = load_workbook(full_docs[0])
     values = [

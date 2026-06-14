@@ -129,6 +129,7 @@ def _clean_spare_part_group_summaries(values: Any) -> list[Dict[str, Any]]:
         for field in (
             "label",
             "display_label",
+            "document_label",
             "route_name",
             "route_source",
             "default_supplier",

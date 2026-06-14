@@ -4950,6 +4950,22 @@ def start_gui():
                 metadata_record = dict(metadata)
                 metadata_record["base_display"] = display_text
                 self.row_meta[sel_key] = metadata_record
+                is_full_spare_list = bool(metadata_record.get("is_full_list"))
+                if is_full_spare_list:
+                    self._set_combo_value(combo, "")
+                    doc_var.set("Standaard bon")
+                    dvar.set("Geen")
+                    combo.configure(state="disabled")
+                    doc_combo.configure(state="disabled")
+                    dcombo.configure(state="disabled")
+                    _HelpTooltip(
+                        combo,
+                        "De volledige spare-partlijst is een klaarleglijst en krijgt geen leverancier.",
+                    )
+                    _HelpTooltip(
+                        doc_combo,
+                        "De klaarleglijst wordt altijd als standaard document gemaakt.",
+                    )
 
                 for trace_var in (
                     var,
@@ -5090,6 +5106,7 @@ def start_gui():
                             "display": display_label,
                             "default_supplier": _to_str(group.get("default_supplier")).strip(),
                             "default_doc_type": _to_str(group.get("default_doc_type")).strip() or "Bestelbon",
+                            "is_full_list": bool(group.get("is_full_list")),
                         },
                     )
 
@@ -6733,6 +6750,13 @@ def start_gui():
                 remember=remember,
             )
 
+        def _is_full_spare_part_row(self, sel_key: str) -> bool:
+            meta = getattr(self, "row_meta", {}).get(sel_key, {})
+            if isinstance(meta, Mapping) and bool(meta.get("is_full_list")):
+                return True
+            kind, identifier = self._parse_selection_key(sel_key)
+            return kind == "sparepart" and _to_str(identifier).strip() == "full"
+
         def apply_state(self, state: "SupplierSelectionState") -> None:
             if SupplierSelectionFrame._state_has_price_values(state):
                 set_price_columns_visible = getattr(
@@ -6744,7 +6768,15 @@ def start_gui():
             set_combo_value = getattr(
                 type(self), "_set_combo_value", SupplierSelectionFrame._set_combo_value
             )
+            is_full_spare_part_row = getattr(
+                self,
+                "_is_full_spare_part_row",
+                lambda _key: False,
+            )
             for sel_key, combo in self.rows:
+                if is_full_spare_part_row(sel_key):
+                    set_combo_value(combo, "")
+                    continue
                 if sel_key in state.selections:
                     set_combo_value(combo, state.selections[sel_key])
 
@@ -6758,6 +6790,9 @@ def start_gui():
 
             for sel_key, value in state.doc_types.items():
                 if sel_key in self.doc_vars:
+                    if is_full_spare_part_row(sel_key):
+                        self.doc_vars[sel_key].set("Standaard bon")
+                        continue
                     self.doc_vars[sel_key].set(value)
 
             for sel_key, value in state.doc_numbers.items():
@@ -6775,6 +6810,9 @@ def start_gui():
                 dcombo = self.delivery_combos.get(sel_key)
                 if dcombo is not None:
                     try:
+                        if is_full_spare_part_row(sel_key):
+                            dcombo.set("Geen")
+                            continue
                         dcombo.set(self._find_delivery_display_for_name(value))
                     except tk.TclError:
                         pass
@@ -7113,6 +7151,12 @@ def start_gui():
         def _is_groupable_kind(kind: str) -> bool:
             return kind in {"production", "finish", "sparepart"}
 
+        def _is_groupable_selection_key(self, sel_key: str) -> bool:
+            kind, _identifier = self._parse_selection_key(sel_key)
+            return self._is_groupable_kind(kind) and not self._is_full_spare_part_row(
+                sel_key
+            )
+
         @staticmethod
         def _group_code_from_index(index):
             try:
@@ -7143,7 +7187,7 @@ def start_gui():
             counters_by_kind: Dict[str, int] = {}
             for row_key, _combo in self.rows:
                 kind, _identifier = self._parse_selection_key(row_key)
-                if not self._is_groupable_kind(kind):
+                if not self._is_groupable_selection_key(row_key):
                     continue
                 root_key = self._resolve_group_root(row_key, group_links)
                 if root_key in seen_roots:
@@ -7175,7 +7219,7 @@ def start_gui():
             followers: Dict[str, List[str]] = {}
             for row_key, _combo in self.rows:
                 kind, _identifier = self._parse_selection_key(row_key)
-                if not self._is_groupable_kind(kind):
+                if not self._is_groupable_selection_key(row_key):
                     continue
                 root_key = self._resolve_group_root(row_key, group_links)
                 if root_key == row_key:
@@ -7187,7 +7231,7 @@ def start_gui():
         def _group_visual_spec(self, sel_key: str, group_links):
             base_label = self._base_row_label(sel_key)
             kind, _identifier = self._parse_selection_key(sel_key)
-            if not self._is_groupable_kind(kind):
+            if not self._is_groupable_selection_key(sel_key):
                 return {
                     "text": base_label,
                     "accent": "",
@@ -7328,7 +7372,7 @@ def start_gui():
 
             for sel_key, _combo in self.rows:
                 kind, _identifier = self._parse_selection_key(sel_key)
-                if not self._is_groupable_kind(kind):
+                if not self._is_groupable_selection_key(sel_key):
                     continue
                 allowed_masters = seen_by_kind.setdefault(kind, [])
                 raw_master = _to_str(raw_links.get(sel_key)).strip()
@@ -7343,7 +7387,7 @@ def start_gui():
             self, sel_key: str, group_links: Dict[str, str]
         ) -> List[str]:
             kind, _identifier = self._parse_selection_key(sel_key)
-            if not self._is_groupable_kind(kind):
+            if not self._is_groupable_selection_key(sel_key):
                 return []
 
             roots: List[str] = []
@@ -7352,7 +7396,7 @@ def start_gui():
                 if row_key == sel_key:
                     break
                 row_kind, _row_identifier = self._parse_selection_key(row_key)
-                if row_kind != kind or not self._is_groupable_kind(row_kind):
+                if row_kind != kind or not self._is_groupable_selection_key(row_key):
                     continue
                 root = self._resolve_group_root(row_key, group_links)
                 if root == sel_key or root in seen_roots:
@@ -7363,13 +7407,23 @@ def start_gui():
 
         def _set_row_grouped_state(self, sel_key: str, grouped: bool) -> None:
             widgets = self._row_widgets_by_key.get(sel_key, {})
+            is_full_spare_part_row = getattr(
+                self,
+                "_is_full_spare_part_row",
+                lambda _key: False,
+            )
+            full_spare_list = is_full_spare_part_row(sel_key)
             supplier_combo = widgets.get("supplier_combo")
             if supplier_combo is not None:
-                supplier_combo.configure(state="disabled" if grouped else "normal")
+                supplier_combo.configure(
+                    state="disabled" if grouped or full_spare_list else "normal"
+                )
 
             doc_combo = widgets.get("doc_combo")
             if doc_combo is not None:
-                doc_combo.configure(state="disabled" if grouped else "readonly")
+                doc_combo.configure(
+                    state="disabled" if grouped or full_spare_list else "readonly"
+                )
 
             doc_entry = widgets.get("doc_entry")
             if doc_entry is not None:
@@ -7399,7 +7453,9 @@ def start_gui():
 
             delivery_combo = widgets.get("delivery_combo")
             if delivery_combo is not None:
-                delivery_combo.configure(state="disabled" if grouped else "readonly")
+                delivery_combo.configure(
+                    state="disabled" if grouped or full_spare_list else "readonly"
+                )
 
             export_check = widgets.get("export_check")
             if export_check is not None:
@@ -7556,7 +7612,19 @@ def start_gui():
             set_combo_value = getattr(
                 type(self), "_set_combo_value", SupplierSelectionFrame._set_combo_value
             )
+            is_full_spare_part_row = getattr(
+                self,
+                "_is_full_spare_part_row",
+                lambda _key: False,
+            )
             for sel_key, combo in self.rows:
+                if is_full_spare_part_row(sel_key):
+                    combo["values"] = ()
+                    set_combo_value(combo, "")
+                    doc_var = self.doc_vars.get(sel_key)
+                    if doc_var is not None:
+                        doc_var.set("Standaard bon")
+                    continue
                 typed = combo.get()
                 combo["values"] = self._base_options
                 parser = getattr(
@@ -7597,6 +7665,10 @@ def start_gui():
             delivery_opts = self._delivery_options()
             default_delivery = self._default_delivery_value()
             for sel_key, dcombo in self.delivery_combos.items():
+                if is_full_spare_part_row(sel_key):
+                    dcombo["values"] = ("Geen",)
+                    dcombo.set("Geen")
+                    continue
                 cur = dcombo.get()
                 dcombo["values"] = delivery_opts
                 if cur in delivery_opts:
@@ -7614,10 +7686,26 @@ def start_gui():
                     apply_presets(auto_apply_only=True, status_when_idle=False)
 
         def _on_combo_change(self, _evt=None):
+            is_full_spare_part_row = getattr(
+                self,
+                "_is_full_spare_part_row",
+                lambda _key: False,
+            )
             for sel_key, combo in self.rows:
                 SupplierSelectionFrame._get_type_filter_map(self).pop(sel_key, None)
                 doc_var = self.doc_vars.get(sel_key)
                 if not doc_var:
+                    continue
+                if is_full_spare_part_row(sel_key):
+                    self._set_combo_value(combo, "")
+                    doc_var.set("Standaard bon")
+                    delivery_var = self.delivery_vars.get(sel_key)
+                    if delivery_var is not None:
+                        delivery_var.set("Geen")
+                    delivery_combo = self.delivery_combos.get(sel_key)
+                    if delivery_combo is not None:
+                        delivery_combo.set("Geen")
+                    self._on_doc_type_change(sel_key)
                     continue
                 raw_val = combo.get().strip()
                 norm_val = raw_val.lower()
@@ -7939,6 +8027,16 @@ def start_gui():
             for sel_key, _combo in self.rows:
                 meta = self.row_meta.get(sel_key, {})
                 if meta.get("kind") != "sparepart":
+                    continue
+                parser = getattr(
+                    self,
+                    "_parse_selection_key",
+                    SupplierSelectionFrame._parse_selection_key,
+                )
+                kind, identifier = parser(sel_key)
+                if bool(meta.get("is_full_list")) or (
+                    kind == "sparepart" and _to_str(identifier).strip() == "full"
+                ):
                     continue
                 if not bool(export_map.get(sel_key, True)):
                     continue
@@ -11780,6 +11878,7 @@ def start_gui():
                         "key": group.get("key", ""),
                         "label": group.get("label", ""),
                         "display_label": group.get("display_label", ""),
+                        "document_label": group.get("document_label", ""),
                         "route_name": group.get("route_name", ""),
                         "route_source": group.get("route_source", ""),
                         "default_supplier": group.get("default_supplier", ""),
@@ -11793,6 +11892,7 @@ def start_gui():
                         "key": getattr(group, "key", ""),
                         "label": getattr(group, "label", ""),
                         "display_label": getattr(group, "display_label", ""),
+                        "document_label": getattr(group, "document_label", ""),
                         "route_name": getattr(group, "route_name", ""),
                         "route_source": getattr(group, "route_source", ""),
                         "default_supplier": getattr(group, "default_supplier", ""),

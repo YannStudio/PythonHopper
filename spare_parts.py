@@ -14,6 +14,8 @@ from helpers import _to_str
 SPARE_PARTS_PRODUCTION_LABEL = "Spare Parts"
 SPARE_PARTS_FULL_LIST_KEY = "full"
 SPARE_PARTS_FULL_LIST_LABEL = "Volledige lijst"
+SPARE_PARTS_FULL_LIST_DISPLAY_LABEL = "Spare Parts - Klaarleglijst"
+SPARE_PARTS_FULL_LIST_DOCUMENT_LABEL = "Klaarleglijst"
 SPARE_PARTS_UNASSIGNED_KEY = "unassigned"
 SPARE_PARTS_UNASSIGNED_LABEL = "Nog toe te wijzen"
 SPARE_PARTS_CUSTOM_SOURCE = "custom"
@@ -124,7 +126,15 @@ class SparePartGroup:
 
     @property
     def display_label(self) -> str:
+        if self.is_full_list:
+            return SPARE_PARTS_FULL_LIST_DISPLAY_LABEL
         return f"{SPARE_PARTS_PRODUCTION_LABEL} - {self.label}"
+
+    @property
+    def document_label(self) -> str:
+        if self.is_full_list:
+            return SPARE_PARTS_FULL_LIST_DOCUMENT_LABEL
+        return self.display_label
 
     @property
     def item_count(self) -> int:
@@ -148,6 +158,7 @@ class SparePartGroup:
             "key": self.key,
             "label": self.label,
             "display_label": self.display_label,
+            "document_label": self.document_label,
             "route_name": self.route_name,
             "route_source": self.route_source,
             "is_full_list": self.is_full_list,
