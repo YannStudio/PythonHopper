@@ -71,3 +71,20 @@ def test_pdf_workdossier_accepts_existing_spare_part_full_list_pdf(tmp_path):
         )
         == []
     )
+
+
+def test_pdf_workdossier_accepts_legacy_spare_part_full_list_hint(tmp_path):
+    pdf_path = tmp_path / "Spare Parts" / "Standaard bon_Spare Parts klaarleglijst.pdf"
+    pdf_path.parent.mkdir()
+    pdf_path.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    records = [
+        {
+            "path": str(Path("Spare Parts") / pdf_path.name),
+            "kind": "order",
+            "format": "pdf",
+            "context_kind": "Spare parts",
+            "context_label": "Klaarleglijst",
+        }
+    ]
+
+    assert _generated_documents_include_spare_part_full_list_pdf(records, tmp_path)

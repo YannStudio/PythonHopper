@@ -526,10 +526,56 @@ def test_workdossier_appends_bon_pdfs_and_spare_part_full_list_at_end(tmp_path):
         "Standaard bon_Spare parts.pdf",
         "Bestelbon_Poedercoating.pdf",
     ]
+    assert plan[2].production == "Klaarleglijst"
     assert [item.section_name for item in plan[-2:]] == [
         "Aanvullende bonnen zonder tekening",
         "Aanvullende bonnen zonder tekening",
     ]
+
+
+def test_workdossier_accepts_legacy_spare_part_full_list_hint(tmp_path):
+    source = tmp_path / "src"
+    order_root = tmp_path / "pdf-dossier-docs"
+    source.mkdir()
+    order_root.mkdir()
+
+    _blank_pdf(source / "ASM-1.pdf", width=80)
+    (order_root / "Spare parts").mkdir()
+    _blank_pdf(
+        order_root / "Spare parts" / "Standaard bon_Spare Parts klaarleglijst.pdf",
+        width=120,
+    )
+
+    bom_df = pd.DataFrame(
+        [
+            {"PartNumber": "ASM-1", "Production": "Assembly"},
+            {"PartNumber": "BOLT-1", "Production": "Spare parts"},
+        ]
+    )
+    generated_documents = [
+        {
+            "path": "Spare parts/Standaard bon_Spare Parts klaarleglijst.pdf",
+            "kind": "order",
+            "format": "pdf",
+            "context_kind": "Spare parts",
+            "context_label": "Klaarleglijst",
+            "doc_type": "Standaardbon",
+        }
+    ]
+
+    plan = build_pdf_workdossier_plan(
+        str(source),
+        bom_df,
+        include_spare_part_list=True,
+        order_document_root=str(order_root),
+        generated_order_documents=generated_documents,
+    )
+
+    assert [Path(item.path).name for item in plan] == [
+        "ASM-1.pdf",
+        "Standaard bon_Spare Parts klaarleglijst.pdf",
+    ]
+    assert plan[1].production == "Klaarleglijst"
 
 
 def test_workdossier_unmatched_section_can_be_positioned(tmp_path):

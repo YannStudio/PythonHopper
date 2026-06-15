@@ -72,7 +72,11 @@ from opticutter import (
     parse_length_to_mm,
     prepare_opticutter_export,
 )
-from spare_parts import SPARE_PARTS_FULL_LIST_KEY, is_spare_parts_production
+from spare_parts import (
+    SPARE_PARTS_FULL_LIST_DOCUMENT_LABEL,
+    SPARE_PARTS_FULL_LIST_KEY,
+    is_spare_parts_production,
+)
 
 import step_previews
 from helpers import (
@@ -5790,10 +5794,30 @@ def _is_generated_order_pdf(
     return _is_order_interleaf_pdf(path, include_offers=include_offers)
 
 
-def _is_generated_spare_part_full_list(record: Mapping[str, object]) -> bool:
-    return any(
+def _is_generated_spare_part_full_list(
+    record: Mapping[str, object],
+    path: str = "",
+) -> bool:
+    pairs = _generated_order_document_selection_pairs(record)
+    if any(
         kind == "sparepart" and identifier == SPARE_PARTS_FULL_LIST_KEY
-        for kind, identifier in _generated_order_document_selection_pairs(record)
+        for kind, identifier in pairs
+    ):
+        return True
+
+    context_kind = _to_str(record.get("context_kind")).strip().casefold()
+    if not context_kind.startswith("spare"):
+        return False
+
+    hint_parts = [
+        record.get("context_label"),
+        record.get("document_label"),
+        record.get("display_label"),
+        os.path.basename(path),
+    ]
+    return any(
+        "klaarleglijst" in _to_str(part).strip().casefold()
+        for part in hint_parts
     )
 
 
@@ -5873,7 +5897,7 @@ def _append_pdf_supplementary_order_documents(
         path = _generated_order_document_path(record, order_document_root)
         if not _is_generated_order_pdf(record, path, include_offers=include_offers):
             continue
-        is_spare_part_full_list = _is_generated_spare_part_full_list(record)
+        is_spare_part_full_list = _is_generated_spare_part_full_list(record, path)
         if is_spare_part_full_list and not include_spare_part_list:
             continue
         if not is_spare_part_full_list and not include_order_documents:
@@ -5887,12 +5911,17 @@ def _append_pdf_supplementary_order_documents(
         if any(identifier.casefold() in drawing_keys for identifier in production_ids):
             continue
         primary_kind = pairs[0][0] if pairs else ""
+        if is_spare_part_full_list and not primary_kind:
+            primary_kind = "sparepart"
         primary_label = pairs[0][1] if pairs else ""
-        label = (
-            _to_str(record.get("context_label")).strip()
-            or _to_str(record.get("context_kind")).strip()
-            or primary_label
-        )
+        if is_spare_part_full_list:
+            label = SPARE_PARTS_FULL_LIST_DOCUMENT_LABEL
+        else:
+            label = (
+                _to_str(record.get("context_label")).strip()
+                or _to_str(record.get("context_kind")).strip()
+                or primary_label
+            )
         add_candidate(path, kind=primary_kind, label=label)
 
     for _sort_key, path, label in sorted(candidates, key=lambda item: item[0]):

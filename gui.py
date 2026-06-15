@@ -107,6 +107,7 @@ from orders import (
     generate_pdf_order_platypus,
 )
 from spare_parts import (
+    SPARE_PARTS_FULL_LIST_DOCUMENT_LABEL,
     SPARE_PARTS_FULL_LIST_KEY,
     SPARE_PARTS_UNASSIGNED_LABEL,
     collect_spare_part_groups,
@@ -301,6 +302,7 @@ def _generated_documents_include_spare_part_full_list_pdf(
     order_document_root: object = "",
 ) -> bool:
     full_list_key = make_spare_part_selection_key(SPARE_PARTS_FULL_LIST_KEY)
+    full_list_label = SPARE_PARTS_FULL_LIST_DOCUMENT_LABEL.casefold()
     for record in generated_documents or []:
         if not isinstance(record, Mapping):
             continue
@@ -322,6 +324,17 @@ def _generated_documents_include_spare_part_full_list_pdf(
         if isinstance(extra_keys, (list, tuple, set)):
             keys.extend(_to_str(key).strip() for key in extra_keys)
         if full_list_key in {key for key in keys if key}:
+            return True
+        context_kind = _to_str(record.get("context_kind")).strip().casefold()
+        if not context_kind.startswith("spare"):
+            continue
+        hint_parts = [
+            record.get("context_label"),
+            record.get("document_label"),
+            record.get("display_label"),
+            os.path.basename(path),
+        ]
+        if any(full_list_label in _to_str(part).strip().casefold() for part in hint_parts):
             return True
     return False
 
