@@ -107,6 +107,7 @@ from orders import (
     generate_pdf_order_platypus,
 )
 from spare_parts import (
+    SPARE_PARTS_FULL_LIST_KEY,
     SPARE_PARTS_UNASSIGNED_LABEL,
     collect_spare_part_groups,
     collect_spare_part_items,
@@ -266,6 +267,80 @@ def _resolve_file_dialog_initial_dir(preferred_path: object) -> str:
     except OSError:
         pass
     return fallback
+
+
+def _bom_has_spare_part_rows(bom_df: object) -> bool:
+    if bom_df is None or not hasattr(bom_df, "iterrows"):
+        return False
+    try:
+        for _, row in bom_df.iterrows():
+            if is_spare_parts_production(row.get("Production")):
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def _generated_pdf_document_path(
+    record: Mapping[str, object],
+    order_document_root: object = "",
+) -> str:
+    raw_path = _to_str(record.get("path")).strip()
+    if not raw_path:
+        return ""
+    if os.path.isabs(raw_path):
+        return raw_path
+    root = _to_str(order_document_root).strip()
+    if root:
+        return os.path.join(root, raw_path)
+    return raw_path
+
+
+def _generated_documents_include_spare_part_full_list_pdf(
+    generated_documents: Sequence[Mapping[str, object]] | None,
+    order_document_root: object = "",
+) -> bool:
+    full_list_key = make_spare_part_selection_key(SPARE_PARTS_FULL_LIST_KEY)
+    for record in generated_documents or []:
+        if not isinstance(record, Mapping):
+            continue
+        if _to_str(record.get("kind")).strip().casefold() != "order":
+            continue
+        file_format = (
+            _to_str(record.get("format")).strip()
+            or _to_str(record.get("file_format")).strip()
+        ).casefold()
+        path = _generated_pdf_document_path(record, order_document_root)
+        if file_format and file_format != "pdf":
+            continue
+        if not path.lower().endswith(".pdf"):
+            continue
+        if order_document_root and not os.path.isfile(path):
+            continue
+        keys = [_to_str(record.get("selection_key")).strip()]
+        extra_keys = record.get("selection_keys")
+        if isinstance(extra_keys, (list, tuple, set)):
+            keys.extend(_to_str(key).strip() for key in extra_keys)
+        if full_list_key in {key for key in keys if key}:
+            return True
+    return False
+
+
+def _missing_pdf_spare_part_preparation_items(
+    bom_df: object,
+    generated_documents: Sequence[Mapping[str, object]] | None,
+    order_document_root: object = "",
+    *,
+    include_spare_part_list: bool,
+) -> List[str]:
+    if not include_spare_part_list or not _bom_has_spare_part_rows(bom_df):
+        return []
+    if _generated_documents_include_spare_part_full_list_pdf(
+        generated_documents,
+        order_document_root,
+    ):
+        return []
+    return ["Spare-parts klaarleglijst"]
 
 
 def start_gui():
@@ -4129,7 +4204,7 @@ def start_gui():
                 context_label = tk.Label(
                     top_area,
                     text=(
-                        "PDF dossier voorbereiden - maak hier alleen de bon-PDF's "
+                        "PDF dossier voorbereiden - maak hier alleen de document-PDF's "
                         "die straks in het werkdossier worden ingevoegd."
                     ),
                     anchor="w",
@@ -10079,6 +10154,7 @@ def start_gui():
             self.preset_var = tk.StringVar(value=self.NO_PRESET_LABEL)
             self.include_bom_var = tk.IntVar(value=0)
             self.include_order_docs_var = tk.IntVar(value=0)
+            self.include_spare_part_list_var = tk.IntVar(value=0)
             self.include_offers_var = tk.IntVar(value=0)
             self.open_pdf_var = tk.IntVar(value=1)
             self.export_filename_var = tk.StringVar(value="")
@@ -10104,6 +10180,7 @@ def start_gui():
                 self.preset_var,
                 self.include_bom_var,
                 self.include_order_docs_var,
+                self.include_spare_part_list_var,
                 self.include_offers_var,
                 self.open_pdf_var,
             ):
@@ -10205,15 +10282,27 @@ def start_gui():
                 anchor="w",
             )
             self.include_offers_check.grid(row=1, column=0, sticky="w", padx=6)
+            self.include_spare_part_list_check = tk.Checkbutton(
+                options,
+                text="Volledige spare-parts klaarleglijst invoegen",
+                variable=self.include_spare_part_list_var,
+                anchor="w",
+            )
+            self.include_spare_part_list_check.grid(row=2, column=0, sticky="w", padx=6)
             self.open_pdf_check = tk.Checkbutton(
                 options,
                 text="PDF openen na combineren",
                 variable=self.open_pdf_var,
                 anchor="w",
             )
-            self.open_pdf_check.grid(row=2, column=0, sticky="w", padx=6, pady=(0, 4))
+            self.open_pdf_check.grid(row=3, column=0, sticky="w", padx=6, pady=(0, 4))
             self._option_widgets.extend(
-                [self.include_order_docs_check, self.include_offers_check, self.open_pdf_check]
+                [
+                    self.include_order_docs_check,
+                    self.include_offers_check,
+                    self.include_spare_part_list_check,
+                    self.open_pdf_check,
+                ]
             )
 
             export_box = tk.LabelFrame(form, text="Exportbestand", labelanchor="n")
@@ -10250,7 +10339,7 @@ def start_gui():
             self.order_flow_label.grid(row=0, column=0, sticky="ew")
             self.prepare_orders_button = ttk.Button(
                 self.order_flow_frame,
-                text="Bestelbonnen klaarmaken",
+                text="Documenten klaarmaken",
                 command=self._prepare_order_documents,
             )
             self.prepare_orders_button.grid(row=0, column=1, sticky="e", padx=(8, 0))
@@ -10436,6 +10525,9 @@ def start_gui():
                 if is_workdossier and bool(self.include_order_docs_var.get()) and not self._busy
                 else "disabled"
             )
+            self.include_spare_part_list_check.configure(
+                state="normal" if is_workdossier and not self._busy else "disabled"
+            )
             self.open_pdf_check.configure(state="normal" if not self._busy else "disabled")
             self.mode_combo.configure(state="readonly" if not self._busy else "disabled")
             self.preset_editor_combo.configure(state="readonly" if not self._busy else "disabled")
@@ -10564,6 +10656,7 @@ def start_gui():
                 "mode": self.mode_var.get(),
                 "preset": preset,
                 "include_order_documents": bool(self.include_order_docs_var.get()),
+                "include_spare_part_list": bool(self.include_spare_part_list_var.get()),
                 "include_offers": bool(self.include_offers_var.get()),
                 "open_pdf": bool(self.open_pdf_var.get()),
             }
@@ -10611,7 +10704,10 @@ def start_gui():
                 filename = os.path.basename(path) if path else "-"
                 filename_key = filename.casefold()
                 if role == "order":
-                    if filename_key.startswith("offerteaanvraag"):
+                    production_key = production.casefold()
+                    if "klaarleglijst" in production_key or "klaarleglijst" in filename_key:
+                        role_label = "Klaarleglijst"
+                    elif filename_key.startswith("offerteaanvraag"):
                         role_label = "Offerte"
                     elif filename_key.startswith("standaard"):
                         role_label = "Standaardbon"
@@ -17794,6 +17890,10 @@ def start_gui():
                 mode == PdfWorkDossierOptionsFrame.MODE_WORKDOSSIER
                 and bool(options.get("include_order_documents"))
             )
+            include_spare_part_list = (
+                mode == PdfWorkDossierOptionsFrame.MODE_WORKDOSSIER
+                and bool(options.get("include_spare_part_list"))
+            )
             items = build_pdf_workdossier_plan(
                 source,
                 bom_df,
@@ -17802,6 +17902,7 @@ def start_gui():
                 if mode == PdfWorkDossierOptionsFrame.MODE_WORKDOSSIER
                 else None,
                 include_order_documents=include_order_documents,
+                include_spare_part_list=include_spare_part_list,
                 order_document_root=order_document_root,
                 include_offers=bool(options.get("include_offers")),
                 generated_order_documents=generated_order_documents,
@@ -17824,6 +17925,14 @@ def start_gui():
                     drawing_productions - order_productions,
                     key=lambda value: value.casefold(),
                 )
+            missing_orders.extend(
+                _missing_pdf_spare_part_preparation_items(
+                    bom_df,
+                    generated_order_documents,
+                    order_document_root,
+                    include_spare_part_list=include_spare_part_list,
+                )
+            )
             return items, missing_orders, ""
 
         def _refresh_pdf_workdossier_preview(self) -> None:
@@ -17857,8 +17966,8 @@ def start_gui():
                 if len(missing_orders) > 8:
                     shown += f", +{len(missing_orders) - 8}"
                 options_frame.set_order_flow_message(
-                    "Bestelbonnen/standaardbonnen ontbreken voor: "
-                    f"{shown}. Gebruik 'Bestelbonnen klaarmaken' om de bon-PDF's "
+                    "PDF-dossierdocumenten ontbreken voor: "
+                    f"{shown}. Gebruik 'Documenten klaarmaken' om de PDF's "
                     "voor dit PDF dossier aan te maken.",
                     show_button=True,
                 )
@@ -17868,7 +17977,7 @@ def start_gui():
         def _prepare_pdf_order_documents(self) -> None:
             if not self._ensure_bom_loaded():
                 return
-            self.status_var.set("Vul de bestelbonpagina aan voor het PDF dossier.")
+            self.status_var.set("Vul de documentpagina aan voor het PDF dossier.")
             self._show_supplier_selection_tab(
                 select_tab=True,
                 prompt_opticutter=True,
@@ -17880,12 +17989,11 @@ def start_gui():
             if len(missing_orders) > 10:
                 shown += f", +{len(missing_orders) - 10}"
             messagebox.showwarning(
-                "Bestelbonnen ontbreken",
+                "PDF-dossierdocumenten ontbreken",
                 (
-                    "De optie om bestelbonnen/standaardbonnen in te voegen staat aan, "
-                    "maar er ontbreken nog PDF-bonnen voor:\n\n"
+                    "Er ontbreken nog PDF-documenten voor het werkdossier:\n\n"
                     f"{shown}\n\n"
-                    "Maak eerst de bon-PDF's via de speciale PDF dossier-context; "
+                    "Maak eerst de documenten via de speciale PDF dossier-context; "
                     "daarna kom je automatisch terug naar deze pagina."
                 ),
                 parent=self,
@@ -18053,6 +18161,9 @@ def start_gui():
                             preset=options.get("preset"),
                             include_order_documents=bool(
                                 options.get("include_order_documents")
+                            ),
+                            include_spare_part_list=bool(
+                                options.get("include_spare_part_list")
                             ),
                             order_document_root=order_document_root,
                             include_offers=bool(options.get("include_offers")),

@@ -72,7 +72,7 @@ from opticutter import (
     parse_length_to_mm,
     prepare_opticutter_export,
 )
-from spare_parts import is_spare_parts_production
+from spare_parts import SPARE_PARTS_FULL_LIST_KEY, is_spare_parts_production
 
 import step_previews
 from helpers import (
@@ -5288,7 +5288,7 @@ def copy_per_production_and_orders(
         spare_part_doc_total = len(spare_part_groups)
         _emit_progress(
             "spare_parts",
-            f"Spare-partsbonnen voorbereiden... 0 van {spare_part_doc_total}",
+            f"Spare-partsdocumenten voorbereiden... 0 van {spare_part_doc_total}",
             percent=65,
             done=0,
             total=spare_part_doc_total,
@@ -5351,25 +5351,36 @@ def copy_per_production_and_orders(
                 )
                 continue
 
-            supplier = pick_supplier_for_spare_part_group(
-                group_key,
-                _to_str(group.get("default_supplier")).strip(),
-                db,
-                spare_part_override_map,
-                suppliers_sorted=suppliers_sorted,
-            )
+            if is_full_spare_list:
+                supplier = Supplier(supplier="")
+            else:
+                supplier = pick_supplier_for_spare_part_group(
+                    group_key,
+                    _to_str(group.get("default_supplier")).strip(),
+                    db,
+                    spare_part_override_map,
+                    suppliers_sorted=suppliers_sorted,
+                )
             spare_sel_key = make_spare_part_selection_key(group_key)
             chosen[spare_sel_key] = supplier.supplier
-            if remember_defaults and supplier.supplier not in (
-                "",
-                "Onbekend",
-                NO_SUPPLIER_PLACEHOLDER,
+            if (
+                not is_full_spare_list
+                and remember_defaults
+                and supplier.supplier not in (
+                    "",
+                    "Onbekend",
+                    NO_SUPPLIER_PLACEHOLDER,
+                )
             ):
                 db.set_default(make_spare_part_default_key(group_key), supplier.supplier)
 
-            raw_doc_type = spare_part_doc_type_map.get(
-                group_key,
-                group.get("default_doc_type") or "Bestelbon",
+            raw_doc_type = (
+                "Standaard bon"
+                if is_full_spare_list
+                else spare_part_doc_type_map.get(
+                    group_key,
+                    group.get("default_doc_type") or "Bestelbon",
+                )
             )
             doc_type = _to_str(raw_doc_type).strip() or "Bestelbon"
             doc_num = _normalize_doc_number(
@@ -5411,7 +5422,11 @@ def copy_per_production_and_orders(
                     filename_context=filename_context,
                     target_dir=target_dir,
                     supplier=supplier,
-                    delivery=spare_part_delivery_map.get(group_key),
+                    delivery=(
+                        None
+                        if is_full_spare_list
+                        else spare_part_delivery_map.get(group_key)
+                    ),
                     doc_type=doc_type,
                     doc_num=doc_num,
                     doc_num_display=doc_num_display,
@@ -5775,6 +5790,13 @@ def _is_generated_order_pdf(
     return _is_order_interleaf_pdf(path, include_offers=include_offers)
 
 
+def _is_generated_spare_part_full_list(record: Mapping[str, object]) -> bool:
+    return any(
+        kind == "sparepart" and identifier == SPARE_PARTS_FULL_LIST_KEY
+        for kind, identifier in _generated_order_document_selection_pairs(record)
+    )
+
+
 def _order_document_sort_key(
     *,
     kind: str,
@@ -5788,6 +5810,8 @@ def _order_document_sort_key(
 def _append_pdf_supplementary_order_documents(
     plan: List[PdfWorkDossierPlanItem],
     *,
+    include_order_documents: bool,
+    include_spare_part_list: bool,
     order_document_root: str | None,
     include_offers: bool,
     generated_order_documents: Sequence[Mapping[str, object]] | None,
@@ -5826,22 +5850,33 @@ def _append_pdf_supplementary_order_documents(
             )
         )
 
-    for production in sorted(
-        {_to_str(value).strip() for value in no_drawing_productions if _to_str(value).strip()},
-        key=lambda value: value.casefold(),
-    ):
-        for path in _find_order_interleaf_pdfs(
-            order_document_root,
-            production,
-            include_offers=include_offers,
+    if include_order_documents:
+        for production in sorted(
+            {
+                _to_str(value).strip()
+                for value in no_drawing_productions
+                if _to_str(value).strip()
+                and not is_spare_parts_production(value)
+            },
+            key=lambda value: value.casefold(),
         ):
-            add_candidate(path, kind="production", label=production)
+            for path in _find_order_interleaf_pdfs(
+                order_document_root,
+                production,
+                include_offers=include_offers,
+            ):
+                add_candidate(path, kind="production", label=production)
 
     for record in generated_order_documents or []:
         if not isinstance(record, Mapping):
             continue
         path = _generated_order_document_path(record, order_document_root)
         if not _is_generated_order_pdf(record, path, include_offers=include_offers):
+            continue
+        is_spare_part_full_list = _is_generated_spare_part_full_list(record)
+        if is_spare_part_full_list and not include_spare_part_list:
+            continue
+        if not is_spare_part_full_list and not include_order_documents:
             continue
         pairs = _generated_order_document_selection_pairs(record)
         production_ids = [
@@ -5879,6 +5914,7 @@ def build_pdf_workdossier_plan(
     bom_source_path: str | None = None,
     preset: PdfWorkDossierPreset | None = None,
     include_order_documents: bool = False,
+    include_spare_part_list: bool = False,
     order_document_root: str | None = None,
     include_offers: bool = False,
     generated_order_documents: Sequence[Mapping[str, object]] | None = None,
@@ -5916,7 +5952,7 @@ def build_pdf_workdossier_plan(
 
     plan: List[PdfWorkDossierPlanItem] = []
     if preset is None:
-        if not include_order_documents:
+        if not include_order_documents and not include_spare_part_list:
             all_files: List[str] = []
             all_files.extend(related_bom_pdfs)
             for paths in prod_to_files.values():
@@ -5951,14 +5987,17 @@ def build_pdf_workdossier_plan(
                 order_document_root=order_document_root,
                 include_offers=include_offers,
             )
-        _append_pdf_supplementary_order_documents(
-            plan,
-            order_document_root=order_document_root,
-            include_offers=include_offers,
-            generated_order_documents=generated_order_documents,
-            drawing_productions=list(drawing_prod_to_files.keys()),
-            no_drawing_productions=no_drawing_productions,
-        )
+        if include_order_documents or include_spare_part_list:
+            _append_pdf_supplementary_order_documents(
+                plan,
+                include_order_documents=include_order_documents,
+                include_spare_part_list=include_spare_part_list,
+                order_document_root=order_document_root,
+                include_offers=include_offers,
+                generated_order_documents=generated_order_documents,
+                drawing_productions=list(drawing_prod_to_files.keys()),
+                no_drawing_productions=no_drawing_productions,
+            )
         return plan
 
     sections = [section for section in preset.sections if section.enabled]
@@ -6039,9 +6078,11 @@ def build_pdf_workdossier_plan(
                 include_offers=include_offers,
             )
 
-    if include_order_documents:
+    if include_order_documents or include_spare_part_list:
         _append_pdf_supplementary_order_documents(
             plan,
+            include_order_documents=include_order_documents,
+            include_spare_part_list=include_spare_part_list,
             order_document_root=order_document_root,
             include_offers=include_offers,
             generated_order_documents=generated_order_documents,
@@ -6064,6 +6105,7 @@ def combine_workdossier_pdf_from_source(
     bom_source_path: str | None = None,
     preset: PdfWorkDossierPreset | None = None,
     include_order_documents: bool = False,
+    include_spare_part_list: bool = False,
     order_document_root: str | None = None,
     include_offers: bool = False,
     generated_order_documents: Sequence[Mapping[str, object]] | None = None,
@@ -6090,6 +6132,7 @@ def combine_workdossier_pdf_from_source(
         bom_source_path=bom_source_path,
         preset=preset,
         include_order_documents=include_order_documents,
+        include_spare_part_list=include_spare_part_list,
         order_document_root=order_document_root,
         include_offers=include_offers,
         generated_order_documents=generated_order_documents,

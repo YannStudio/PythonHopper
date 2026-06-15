@@ -12,6 +12,9 @@
 - De volledige spare-partlijst wordt in UI/export duidelijker als klaarleglijst benoemd.
 - De spare-part klaarleglijst gedraagt zich in de Bestelbonnen-flow niet meer als leveranciersbon.
 - De spare-part klaarleglijst kan niet meer als gekoppelde bon of groepsmaster gebruikt worden.
+- De exportlaag forceert de spare-part klaarleglijst nu altijd als standaarddocument zonder leverancier.
+- Het PDF werkdossier heeft nu een aparte keuze om de volledige spare-parts klaarleglijst mee in te voegen.
+- Het PDF werkdossier meldt nu ook wanneer de aangevinkte spare-parts klaarleglijst nog niet voorbereid is.
 - Diagnostiek waarschuwt nu ook voor lege of overlappende spare-part presetregels.
 - PDF dossier wist na het kiezen van een volgordepreset de gearceerde comboboxselectie, zoals bij de moduskeuze.
 - Informatietekst bij de PDF dossier-modus en volgordepreset gebruikt nu dezelfde tekstkleur.

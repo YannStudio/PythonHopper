@@ -359,7 +359,11 @@ def test_spare_part_groups_export_full_list_and_supplier_order(tmp_path):
         {},
         True,
         spare_part_groups=groups,
-        spare_part_override_map={"supplier--herbaroof": "Herbaroof"},
+        spare_part_override_map={
+            SPARE_PARTS_FULL_LIST_KEY: "Herbaroof",
+            "supplier--herbaroof": "Herbaroof",
+        },
+        spare_part_doc_type_map={SPARE_PARTS_FULL_LIST_KEY: "Bestelbon"},
         generated_documents=generated_documents,
     )
 
@@ -384,6 +388,8 @@ def test_spare_part_groups_export_full_list_and_supplier_order(tmp_path):
     ]
     assert full_records
     assert {record.get("context_label") for record in full_records} == {"Klaarleglijst"}
+    assert {record.get("doc_type") for record in full_records} == {"Standaard bon"}
+    assert all(not record.get("supplier") for record in full_records)
 
     workbook = load_workbook(full_docs[0])
     values = [

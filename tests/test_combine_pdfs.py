@@ -428,7 +428,46 @@ def test_workdossier_can_insert_order_documents_before_production(tmp_path):
     ]
 
 
-def test_workdossier_appends_bon_pdfs_without_drawings_at_end(tmp_path):
+def test_workdossier_skips_spare_part_full_list_without_option(tmp_path):
+    source = tmp_path / "src"
+    order_root = tmp_path / "pdf-dossier-docs"
+    source.mkdir()
+    order_root.mkdir()
+
+    _blank_pdf(source / "ASM-1.pdf", width=80)
+    (order_root / "Spare parts").mkdir()
+    _blank_pdf(order_root / "Spare parts" / "Standaard bon_Spare parts.pdf", width=120)
+
+    bom_df = pd.DataFrame(
+        [
+            {"PartNumber": "ASM-1", "Production": "Assembly"},
+            {"PartNumber": "BOLT-1", "Production": "Spare parts"},
+        ]
+    )
+    generated_documents = [
+        {
+            "path": "Spare parts/Standaard bon_Spare parts.pdf",
+            "kind": "order",
+            "format": "pdf",
+            "selection_key": make_spare_part_selection_key("full"),
+            "context_kind": "Spare parts",
+            "context_label": "Klaarleglijst",
+            "doc_type": "Standaard bon",
+        },
+    ]
+
+    plan = build_pdf_workdossier_plan(
+        str(source),
+        bom_df,
+        include_order_documents=True,
+        order_document_root=str(order_root),
+        generated_order_documents=generated_documents,
+    )
+
+    assert [Path(item.path).name for item in plan] == ["ASM-1.pdf"]
+
+
+def test_workdossier_appends_bon_pdfs_and_spare_part_full_list_at_end(tmp_path):
     source = tmp_path / "src"
     order_root = tmp_path / "pdf-dossier-docs"
     source.mkdir()
@@ -476,6 +515,7 @@ def test_workdossier_appends_bon_pdfs_without_drawings_at_end(tmp_path):
         str(source),
         bom_df,
         include_order_documents=True,
+        include_spare_part_list=True,
         order_document_root=str(order_root),
         generated_order_documents=generated_documents,
     )
