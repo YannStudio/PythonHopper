@@ -1,8 +1,8 @@
 {
-  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Slimp/00. Projecten/2026/P26-017 - Deurframe",
-  "dest_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/Interne projecten/00 - Stock bestelbonnen",
-  "project_number": "Stock",
-  "project_name": "Uurroosterkaders De Lijn",
+  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/Jef van Looveren",
+  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/Jef van Looveren/00. Pannen/01. Export",
+  "project_number": "JVL",
+  "project_name": "Pannen - Recht 75x115",
   "file_extensions": [
     {
       "key": "pdf",
@@ -42,6 +42,20 @@
       "label": "eDrawing",
       "patterns": [
         ".html"
+      ],
+      "enabled": true
+    },
+    {
+      "key": "xls",
+      "label": "Excel",
+      "patterns": [
+        ".pdf",
+        ".doc",
+        ".docx",
+        ".xls",
+        ".xlsx",
+        ".ppt",
+        ".pptx"
       ],
       "enabled": false
     }
@@ -105,6 +119,7 @@
     "green roof": false,
     "stone": false,
     "waterjet": false,
-    "sparte part": false
+    "sparte part": false,
+    "mallen": false
   }
 }

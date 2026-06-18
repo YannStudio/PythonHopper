@@ -17,6 +17,7 @@
 - Het PDF werkdossier meldt nu ook wanneer de aangevinkte spare-parts klaarleglijst nog niet voorbereid is.
 - De spare-parts klaarleglijst krijgt in de PDF-werkdossierplanning altijd het vaste label "Klaarleglijst".
 - Oudere PDF-dossierrecords zonder sparepart::full worden ook als klaarleglijst herkend wanneer context of bestandsnaam dat duidelijk aangeeft.
+- PDF-dossierknoppen en meldingen spreken nu consequent over document-PDF's in plaats van alleen bon-PDF's.
 - Diagnostiek waarschuwt nu ook voor lege of overlappende spare-part presetregels.
 - PDF dossier wist na het kiezen van een volgordepreset de gearceerde comboboxselectie, zoals bij de moduskeuze.
 - Informatietekst bij de PDF dossier-modus en volgordepreset gebruikt nu dezelfde tekstkleur.

@@ -5289,7 +5289,7 @@ def start_gui():
             self.cancel_button = tk.Button(btns, text="Annuleer", command=self._cancel)
             self.cancel_button.grid(row=0, column=1, sticky="e", padx=(4, 0))
             confirm_text = (
-                "Bon-PDF's aanmaken en terug naar PDF dossier"
+                "Document-PDF's aanmaken en terug naar PDF dossier"
                 if self.pdf_dossier_context
                 else "Bevestig"
             )
@@ -12065,7 +12065,7 @@ def start_gui():
             ).grid(row=0, column=0, columnspan=5, sticky="ew")
             tk.Button(
                 toolbar,
-                text="Bestelbonnen klaarmaken",
+                text="Documenten klaarmaken",
                 command=self._open_spare_parts_order_flow,
                 bg=MANUFACT_BRAND_COLOR,
                 activebackground="#F4C46C",
@@ -15044,7 +15044,7 @@ def start_gui():
 
                     update_status("Kopiëren & bestelbonnen maken...")
                     if pdf_dossier_context:
-                        update_status("Bon-PDF's voor PDF dossier maken...")
+                        update_status("Document-PDF's voor PDF dossier maken...")
                     path_limit_messages: List[str] = []
                     document_status_lines: List[str] = []
                     generated_document_records: List[Dict[str, object]] = []
@@ -15229,7 +15229,7 @@ def start_gui():
                                 self._current_pdf_order_context_signature()
                             )
                             update_status(
-                                f"Bon-PDF's voor PDF dossier aangemaakt in {bundle_dest}"
+                                f"Document-PDF's voor PDF dossier aangemaakt in {bundle_dest}"
                             )
                             try:
                                 current_sel = getattr(self, "sel_frame", None)
@@ -15254,7 +15254,7 @@ def start_gui():
                             self._refresh_pdf_workdossier_preview()
                             set_busy_state(False)
                             info_lines = [
-                                "Bon-PDF's voor het PDF dossier zijn aangemaakt in:",
+                                "Document-PDF's voor het PDF dossier zijn aangemaakt in:",
                                 bundle_dest,
                             ]
                             if document_status_lines:

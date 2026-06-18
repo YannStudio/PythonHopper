@@ -333,6 +333,64 @@ def test_pdf_order_title_scales_down_for_long_descriptions():
     assert long_style.leading == long_style.fontSize + 2.0
 
 
+def test_order_pdf_header_remark_uses_indented_value_column(monkeypatch, tmp_path):
+    pytest.importorskip("reportlab")
+
+    captured = {}
+
+    class FakeDoc:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def build(self, story):
+            captured["story"] = story
+
+    monkeypatch.setattr(orders, "SimpleDocTemplate", FakeDoc)
+    remark = "Materiaal op tekening mag vervangen worden naar Inox 304L 2B."
+
+    generate_pdf_order_platypus(
+        str(tmp_path / "bestelbon.pdf"),
+        {
+            "name": "Tecno Art bvba",
+            "address": "Kwade Weide 13, 2920 Kalmthout",
+            "vat": "BE0460.973.296",
+            "email": "jeroen@tecnoart.be",
+        },
+        None,
+        production="Glasklemmen",
+        items=[{"PartNumber": "PN-1", "Description": "Glasklem", "Aantal": 1}],
+        doc_number="BB2026171",
+        project_number="Stock",
+        project_name="Glasklemmen",
+        order_remark=remark,
+    )
+
+    tables = [
+        flowable
+        for flowable in captured["story"]
+        if hasattr(flowable, "_cellvalues")
+    ]
+    header_table = next(
+        table
+        for table in tables
+        if len(table._cellvalues) == 1
+        and len(table._cellvalues[0]) == 2
+        and isinstance(table._cellvalues[0][0], list)
+    )
+    metadata_table = header_table._cellvalues[0][0][0]
+    remark_cell = next(
+        row[0]
+        for row in metadata_table._cellvalues
+        if _cell_text(row[0]).startswith("Opmerking:")
+    )
+
+    assert _cell_text(remark_cell) == f"Opmerking: {remark}"
+    assert remark_cell.style.leftIndent > 0
+    assert remark_cell.style.firstLineIndent < 0
+    assert abs(remark_cell.style.leftIndent + remark_cell.style.firstLineIndent) < 0.01
+    assert sum(metadata_table._colWidths) < header_table._colWidths[0]
+
+
 def test_order_excel_section_moves_vat_summary_below_table():
     section = OrderDocumentSection(
         context_label="Document",

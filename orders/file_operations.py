@@ -2281,6 +2281,85 @@ def _order_table_header_cell(
     return Paragraph(escape(_to_str(label)), style)
 
 
+def _order_metadata_table(
+    rows: Sequence[Tuple[str, object]],
+    *,
+    table_width: float,
+    base_style,
+    value_max_width: float | None = None,
+    right_gap: float | None = None,
+):
+    """Return a compact label/value table for order PDF metadata."""
+
+    visible_rows = [
+        (_to_str(label).strip(), _to_str(value).strip())
+        for label, value in rows
+        if _to_str(label).strip() or _to_str(value).strip()
+    ]
+    if not visible_rows:
+        return Paragraph("", base_style)
+
+    font_size = float(getattr(base_style, "fontSize", 10) or 10)
+    leading = float(getattr(base_style, "leading", font_size + 2.2) or font_size + 2.2)
+    text_color = getattr(base_style, "textColor", colors.HexColor(ORDER_TEXT_COLOR))
+    try:
+        widest_label = max(
+            stringWidth(f"{label}: ", "Helvetica-Bold", font_size)
+            for label, _value in visible_rows
+            if label
+        )
+    except Exception:
+        widest_label = max((len(label) for label, _value in visible_rows), default=10) * font_size * 0.55
+
+    gap = right_gap if right_gap is not None else 11 * mm
+    value_cap = value_max_width if value_max_width is not None else 60 * mm
+    available_width = max(80.0, table_width - gap)
+    metadata_width = min(available_width, widest_label + value_cap)
+    metadata_width = max(min(available_width, widest_label + 56.0), metadata_width)
+
+    def value_html(value: str) -> str:
+        lines = value.splitlines() or [value]
+        return "<br/>".join(escape(line.strip()) for line in lines)
+
+    data = []
+    for index, (label, value) in enumerate(visible_rows):
+        try:
+            indent = stringWidth(f"{label}: ", "Helvetica-Bold", font_size) + 2.0
+        except Exception:
+            indent = (len(label) + 2) * font_size * 0.55
+        row_style = ParagraphStyle(
+            f"OrderMetaRow{index}",
+            parent=base_style,
+            fontSize=font_size,
+            leading=leading,
+            textColor=text_color,
+            leftIndent=indent,
+            firstLineIndent=-indent,
+            wordWrap="CJK",
+        )
+        data.append(
+            [
+                Paragraph(
+                    f"<b>{escape(label)}:</b> {value_html(value)}" if label else value_html(value),
+                    row_style,
+                )
+            ]
+        )
+    table = Table(data, colWidths=[metadata_width], hAlign="LEFT")
+    table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0.8),
+            ]
+        )
+    )
+    return table
+
+
 def _order_company_lines(company_info: Mapping[str, object] | None) -> List[str]:
     """Return formatted company lines for order headers."""
 
@@ -2880,6 +2959,9 @@ def generate_pdf_order_platypus(
         bottomMargin=20 * mm,
     )
     width, _ = A4
+    usable_w = width - 2 * margin
+    left_col_width = usable_w * 0.58
+    right_col_width = usable_w - left_col_width
     palette = _order_palette(company_info)
     styles = getSampleStyleSheet()
     text_style = styles["Normal"]
@@ -2946,24 +3028,24 @@ def generate_pdf_order_platypus(
         delivery=delivery,
     )
 
-    doc_lines: List[str] = []
+    doc_meta_rows: List[Tuple[str, object]] = []
     if doc_number:
-        doc_lines.append(f"Nummer: {doc_number}")
+        doc_meta_rows.append(("Nummer", doc_number))
     today = datetime.date.today().strftime("%Y-%m-%d")
-    doc_lines.append(f"Datum: {today}")
+    doc_meta_rows.append(("Datum", today))
     label_title = label_kind_clean[0].upper() + label_kind_clean[1:]
     group_summary = _order_group_summary_text(normalized_sections)
     if multiple_sections:
         if group_summary:
-            doc_lines.append(f"Gecombineerde bon voor: {group_summary}")
+            doc_meta_rows.append(("Gecombineerde bon voor", group_summary))
     elif production_text:
-        doc_lines.append(f"{label_title}: {production_text}")
+        doc_meta_rows.append((label_title, production_text))
     if project_number:
-        doc_lines.append(f"Projectnummer: {project_number}")
+        doc_meta_rows.append(("Projectnummer", project_number))
     if project_name:
-        doc_lines.append(f"Projectnaam: {project_name}")
+        doc_meta_rows.append(("Projectnaam", project_name))
     if order_remark_has_content and not place_remark_in_delivery_block:
-        doc_lines.append(f"Opmerking: {order_remark_text}")
+        doc_meta_rows.append(("Opmerking", order_remark_text))
 
     company_lines = _order_company_lines(company_info)
 
@@ -3030,44 +3112,19 @@ def generate_pdf_order_platypus(
         if supplier.phone:
             supp_lines.append(f"Tel: {supplier.phone}")
 
-    doc_html_lines: List[str] = []
-    if doc_number:
-        doc_html_lines.append(f"<b>Nummer:</b> {escape(_to_str(doc_number))}")
-    doc_html_lines.append(f"<b>Datum:</b> {escape(today)}")
-    if multiple_sections:
-        if group_summary:
-            doc_html_lines.append(
-                f"<b>Gecombineerde bon voor:</b> {escape(group_summary)}"
-            )
-    elif production_text:
-        doc_html_lines.append(
-            f"<b>{escape(label_title)}:</b> {escape(production_text)}"
-        )
-    if project_number:
-        doc_html_lines.append(
-            f"<b>Projectnummer:</b> {escape(_to_str(project_number))}"
-        )
-    if project_name:
-        doc_html_lines.append(
-            f"<b>Projectnaam:</b> {escape(_to_str(project_name))}"
-        )
-    if order_remark_has_content and not place_remark_in_delivery_block:
-        doc_html_lines.append(
-            f"<b>Opmerking:</b> {escape(order_remark_text)}"
-        )
-
     client_block = Paragraph("<br/>".join(company_lines), text_style)
-    doc_block = (
-        Paragraph("<br/>".join(doc_html_lines), meta_style)
-        if doc_html_lines
-        else Paragraph("", meta_style)
+    doc_block = _order_metadata_table(
+        doc_meta_rows,
+        table_width=left_col_width,
+        base_style=meta_style,
+        value_max_width=58 * mm,
     )
 
     supplier_block_parts: List[object] = []
     if supp_lines:
         supplier_block_parts.append(Paragraph("<br/>".join(supp_lines), text_style))
 
-    delivery_html: str | None = None
+    delivery_block: object | None = None
     include_delivery_block = not is_standaard_doc and (
         delivery is not None or place_remark_in_delivery_block
     )
@@ -3075,31 +3132,34 @@ def generate_pdf_order_platypus(
         delivery_text_parts: List[str] = []
         if delivery:
             if _to_str(delivery.name).strip():
-                delivery_text_parts.append(escape(_to_str(delivery.name).strip()))
+                delivery_text_parts.append(_to_str(delivery.name).strip())
             address_text = ", ".join(
                 line.strip()
                 for line in _to_str(delivery.address).splitlines()
                 if line.strip()
             )
             if address_text:
-                delivery_text_parts.append(escape(address_text))
+                delivery_text_parts.append(address_text)
             if _to_str(delivery.remarks).strip():
-                delivery_text_parts.append(escape(_to_str(delivery.remarks).strip()))
-        delivery_sections: List[str] = []
+                delivery_text_parts.append(_to_str(delivery.remarks).strip())
+        delivery_rows: List[Tuple[str, object]] = []
         if delivery_text_parts:
-            delivery_sections.append(
-                f"<b>Leveradres:</b> {' | '.join(delivery_text_parts)}"
-            )
+            delivery_rows.append(("Leveradres", " | ".join(delivery_text_parts)))
         if place_remark_in_delivery_block:
             remark_lines = order_remark_text.splitlines()
             if not remark_lines:
                 remark_lines = [order_remark_text]
-            delivery_sections.append(
-                "<b>Opmerking:</b><br/>"
-                + "<br/>".join(escape(line) for line in remark_lines if line.strip())
+            delivery_rows.append(
+                ("Opmerking", "\n".join(line for line in remark_lines if line.strip()))
             )
-        if delivery_sections:
-            delivery_html = "<br/>".join(delivery_sections)
+        if delivery_rows:
+            delivery_block = _order_metadata_table(
+                delivery_rows,
+                table_width=min(usable_w, 106 * mm),
+                base_style=delivery_style,
+                value_max_width=70 * mm,
+                right_gap=0,
+            )
 
     left_block_parts: List[object] = [doc_block]
     if supplier_block_parts:
@@ -3113,9 +3173,9 @@ def generate_pdf_order_platypus(
         if multiple_sections or not production_text
         else f"{doc_type_text} {label_kind_clean}: {production_text}"
     )
-    title_style = _order_title_style(styles, palette, title, width - 2 * margin)
+    title_style = _order_title_style(styles, palette, title, usable_w)
     story.append(Paragraph(title, title_style))
-    title_rule = Table([[""]], colWidths=[width - 2 * margin], rowHeights=[2])
+    title_rule = Table([[""]], colWidths=[usable_w], rowHeights=[2])
     title_rule.setStyle(
         TableStyle(
             [
@@ -3130,8 +3190,6 @@ def generate_pdf_order_platypus(
     story.append(title_rule)
     story.append(Spacer(0, 12))
 
-    left_col_width = (width - 2 * margin) * 0.58
-    right_col_width = (width - 2 * margin) - left_col_width
     right_block_parts: List[object] = []
     if logo_flowable is not None:
         logo_flowable.hAlign = "LEFT"
@@ -3156,9 +3214,9 @@ def generate_pdf_order_platypus(
         )
     )
     story.append(header_tbl)
-    if delivery_html:
+    if delivery_block:
         story.append(Spacer(0, 6))
-        story.append(Paragraph(delivery_html, delivery_style))
+        story.append(delivery_block)
         story.append(Spacer(0, 12))
     else:
         story.append(Spacer(0, 10))
@@ -3169,7 +3227,7 @@ def generate_pdf_order_platypus(
             _build_order_pdf_section_story(
                 section,
                 story=story,
-                usable_w=width - 2 * margin,
+                usable_w=usable_w,
                 palette=palette,
                 section_title_style=section_title_style,
                 show_title=True,
@@ -3244,7 +3302,6 @@ def generate_pdf_order_platypus(
         column_layout,
         is_raw=is_raw_material_order,
     )
-    usable_w = width - 2 * margin
     standard_col_widths: List[float] | None = None
     if not custom_layout and not is_raw_material_order:
         col_fracs = [0.22, 0.40, 0.14, 0.06, 0.09, 0.09]
