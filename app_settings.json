@@ -1,8 +1,8 @@
 {
-  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/Jef van Looveren",
-  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/03. Projecten/00. Klanten/Jef van Looveren/00. Pannen/01. Export",
-  "project_number": "JVL",
-  "project_name": "Pannen - Recht 75x115",
+  "source_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2024/20240158 - GBS De Droomwolk Kieldrecht/CAD/3D Soldiworks Files/MOD3 V1",
+  "dest_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2024/20240158 - GBS De Droomwolk Kieldrecht/CAD/Bestellingen/Export Mod3",
+  "project_number": "20240158",
+  "project_name": "De droomwolk-Mod3",
   "file_extensions": [
     {
       "key": "pdf",
@@ -72,7 +72,7 @@
   "custom_prefix_text": "",
   "custom_suffix_enabled": false,
   "custom_suffix_text": "",
-  "document_filename_profile": "compact",
+  "document_filename_profile": "short",
   "document_filename_show_doc_type": true,
   "document_filename_show_doc_number": true,
   "document_filename_show_context": false,
