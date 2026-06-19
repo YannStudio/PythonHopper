@@ -15364,8 +15364,6 @@ def start_gui():
                     daemon=True,
                 ).start()
 
-<<<<<<< ours
-<<<<<<< ours
             sup_search_restore = ""
             sup_frame = getattr(self, "suppliers_frame", None)
             if sup_frame is not None and hasattr(sup_frame, "suspend_search_filter"):
@@ -15373,45 +15371,6 @@ def start_gui():
                     sup_search_restore = sup_frame.suspend_search_filter()
                 except Exception:
                     sup_search_restore = ""
-=======
-=======
->>>>>>> theirs
-        def _selected_ext_groups(self) -> Optional[List[List[str]]]:
-            groups: List[List[str]] = []
-            for ext in self.settings.file_extensions:
-                var = self.extension_vars.get(ext.key)
-                if var is None or not var.get():
-                    continue
-                normalized_group: List[str] = []
-                seen = set()
-                for pattern in ext.patterns:
-                    value = _to_str(pattern).strip().lower()
-                    if not value:
-                        continue
-                    if not value.startswith("."):
-                        value = f".{value.lstrip('.')}"
-                    if value in seen:
-                        continue
-                    normalized_group.append(value)
-                    seen.add(value)
-                if normalized_group:
-                    groups.append(normalized_group)
-            return groups or None
-
-        def _selected_exts(self) -> Optional[List[str]]:
-            groups = self._selected_ext_groups()
-            if not groups:
-                return None
-            selected: List[str] = []
-            seen = set()
-            for group in groups:
-                for pattern in group:
-                    if pattern in seen:
-                        continue
-                    selected.append(pattern)
-                    seen.add(pattern)
-            return selected or None
->>>>>>> theirs
 
             previous_state = (
                 initial_state_override
@@ -15507,45 +15466,7 @@ def start_gui():
 
                 sel_frame.bind("<Destroy>", _restore_search, add="+")
 
-<<<<<<< ours
             return sel_frame
-=======
-        def _selected_ext_groups(self) -> Optional[List[List[str]]]:
-            groups: List[List[str]] = []
-            for ext in self.settings.file_extensions:
-                var = self.extension_vars.get(ext.key)
-                if var is None or not var.get():
-                    continue
-                normalized_group: List[str] = []
-                seen = set()
-                for pattern in ext.patterns:
-                    value = _to_str(pattern).strip().lower()
-                    if not value:
-                        continue
-                    if not value.startswith("."):
-                        value = f".{value.lstrip('.')}"
-                    if value in seen:
-                        continue
-                    normalized_group.append(value)
-                    seen.add(value)
-                if normalized_group:
-                    groups.append(normalized_group)
-            return groups or None
-
-        def _selected_exts(self) -> Optional[List[str]]:
-            groups = self._selected_ext_groups()
-            if not groups:
-                return None
-            selected: List[str] = []
-            seen = set()
-            for group in groups:
-                for pattern in group:
-                    if pattern in seen:
-                        continue
-                    selected.append(pattern)
-                    seen.add(pattern)
-            return selected or None
->>>>>>> theirs
 
         def _schedule_opticutter_refresh(self) -> None:
             after_id = getattr(self, "_opticutter_refresh_after_id", None)
@@ -16683,8 +16604,13 @@ def start_gui():
             idx = _build_file_index(self.source_folder, exts)
             sw_idx = _build_file_index(self.source_folder, [".sldprt", ".slddrw"])
             found, status, links = [], [], []
-            selected_groups = self._selected_ext_groups() or []
-            groups = [set(group) for group in selected_groups if group]
+            groups = []
+            exts_set = set(e.lower() for e in exts)
+            if ".step" in exts_set or ".stp" in exts_set:
+                groups.append({".step", ".stp"})
+                exts_set -= {".step", ".stp"}
+            for e in exts_set:
+                groups.append({e})
             for _, row in self.bom_df.iterrows():
                 pn = row["PartNumber"]
                 hits = idx.get(pn, [])
@@ -16729,8 +16655,13 @@ def start_gui():
             idx = _build_file_index(self.source_folder, exts)
             sw_idx = _build_file_index(self.source_folder, [".sldprt", ".slddrw"])
             found, status, links = [], [], []
-            selected_groups = self._selected_ext_groups() or []
-            groups = [set(group) for group in selected_groups if group]
+            groups = []
+            exts_set = set(e.lower() for e in exts)
+            if ".step" in exts_set or ".stp" in exts_set:
+                groups.append({".step", ".stp"})
+                exts_set -= {".step", ".stp"}
+            for e in exts_set:
+                groups.append({e})
             for _, row in self.bom_df.iterrows():
                 pn = row["PartNumber"]
                 hits = idx.get(pn, [])
