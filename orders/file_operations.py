@@ -2276,9 +2276,68 @@ def _order_table_header_cell(
         leading=font_size + 1.5,
         alignment=alignment,
         textColor=colors.HexColor(text_color),
-        wordWrap="CJK",
+        splitLongWords=0,
     )
     return Paragraph(escape(_to_str(label)), style)
+
+
+def _order_table_header_min_width(label: object, font_size: float) -> float:
+    """Return the minimum width needed to keep header words intact."""
+
+    text = re.sub(r"\s+", " ", _to_str(label).replace("\n", " ")).strip()
+    tokens = [token for token in text.split(" ") if token]
+    if not tokens:
+        return 0.0
+    try:
+        token_width = max(
+            stringWidth(token, "Helvetica-Bold", font_size) for token in tokens
+        )
+    except Exception:
+        token_width = max(len(token) for token in tokens) * font_size * 0.55
+    return token_width + 14.0
+
+
+def _weighted_widths_with_minimums(
+    total_width: float,
+    weights: Sequence[float],
+    minimums: Sequence[float],
+) -> List[float]:
+    """Distribute width by weight while honoring column minimums when possible."""
+
+    count = len(weights)
+    if count == 0:
+        return []
+    safe_weights = [weight if weight > 0 else 1.0 for weight in weights]
+    safe_minimums = [max(0.0, minimum) for minimum in minimums]
+    while len(safe_minimums) < count:
+        safe_minimums.append(0.0)
+    safe_minimums = safe_minimums[:count]
+    minimum_total = sum(safe_minimums)
+    if minimum_total >= total_width and minimum_total > 0:
+        return [total_width * (minimum / minimum_total) for minimum in safe_minimums]
+
+    fixed: set[int] = set()
+    widths = [0.0] * count
+    while True:
+        fixed_width = sum(safe_minimums[index] for index in fixed)
+        flexible = [index for index in range(count) if index not in fixed]
+        if not flexible:
+            break
+        flexible_width = max(0.0, total_width - fixed_width)
+        flexible_weight = sum(safe_weights[index] for index in flexible) or len(flexible)
+        for index in fixed:
+            widths[index] = safe_minimums[index]
+        for index in flexible:
+            widths[index] = flexible_width * (safe_weights[index] / flexible_weight)
+        new_fixed = [
+            index
+            for index in flexible
+            if widths[index] < safe_minimums[index]
+        ]
+        if not new_fixed:
+            break
+        fixed.update(new_fixed)
+    return widths
 
 
 def _order_metadata_table(
@@ -2809,9 +2868,16 @@ def _build_order_pdf_section_story(
             except Exception:
                 weight_val = 0.0
             weights.append(weight_val if weight_val > 0 else 1.0)
-        total_weight_units = sum(weights) or len(weights) or 1
+        minimums = [
+            _order_table_header_min_width(column.get("label"), table_header_font_size)
+            for column in column_layout
+        ]
         col_widths = [item_col_width] + [
-            content_usable_w * (w / total_weight_units) for w in weights
+            width for width in _weighted_widths_with_minimums(
+                content_usable_w,
+                weights,
+                minimums,
+            )
         ]
     elif is_raw_material_order:
         col_fracs = [0.32, 0.24, 0.16, 0.12, 0.16]
@@ -3506,8 +3572,11 @@ def generate_pdf_order_platypus(
             except Exception:
                 weight_val = 0.0
             weights.append(weight_val if weight_val > 0 else 1.0)
-        total_weight_units = sum(weights) or len(weights) or 1
-        col_widths = [usable_w * (w / total_weight_units) for w in weights]
+        minimums = [
+            _order_table_header_min_width(column.get("label"), 9.5)
+            for column in column_layout
+        ]
+        col_widths = _weighted_widths_with_minimums(usable_w, weights, minimums)
     elif is_raw_material_order:
         col_fracs = [0.32, 0.24, 0.16, 0.12, 0.16]
         col_widths = [usable_w * frac for frac in col_fracs]

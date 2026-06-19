@@ -6,6 +6,7 @@ from orders import (
     _build_order_excel_section_data,
     _build_order_pdf_section_story,
     _order_title_style,
+    _order_table_header_min_width,
     generate_pdf_order_platypus,
     _order_palette,
     _wrap_words_to_lines,
@@ -211,6 +212,94 @@ def test_order_pdf_section_compacts_price_headers():
     assert header[-2:] == ["Prijs/st. (\u20ac)", "Totaal (\u20ac)"]
     assert table._cellvalues[0][-2].style.alignment == 2
     assert table._cellvalues[0][-1].style.alignment == 2
+
+
+def test_single_section_pdf_keeps_aantal_header_as_one_word(monkeypatch, tmp_path):
+    pytest.importorskip("reportlab")
+
+    captured = {}
+
+    class FakeDoc:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def build(self, story):
+            captured["story"] = story
+
+    monkeypatch.setattr(orders, "SimpleDocTemplate", FakeDoc)
+
+    generate_pdf_order_platypus(
+        str(tmp_path / "bestelbon.pdf"),
+        {},
+        None,
+        production="Glasklemmen",
+        items=[
+            {
+                "part_number": "XXX-GPH-p01",
+                "description": "Outer ring",
+                "material": "Inox 304L 2B",
+                "quantity": 50,
+                "weight": 0.10,
+                "unit_price": 14.57,
+                "total_price": 728.50,
+            }
+        ],
+        label_kind="document",
+        column_layout=[
+            {"key": "part_number", "label": "Artikel nr.", "weight": 1.6},
+            {"key": "description", "label": "Omschrijving", "weight": 2.6},
+            {"key": "material", "label": "Materiaal", "weight": 1.6},
+            {
+                "key": "quantity",
+                "label": "Aantal",
+                "justify": "right",
+                "numeric": True,
+                "integer": True,
+                "weight": 0.7,
+            },
+            {
+                "key": "weight",
+                "label": "kg",
+                "justify": "right",
+                "numeric": True,
+                "weight": 0.8,
+            },
+            {
+                "key": "unit_price",
+                "label": "Prijs/st. (\u20ac)",
+                "justify": "right",
+                "numeric": True,
+                "weight": 1.0,
+            },
+            {
+                "key": "total_price",
+                "label": "Totaal (\u20ac)",
+                "justify": "right",
+                "numeric": True,
+                "weight": 1.0,
+            },
+        ],
+    )
+
+    tables = [
+        flowable
+        for flowable in captured["story"]
+        if hasattr(flowable, "_cellvalues")
+    ]
+    order_table = next(
+        table
+        for table in tables
+        if table._cellvalues and "Aantal" in _row_texts(table._cellvalues[0])
+    )
+    header = _row_texts(order_table._cellvalues[0])
+    qty_idx = header.index("Aantal")
+    qty_header = order_table._cellvalues[0][qty_idx]
+
+    assert order_table._colWidths[qty_idx] >= _order_table_header_min_width(
+        "Aantal",
+        9.5,
+    )
+    assert getattr(qty_header.style, "splitLongWords", None) == 0
 
 
 def test_order_excel_section_compacts_price_headers():
