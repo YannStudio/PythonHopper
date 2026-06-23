@@ -1367,6 +1367,19 @@ def start_gui():
             combo.set(value)
             setattr(combo, "_supplier_focus_seen", False)
 
+        @staticmethod
+        def _strip_favorite_marker(text: str) -> str:
+            """Remove the display favorite marker without depending on module globals."""
+
+            try:
+                return strip_favorite_marker(text)
+            except NameError:
+                value = "" if text is None else str(text)
+                for marker in ("★ ", "* "):
+                    if marker and marker in value:
+                        return value.replace(marker, "", 1)
+                return value
+
         def set_opticutter_notice(self, message: str) -> None:
             text = (message or "").strip()
             if text:
@@ -2378,7 +2391,9 @@ def start_gui():
 
             def _option_norm(opt: str) -> str:
                 name = disp_to_name.get(opt, opt)
-                cleaned = strip_favorite_marker(name if name else opt)
+                cleaned = SupplierSelectionFrame._strip_favorite_marker(
+                    name if name else opt
+                )
                 cleaned = cleaned.replace("(", "").replace(")", "")
                 return _norm(cleaned)
 
@@ -6788,4 +6803,3 @@ def start_gui():
                 )
 
     App().mainloop()
-
