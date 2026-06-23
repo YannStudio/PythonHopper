@@ -54,6 +54,7 @@ from spare_part_presets import (
     SPARE_PART_PRESETS_DB_FILE,
     SparePartPresetRule,
     SparePartPresetsDB,
+    example_spare_part_preset_rules,
 )
 from pdf_workdossier_presets import (
     PDF_WORKDOSSIER_PRESETS_DB_FILE,
@@ -143,7 +144,7 @@ from changelog_viewer import (
     get_latest_release_notes,
     load_changelog,
 )
-from help_content import FAQ_ENTRIES, QUICK_START_STEPS
+from help_content import FAQ_ENTRIES, QUICK_MANUAL_SECTIONS
 
 if TYPE_CHECKING:
     from orders import OpticutterOrderComputation
@@ -8933,14 +8934,15 @@ def start_gui():
 
             tk.Label(
                 body_frame,
-                text="Snel aan de slag:",
+                text="Quick manuals:",
                 background=self._settings_card_bg,
                 foreground=self._settings_text,
                 anchor="w",
             ).grid(row=0, column=0, sticky="w", pady=(0, 4))
 
             preview_text = "\n".join(
-                f"{index + 1}. {step['title']}" for index, step in enumerate(QUICK_START_STEPS[:3])
+                f"- {section['label']}: {section['intro']}"
+                for section in QUICK_MANUAL_SECTIONS.values()
             )
             tk.Label(
                 body_frame,
@@ -8956,13 +8958,13 @@ def start_gui():
             btn_frame.grid(row=2, column=0, sticky="w", pady=(10, 0))
             tk.Button(
                 btn_frame,
-                text="Start Quick Start",
-                command=self.app._show_quick_start,
+                text="Algemene quick manual",
+                command=lambda: self.app._show_quick_start("general"),
             ).pack(side="left", padx=(0, 8), pady=4)
             tk.Button(
                 btn_frame,
-                text="Visuele quick manual",
-                command=self.app._open_visual_quick_manual,
+                text="Spare parts",
+                command=lambda: self.app._show_quick_start("spare_parts"),
             ).pack(side="left", padx=(0, 8), pady=4)
             tk.Button(
                 btn_frame,
@@ -12054,7 +12056,8 @@ def start_gui():
 
             toolbar = tk.Frame(frame)
             toolbar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-            toolbar.grid_columnconfigure(1, weight=1)
+            toolbar.grid_columnconfigure(0, weight=1)
+            toolbar.grid_columnconfigure(1, weight=0)
             self.spare_parts_status_var = tk.StringVar(
                 master=self, value="Geen BOM geladen."
             )
@@ -12062,81 +12065,142 @@ def start_gui():
                 toolbar,
                 textvariable=self.spare_parts_status_var,
                 anchor="w",
-            ).grid(row=0, column=0, columnspan=5, sticky="ew")
-            tk.Button(
-                toolbar,
+            ).grid(row=0, column=0, sticky="ew", padx=(0, 12))
+
+            def _spare_toolbar_button(
+                parent,
+                *,
+                text: str,
+                command,
+                tooltip: str,
+                primary: bool = False,
+            ) -> "tk.Button":
+                kwargs = {
+                    "text": text,
+                    "command": command,
+                    "takefocus": False,
+                }
+                if primary:
+                    kwargs.update(
+                        {
+                            "bg": MANUFACT_BRAND_COLOR,
+                            "activebackground": "#F4C46C",
+                            "fg": "black",
+                            "activeforeground": "black",
+                            "padx": 12,
+                            "pady": 5,
+                        }
+                    )
+                button = tk.Button(parent, **kwargs)
+                _HelpTooltip(button, tooltip)
+                return button
+
+            top_actions = tk.Frame(toolbar)
+            top_actions.grid(row=0, column=1, sticky="e")
+            quick_manual_btn = _spare_toolbar_button(
+                top_actions,
                 text="Quick manual",
                 command=self._open_spare_parts_quick_manual,
-            ).grid(row=0, column=5, sticky="e", padx=(8, 0))
-            tk.Button(
-                toolbar,
+                tooltip="Open de interne quick manual meteen op de spare-parts uitleg.",
+            )
+            quick_manual_btn.pack(side="left", padx=(0, 8))
+            document_btn = _spare_toolbar_button(
+                top_actions,
                 text="Documenten klaarmaken",
                 command=self._open_spare_parts_order_flow,
-                bg=MANUFACT_BRAND_COLOR,
-                activebackground="#F4C46C",
-                fg="black",
-                activeforeground="black",
-                padx=12,
-                pady=5,
-                takefocus=False,
-            ).grid(row=0, column=6, sticky="e", padx=(8, 0))
+                tooltip="Open de bestelbonnenflow voor de voorbereide spare-parts groepen.",
+                primary=True,
+            )
+            document_btn.pack(side="left")
 
-            tk.Label(toolbar, text="Bestelgroep:").grid(
-                row=1, column=0, sticky="w", pady=(8, 0)
+            group_controls = tk.Frame(toolbar)
+            group_controls.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+            group_controls.grid_columnconfigure(1, weight=1)
+            tk.Label(group_controls, text="Bestelgroep:").grid(
+                row=0, column=0, sticky="w"
             )
             self.spare_parts_group_var = tk.StringVar(master=self, value="")
             self.spare_parts_group_combo = ttk.Combobox(
-                toolbar,
+                group_controls,
                 textvariable=self.spare_parts_group_var,
                 width=28,
                 state="normal",
             )
             self.spare_parts_group_combo.grid(
-                row=1, column=1, sticky="ew", padx=(6, 6), pady=(8, 0)
+                row=0, column=1, sticky="ew", padx=(6, 10)
             )
-            tk.Button(
-                toolbar,
+            _HelpTooltip(
+                self.spare_parts_group_combo,
+                "Kies of typ de bestelgroep waar geselecteerde spare-parts regels naartoe moeten.",
+            )
+
+            group_buttons = tk.Frame(group_controls)
+            group_buttons.grid(row=0, column=2, sticky="w")
+            assign_btn = _spare_toolbar_button(
+                group_buttons,
                 text="Zet selectie",
                 command=self._assign_selected_spare_parts_to_group,
-            ).grid(row=1, column=2, sticky="w", padx=(0, 4), pady=(8, 0))
-            tk.Button(
-                toolbar,
+                tooltip="Zet de geselecteerde onderdelen in de ingevulde bestelgroep.",
+            )
+            assign_btn.pack(side="left", padx=(0, 4))
+            new_group_btn = _spare_toolbar_button(
+                group_buttons,
                 text="Nieuwe groep",
                 command=self._create_spare_part_group_from_selection,
-            ).grid(row=1, column=3, sticky="w", padx=(0, 4), pady=(8, 0))
-            tk.Button(
-                toolbar,
+                tooltip="Maak een nieuwe bestelgroep en zet de selectie daar meteen in.",
+            )
+            new_group_btn.pack(side="left", padx=(0, 4))
+            unassigned_btn = _spare_toolbar_button(
+                group_buttons,
                 text="Terug open",
                 command=self._mark_selected_spare_parts_unassigned,
-            ).grid(row=1, column=4, sticky="w", padx=(0, 4), pady=(8, 0))
-            tk.Button(
-                toolbar,
+                tooltip="Zet de geselecteerde onderdelen terug naar Nog toe te wijzen.",
+            )
+            unassigned_btn.pack(side="left", padx=(0, 4))
+            auto_btn = _spare_toolbar_button(
+                group_buttons,
                 text="Auto",
                 command=self._reset_selected_spare_parts_group,
-            ).grid(row=1, column=5, sticky="w", padx=(0, 4), pady=(8, 0))
-            preset_buttons = tk.Frame(toolbar)
-            preset_buttons.grid(row=1, column=6, sticky="e", pady=(8, 0))
-            tk.Button(
+                tooltip="Verwijder de handmatige keuze en gebruik opnieuw automatische Supplier/Manufacturer-groepering.",
+            )
+            auto_btn.pack(side="left")
+
+            preset_buttons = tk.Frame(group_controls)
+            preset_buttons.grid(row=0, column=3, sticky="e", padx=(16, 0))
+            apply_presets_btn = _spare_toolbar_button(
                 preset_buttons,
                 text="Presets toepassen",
                 command=self._apply_spare_part_presets,
-            ).pack(side="left", padx=(0, 4))
-            tk.Button(
+                tooltip="Pas alle actieve spare-part presetregels toe op de huidige BOM.",
+            )
+            apply_presets_btn.pack(side="left", padx=(0, 4))
+            add_preset_btn = _spare_toolbar_button(
                 preset_buttons,
                 text="Preset toevoegen",
                 command=self._open_spare_part_preset_dialog,
-            ).pack(side="left", padx=(0, 4))
-            tk.Button(
+                tooltip="Maak een nieuwe presetregel, eventueel op basis van de geselecteerde regel.",
+            )
+            add_preset_btn.pack(side="left", padx=(0, 4))
+            example_presets_btn = _spare_toolbar_button(
+                preset_buttons,
+                text="Voorbeelden",
+                command=self._add_spare_part_example_presets,
+                tooltip="Voeg veilige voorbeeldpresets toe zodat gebruikers de opbouw kunnen bekijken.",
+            )
+            example_presets_btn.pack(side="left", padx=(0, 4))
+            manage_presets_btn = _spare_toolbar_button(
                 preset_buttons,
                 text="Presets beheren",
                 command=self._open_spare_part_presets_manager,
-            ).pack(side="left")
+                tooltip="Open het overzicht om presets te bewerken, aan/uit te zetten of te verwijderen.",
+            )
+            manage_presets_btn.pack(side="left")
 
             groups_frame = tk.LabelFrame(frame, text="Groepen", labelanchor="n")
             groups_frame.grid(row=1, column=0, sticky="nsw", padx=(0, 8))
             groups_frame.grid_rowconfigure(0, weight=1)
             groups_frame.grid_columnconfigure(0, weight=1)
-            group_columns = ("label", "route", "count", "missing")
+            group_columns = ("label", "route", "count", "missing", "space")
             self.spare_parts_groups_tree = ttk.Treeview(
                 groups_frame,
                 columns=group_columns,
@@ -12148,12 +12212,14 @@ def start_gui():
                 "route": "Route",
                 "count": "Aantal",
                 "missing": "Mist",
+                "space": "",
             }
             group_widths = {
                 "label": 190,
                 "route": 110,
                 "count": 58,
                 "missing": 48,
+                "space": 18,
             }
             for column in group_columns:
                 anchor = "e" if column in {"count", "missing"} else "w"
@@ -12173,6 +12239,9 @@ def start_gui():
             group_scroll.grid(row=0, column=1, sticky="ns")
             self.spare_parts_groups_tree.bind(
                 "<<TreeviewSelect>>", self._on_spare_parts_group_select
+            )
+            self.spare_parts_group_tooltips = _TreeTooltipManager(
+                self.spare_parts_groups_tree
             )
 
             items_frame = tk.LabelFrame(frame, text="Onderdelen", labelanchor="n")
@@ -12273,6 +12342,9 @@ def start_gui():
                 group_tree.delete(item_id)
             for item_id in item_tree.get_children():
                 item_tree.delete(item_id)
+            tooltip_manager = getattr(self, "spare_parts_group_tooltips", None)
+            if tooltip_manager is not None:
+                tooltip_manager.clear()
             self._spare_parts_group_records = {}
 
             groups = self._spare_part_groups_for_current_bom()
@@ -12322,8 +12394,16 @@ def start_gui():
                         route_label,
                         group.item_count,
                         group.missing_count or "",
+                        "",
                     ),
                 )
+                if tooltip_manager is not None and group.missing_count:
+                    tooltip_manager.set(
+                        group_key,
+                        "#4",
+                        "Aantal regels in deze groep met ontbrekende "
+                        "Supplier/Manufacturer of code-informatie.",
+                    )
             first_id = group_tree.get_children()[0]
             group_tree.selection_set(first_id)
             group_tree.focus(first_id)
@@ -12737,29 +12817,51 @@ def start_gui():
             win.after_idle(name_entry.focus_set)
 
         def _open_spare_parts_quick_manual(self) -> None:
+            self._show_quick_start("spare_parts")
+
+        def _add_spare_part_example_presets(
+            self,
+            *,
+            parent=None,
+            on_added=None,
+        ) -> int:
             from tkinter import messagebox
 
-            doc_path = (
-                Path(__file__).resolve().parent
-                / "docs"
-                / "spare_parts_quick_manual.md"
-            )
-            if doc_path.exists():
-                try:
-                    os.startfile(str(doc_path))
-                    return
-                except Exception:
-                    pass
-            try:
-                import webbrowser
+            parent = parent or self
+            db = getattr(self, "spare_part_presets_db", None)
+            if db is None:
+                self.spare_part_presets_db = SparePartPresetsDB()
+                db = self.spare_part_presets_db
 
-                webbrowser.open(doc_path.as_uri())
-            except Exception as exc:
-                messagebox.showerror(
-                    "Fout",
-                    f"Kon de spare-parts quick manual niet openen.\n{doc_path}\n{exc}",
-                    parent=self,
+            added: list[SparePartPresetRule] = []
+            for rule in example_spare_part_preset_rules():
+                if db.get(rule.name) is not None:
+                    continue
+                db.upsert(rule)
+                added.append(rule)
+
+            if not added:
+                messagebox.showinfo(
+                    "Spare-part voorbeelden",
+                    "De voorbeeldpresets staan al in de lijst.",
+                    parent=parent,
                 )
+                return 0
+
+            db.save(SPARE_PART_PRESETS_DB_FILE)
+            if callable(on_added):
+                on_added()
+            self.status_var.set(
+                f"{len(added)} voorbeeldpreset(s) toegevoegd. Ze staan standaard uit."
+            )
+            messagebox.showinfo(
+                "Spare-part voorbeelden",
+                "Voorbeeldpresets toegevoegd.\n\n"
+                "Ze staan standaard uit, zodat ze niets toepassen tot je ze bewust "
+                "aanzet of bewerkt.",
+                parent=parent,
+            )
+            return len(added)
 
         def _open_spare_part_presets_manager(self) -> None:
             from tkinter import messagebox
@@ -12932,6 +13034,9 @@ def start_gui():
                     f"Spare-part presets toegepast: {count} regel(s) gegroepeerd."
                 )
 
+            def _add_examples_from_manager() -> None:
+                self._add_spare_part_example_presets(parent=win, on_added=_refresh)
+
             tree.bind("<Double-1>", lambda _event: _edit_rule())
 
             buttons = tk.Frame(win)
@@ -12952,11 +13057,14 @@ def start_gui():
             tk.Button(buttons, text="Verwijder", command=_delete_rule).grid(
                 row=0, column=4, padx=(6, 0)
             )
-            tk.Button(buttons, text="Toepassen", command=_apply_presets_from_manager).grid(
+            tk.Button(buttons, text="Voorbeelden", command=_add_examples_from_manager).grid(
                 row=0, column=5, padx=(12, 0)
             )
-            tk.Button(buttons, text="Sluiten", command=win.destroy).grid(
+            tk.Button(buttons, text="Toepassen", command=_apply_presets_from_manager).grid(
                 row=0, column=6, padx=(6, 0)
+            )
+            tk.Button(buttons, text="Sluiten", command=win.destroy).grid(
+                row=0, column=7, padx=(6, 0)
             )
 
             _refresh()
@@ -13826,66 +13934,105 @@ def start_gui():
             win.transient(self)
             win.grab_set()
 
-        def _show_quick_start(self) -> None:
-            """Show the interactive quick-start guide."""
+        def _show_quick_start(self, initial_section: str = "general") -> None:
+            """Show the internal quick manual with selectable sections."""
             import tkinter as tk
-            from tkinter import ttk
+            from tkinter import scrolledtext
 
-            steps = QUICK_START_STEPS
-            current = {"index": 0}
+            sections = QUICK_MANUAL_SECTIONS
+            current = {
+                "key": initial_section if initial_section in sections else "general"
+            }
 
             win = tk.Toplevel(self)
-            win.title("Quick Start Guide")
-            win.geometry("680x420")
+            win.title("Quick manual")
+            win.geometry("820x540")
+            win.columnconfigure(1, weight=1)
+            win.rowconfigure(1, weight=1)
 
-            def update_step() -> None:
-                step = steps[current["index"]]
-                title_label.config(text=step["title"])
-                description_label.config(text=step["description"])
-                prev_button.config(state="normal" if current["index"] > 0 else "disabled")
-                next_button.config(text="Volgende" if current["index"] < len(steps) - 1 else "Sluiten")
-
-            title_label = tk.Label(
+            tk.Label(
                 win,
-                text="",
-                font=("TkDefaultFont", 13, "bold"),
+                text="Quick manual",
+                font=("TkDefaultFont", 14, "bold"),
                 anchor="w",
-                justify="left",
-                wraplength=640,
+                padx=16,
                 pady=12,
-            )
-            title_label.pack(fill="x", padx=16)
+            ).grid(row=0, column=0, columnspan=2, sticky="ew")
 
-            description_label = tk.Label(
+            nav_frame = tk.Frame(win)
+            nav_frame.grid(row=1, column=0, sticky="nsw", padx=(16, 8), pady=(0, 12))
+            nav_frame.columnconfigure(0, weight=1)
+
+            text_widget = scrolledtext.ScrolledText(
                 win,
-                text="",
-                anchor="nw",
-                justify="left",
-                wraplength=640,
-                padx=4,
-                pady=8,
+                wrap="word",
+                font=("TkDefaultFont", 10),
+                background="white",
+                relief="solid",
+                borderwidth=1,
+                padx=10,
+                pady=10,
             )
-            description_label.pack(fill="both", expand=True, padx=16)
+            text_widget.grid(row=1, column=1, sticky="nsew", padx=(0, 16), pady=(0, 12))
+            text_widget.tag_configure(
+                "title",
+                font=("TkDefaultFont", 13, "bold"),
+                foreground="#1F2937",
+                spacing3=8,
+            )
+            text_widget.tag_configure(
+                "intro",
+                foreground="#374151",
+                spacing3=10,
+            )
+            text_widget.tag_configure(
+                "step_title",
+                font=("TkDefaultFont", 10, "bold"),
+                foreground="#1F2937",
+                spacing1=8,
+                spacing3=2,
+            )
+            text_widget.tag_configure(
+                "step_body",
+                foreground="#374151",
+                lmargin1=18,
+                lmargin2=18,
+                spacing3=6,
+            )
 
-            control_frame = tk.Frame(win)
-            control_frame.pack(fill="x", padx=16, pady=(0, 12))
-            prev_button = tk.Button(control_frame, text="Vorige", command=lambda: navigate(-1))
-            prev_button.pack(side="left")
-            next_button = tk.Button(control_frame, text="Volgende", command=lambda: navigate(1))
-            next_button.pack(side="right")
+            section_buttons: Dict[str, "tk.Button"] = {}
 
-            def navigate(direction: int) -> None:
-                if direction < 0 and current["index"] > 0:
-                    current["index"] -= 1
-                    update_step()
-                elif direction > 0:
-                    if current["index"] < len(steps) - 1:
-                        current["index"] += 1
-                        update_step()
-                    else:
-                        win.destroy()
+            def render(section_key: str) -> None:
+                section = sections.get(section_key, sections["general"])
+                current["key"] = section_key if section_key in sections else "general"
+                for key, button in section_buttons.items():
+                    button.configure(
+                        relief="sunken" if key == current["key"] else "raised"
+                    )
+                text_widget.configure(state="normal")
+                text_widget.delete("1.0", "end")
+                text_widget.insert("end", f"{section['title']}\n", "title")
+                text_widget.insert("end", f"{section['intro']}\n\n", "intro")
+                for step in section["steps"]:
+                    text_widget.insert("end", f"{step['title']}\n", "step_title")
+                    text_widget.insert("end", f"{step['description']}\n", "step_body")
+                text_widget.configure(state="disabled")
 
-            update_step()
+            for row_index, (section_key, section) in enumerate(sections.items()):
+                button = tk.Button(
+                    nav_frame,
+                    text=section["label"],
+                    width=18,
+                    anchor="w",
+                    command=lambda key=section_key: render(key),
+                )
+                button.grid(row=row_index, column=0, sticky="ew", pady=(0, 6))
+                section_buttons[section_key] = button
+
+            close_btn = tk.Button(win, text="Sluiten", command=win.destroy)
+            close_btn.grid(row=2, column=1, sticky="e", padx=16, pady=(0, 12))
+
+            render(current["key"])
             win.transient(self)
             win.grab_set()
 
@@ -13953,28 +14100,8 @@ def start_gui():
             win.grab_set()
 
         def _open_visual_quick_manual(self) -> None:
-            """Open the visual quick-start markdown file."""
-            import os
-            import tkinter as tk
-            from tkinter import messagebox
-            from pathlib import Path
-
-            doc_path = Path(__file__).resolve().parent / "docs" / "quick_start_visual.md"
-            if doc_path.exists():
-                try:
-                    os.startfile(str(doc_path))
-                    return
-                except Exception:
-                    pass
-            try:
-                import webbrowser
-                webbrowser.open(doc_path.as_uri())
-            except Exception as exc:
-                messagebox.showerror(
-                    "Fout",
-                    f"Kon de visuele quick manual niet openen.\n{doc_path}\n{exc}",
-                    parent=self,
-                )
+            """Open the internal quick manual."""
+            self._show_quick_start("general")
 
         def _show_about_dialog(self) -> None:
             """Show about dialog."""

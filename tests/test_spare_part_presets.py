@@ -1,6 +1,7 @@
 from spare_part_presets import (
     SparePartPresetRule,
     SparePartPresetsDB,
+    example_spare_part_preset_rules,
     normalize_spare_part_match_type,
     normalize_spare_part_preset_field,
 )
@@ -142,3 +143,17 @@ def test_spare_part_preset_normalizers_have_stable_defaults():
     assert normalize_spare_part_preset_field("unknown") == "manufacturer"
     assert normalize_spare_part_match_type("bevat") == "contains"
     assert normalize_spare_part_match_type("unknown") == "exact"
+
+
+def test_example_spare_part_presets_are_disabled_and_use_bom_fields():
+    rules = example_spare_part_preset_rules()
+
+    assert rules
+    assert all(rule.enabled is False for rule in rules)
+    assert {rule.match_field for rule in rules} == {
+        "supplier",
+        "supplier_code",
+        "manufacturer",
+        "manufacturer_code",
+    }
+    assert all(rule.name.startswith("Voorbeeld - ") for rule in rules)

@@ -66,6 +66,8 @@ Voorbeelden:
 
 Gebruik `Presets toepassen` om actieve regels op de huidige BOM toe te passen. Filehopper wist daarbij eerst eerdere presetresultaten en berekent ze opnieuw, terwijl handmatige groepskeuzes behouden blijven. De presets worden opgeslagen in `spare_part_presets.json`. Een preset wijzigt alleen de interne spare-part-groepering; de BOM-kolom `Production` blijft `Spare Parts`.
 
+Met `Voorbeelden` kan Filehopper enkele uitgeschakelde voorbeeldpresets toevoegen. Die regels zijn bedoeld als startpunt om de opbouw te tonen en worden pas toegepast wanneer je ze zelf activeert of bewerkt.
+
 ## Waarschuwingen
 
 De Spare parts-tab toont een korte waarschuwing wanneer er regels zijn:

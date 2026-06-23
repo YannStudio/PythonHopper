@@ -51,6 +51,10 @@ Voorbeelden:
 - `Manufacturer` is `Festo` -> doelgroep `Pneumatica`
 - `Manufacturer code` begint met `SM-` -> doelgroep `Mechanisch`
 
+Gebruik `Voorbeelden` in de Spare parts-tab of in `Presets beheren` om enkele
+uitgeschakelde voorbeeldpresets toe te voegen. Die voorbeelden tonen de opbouw
+zonder direct regels te verplaatsen.
+
 ## Belangrijke afspraken
 
 - Verander `Production` niet naar een bestelgroep. Laat die waarde `Spare Parts`.

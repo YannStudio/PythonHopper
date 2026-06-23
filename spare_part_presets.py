@@ -152,6 +152,49 @@ class SparePartPresetRule:
         return f"{field_label} {match_label} {self.pattern} -> {self.target_group}"
 
 
+def example_spare_part_preset_rules() -> list[SparePartPresetRule]:
+    """Return disabled example rules that demonstrate common spare-part presets."""
+
+    return [
+        SparePartPresetRule(
+            name="Voorbeeld - RS supplier naar Electro",
+            enabled=False,
+            priority=90,
+            match_field="supplier",
+            match_type="contains",
+            pattern="RS",
+            target_group="Electro",
+        ),
+        SparePartPresetRule(
+            name="Voorbeeld - Festo fabrikant naar Pneumatica",
+            enabled=False,
+            priority=80,
+            match_field="manufacturer",
+            match_type="exact",
+            pattern="Festo",
+            target_group="Pneumatica",
+        ),
+        SparePartPresetRule(
+            name="Voorbeeld - SM fabrikantcode naar Mechanisch",
+            enabled=False,
+            priority=70,
+            match_field="manufacturer_code",
+            match_type="startswith",
+            pattern="SM-",
+            target_group="Mechanisch",
+        ),
+        SparePartPresetRule(
+            name="Voorbeeld - ND suppliercode naar Herbaroof",
+            enabled=False,
+            priority=60,
+            match_field="supplier_code",
+            match_type="startswith",
+            pattern="ND",
+            target_group="Herbaroof",
+        ),
+    ]
+
+
 class SparePartPresetsDB:
     def __init__(self, rules: Sequence[SparePartPresetRule] | None = None):
         self.rules: list[SparePartPresetRule] = list(rules or [])

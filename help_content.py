@@ -38,6 +38,70 @@ QUICK_START_STEPS = [
     },
 ]
 
+SPARE_PART_QUICK_START_STEPS = [
+    {
+        "title": "1. BOM voorbereiden",
+        "description": (
+            "Zet spare-part regels in de BOM op `Production = Spare Parts`. "
+            "Gebruik dezelfde propertynamen als in de BOM-template: `Supplier`, "
+            "`Supplier code`, `Manufacturer` en `Manufacturer code`."
+        ),
+    },
+    {
+        "title": "2. Spare parts controleren",
+        "description": (
+            "Open het tabblad `Spare parts`. Controleer de status bovenaan en de "
+            "groepen links. De kolom `Mist` toont hoeveel regels in een groep nog "
+            "Supplier/Manufacturer of code-informatie missen."
+        ),
+    },
+    {
+        "title": "3. Groepen bijsturen",
+        "description": (
+            "Selecteer onderdelen rechts en zet ze met `Zet selectie` in een "
+            "bestelgroep. Gebruik `Nieuwe groep` voor een eigen groep en `Auto` om "
+            "terug naar automatische Supplier/Manufacturer-groepering te gaan."
+        ),
+    },
+    {
+        "title": "4. Presets gebruiken",
+        "description": (
+            "Gebruik presets voor terugkerende regels. Match bijvoorbeeld op "
+            "`Supplier`, `Supplier code`, `Manufacturer` of `Manufacturer code` en "
+            "stuur de regel naar een vaste bestelgroep."
+        ),
+    },
+    {
+        "title": "5. Documenten klaarmaken",
+        "description": (
+            "Klik op `Documenten klaarmaken`. Controleer daarna per spare-parts "
+            "groep documenttype, leverancier, leveradres, opmerkingen en prijzen "
+            "voordat je exporteert."
+        ),
+    },
+]
+
+QUICK_MANUAL_SECTIONS = {
+    "general": {
+        "label": "Algemeen",
+        "title": "Quick Start",
+        "intro": (
+            "Korte gids voor de algemene Filehopper-flow: data laden, instellingen "
+            "nakijken en documenten genereren."
+        ),
+        "steps": QUICK_START_STEPS,
+    },
+    "spare_parts": {
+        "label": "Spare parts",
+        "title": "Spare parts quick manual",
+        "intro": (
+            "Korte gids voor spare parts: BOM-properties herkennen, groepen "
+            "controleren, presets gebruiken en bestel-/offertedocumenten klaarmaken."
+        ),
+        "steps": SPARE_PART_QUICK_START_STEPS,
+    },
+}
+
 FAQ_ENTRIES = [
     {
         "question": "Wat doe ik als een exportbestand niet opent?",
