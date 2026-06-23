@@ -18349,8 +18349,11 @@ def start_gui():
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
                 self.after(0, on_done)
 
+<<<<<<< ours
             threading.Thread(target=work, daemon=True).start()
 
         def _select_pdf_workdossier_tab(self) -> None:
@@ -18367,6 +18370,12 @@ def start_gui():
             self._select_pdf_workdossier_tab()
             return
 
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
