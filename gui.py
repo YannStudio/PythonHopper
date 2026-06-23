@@ -18348,6 +18348,7 @@ def start_gui():
                     self._open_export_path(target_to_open)
 
 <<<<<<< ours
+<<<<<<< ours
                 self.after(0, on_done)
 
             threading.Thread(target=work, daemon=True).start()
@@ -18366,6 +18367,8 @@ def start_gui():
             self._select_pdf_workdossier_tab()
             return
 
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
     App().mainloop()
