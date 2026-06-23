@@ -2396,6 +2396,7 @@ def start_gui():
                 if self.on_change:
                     self.on_change()
 
+<<<<<<< ours
     class PresetRulesManagerFrame(tk.Frame):
         KIND_LABELS = {
             "production": "Productie",
@@ -2414,6 +2415,85 @@ def start_gui():
         DELIVERY_UNCHANGED_LABEL = "(ongewijzigd)"
         DOC_TYPE_UNCHANGED_LABEL = "(ongewijzigd)"
         EN1090_UNCHANGED_LABEL = "(ongewijzigd)"
+=======
+    @dataclass
+    class SupplierSelectionState:
+        selections: Dict[str, str]
+        doc_types: Dict[str, str]
+        doc_numbers: Dict[str, str]
+        remarks: Dict[str, str]
+        deliveries: Dict[str, str]
+        exports: Dict[str, bool] = field(default_factory=dict)
+        en1090: Dict[str, bool] = field(default_factory=dict)
+        remember: bool = True
+
+    class SupplierSelectionFrame(tk.Frame):
+        """Per productie: type-to-filter of dropdown; rechts detailkaart (klik = selecteer).
+           Knoppen altijd zichtbaar onderaan.
+        """
+
+        LABEL_COLUMN_WIDTH = 30
+        EN1090_COLUMN_WIDTH = 64
+        EN1090_MIN_COLUMN_WIDTH = 32
+        EN1090_COLUMN_PADDING = 12
+        EN1090_HEADER_TEXT = "EN 1090"
+
+        @staticmethod
+        def _install_supplier_focus_behavior(combo: "ttk.Combobox") -> None:
+            """Selecteer automatisch alle tekst bij eerste focus of placeholder."""
+
+            def _handle_focus(event):
+                widget = event.widget
+                try:
+                    current = widget.get()
+                except tk.TclError:
+                    current = ""
+
+                first_focus = not getattr(widget, "_supplier_focus_seen", False)
+                placeholder = current.strip().lower() in {"(geen)", "geen"}
+
+                if first_focus or placeholder:
+                    def _select_all():
+                        try:
+                            widget.selection_range(0, "end")
+                        except tk.TclError:
+                            return
+
+                    widget.after_idle(_select_all)
+
+                widget._supplier_focus_seen = True
+
+            combo.bind("<FocusIn>", _handle_focus, add="+")
+
+        @staticmethod
+        def _set_combo_value(combo: "ttk.Combobox", value: str) -> None:
+            """Update combobox text and reset focus selection tracking."""
+
+            combo.set(value)
+            setattr(combo, "_supplier_focus_seen", False)
+
+        @staticmethod
+        def _strip_favorite_marker(text: str) -> str:
+            """Remove the display favorite marker without depending on module globals."""
+
+            try:
+                return strip_favorite_marker(text)
+            except NameError:
+                value = "" if text is None else str(text)
+                for marker in ("★ ", "* "):
+                    if marker and marker in value:
+                        return value.replace(marker, "", 1)
+                return value
+
+        def set_opticutter_notice(self, message: str) -> None:
+            text = (message or "").strip()
+            if text:
+                self._opticutter_notice_var.set(text)
+                self._opticutter_notice_label.pack(fill="x", pady=(0, 6))
+            else:
+                self._opticutter_notice_var.set("")
+                self._opticutter_notice_label.pack_forget()
+>>>>>>> theirs
 
         def __init__(
             self,
@@ -4092,7 +4172,17 @@ def start_gui():
                         except tk.TclError:
                             return
 
+<<<<<<< ours
                     widget.after_idle(_select_all)
+=======
+            def _option_norm(opt: str) -> str:
+                name = disp_to_name.get(opt, opt)
+                cleaned = SupplierSelectionFrame._strip_favorite_marker(
+                    name if name else opt
+                )
+                cleaned = cleaned.replace("(", "").replace(")", "")
+                return _norm(cleaned)
+>>>>>>> theirs
 
                 widget._supplier_focus_seen = True
 
@@ -4595,6 +4685,7 @@ def start_gui():
                     self.clipboard_append(project_name)
                     self.update_idletasks()
                 except tk.TclError:
+<<<<<<< ours
                     messagebox.showerror(
                         "Kopieren mislukt",
                         "De projectnaam kon niet naar het klembord worden gekopieerd.",
@@ -4611,6 +4702,26 @@ def start_gui():
                     1200,
                     lambda: project_name_copy_btn.configure(text=copy_button_text),
                 )
+=======
+                    pass
+
+            norm_text = _norm(text_so_far.strip())
+            if not norm_text:
+                combo["values"] = base_options
+                self._populate_cards([], sel_key)
+                self._update_preview_for_text("")
+                return
+
+            disp_to_name = getattr(self, "_disp_to_name", {})
+
+            def _option_norm(opt: str) -> str:
+                name = disp_to_name.get(opt, opt)
+                cleaned = SupplierSelectionFrame._strip_favorite_marker(
+                    name if name else opt
+                )
+                cleaned = cleaned.replace("(", "").replace(")", "")
+                return _norm(cleaned)
+>>>>>>> theirs
 
             project_number_value = tk.Label(
                 pn_row,
@@ -18236,6 +18347,7 @@ def start_gui():
                     messagebox.showinfo("Klaar", message, parent=self)
                     self._open_export_path(target_to_open)
 
+<<<<<<< ours
                 self.after(0, on_done)
 
             threading.Thread(target=work, daemon=True).start()
@@ -18254,5 +18366,6 @@ def start_gui():
             self._select_pdf_workdossier_tab()
             return
 
+=======
+>>>>>>> theirs
     App().mainloop()
-
