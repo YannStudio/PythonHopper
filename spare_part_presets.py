@@ -138,12 +138,18 @@ class SparePartPresetRule:
         return value_key == pattern_key
 
     def summary(self) -> str:
+        field_label = {
+            "supplier": "Supplier",
+            "supplier_code": "Supplier code",
+            "manufacturer": "Manufacturer",
+            "manufacturer_code": "Manufacturer code",
+        }.get(self.match_field, self.match_field)
         match_label = {
             "exact": "is",
             "contains": "bevat",
             "startswith": "begint met",
         }.get(self.match_type, self.match_type)
-        return f"{self.match_field} {match_label} {self.pattern} -> {self.target_group}"
+        return f"{field_label} {match_label} {self.pattern} -> {self.target_group}"
 
 
 class SparePartPresetsDB:

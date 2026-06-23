@@ -51,6 +51,21 @@ def test_is_quantity_key_detection(key, expected):
     assert ManualOrderTab._is_quantity_key(key) is expected
 
 
+def test_spare_parts_template_uses_bom_property_names():
+    columns = ManualOrderTab.COLUMN_TEMPLATES["Spare parts"]
+    keys = [column["key"] for column in columns]
+    labels = {column["key"]: column["label"] for column in columns}
+
+    assert "Supplier code" in keys
+    assert "Manufacturer" in keys
+    assert "Manufacturer code" in keys
+    assert "SupplierCode" not in keys
+    assert "ManufacturerCode" not in keys
+    assert labels["Supplier code"] == "Supplier code"
+    assert labels["Manufacturer"] == "Manufacturer"
+    assert labels["Manufacturer code"] == "Manufacturer code"
+
+
 def test_ensure_column_metrics_marks_integer_column():
     tab = ManualOrderTab.__new__(ManualOrderTab)
     tab._entry_char_pixels = 8

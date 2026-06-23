@@ -23,8 +23,8 @@ Filehopper maakt automatisch meerdere spare-parts-selecties:
 
 - `Volledige lijst`: alle spare parts samen, standaard als `Standaard bon`. Dit is de lijst voor monteurs om klaar te leggen voor vertrek.
 - Leveranciersgroepen: alle spare parts met dezelfde `Supplier`, standaard als `Bestelbon`.
-- Fabrikantgroepen: fallback wanneer `Supplier` leeg is maar `Manufacturer` wel ingevuld is.
-- `Zonder leverancier/fabrikant`: controlelijst voor regels die nog onvoldoende bestelinfo hebben.
+- Manufacturer-groepen: fallback wanneer `Supplier` leeg is maar `Manufacturer` wel ingevuld is.
+- `Zonder Supplier/Manufacturer`: controlelijst voor regels die nog onvoldoende bestelinfo hebben.
 
 Leveranciersgroepen krijgen voorrang op fabrikantgroepen. Dat houdt de bestelstroom praktisch: wat rechtstreeks bij een leverancier besteld wordt, komt niet dubbel in een fabrikantgroep terecht.
 
@@ -81,15 +81,16 @@ Vlak voor het bevestigen van de bestelbonnenflow toont Filehopper nog een bevest
 
 ## Documenten en export
 
-Spare-parts-documenten gebruiken een eigen tabelindeling met bestelgerichte kolommen:
+Spare-parts-documenten gebruiken een eigen tabelindeling met bestelgerichte kolommen.
+De BOM-propertynamen blijven zichtbaar waar dezelfde informatie bedoeld wordt:
 
 - Artikel nr.
 - Omschrijving
 - St.
 - Supplier
 - Supplier code
-- Fabrikant
-- Fabrikant code
+- Manufacturer
+- Manufacturer code
 - Bestelgroep
 - Status
 

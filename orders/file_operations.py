@@ -679,8 +679,8 @@ def _spare_part_column_layout() -> List[Dict[str, object]]:
         {"key": "Aantal", "label": "St.", "width": 8, "justify": "right", "numeric": True, "integer": True, "weight": 0.55},
         {"key": "Supplier", "label": "Supplier", "width": 18, "justify": "left", "wrap": True, "weight": 1.2},
         {"key": "Supplier code", "label": "Supplier code", "width": 18, "justify": "left", "wrap": True, "weight": 1.25},
-        {"key": "Manufacturer", "label": "Fabrikant", "width": 18, "justify": "left", "wrap": True, "weight": 1.2},
-        {"key": "Manufacturer code", "label": "Fabrikant code", "width": 18, "justify": "left", "wrap": True, "weight": 1.25},
+        {"key": "Manufacturer", "label": "Manufacturer", "width": 18, "justify": "left", "wrap": True, "weight": 1.2},
+        {"key": "Manufacturer code", "label": "Manufacturer code", "width": 18, "justify": "left", "wrap": True, "weight": 1.25},
         {"key": "Bestelgroep", "label": "Bestelgroep", "width": 16, "justify": "left", "wrap": True, "weight": 1.0},
         {"key": "Status", "label": "Status", "width": 16, "justify": "left", "wrap": True, "weight": 0.95},
     ]

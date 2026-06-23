@@ -54,9 +54,9 @@ class SparePartItem:
     @property
     def status(self) -> str:
         if not (self.supplier or self.manufacturer):
-            return "Mist leverancier/fabrikant"
+            return "Mist Supplier/Manufacturer"
         if not (self.supplier_code or self.manufacturer_code):
-            return "Mist code"
+            return "Mist Supplier code/Manufacturer code"
         return "OK"
 
     @property
@@ -475,9 +475,9 @@ def summarize_spare_part_warnings(groups: Sequence[SparePartGroup]) -> list[str]
     if unassigned:
         warnings.append(f"{unassigned} nog toe te wijzen")
     if without_route:
-        warnings.append(f"{without_route} zonder leverancier/fabrikant")
+        warnings.append(f"{without_route} zonder Supplier/Manufacturer")
     if without_code:
-        warnings.append(f"{without_code} zonder supplier/fabrikantcode")
+        warnings.append(f"{without_code} zonder Supplier code/Manufacturer code")
     if groups_without_supplier:
         warnings.append(f"{groups_without_supplier} groep(en) zonder standaardleverancier")
     return warnings

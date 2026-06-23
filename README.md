@@ -181,5 +181,7 @@ BOM-regels met `Production` gelijk aan `Spare Parts` krijgen een aparte flow.
 Filehopper maakt een volledige lijst voor montagevoorbereiding en groepeert de
 bestel-/offertedocumenten automatisch per leverancier of fabrikant. Zie
 [docs/spare_parts_flow.md](docs/spare_parts_flow.md) voor de afspraken rond
-`Supplier`, `Supplier code`, `Manufacturer` en `Manufacturer code`.
+`Supplier`, `Supplier code`, `Manufacturer` en `Manufacturer code`. Voor gebruikers
+staat er ook een compacte handleiding in
+[docs/spare_parts_quick_manual.md](docs/spare_parts_quick_manual.md).
 

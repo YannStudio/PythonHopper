@@ -153,8 +153,8 @@ def test_spare_part_warnings_summarize_open_data_and_supplier_gaps():
     warnings = summarize_spare_part_warnings(groups)
 
     assert "1 nog toe te wijzen" in warnings
-    assert "1 zonder leverancier/fabrikant" in warnings
-    assert "2 zonder supplier/fabrikantcode" in warnings
+    assert "1 zonder Supplier/Manufacturer" in warnings
+    assert "2 zonder Supplier code/Manufacturer code" in warnings
     assert "2 groep(en) zonder standaardleverancier" in warnings
 
 
@@ -399,7 +399,7 @@ def test_spare_part_groups_export_full_list_and_supplier_order(tmp_path):
         if value is not None
     ]
     assert "Supplier code" in values
-    assert "Fabrikant code" in values
+    assert "Manufacturer code" in values
     assert "Bestelgroep" in values
     assert "Status" in values
     assert "ND SM-25" in values

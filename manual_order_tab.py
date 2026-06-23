@@ -642,7 +642,7 @@ class ManualOrderTab(tk.Frame):
                 "weight": 1.6,
             },
             {
-                "key": "SupplierCode",
+                "key": "Supplier code",
                 "label": "Supplier code",
                 "width": 16,
                 "justify": "left",
@@ -660,7 +660,7 @@ class ManualOrderTab(tk.Frame):
                 "weight": 2.0,
             },
             {
-                "key": "ManufacturerCode",
+                "key": "Manufacturer code",
                 "label": "Manufacturer code",
                 "width": 16,
                 "justify": "left",

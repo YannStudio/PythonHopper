@@ -12065,6 +12065,11 @@ def start_gui():
             ).grid(row=0, column=0, columnspan=5, sticky="ew")
             tk.Button(
                 toolbar,
+                text="Quick manual",
+                command=self._open_spare_parts_quick_manual,
+            ).grid(row=0, column=5, sticky="e", padx=(8, 0))
+            tk.Button(
+                toolbar,
                 text="Documenten klaarmaken",
                 command=self._open_spare_parts_order_flow,
                 bg=MANUFACT_BRAND_COLOR,
@@ -12198,8 +12203,8 @@ def start_gui():
                 "qty": "Aantal",
                 "supplier": "Supplier",
                 "supplier_code": "Supplier code",
-                "manufacturer": "Fabrikant",
-                "manufacturer_code": "Fabrikant code",
+                "manufacturer": "Manufacturer",
+                "manufacturer_code": "Manufacturer code",
                 "group": "Bestelgroep",
                 "status": "Status",
             }
@@ -12304,8 +12309,8 @@ def start_gui():
                 self._spare_parts_group_records[group_key] = group
                 route_label = {
                     "full": "Lijst",
-                    "supplier": "Leverancier",
-                    "manufacturer": "Fabrikant",
+                    "supplier": "Supplier",
+                    "manufacturer": "Manufacturer",
                     "unassigned": "Open",
                 }.get(group.route_source, group.route_source)
                 group_tree.insert(
@@ -12730,6 +12735,31 @@ def start_gui():
 
             _place_window_near_parent(win, parent)
             win.after_idle(name_entry.focus_set)
+
+        def _open_spare_parts_quick_manual(self) -> None:
+            from tkinter import messagebox
+
+            doc_path = (
+                Path(__file__).resolve().parent
+                / "docs"
+                / "spare_parts_quick_manual.md"
+            )
+            if doc_path.exists():
+                try:
+                    os.startfile(str(doc_path))
+                    return
+                except Exception:
+                    pass
+            try:
+                import webbrowser
+
+                webbrowser.open(doc_path.as_uri())
+            except Exception as exc:
+                messagebox.showerror(
+                    "Fout",
+                    f"Kon de spare-parts quick manual niet openen.\n{doc_path}\n{exc}",
+                    parent=self,
+                )
 
         def _open_spare_part_presets_manager(self) -> None:
             from tkinter import messagebox
