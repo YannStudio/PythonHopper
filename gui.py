@@ -12200,7 +12200,7 @@ def start_gui():
             groups_frame.grid(row=1, column=0, sticky="nsw", padx=(0, 8))
             groups_frame.grid_rowconfigure(0, weight=1)
             groups_frame.grid_columnconfigure(0, weight=1)
-            group_columns = ("label", "route", "count", "missing", "space")
+            group_columns = ("label", "route", "count", "missing")
             self.spare_parts_groups_tree = ttk.Treeview(
                 groups_frame,
                 columns=group_columns,
@@ -12212,17 +12212,15 @@ def start_gui():
                 "route": "Route",
                 "count": "Aantal",
                 "missing": "Mist",
-                "space": "",
             }
             group_widths = {
                 "label": 190,
                 "route": 110,
                 "count": 58,
-                "missing": 48,
-                "space": 18,
+                "missing": 70,
             }
             for column in group_columns:
-                anchor = "e" if column in {"count", "missing"} else "w"
+                anchor = "center" if column == "missing" else ("e" if column == "count" else "w")
                 self.spare_parts_groups_tree.heading(
                     column, text=group_headers[column], anchor=anchor
                 )
@@ -12394,7 +12392,6 @@ def start_gui():
                         route_label,
                         group.item_count,
                         group.missing_count or "",
-                        "",
                     ),
                 )
                 if tooltip_manager is not None and group.missing_count:
@@ -12892,12 +12889,17 @@ def start_gui():
                 "name": 220,
                 "match": 310,
                 "target": 160,
-                "priority": 60,
+                "priority": 80,
             }
             for column in columns:
-                anchor = "e" if column == "priority" else "w"
+                anchor = "center" if column == "priority" else "w"
                 tree.heading(column, text=headers[column], anchor=anchor)
-                tree.column(column, width=widths[column], anchor=anchor, stretch=True)
+                tree.column(
+                    column,
+                    width=widths[column],
+                    anchor=anchor,
+                    stretch=column != "priority",
+                )
             tree.grid(row=0, column=0, sticky="nsew", padx=(12, 0), pady=12)
             scroll = ttk.Scrollbar(win, orient="vertical", command=tree.yview)
             scroll.grid(row=0, column=1, sticky="ns", pady=12)
