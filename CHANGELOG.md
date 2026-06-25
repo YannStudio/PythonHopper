@@ -4,7 +4,9 @@
 
 - Spare-parts-regels in de BOM krijgen een eigen flow met volledige monteurslijst, groepering per leverancier/fabrikant en bestelgerichte codes op bonnen en exports.
 - Spare-parts tab, presets en exportdocumenten tonen nu dezelfde BOM-propertynamen voor Supplier/Manufacturer-velden, bevatten een interne quick manual en kunnen veilige voorbeeldpresets toevoegen.
+- De standaard spare-part presetdata bevat nu veilige, uitgeschakelde voorbeeldregels voor Supplier/Manufacturer-matching.
 - Spare-parts-groepen kunnen nu met beheerbare presets voorbereid worden; exportlogs bewaren en herstellen ook de spare-part-verdeling.
+- Spare-parts groepsoverzicht en presetbeheer gebruiken duidelijkere kolombreedtes en uitlijning voor missende info en prioriteiten.
 - Spare-part bestelbonnen/offerteaanvragen zonder leverancier geven nu een bevestiging vlak voor export.
 - Exportlog-controle toont herstelbare custom spare-partgroepen nu apart van echt ontbrekende bestelbonregels.
 - Spare-partsverdelingen uit exportlogs worden robuuster hersteld wanneer BOM-rijindexen verschuiven.

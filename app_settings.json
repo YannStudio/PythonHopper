@@ -1,8 +1,8 @@
 {
-  "source_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2024/20240158 - GBS De Droomwolk Kieldrecht/CAD/3D Soldiworks Files/MOD3 V1",
-  "dest_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2024/20240158 - GBS De Droomwolk Kieldrecht/CAD/Bestellingen/Export Mod3",
-  "project_number": "20240158",
-  "project_name": "De droomwolk-Mod3",
+  "source_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/00. Standaard producten/03. Modulaire structuren/00. Datacenter/01. Containers/cad",
+  "dest_folder": "G:/Gedeelde drives/Manufact/Manufact-Projecten/Wuyts/00. Standaard producten/03. Modulaire structuren/00. Datacenter/01. Containers/export",
+  "project_number": "P22-0527",
+  "project_name": "ContainerTrap",
   "file_extensions": [
     {
       "key": "pdf",
@@ -43,7 +43,7 @@
       "patterns": [
         ".html"
       ],
-      "enabled": true
+      "enabled": false
     },
     {
       "key": "xls",
