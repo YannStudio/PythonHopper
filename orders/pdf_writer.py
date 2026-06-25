@@ -53,10 +53,10 @@ def _pdf_order_column_label(column: Mapping[str, object]) -> str:
         .replace(" ", "")
     )
 
-    if key == "oppervlakte" or label_lower == "oppervlakte":
-        return "m\u00b2"
-    if key == "gewicht" or label_lower in {"gewicht", "gewicht (kg)"}:
-        return "kg"
+    if key == "oppervlakte" or label_lower in {"oppervlakte", "oppervlakte/st"}:
+        return "m\u00b2/st"
+    if key == "gewicht" or label_lower in {"gewicht", "gewicht (kg)", "gewicht/st"}:
+        return "kg/st"
     if key == "eenheidsprijs" or label_compact in {"eenheidsprijs", "unitprice"}:
         return "Prijs/st. (\u20ac)"
     if key == "totaalprijs" or label_compact in {"totaalprijs", "totalprice"}:
@@ -609,7 +609,7 @@ def generate_pdf_order_platypus(
     elif is_raw_material_order:
         head = ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
     else:
-        head = ["PartNumber", "Omschrijving", "Materiaal", "St.", "m²", "kg"]
+        head = ["PartNumber", "Omschrijving", "Materiaal", "St.", "m\u00b2/st", "kg/st"]
 
     display_items, price_subtotal, price_summary_rows = _split_order_price_summary_rows(
         items,

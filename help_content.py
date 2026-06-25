@@ -48,7 +48,15 @@ SPARE_PART_QUICK_START_STEPS = [
         ),
     },
     {
-        "title": "2. Spare parts controleren",
+        "title": "2. Automatische flow begrijpen",
+        "description": (
+            "Als je niets aanpast in `Spare parts`, maakt Filehopper zelf een "
+            "klaarleglijst, Supplier-groepen, Manufacturer-groepen en eventueel "
+            "`Nog toe te wijzen`. Je hoeft dus niet verplicht handmatig groepen te maken."
+        ),
+    },
+    {
+        "title": "3. Spare parts controleren",
         "description": (
             "Open het tabblad `Spare parts`. Controleer de status bovenaan en de "
             "groepen links. De kolom `Mist` toont hoeveel regels in een groep nog "
@@ -56,15 +64,16 @@ SPARE_PART_QUICK_START_STEPS = [
         ),
     },
     {
-        "title": "3. Groepen bijsturen",
+        "title": "4. Groepen bijsturen",
         "description": (
             "Selecteer onderdelen rechts en zet ze met `Zet selectie` in een "
             "bestelgroep. Gebruik `Nieuwe groep` voor een eigen groep en `Auto` om "
-            "terug naar automatische Supplier/Manufacturer-groepering te gaan."
+            "terug naar automatische Supplier/Manufacturer-groepering te gaan. "
+            "Dit wijzigt de originele BOM niet."
         ),
     },
     {
-        "title": "4. Presets gebruiken",
+        "title": "5. Presets gebruiken",
         "description": (
             "Gebruik presets voor terugkerende regels. Match bijvoorbeeld op "
             "`Supplier`, `Supplier code`, `Manufacturer` of `Manufacturer code` en "
@@ -72,11 +81,36 @@ SPARE_PART_QUICK_START_STEPS = [
         ),
     },
     {
-        "title": "5. Documenten klaarmaken",
+        "title": "6. Klaarleglijst nakijken",
+        "description": (
+            "De `Volledige lijst` is een klaarleglijst en krijgt geen leverancier "
+            "in de documentkop. De regels tonen wel `Supplier`, `Supplier code`, "
+            "`Manufacturer`, `Manufacturer code`, `Bestelgroep` en `Status`."
+        ),
+    },
+    {
+        "title": "7. Documenten klaarmaken",
         "description": (
             "Klik op `Documenten klaarmaken`. Controleer daarna per spare-parts "
             "groep documenttype, leverancier, leveradres, opmerkingen en prijzen "
             "voordat je exporteert."
+        ),
+    },
+    {
+        "title": "8. Leverancier wijzigen",
+        "description": (
+            "Wil je toch bij een andere leverancier bestellen, kies dan in de "
+            "bestelbonnenflow een andere leverancier voor de volledige groep. "
+            "Voor enkele onderdelen maak je eerst in `Spare parts` een nieuwe "
+            "bestelgroep en kies je daarna de gewenste leverancier."
+        ),
+    },
+    {
+        "title": "9. Waarschuwingen controleren",
+        "description": (
+            "Een spare-part `Bestelbon` of `Offerteaanvraag` zonder leverancier "
+            "geeft een waarschuwing. Ga je toch door zonder leverancier, dan wordt "
+            "die bon overgeslagen. De klaarleglijst mag wel zonder leverancier blijven."
         ),
     },
 ]
@@ -95,8 +129,8 @@ QUICK_MANUAL_SECTIONS = {
         "label": "Spare parts",
         "title": "Spare parts quick manual",
         "intro": (
-            "Korte gids voor spare parts: BOM-properties herkennen, groepen "
-            "controleren, presets gebruiken en bestel-/offertedocumenten klaarmaken."
+            "Korte gids voor spare parts: automatische groepen begrijpen, "
+            "klaarleglijst controleren, leveranciers kiezen en bestel-/offertedocumenten klaarmaken."
         ),
         "steps": SPARE_PART_QUICK_START_STEPS,
     },

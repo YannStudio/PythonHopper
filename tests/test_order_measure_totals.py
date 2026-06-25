@@ -28,6 +28,11 @@ def test_write_order_excel_adds_surface_and_weight_total_row(tmp_path):
     )
 
     ws = openpyxl.load_workbook(path).active
+    header_row = next(
+        row for row in range(1, ws.max_row + 1) if ws.cell(row, 1).value == "PartNumber"
+    )
+    assert ws.cell(header_row, 5).value == "m\u00b2/st"
+    assert ws.cell(header_row, 6).value == "kg/st"
     total_row = next(
         row for row in range(1, ws.max_row + 1) if ws.cell(row, 1).value == "Totaal"
     )

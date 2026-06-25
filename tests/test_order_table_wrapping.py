@@ -73,7 +73,7 @@ def test_order_pdf_section_uses_square_meter_header():
 
     table = story[-1]
     assert table._cellvalues[0][0] == "Nr."
-    assert table._cellvalues[0][5] == "m\u00b2"
+    assert table._cellvalues[0][5] == "m\u00b2/st"
     assert table._cellvalues[1][0].getPlainText() == "1"
 
 
@@ -163,8 +163,8 @@ def test_order_pdf_section_compacts_custom_area_and_weight_headers():
 
     table = story[-1]
     header = _row_texts(table._cellvalues[0])
-    assert header[5] == "m\u00b2"
-    assert header[6] == "kg"
+    assert header[5] == "m\u00b2/st"
+    assert header[6] == "kg/st"
     assert table._cellvalues[2][1].getPlainText() == "Totaal"
     assert table._cellvalues[2][5].getPlainText() == "2.00"
     assert table._cellvalues[2][6].getPlainText() == "50.00"
@@ -600,8 +600,8 @@ def test_single_section_pdf_compacts_custom_area_and_weight_headers(monkeypatch,
     header = _row_texts(order_table._cellvalues[0])
     assert "Oppervlakte" not in header
     assert "Gewicht (kg)" not in header
-    assert header[4] == "m\u00b2"
-    assert header[5] == "kg"
+    assert header[4] == "m\u00b2/st"
+    assert header[5] == "kg/st"
     assert order_table._cellvalues[2][0].getPlainText() == "Totaal"
     assert order_table._cellvalues[2][4].getPlainText() == "0.42"
     assert order_table._cellvalues[2][5].getPlainText() == "3.23"

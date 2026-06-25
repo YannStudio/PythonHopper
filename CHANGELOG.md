@@ -5,6 +5,7 @@
 - Spare-parts-regels in de BOM krijgen een eigen flow met volledige monteurslijst, groepering per leverancier/fabrikant en bestelgerichte codes op bonnen en exports.
 - Spare-parts tab, presets en exportdocumenten tonen nu dezelfde BOM-propertynamen voor Supplier/Manufacturer-velden, bevatten een interne quick manual en kunnen veilige voorbeeldpresets toevoegen.
 - De standaard spare-part presetdata bevat nu veilige, uitgeschakelde voorbeeldregels voor Supplier/Manufacturer-matching.
+- De spare-parts quick manual legt nu de automatische flow, klaarleglijst, waarschuwingen en leverancierkeuze uitgebreider uit.
 - Spare-parts-groepen kunnen nu met beheerbare presets voorbereid worden; exportlogs bewaren en herstellen ook de spare-part-verdeling.
 - Spare-parts groepsoverzicht en presetbeheer gebruiken duidelijkere kolombreedtes en uitlijning voor missende info en prioriteiten.
 - Spare-part bestelbonnen/offerteaanvragen zonder leverancier geven nu een bevestiging vlak voor export.
@@ -25,6 +26,7 @@
 - PDF dossier wist na het kiezen van een volgordepreset de gearceerde comboboxselectie, zoals bij de moduskeuze.
 - Informatietekst bij de PDF dossier-modus en volgordepreset gebruikt nu dezelfde tekstkleur.
 - Bestelbon- en werkdossieruitvoer verwerkt maatvelden, totalen en plaat-/profielgegevens consequenter in Excel en PDF.
+- Gewicht- en oppervlaktekolommen op bestelbonregels tonen nu duidelijk dat het per stuk gaat met `kg/st` en `m²/st`.
 - Lange bestelbontabellen en celteksten breken beter af, zodat totalen en details leesbaar blijven.
 - Leveranciersbeheer bewaart extra adres- en contactgegevens correct bij het bewerken.
 - Leveranciersdata en templategegevens zijn bijgewerkt.

@@ -37,10 +37,11 @@ def _order_column_export_label(column: Dict[str, object]) -> str:
         .replace(" ", "")
     )
 
-    if key == "oppervlakte" or label.lower() == "oppervlakte":
-        return "m\u00b2"
-    if key == "gewicht" or label.lower() in {"gewicht", "gewicht (kg)"}:
-        return "kg"
+    label_lower = label.lower()
+    if key == "oppervlakte" or label_lower in {"oppervlakte", "oppervlakte/st"}:
+        return "m\u00b2/st"
+    if key == "gewicht" or label_lower in {"gewicht", "gewicht (kg)", "gewicht/st"}:
+        return "kg/st"
     if key == "eenheidsprijs" or label_compact in {"eenheidsprijs", "unitprice"}:
         return "Prijs/st. (\u20ac)"
     if key == "totaalprijs" or label_compact in {"totaalprijs", "totalprice"}:
@@ -304,8 +305,21 @@ def write_order_excel(
         if is_raw_material_order:
             df_columns = ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
         else:
-            df_columns = ["PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht"]
-        df = pd.DataFrame(display_items, columns=df_columns)
+            df_columns = ["PartNumber", "Description", "Materiaal", "Aantal", "m\u00b2/st", "kg/st"]
+        if is_raw_material_order:
+            df = pd.DataFrame(display_items, columns=df_columns)
+        else:
+            df = pd.DataFrame(
+                display_items,
+                columns=[
+                    "PartNumber",
+                    "Description",
+                    "Materiaal",
+                    "Aantal",
+                    "Oppervlakte",
+                    "Gewicht",
+                ],
+            ).rename(columns={"Oppervlakte": "m\u00b2/st", "Gewicht": "kg/st"})
         if is_raw_material_order:
             if total_weight_kg is not None:
                 total_row = {
@@ -322,12 +336,12 @@ def write_order_excel(
                 "Description": "",
                 "Materiaal": "",
                 "Aantal": "",
-                "Oppervlakte": (
+                "m\u00b2/st": (
                     core._format_weight_kg(total_surface_m2)
                     if total_surface_m2 is not None
                     else ""
                 ),
-                "Gewicht": (
+                "kg/st": (
                     core._format_weight_kg(total_weight_kg)
                     if total_weight_kg is not None
                     else ""

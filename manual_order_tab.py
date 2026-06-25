@@ -581,7 +581,7 @@ class ManualOrderTab(tk.Frame):
             },
             {
                 "key": "Oppervlakte",
-                "label": "Oppervlakte",
+                "label": "m\u00b2/st",
                 "width": 10,
                 "justify": "right",
                 "numeric": True,
@@ -592,7 +592,7 @@ class ManualOrderTab(tk.Frame):
             },
             {
                 "key": "Gewicht",
-                "label": "Gewicht (kg)",
+                "label": "kg/st",
                 "width": 10,
                 "justify": "right",
                 "numeric": True,

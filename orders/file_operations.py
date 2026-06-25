@@ -706,8 +706,8 @@ def _default_priced_column_layout(context_kind: str) -> List[Dict[str, object]]:
             {"key": "Description", "label": "Omschrijving", "width": 32, "justify": "left", "wrap": True, "weight": 2.4},
             {"key": "Materiaal", "label": "Materiaal", "width": 16, "justify": "left", "wrap": False, "weight": 1.2},
             {"key": "Aantal", "label": "St.", "width": 8, "justify": "right", "numeric": True, "integer": True, "weight": 0.7},
-            {"key": "Oppervlakte", "label": "m2", "width": 10, "justify": "right", "numeric": True, "total_surface": True, "weight": 0.8},
-            {"key": "Gewicht", "label": "kg", "width": 10, "justify": "right", "numeric": True, "total_weight": True, "weight": 0.8},
+            {"key": "Oppervlakte", "label": "m\u00b2/st", "width": 10, "justify": "right", "numeric": True, "total_surface": True, "weight": 0.8},
+            {"key": "Gewicht", "label": "kg/st", "width": 10, "justify": "right", "numeric": True, "total_weight": True, "weight": 0.8},
         ]
     columns.extend(
         [
@@ -2158,10 +2158,23 @@ def _build_order_excel_section_data(
             "Description",
             "Materiaal",
             "Aantal",
-            "Oppervlakte",
-            "Gewicht",
+            "m\u00b2/st",
+            "kg/st",
         ]
-    df = pd.DataFrame(display_items, columns=df_columns)
+    if is_raw_material_order:
+        df = pd.DataFrame(display_items, columns=df_columns)
+    else:
+        df = pd.DataFrame(
+            display_items,
+            columns=[
+                "PartNumber",
+                "Description",
+                "Materiaal",
+                "Aantal",
+                "Oppervlakte",
+                "Gewicht",
+            ],
+        ).rename(columns={"Oppervlakte": "m\u00b2/st", "Gewicht": "kg/st"})
     if is_raw_material_order:
         if section.total_weight_kg is not None:
             total_row = {
@@ -2180,12 +2193,12 @@ def _build_order_excel_section_data(
             "Description": "",
             "Materiaal": "",
             "Aantal": "",
-            "Oppervlakte": (
+            "m\u00b2/st": (
                 _format_weight_kg(section.total_surface_m2)
                 if section.total_surface_m2 is not None
                 else ""
             ),
-            "Gewicht": (
+            "kg/st": (
                 _format_weight_kg(section.total_weight_kg)
                 if section.total_weight_kg is not None
                 else ""
@@ -2211,10 +2224,10 @@ def _order_column_export_label(column: Mapping[str, object]) -> str:
         .replace(" ", "")
     )
 
-    if key == "oppervlakte" or label_lower == "oppervlakte":
-        return "m\u00b2"
-    if key == "gewicht" or label_lower in {"gewicht", "gewicht (kg)"}:
-        return "kg"
+    if key == "oppervlakte" or label_lower in {"oppervlakte", "oppervlakte/st"}:
+        return "m\u00b2/st"
+    if key == "gewicht" or label_lower in {"gewicht", "gewicht (kg)", "gewicht/st"}:
+        return "kg/st"
     if key == _PRICE_UNIT_KEY.lower() or label_compact in {
         "eenheidsprijs",
         "unitprice",
@@ -2590,8 +2603,8 @@ def _build_order_pdf_section_story(
             "Omschrijving",
             "Materiaal",
             "St.",
-            "m\u00b2",
-            "kg",
+            "m\u00b2/st",
+            "kg/st",
         ]
 
     def wrap_cell_html(val: str, small=False, align=None):
@@ -3349,7 +3362,7 @@ def generate_pdf_order_platypus(
     elif is_raw_material_order:
         head = ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
     else:
-        head = ["PartNumber", "Omschrijving", "Materiaal", "St.", "m²", "kg"]
+        head = ["PartNumber", "Omschrijving", "Materiaal", "St.", "m\u00b2/st", "kg/st"]
 
     def wrap_cell_html(val: str, small=False, align=None):
         style = ParagraphStyle(
@@ -3872,8 +3885,21 @@ def write_order_excel(
         if is_raw_material_order:
             df_columns = ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
         else:
-            df_columns = ["PartNumber", "Description", "Materiaal", "Aantal", "Oppervlakte", "Gewicht"]
-        df = pd.DataFrame(display_items, columns=df_columns)
+            df_columns = ["PartNumber", "Description", "Materiaal", "Aantal", "m\u00b2/st", "kg/st"]
+        if is_raw_material_order:
+            df = pd.DataFrame(display_items, columns=df_columns)
+        else:
+            df = pd.DataFrame(
+                display_items,
+                columns=[
+                    "PartNumber",
+                    "Description",
+                    "Materiaal",
+                    "Aantal",
+                    "Oppervlakte",
+                    "Gewicht",
+                ],
+            ).rename(columns={"Oppervlakte": "m\u00b2/st", "Gewicht": "kg/st"})
         if is_raw_material_order:
             if total_weight_kg is not None:
                 total_row = {
@@ -3890,12 +3916,12 @@ def write_order_excel(
                 "Description": "",
                 "Materiaal": "",
                 "Aantal": "",
-                "Oppervlakte": (
+                "m\u00b2/st": (
                     _format_weight_kg(total_surface_m2)
                     if total_surface_m2 is not None
                     else ""
                 ),
-                "Gewicht": (
+                "kg/st": (
                     _format_weight_kg(total_weight_kg)
                     if total_weight_kg is not None
                     else ""

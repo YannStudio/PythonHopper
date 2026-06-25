@@ -858,16 +858,22 @@ _ORDER_SURFACE_KEY_HINTS = {
     "oppervlakte",
     "oppervlaktem2",
     "m2",
+    "m2st",
     "surface",
     "surfacearea",
     "surfaceaream2",
+    "surfaceaream2st",
 }
 _ORDER_WEIGHT_KEY_HINTS = {
     "gewicht",
     "gewichtkg",
+    "gewichtkgst",
+    "gewichtst",
     "kg",
+    "kgst",
     "weight",
     "weightkg",
+    "weightkgst",
 }
 
 

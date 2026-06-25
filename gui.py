@@ -1293,7 +1293,7 @@ def start_gui():
                     table_x = inner_x
                     table_w = inner_w
                     col_fracs = [0.22, 0.40, 0.14, 0.06, 0.09, 0.09]
-                    headers = ["PartNumber", "Omschrijving", "Materiaal", "St.", "m²", "kg"]
+                    headers = ["PartNumber", "Omschrijving", "Materiaal", "St.", "m\u00b2/st", "kg/st"]
                     rows = [
                         ["PN-001", "Voetplaat voor voorbeeldbon", "S235JR", "2", "1,25", "4,80"],
                         ["PN-002", "Tweede regel om de layout te tonen", "RAL9005", "1", "", "2,10"],
@@ -1305,8 +1305,8 @@ def start_gui():
                         "Omschrijving",
                         "Materiaal",
                         "St.",
-                        "m²",
-                        "kg",
+                        "m\u00b2/st",
+                        "kg/st",
                     ]
                     rows = [
                         ["1", "PN-001", "Voetplaat voor voorbeeldbon", "S235JR", "2", "1,25", "4,80"],
