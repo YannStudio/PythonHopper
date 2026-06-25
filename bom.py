@@ -65,6 +65,15 @@ def _find_col_by_regex(df: pd.DataFrame, patterns: List[str]) -> Optional[str]:
     return None
 
 
+def _normalize_column_label(value: object) -> str:
+    text = str(value).replace("\xa0", " ").strip().casefold()
+    return re.sub(r"\s+", " ", text)
+
+
+def _compact_column_label(value: object) -> str:
+    return re.sub(r"[\s_\-]+", "", _normalize_column_label(value))
+
+
 def load_bom(path: str) -> pd.DataFrame:
     """Load a BOM spreadsheet and normalize expected columns.
 
@@ -79,13 +88,27 @@ def load_bom(path: str) -> pd.DataFrame:
         engine = "openpyxl" if path.lower().endswith(".xlsx") else None
         df = pd.read_excel(path, engine=engine)
 
-    column_lookup = {str(c).lower(): c for c in df.columns}
+    column_lookup: dict[str, object] = {}
+    compact_column_lookup: dict[str, object] = {}
+    for column in df.columns:
+        column_lookup.setdefault(_normalize_column_label(column), column)
+        compact_column_lookup.setdefault(_compact_column_label(column), column)
+
+    def find_any(names: List[str]) -> Optional[str]:
+        for name in names:
+            column = column_lookup.get(_normalize_column_label(name))
+            if column is not None:
+                return column
+            column = compact_column_lookup.get(_compact_column_label(name))
+            if column is not None:
+                return column
+        return None
 
     def need(colname: str) -> str:
-        lc = colname.lower()
-        if lc not in column_lookup:
+        column = find_any([colname])
+        if column is None:
             raise ValueError(f"BOM mist kolom: {colname}")
-        return column_lookup[lc]
+        return column
 
     pn_c = need("PartNumber")
     try:
@@ -96,12 +119,6 @@ def load_bom(path: str) -> pd.DataFrame:
         pr_c = need("Production")
     except ValueError:
         pr_c = None
-
-    def find_any(names: List[str]) -> Optional[str]:
-        for n in names:
-            if n.lower() in column_lookup:
-                return column_lookup[n.lower()]
-        return None
 
     aantal_col = find_any(["Aantal", "Qty", "Qty.", "Quantity", "Stuks"])
 
@@ -188,10 +205,26 @@ def load_bom(path: str) -> pd.DataFrame:
     df["Length profile"] = _text_column(profile_length_col)
     df["Plate thickness"] = _text_column(thickness_col)
 
-    supplier_col = find_any(["Supplier"])
-    supplier_code_col = find_any(["Supplier code"])
-    manufacturer_col = find_any(["Manufacturer"])
-    manufacturer_code_col = find_any(["Manufacturer code"])
+    supplier_col = find_any(["Supplier", "Leverancier"])
+    supplier_code_col = find_any(
+        [
+            "Supplier code",
+            "Supplier Code",
+            "SupplierCode",
+            "Leverancier code",
+            "Leverancierscode",
+        ]
+    )
+    manufacturer_col = find_any(["Manufacturer", "Fabrikant"])
+    manufacturer_code_col = find_any(
+        [
+            "Manufacturer code",
+            "Manufacturer Code",
+            "ManufacturerCode",
+            "Fabrikant code",
+            "Fabrikantcode",
+        ]
+    )
 
     df["Supplier"] = _text_column(supplier_col)
     df["Supplier code"] = _text_column(supplier_code_col)

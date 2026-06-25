@@ -6,6 +6,7 @@ import pandas as pd
 
 from bom import load_bom
 from bom_custom_tab import BOMCustomTab
+from spare_parts import collect_spare_part_items
 
 
 EXPECTED_COLUMNS = [
@@ -58,6 +59,32 @@ def test_load_bom_preserves_supplier_fields(tmp_path):
     assert df.loc[0, "Profile"] == "L-100"
     assert df.loc[0, "Length profile"] == "2500"
     assert df.loc[0, "Plate thickness"] == "8"
+
+
+def test_load_bom_accepts_padded_supplier_headers(tmp_path):
+    bom_path = tmp_path / "bom.csv"
+    pd.DataFrame(
+        {
+            "PartNumber": ["PN1"],
+            "Description": ["Widget"],
+            "Production": ["Spare Parts"],
+            "QTY.": [2],
+            "   Supplier": [" Supplier NV "],
+            "   Supplier code": [" SUP-001 "],
+            "   Manufacturer": [" Maker BV "],
+            "   Manufacturer code": [" M-42 "],
+        }
+    ).to_csv(bom_path, index=False)
+
+    df = load_bom(str(bom_path))
+    items = collect_spare_part_items(df)
+
+    assert df.loc[0, "Supplier"] == "Supplier NV"
+    assert df.loc[0, "Supplier code"] == "SUP-001"
+    assert df.loc[0, "Manufacturer"] == "Maker BV"
+    assert df.loc[0, "Manufacturer code"] == "M-42"
+    assert items[0].supplier == "Supplier NV"
+    assert items[0].status == "OK"
 
 
 def test_custom_bom_export_includes_supplier_columns(tmp_path):
