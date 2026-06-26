@@ -400,8 +400,8 @@ def test_spare_part_groups_export_full_list_and_supplier_order(tmp_path):
     ]
     assert "Supplier code" in values
     assert "Manufacturer code" in values
-    assert "Bestelgroep" in values
-    assert "Status" in values
+    assert "Bestelgroep" not in values
+    assert "Status" not in values
     assert "ND SM-25" in values
     assert "MF-30" in values
 

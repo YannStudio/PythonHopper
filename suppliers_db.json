@@ -1619,9 +1619,16 @@
   "defaults_by_production": {
     "Sheetmetal": "Productora",
     "Lasercutting": "Productora",
-    "Mount material": "Elcee Belux"
+    "Mount material": "Elcee Belux",
+    "Tube laser": "Saey",
+    "Cutting::Opticutter": "Saey",
+    "Wood": "Byttebier-hout",
+    "Spare Parts::custom--locinox": "Locinox",
+    "Spare Parts::custom--steeldeck": "Joriside",
+    "Spare Parts::supplier--locinox": "Locinox"
   },
   "defaults_by_finish": {
-    "Finish-Galvanised": "Van Gils Coating - Beringen/Maasmechelen"
+    "Finish-Galvanised": "Van Gils Coating - Beringen/Maasmechelen",
+    "Finish-Powder coating": "Van Gils Coating - Beringen/Maasmechelen"
   }
 }

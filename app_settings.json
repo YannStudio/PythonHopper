@@ -1,6 +1,6 @@
 {
   "source_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2024/20240158 - GBS De Droomwolk Kieldrecht/CAD/3D Soldiworks Files/Mod2/MOD2 V2",
-  "dest_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2024/20240158 - GBS De Droomwolk Kieldrecht/CAD/Bestellingen/Export Mod2",
+  "dest_folder": "C:/Users/jeroe/Desktop",
   "project_number": "20240158",
   "project_name": "Droomwolk Mod2",
   "file_extensions": [
@@ -67,7 +67,7 @@
   "export_processed_bom": true,
   "export_related_bom_files": true,
   "export_date_prefix": false,
-  "export_date_suffix": false,
+  "export_date_suffix": true,
   "custom_prefix_enabled": false,
   "custom_prefix_text": "",
   "custom_suffix_enabled": false,
@@ -120,6 +120,7 @@
     "stone": false,
     "waterjet": false,
     "sparte part": false,
-    "mallen": false
+    "mallen": false,
+    "wood": false
   }
 }

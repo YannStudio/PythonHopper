@@ -19,7 +19,7 @@ from collections import defaultdict
 from decimal import Decimal, InvalidOperation
 from html import escape
 from pathlib import Path
-from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import pandas as pd
 from dataclasses import dataclass, field
@@ -670,23 +670,34 @@ def _line_pricing_for_item(
     return None
 
 
-def _spare_part_column_layout() -> List[Dict[str, object]]:
+def _spare_part_column_layout(*, include_internal: bool = True) -> List[Dict[str, object]]:
     """Return the order table layout for spare-parts documents."""
 
-    return [
-        {"key": "PartNumber", "label": "Artikel nr.", "width": 16, "justify": "left", "wrap": True, "weight": 1.25},
-        {"key": "Description", "label": "Omschrijving", "width": 28, "justify": "left", "wrap": True, "weight": 2.2},
-        {"key": "Aantal", "label": "St.", "width": 8, "justify": "right", "numeric": True, "integer": True, "weight": 0.55},
-        {"key": "Supplier", "label": "Supplier", "width": 18, "justify": "left", "wrap": True, "weight": 1.2},
-        {"key": "Supplier code", "label": "Supplier code", "width": 18, "justify": "left", "wrap": True, "weight": 1.25},
-        {"key": "Manufacturer", "label": "Manufacturer", "width": 18, "justify": "left", "wrap": True, "weight": 1.2},
-        {"key": "Manufacturer code", "label": "Manufacturer code", "width": 18, "justify": "left", "wrap": True, "weight": 1.25},
-        {"key": "Bestelgroep", "label": "Bestelgroep", "width": 16, "justify": "left", "wrap": True, "weight": 1.0},
-        {"key": "Status", "label": "Status", "width": 16, "justify": "left", "wrap": True, "weight": 0.95},
+    columns = [
+        {"key": "PartNumber", "label": "Artikel nr.", "width": 16, "justify": "left", "wrap": True, "weight": 1.35},
+        {"key": "Description", "label": "Omschrijving", "width": 30, "justify": "left", "wrap": True, "weight": 2.6},
+        {"key": "Aantal", "label": "St.", "width": 8, "justify": "right", "numeric": True, "integer": True, "weight": 0.45},
+        {"key": "Supplier", "label": "Supplier", "width": 18, "justify": "left", "wrap": True, "weight": 1.15},
+        {"key": "Supplier code", "label": "Supplier code", "width": 18, "justify": "left", "wrap": True, "weight": 1.2},
+        {"key": "Manufacturer", "label": "Manufacturer", "width": 18, "justify": "left", "wrap": True, "weight": 1.15},
+        {"key": "Manufacturer code", "label": "Manufacturer code", "width": 18, "justify": "left", "wrap": True, "weight": 1.2},
     ]
+    if include_internal:
+        columns.extend(
+            [
+                {"key": "Bestelgroep", "label": "Bestelgroep", "width": 16, "justify": "left", "wrap": True, "weight": 1.0},
+                {"key": "Status", "label": "Status", "width": 16, "justify": "left", "wrap": True, "weight": 0.95},
+            ]
+        )
+    return columns
 
 
-def _default_priced_column_layout(context_kind: str) -> List[Dict[str, object]]:
+def _default_priced_column_layout(
+    context_kind: str,
+    *,
+    include_length: bool = False,
+    include_spare_internal: bool = True,
+) -> List[Dict[str, object]]:
     context_kind_clean = (_to_str(context_kind) or "productie").strip().lower()
     is_raw = context_kind_clean.startswith("brutemateriaal")
     is_spare = context_kind_clean.startswith("spare")
@@ -699,16 +710,22 @@ def _default_priced_column_layout(context_kind: str) -> List[Dict[str, object]]:
             {"key": "kg", "label": "kg", "width": 10, "justify": "right", "numeric": True, "total_weight": True, "weight": 0.8},
         ]
     elif is_spare:
-        columns = _spare_part_column_layout()
+        columns = _spare_part_column_layout(include_internal=include_spare_internal)
     else:
         columns = [
             {"key": "PartNumber", "label": "PartNumber", "width": 22, "justify": "left", "wrap": True, "weight": 1.8},
             {"key": "Description", "label": "Omschrijving", "width": 32, "justify": "left", "wrap": True, "weight": 2.4},
             {"key": "Materiaal", "label": "Materiaal", "width": 16, "justify": "left", "wrap": False, "weight": 1.2},
-            {"key": "Aantal", "label": "St.", "width": 8, "justify": "right", "numeric": True, "integer": True, "weight": 0.7},
-            {"key": "Oppervlakte", "label": "m\u00b2/st", "width": 10, "justify": "right", "numeric": True, "total_surface": True, "weight": 0.8},
-            {"key": "Gewicht", "label": "kg/st", "width": 10, "justify": "right", "numeric": True, "total_weight": True, "weight": 0.8},
         ]
+        if include_length:
+            columns.append({"key": "Lengte", "label": "Lengte", "width": 10, "justify": "right", "numeric": True, "integer": True, "weight": 0.8})
+        columns.extend(
+            [
+                {"key": "Aantal", "label": "St.", "width": 8, "justify": "right", "numeric": True, "integer": True, "weight": 0.7},
+                {"key": "Oppervlakte", "label": "m\u00b2/st", "width": 10, "justify": "right", "numeric": True, "total_surface": True, "weight": 0.8},
+                {"key": "Gewicht", "label": "kg/st", "width": 10, "justify": "right", "numeric": True, "total_weight": True, "weight": 0.8},
+            ]
+        )
     columns.extend(
         [
             {"key": _PRICE_UNIT_KEY, "label": "Prijs/st. (\u20ac)", "width": 12, "justify": "right", "numeric": True, "weight": 0.9},
@@ -804,7 +821,13 @@ def _apply_order_pricing(
     for item in priced_items:
         item.setdefault(_PRICE_UNIT_KEY, "")
         item.setdefault(_PRICE_TOTAL_KEY, "")
-    return priced_items, _default_priced_column_layout(context_kind)
+    include_length = (not is_raw) and any(
+        _clean_order_cell_text(item.get("Lengte", "")) for item in priced_items
+    )
+    return priced_items, _default_priced_column_layout(
+        context_kind,
+        include_length=include_length,
+    )
 
 
 _INVALID_PATH_CHARS = set('<>:"/\\|?*')
@@ -1790,6 +1813,175 @@ def _format_weight_kg(value: float | None) -> str:
     return f"{value:.2f}"
 
 
+@dataclass(frozen=True, slots=True)
+class _StandardOrderColumn:
+    key: str
+    pdf_label: str
+    excel_label: str
+    width_fraction: float
+    align: str = "RIGHT"
+    small: bool = True
+    wrap: bool = False
+
+
+_STANDARD_ORDER_COLUMNS: Tuple[_StandardOrderColumn, ...] = (
+    _StandardOrderColumn(
+        "PartNumber",
+        "PartNumber",
+        "PartNumber",
+        0.22,
+        align="LEFT",
+        small=False,
+        wrap=True,
+    ),
+    _StandardOrderColumn(
+        "Description",
+        "Omschrijving",
+        "Description",
+        0.40,
+        align="LEFT",
+        small=False,
+        wrap=True,
+    ),
+    _StandardOrderColumn("Materiaal", "Materiaal", "Materiaal", 0.14),
+    _StandardOrderColumn("Lengte", "Lengte", "Lengte", 0.10),
+    _StandardOrderColumn("Aantal", "St.", "Aantal", 0.06),
+    _StandardOrderColumn("Oppervlakte", "m\u00b2/st", "m\u00b2/st", 0.09),
+    _StandardOrderColumn("Gewicht", "kg/st", "kg/st", 0.09),
+)
+_STANDARD_ORDER_TOTAL_KEYS = {"Oppervlakte", "Gewicht"}
+
+
+def _standard_order_column_item_has_value(
+    column: _StandardOrderColumn,
+    item: Mapping[str, object],
+) -> bool:
+    value = item.get(column.key, "")
+    if column.key in _STANDARD_ORDER_TOTAL_KEYS:
+        value = _num_to_2dec(value)
+    return bool(_clean_order_cell_text(value))
+
+
+def _standard_order_visible_columns(
+    items: Sequence[Mapping[str, object]],
+    *,
+    total_surface_m2: float | None,
+    total_weight_kg: float | None,
+) -> List[_StandardOrderColumn]:
+    visible: List[_StandardOrderColumn] = []
+    for column in _STANDARD_ORDER_COLUMNS:
+        has_value = any(
+            _standard_order_column_item_has_value(column, item) for item in items
+        )
+        if column.key == "Oppervlakte" and total_surface_m2 is not None:
+            has_value = True
+        elif column.key == "Gewicht" and total_weight_kg is not None:
+            has_value = True
+        if has_value:
+            visible.append(column)
+
+    has_total_row = total_surface_m2 is not None or total_weight_kg is not None
+    if has_total_row and (
+        not visible
+        or visible[0].key in _STANDARD_ORDER_TOTAL_KEYS
+        or visible[0].align.upper() != "LEFT"
+    ):
+        visible.insert(0, _STANDARD_ORDER_COLUMNS[0])
+    if not visible:
+        visible.append(_STANDARD_ORDER_COLUMNS[0])
+    return visible
+
+
+def _standard_order_column_widths(
+    columns: Sequence[_StandardOrderColumn],
+    items: Sequence[Mapping[str, object]],
+    *,
+    total_width: float,
+    small_font_size: float,
+    header_font_size: float,
+) -> List[float]:
+    if not columns:
+        return []
+
+    fractions = {column.key: column.width_fraction for column in _STANDARD_ORDER_COLUMNS}
+    visible_keys = {column.key for column in columns}
+    if {"PartNumber", "Description"}.issubset(visible_keys):
+        non_empty_desc_count = sum(
+            1 for item in items if _clean_order_cell_text(item.get("Description", ""))
+        )
+        empty_desc_ratio = (
+            1.0 - (non_empty_desc_count / len(items)) if items else 0.0
+        )
+        extra_pn_frac = 0.12 * max(0.0, min(1.0, empty_desc_ratio))
+        fractions["PartNumber"] += extra_pn_frac
+        fractions["Description"] -= extra_pn_frac
+
+    weights = [fractions[column.key] for column in columns]
+    minimums: List[float] = []
+    for column in columns:
+        if column.key == "Description":
+            minimums.append(max(_order_table_header_min_width(column.pdf_label, header_font_size), 42 * mm))
+            continue
+        values = [item.get(column.key, "") for item in items]
+        minimums.append(
+            _order_table_column_min_width(
+                column.pdf_label,
+                values,
+                header_font_size=header_font_size,
+                body_font_size=small_font_size if column.small else 9,
+                wrap=column.wrap,
+                max_width=total_width * (0.34 if column.key == "PartNumber" else 0.24),
+            )
+        )
+
+    return _weighted_widths_with_minimums(total_width, weights, minimums)
+
+
+def _build_standard_order_excel_dataframe(
+    items: Sequence[Mapping[str, object]],
+    *,
+    total_surface_m2: float | None,
+    total_weight_kg: float | None,
+) -> pd.DataFrame:
+    columns = _standard_order_visible_columns(
+        items,
+        total_surface_m2=total_surface_m2,
+        total_weight_kg=total_weight_kg,
+    )
+    df = pd.DataFrame(items, columns=[column.key for column in columns])
+    df = df.rename(
+        columns={
+            column.key: column.excel_label
+            for column in columns
+            if column.excel_label != column.key
+        }
+    )
+
+    if total_surface_m2 is not None or total_weight_kg is not None:
+        total_row = {column.excel_label: "" for column in columns}
+        total_row[columns[0].excel_label] = "Totaal"
+        for column in columns:
+            if column.key == "Oppervlakte" and total_surface_m2 is not None:
+                total_row[column.excel_label] = _format_weight_kg(total_surface_m2)
+            elif column.key == "Gewicht" and total_weight_kg is not None:
+                total_row[column.excel_label] = _format_weight_kg(total_weight_kg)
+        df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
+
+    return df
+
+
+def _standard_order_left_columns(columns: Sequence[_StandardOrderColumn]) -> set[str]:
+    return {
+        column.excel_label
+        for column in columns
+        if column.align.upper() != "RIGHT"
+    }
+
+
+def _standard_order_wrap_columns(columns: Sequence[_StandardOrderColumn]) -> set[str]:
+    return {column.excel_label for column in columns if column.wrap}
+
+
 def _compute_opticutter_order_exports(
     opticutter_prod: OpticutterProductionExport,
     stats_map: Mapping[tuple[str, str, str], OpticutterProfileStats],
@@ -2152,30 +2344,7 @@ def _build_order_excel_section_data(
 
     if is_raw_material_order:
         df_columns = ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
-    else:
-        df_columns = [
-            "PartNumber",
-            "Description",
-            "Materiaal",
-            "Aantal",
-            "m\u00b2/st",
-            "kg/st",
-        ]
-    if is_raw_material_order:
         df = pd.DataFrame(display_items, columns=df_columns)
-    else:
-        df = pd.DataFrame(
-            display_items,
-            columns=[
-                "PartNumber",
-                "Description",
-                "Materiaal",
-                "Aantal",
-                "Oppervlakte",
-                "Gewicht",
-            ],
-        ).rename(columns={"Oppervlakte": "m\u00b2/st", "Gewicht": "kg/st"})
-    if is_raw_material_order:
         if section.total_weight_kg is not None:
             total_row = {
                 "Profiel": "Totaal",
@@ -2187,26 +2356,21 @@ def _build_order_excel_section_data(
             df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
         return df, {"Profiel", "Materiaal"}, {"Profiel", "Materiaal"}
 
-    if section.total_surface_m2 is not None or section.total_weight_kg is not None:
-        total_row = {
-            "PartNumber": "Totaal",
-            "Description": "",
-            "Materiaal": "",
-            "Aantal": "",
-            "m\u00b2/st": (
-                _format_weight_kg(section.total_surface_m2)
-                if section.total_surface_m2 is not None
-                else ""
-            ),
-            "kg/st": (
-                _format_weight_kg(section.total_weight_kg)
-                if section.total_weight_kg is not None
-                else ""
-            ),
-        }
-        df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
-
-    return df, {"PartNumber", "Description"}, {"PartNumber", "Description"}
+    visible_columns = _standard_order_visible_columns(
+        display_items,
+        total_surface_m2=section.total_surface_m2,
+        total_weight_kg=section.total_weight_kg,
+    )
+    df = _build_standard_order_excel_dataframe(
+        display_items,
+        total_surface_m2=section.total_surface_m2,
+        total_weight_kg=section.total_weight_kg,
+    )
+    return (
+        df,
+        _standard_order_left_columns(visible_columns),
+        _standard_order_wrap_columns(visible_columns),
+    )
 
 
 def _order_column_export_label(column: Mapping[str, object]) -> str:
@@ -2308,6 +2472,49 @@ def _order_table_header_min_width(label: object, font_size: float) -> float:
     except Exception:
         token_width = max(len(token) for token in tokens) * font_size * 0.55
     return token_width + 14.0
+
+
+def _order_table_value_min_width(
+    value: object,
+    *,
+    font_size: float,
+    wrap: bool,
+) -> float:
+    text = _clean_order_cell_text(value).replace("\u00a0", " ")
+    if not text:
+        return 0.0
+    tokens = [token for token in re.split(r"\s+", text) if token] if wrap else [text]
+    if not tokens:
+        return 0.0
+    try:
+        width = max(stringWidth(token, "Helvetica", font_size) for token in tokens)
+    except Exception:
+        width = max(len(token) for token in tokens) * font_size * 0.55
+    return width + 14.0
+
+
+def _order_table_column_min_width(
+    label: object,
+    values: Iterable[object],
+    *,
+    header_font_size: float,
+    body_font_size: float,
+    wrap: bool,
+    max_width: float | None = None,
+) -> float:
+    minimum = _order_table_header_min_width(label, header_font_size)
+    for value in values:
+        minimum = max(
+            minimum,
+            _order_table_value_min_width(
+                value,
+                font_size=body_font_size,
+                wrap=wrap,
+            ),
+        )
+    if max_width is not None and max_width > 0:
+        minimum = min(minimum, max_width)
+    return minimum
 
 
 def _weighted_widths_with_minimums(
@@ -2556,6 +2763,13 @@ def _build_order_pdf_section_story(
         next_item_number = max(1, int(start_item_number))
     except Exception:
         next_item_number = 1
+    standard_columns: List[_StandardOrderColumn] = []
+    if not custom_layout and not is_raw_material_order:
+        standard_columns = _standard_order_visible_columns(
+            display_items,
+            total_surface_m2=section.total_surface_m2,
+            total_weight_kg=section.total_weight_kg,
+        )
 
     if show_title:
         story.append(
@@ -2597,15 +2811,7 @@ def _build_order_pdf_section_story(
     elif is_raw_material_order:
         head = [item_column_title, "Profiel", "Materiaal", "Lengte", "St.", "kg"]
     else:
-        head = [
-            item_column_title,
-            "PartNumber",
-            "Omschrijving",
-            "Materiaal",
-            "St.",
-            "m\u00b2/st",
-            "kg/st",
-        ]
+        head = [item_column_title] + [column.pdf_label for column in standard_columns]
 
     def wrap_cell_html(val: str, small=False, align=None):
         style = ParagraphStyle(
@@ -2623,58 +2829,13 @@ def _build_order_pdf_section_story(
 
     standard_col_widths: List[float] | None = None
     if not custom_layout and not is_raw_material_order:
-        col_fracs = [0.22, 0.40, 0.14, 0.06, 0.09, 0.09]
-        non_empty_desc_count = sum(
-            1
-            for item in display_items
-            if _clean_order_cell_text(item.get("Description", ""))
+        standard_col_widths = _standard_order_column_widths(
+            standard_columns,
+            display_items,
+            total_width=content_usable_w,
+            small_font_size=table_small_font_size,
+            header_font_size=table_header_font_size,
         )
-        if display_items:
-            empty_desc_ratio = 1.0 - (non_empty_desc_count / len(display_items))
-        else:
-            empty_desc_ratio = 0.0
-        extra_pn_frac = 0.12 * max(0.0, min(1.0, empty_desc_ratio))
-        col_fracs[0] += extra_pn_frac
-        col_fracs[1] -= extra_pn_frac
-
-        desc_w = content_usable_w * col_fracs[1]
-        mat_w = content_usable_w * col_fracs[2]
-        try:
-            header_width = (
-                stringWidth("Materiaal", "Helvetica-Bold", table_header_font_size) + 6
-            )
-            material_values = [
-                stringWidth(
-                    _material_nowrap(_clean_order_cell_text(item.get("Materiaal", ""))),
-                    "Helvetica",
-                    table_small_font_size,
-                )
-                for item in display_items
-                if _clean_order_cell_text(item.get("Materiaal", ""))
-            ]
-            value_width = (max(material_values) if material_values else 0) + 6
-            max_mat = max(header_width, value_width)
-            if max_mat < mat_w:
-                desc_w += mat_w - max_mat
-                mat_w = max_mat
-            elif max_mat > mat_w:
-                desc_w -= max_mat - mat_w
-                mat_w = max_mat
-            min_desc_w = 42 * mm
-            if desc_w < min_desc_w:
-                diff = min_desc_w - desc_w
-                desc_w = min_desc_w
-                mat_w = max(0, mat_w - diff)
-        except Exception:
-            pass
-        standard_col_widths = [
-            content_usable_w * col_fracs[0],
-            desc_w,
-            mat_w,
-            content_usable_w * col_fracs[3],
-            content_usable_w * col_fracs[4],
-            content_usable_w * col_fracs[5],
-        ]
 
     def description_cell_html(val: object, width: float) -> str:
         lines = _wrap_words_to_lines(
@@ -2821,55 +2982,79 @@ def _build_order_pdf_section_story(
             data.append(total_row)
             total_row_index = len(data) - 1
     else:
+        standard_widths_by_key = {
+            column.key: width
+            for column, width in zip(standard_columns, standard_col_widths or [])
+        }
         for row_offset, item in enumerate(display_items):
-            pn = escape(_clean_order_cell_text(item.get("PartNumber", "")))
-            desc_width = (
-                (standard_col_widths[1] - 10)
-                if standard_col_widths
-                else (content_usable_w * 0.40)
-            )
-            desc = description_cell_html(item.get("Description", ""), desc_width)
-            mat = _material_nowrap(_clean_order_cell_text(item.get("Materiaal", "")))
-            qty = item.get("Aantal", "")
-            opp = _num_to_2dec(item.get("Oppervlakte", ""))
-            gew = _num_to_2dec(item.get("Gewicht", ""))
-            data.append(
-                [
+            row_cells: List[Paragraph] = [
+                wrap_cell_html(
+                    str(next_item_number + row_offset),
+                    small=True,
+                    align="CENTER",
+                )
+            ]
+            for column in standard_columns:
+                if column.key == "PartNumber":
+                    value = escape(_clean_order_cell_text(item.get("PartNumber", "")))
+                elif column.key == "Description":
+                    desc_width = max(
+                        24.0,
+                        standard_widths_by_key.get(
+                            "Description",
+                            content_usable_w * 0.40,
+                        )
+                        - 10,
+                    )
+                    value = description_cell_html(item.get("Description", ""), desc_width)
+                elif column.key == "Materiaal":
+                    value = _material_nowrap(
+                        _clean_order_cell_text(item.get("Materiaal", ""))
+                    )
+                elif column.key == "Aantal":
+                    value = item.get("Aantal", "")
+                elif column.key == "Oppervlakte":
+                    value = _num_to_2dec(item.get("Oppervlakte", ""))
+                elif column.key == "Gewicht":
+                    value = _num_to_2dec(item.get("Gewicht", ""))
+                else:
+                    value = item.get(column.key, "")
+                row_cells.append(
                     wrap_cell_html(
-                        str(next_item_number + row_offset),
-                        small=True,
-                        align="CENTER",
-                    ),
-                    wrap_cell_html(pn, small=False, align="LEFT"),
-                    wrap_cell_html(desc, small=False, align="LEFT"),
-                    wrap_cell_html(mat, small=True, align="RIGHT"),
-                    wrap_cell_html(qty, small=True, align="RIGHT"),
-                    wrap_cell_html(opp, small=True, align="RIGHT"),
-                    wrap_cell_html(gew, small=True, align="RIGHT"),
-                ]
-            )
+                        value,
+                        small=column.small,
+                        align=column.align,
+                    )
+                )
+            data.append(row_cells)
         if section.total_surface_m2 is not None or section.total_weight_kg is not None:
             total_row = [
-                wrap_cell_html("", small=True, align="CENTER"),
-                wrap_cell_html("Totaal", small=False, align="LEFT"),
-                wrap_cell_html("", small=False, align="LEFT"),
-                wrap_cell_html("", small=True, align="RIGHT"),
-                wrap_cell_html("", small=True, align="RIGHT"),
-                wrap_cell_html(
-                    _num_to_2dec(section.total_surface_m2)
-                    if section.total_surface_m2 is not None
-                    else "",
-                    small=True,
-                    align="RIGHT",
-                ),
-                wrap_cell_html(
-                    _num_to_2dec(section.total_weight_kg)
-                    if section.total_weight_kg is not None
-                    else "",
-                    small=True,
-                    align="RIGHT",
-                ),
+                wrap_cell_html("", small=True, align="CENTER")
             ]
+            for idx, column in enumerate(standard_columns):
+                if idx == 0:
+                    value = "Totaal"
+                    small = False
+                    align = "LEFT"
+                elif column.key == "Oppervlakte" and section.total_surface_m2 is not None:
+                    value = _num_to_2dec(section.total_surface_m2)
+                    small = True
+                    align = column.align
+                elif column.key == "Gewicht" and section.total_weight_kg is not None:
+                    value = _num_to_2dec(section.total_weight_kg)
+                    small = True
+                    align = column.align
+                else:
+                    value = ""
+                    small = column.small
+                    align = column.align
+                total_row.append(
+                    wrap_cell_html(
+                        value,
+                        small=small,
+                        align=align,
+                    )
+                )
             data.append(total_row)
             total_row_index = len(data) - 1
 
@@ -2882,7 +3067,19 @@ def _build_order_pdf_section_story(
                 weight_val = 0.0
             weights.append(weight_val if weight_val > 0 else 1.0)
         minimums = [
-            _order_table_header_min_width(column.get("label"), table_header_font_size)
+            _order_table_column_min_width(
+                column.get("label"),
+                [
+                    item.get(column.get("key"), "") if column.get("key") else ""
+                    for item in display_items
+                ],
+                header_font_size=table_header_font_size,
+                body_font_size=table_small_font_size
+                if column.get("numeric")
+                else table_body_font_size,
+                wrap=bool(column.get("wrap")),
+                max_width=content_usable_w * 0.34,
+            )
             for column in column_layout
         ]
         col_widths = [item_col_width] + [
@@ -2900,14 +3097,8 @@ def _build_order_pdf_section_story(
     else:
         col_widths = [item_col_width] + (
             standard_col_widths
-            or [
-                content_usable_w * 0.22,
-                content_usable_w * 0.40,
-                content_usable_w * 0.14,
-                content_usable_w * 0.06,
-                content_usable_w * 0.09,
-                content_usable_w * 0.09,
-            ]
+            or [content_usable_w / max(1, len(standard_columns))]
+            * max(1, len(standard_columns))
         )
 
     tbl = LongTable(data, colWidths=col_widths, repeatRows=1)
@@ -2950,13 +3141,9 @@ def _build_order_pdf_section_story(
             ]
         )
     else:
-        style_cmds.extend(
-            [
-                ("ALIGN", (0, 0), (0, -1), "CENTER"),
-                ("ALIGN", (3, 0), (6, 0), "RIGHT"),
-                ("ALIGN", (3, 1), (6, -1), "RIGHT"),
-            ]
-        )
+        style_cmds.append(("ALIGN", (0, 0), (0, -1), "CENTER"))
+        for idx, column in enumerate(standard_columns, start=1):
+            style_cmds.append(("ALIGN", (idx, 0), (idx, -1), column.align))
     if total_row_index is not None:
         style_cmds.extend(
             [
@@ -3340,6 +3527,19 @@ def generate_pdf_order_platypus(
         doc.build(story)
         return
 
+    display_items, price_subtotal, price_summary_rows = _split_order_price_summary_rows(
+        items,
+        column_layout,
+        is_raw=is_raw_material_order,
+    )
+    standard_columns: List[_StandardOrderColumn] = []
+    if not custom_layout and not is_raw_material_order:
+        standard_columns = _standard_order_visible_columns(
+            display_items,
+            total_surface_m2=total_surface_m2,
+            total_weight_kg=total_weight_kg,
+        )
+
     # Headers and data
     if custom_layout:
         head = []
@@ -3362,7 +3562,7 @@ def generate_pdf_order_platypus(
     elif is_raw_material_order:
         head = ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
     else:
-        head = ["PartNumber", "Omschrijving", "Materiaal", "St.", "m\u00b2/st", "kg/st"]
+        head = [column.pdf_label for column in standard_columns]
 
     def wrap_cell_html(val: str, small=False, align=None):
         style = ParagraphStyle(
@@ -3376,61 +3576,15 @@ def generate_pdf_order_platypus(
             style.alignment = {"LEFT": 0, "CENTER": 1, "RIGHT": 2}.get(align.upper(), 0)
         return Paragraph(str(val if (val is not None) else ""), style)
 
-    display_items, price_subtotal, price_summary_rows = _split_order_price_summary_rows(
-        items,
-        column_layout,
-        is_raw=is_raw_material_order,
-    )
     standard_col_widths: List[float] | None = None
     if not custom_layout and not is_raw_material_order:
-        col_fracs = [0.22, 0.40, 0.14, 0.06, 0.09, 0.09]
-        non_empty_desc_count = sum(
-            1 for it in display_items if _clean_order_cell_text(it.get("Description", ""))
+        standard_col_widths = _standard_order_column_widths(
+            standard_columns,
+            display_items,
+            total_width=usable_w,
+            small_font_size=8.5,
+            header_font_size=10,
         )
-        if display_items:
-            empty_desc_ratio = 1.0 - (non_empty_desc_count / len(display_items))
-        else:
-            empty_desc_ratio = 0.0
-        extra_pn_frac = 0.12 * max(0.0, min(1.0, empty_desc_ratio))
-        col_fracs[0] += extra_pn_frac
-        col_fracs[1] -= extra_pn_frac
-
-        desc_w = usable_w * col_fracs[1]
-        mat_w = usable_w * col_fracs[2]
-        try:
-            header_width = stringWidth("Materiaal", "Helvetica-Bold", 10) + 6
-            material_values = [
-                stringWidth(
-                    _material_nowrap(_clean_order_cell_text(it.get("Materiaal", ""))),
-                    "Helvetica",
-                    9,
-                )
-                for it in display_items
-                if _clean_order_cell_text(it.get("Materiaal", ""))
-            ]
-            value_width = (max(material_values) if material_values else 0) + 6
-            max_mat = max(header_width, value_width)
-            if max_mat < mat_w:
-                desc_w += mat_w - max_mat
-                mat_w = max_mat
-            elif max_mat > mat_w:
-                desc_w -= max_mat - mat_w
-                mat_w = max_mat
-            min_desc_w = 42 * mm
-            if desc_w < min_desc_w:
-                diff = min_desc_w - desc_w
-                desc_w = min_desc_w
-                mat_w = max(0, mat_w - diff)
-        except Exception:
-            pass
-        standard_col_widths = [
-            usable_w * col_fracs[0],
-            desc_w,
-            mat_w,
-            usable_w * col_fracs[3],
-            usable_w * col_fracs[4],
-            usable_w * col_fracs[5],
-        ]
 
     def description_cell_html(val: object, width: float) -> str:
         lines = _wrap_words_to_lines(
@@ -3533,47 +3687,60 @@ def generate_pdf_order_platypus(
             data.append(total_row)
             total_row_index = len(data) - 1
     else:
+        standard_widths_by_key = {
+            column.key: width
+            for column, width in zip(standard_columns, standard_col_widths or [])
+        }
         for it in display_items:
-            pn = escape(_clean_order_cell_text(it.get("PartNumber", "")))
-            desc_width = (
-                (standard_col_widths[1] - 10) if standard_col_widths else (usable_w * 0.40)
-            )
-            desc = description_cell_html(it.get("Description", ""), desc_width)
-            mat = _material_nowrap(_clean_order_cell_text(it.get("Materiaal", "")))
-            qty = it.get("Aantal", "")
-            opp = _num_to_2dec(it.get("Oppervlakte", ""))
-            gew = _num_to_2dec(it.get("Gewicht", ""))
-            data.append(
-                [
-                    wrap_cell_html(pn, small=False, align="LEFT"),
-                    wrap_cell_html(desc, small=False, align="LEFT"),
-                    wrap_cell_html(mat, small=True, align="RIGHT"),
-                    wrap_cell_html(qty, small=True, align="RIGHT"),
-                    wrap_cell_html(opp, small=True, align="RIGHT"),
-                    wrap_cell_html(gew, small=True, align="RIGHT"),
-                ]
-            )
+            row_cells: List[Paragraph] = []
+            for column in standard_columns:
+                if column.key == "PartNumber":
+                    value = escape(_clean_order_cell_text(it.get("PartNumber", "")))
+                elif column.key == "Description":
+                    desc_width = max(
+                        24.0,
+                        standard_widths_by_key.get("Description", usable_w * 0.40)
+                        - 10,
+                    )
+                    value = description_cell_html(it.get("Description", ""), desc_width)
+                elif column.key == "Materiaal":
+                    value = _material_nowrap(_clean_order_cell_text(it.get("Materiaal", "")))
+                elif column.key == "Aantal":
+                    value = it.get("Aantal", "")
+                elif column.key == "Oppervlakte":
+                    value = _num_to_2dec(it.get("Oppervlakte", ""))
+                elif column.key == "Gewicht":
+                    value = _num_to_2dec(it.get("Gewicht", ""))
+                else:
+                    value = it.get(column.key, "")
+                row_cells.append(
+                    wrap_cell_html(
+                        value,
+                        small=column.small,
+                        align=column.align,
+                    )
+                )
+            data.append(row_cells)
         if total_surface_m2 is not None or total_weight_kg is not None:
-            total_row = [
-                wrap_cell_html("Totaal", small=False, align="LEFT"),
-                wrap_cell_html("", small=False, align="LEFT"),
-                wrap_cell_html("", small=True, align="RIGHT"),
-                wrap_cell_html("", small=True, align="RIGHT"),
-                wrap_cell_html(
-                    _num_to_2dec(total_surface_m2)
-                    if total_surface_m2 is not None
-                    else "",
-                    small=True,
-                    align="RIGHT",
-                ),
-                wrap_cell_html(
-                    _num_to_2dec(total_weight_kg)
-                    if total_weight_kg is not None
-                    else "",
-                    small=True,
-                    align="RIGHT",
-                ),
-            ]
+            total_row = []
+            for idx, column in enumerate(standard_columns):
+                if idx == 0:
+                    value = "Totaal"
+                    small = False
+                    align = "LEFT"
+                elif column.key == "Oppervlakte" and total_surface_m2 is not None:
+                    value = _num_to_2dec(total_surface_m2)
+                    small = True
+                    align = column.align
+                elif column.key == "Gewicht" and total_weight_kg is not None:
+                    value = _num_to_2dec(total_weight_kg)
+                    small = True
+                    align = column.align
+                else:
+                    value = ""
+                    small = column.small
+                    align = column.align
+                total_row.append(wrap_cell_html(value, small=small, align=align))
             data.append(total_row)
             total_row_index = len(data) - 1
 
@@ -3586,7 +3753,17 @@ def generate_pdf_order_platypus(
                 weight_val = 0.0
             weights.append(weight_val if weight_val > 0 else 1.0)
         minimums = [
-            _order_table_header_min_width(column.get("label"), 9.5)
+            _order_table_column_min_width(
+                column.get("label"),
+                [
+                    item.get(column.get("key"), "") if column.get("key") else ""
+                    for item in display_items
+                ],
+                header_font_size=9.5,
+                body_font_size=8.5 if column.get("numeric") else 9,
+                wrap=bool(column.get("wrap")),
+                max_width=usable_w * 0.34,
+            )
             for column in column_layout
         ]
         col_widths = _weighted_widths_with_minimums(usable_w, weights, minimums)
@@ -3595,13 +3772,8 @@ def generate_pdf_order_platypus(
         col_widths = [usable_w * frac for frac in col_fracs]
     else:
         col_widths = standard_col_widths or [
-            usable_w * 0.22,
-            usable_w * 0.40,
-            usable_w * 0.14,
-            usable_w * 0.06,
-            usable_w * 0.09,
-            usable_w * 0.09,
-        ]
+            usable_w / max(1, len(standard_columns))
+        ] * max(1, len(standard_columns))
 
     tbl = LongTable(data, colWidths=col_widths, repeatRows=1)
     style_cmds = [
@@ -3637,12 +3809,8 @@ def generate_pdf_order_platypus(
     elif is_raw_material_order:
         style_cmds.append(("ALIGN", (2, 0), (4, -1), "RIGHT"))
     else:
-        style_cmds.extend(
-            [
-                ("ALIGN", (2, 0), (5, 0), "RIGHT"),
-                ("ALIGN", (2, 1), (5, -1), "RIGHT"),
-            ]
-        )
+        for idx, column in enumerate(standard_columns):
+            style_cmds.append(("ALIGN", (idx, 0), (idx, -1), column.align))
     if total_row_index is not None:
         style_cmds.extend(
             [
@@ -3884,23 +4052,7 @@ def write_order_excel(
     else:
         if is_raw_material_order:
             df_columns = ["Profiel", "Materiaal", "Lengte", "St.", "kg"]
-        else:
-            df_columns = ["PartNumber", "Description", "Materiaal", "Aantal", "m\u00b2/st", "kg/st"]
-        if is_raw_material_order:
             df = pd.DataFrame(display_items, columns=df_columns)
-        else:
-            df = pd.DataFrame(
-                display_items,
-                columns=[
-                    "PartNumber",
-                    "Description",
-                    "Materiaal",
-                    "Aantal",
-                    "Oppervlakte",
-                    "Gewicht",
-                ],
-            ).rename(columns={"Oppervlakte": "m\u00b2/st", "Gewicht": "kg/st"})
-        if is_raw_material_order:
             if total_weight_kg is not None:
                 total_row = {
                     "Profiel": "Totaal",
@@ -3910,24 +4062,13 @@ def write_order_excel(
                     "kg": _format_weight_kg(total_weight_kg),
                 }
                 df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
-        elif total_surface_m2 is not None or total_weight_kg is not None:
-            total_row = {
-                "PartNumber": "Totaal",
-                "Description": "",
-                "Materiaal": "",
-                "Aantal": "",
-                "m\u00b2/st": (
-                    _format_weight_kg(total_surface_m2)
-                    if total_surface_m2 is not None
-                    else ""
-                ),
-                "kg/st": (
-                    _format_weight_kg(total_weight_kg)
-                    if total_weight_kg is not None
-                    else ""
-                ),
-            }
-            df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
+        else:
+            df = _build_standard_order_excel_dataframe(
+                display_items,
+                total_surface_m2=total_surface_m2,
+                total_weight_kg=total_weight_kg,
+            )
+            df_columns = list(df.columns)
 
     note_text = EN1090_NOTE_TEXT if en1090_note is None else _to_str(en1090_note)
 
@@ -4104,8 +4245,13 @@ def write_order_excel(
                     left_cols = {"Profiel", "Materiaal"}
                     wrap_cols = {"Profiel", "Materiaal"}
                 else:
-                    left_cols = {"PartNumber", "Description"}
-                    wrap_cols = {"PartNumber", "Description"}
+                    visible_columns = _standard_order_visible_columns(
+                        display_items,
+                        total_surface_m2=total_surface_m2,
+                        total_weight_kg=total_weight_kg,
+                    )
+                    left_cols = _standard_order_left_columns(visible_columns)
+                    wrap_cols = _standard_order_wrap_columns(visible_columns)
             for col_idx, col_name in enumerate(df.columns, start=1):
                 align = Alignment(
                     horizontal="left" if col_name in left_cols else "right",
@@ -4866,6 +5012,7 @@ def copy_per_production_and_orders(
                 "PartNumber": row.get("PartNumber", ""),
                 "Description": row.get("Description", ""),
                 "Materiaal": row.get("Materiaal", ""),
+                "Lengte": row.get("Length profile", ""),
                 "Aantal": _parse_qty(row.get("Aantal", "")),
                 "Oppervlakte": row.get("Oppervlakte", ""),
                 "Gewicht": row.get("Gewicht", ""),
@@ -5388,6 +5535,7 @@ def copy_per_production_and_orders(
                     "PartNumber": row.get("PartNumber", ""),
                     "Description": row.get("Description", ""),
                     "Materiaal": row.get("Materiaal", ""),
+                    "Lengte": row.get("Length profile", ""),
                     "Aantal": _parse_qty(row.get("Aantal", "")),
                     "Oppervlakte": row.get("Oppervlakte", ""),
                     "Gewicht": row.get("Gewicht", ""),
@@ -5569,7 +5717,17 @@ def copy_per_production_and_orders(
                 context_kind="Spare parts",
                 vat_rate=spare_part_vat_rate_map.get(group_key, ""),
             )
-            column_layout = priced_layout or _spare_part_column_layout()
+            if is_full_spare_list:
+                base_layout = priced_layout or _spare_part_column_layout(
+                    include_internal=False
+                )
+                column_layout = [
+                    column
+                    for column in base_layout
+                    if _to_str(column.get("key")) not in {"Bestelgroep", "Status"}
+                ]
+            else:
+                column_layout = priced_layout or _spare_part_column_layout()
             order_candidates.append(
                 OrderDocumentCandidate(
                     selection_key=spare_sel_key,

@@ -41,6 +41,41 @@ def test_write_order_excel_adds_surface_and_weight_total_row(tmp_path):
     assert str(ws.cell(total_row, 6).value).replace(",", ".") == "31.20"
 
 
+def test_write_order_excel_drops_empty_standard_material_column(tmp_path):
+    openpyxl = pytest.importorskip("openpyxl")
+
+    path = tmp_path / "assembly.xlsx"
+    orders.write_order_excel(
+        str(path),
+        [
+            {
+                "PartNumber": "ASM-1",
+                "Description": "Assembly item",
+                "Materiaal": "",
+                "Aantal": 1,
+                "Oppervlakte": "1.23",
+                "Gewicht": "4.56",
+            }
+        ],
+        context_label="Assembly",
+        total_surface_m2=1.23,
+        total_weight_kg=4.56,
+    )
+
+    ws = openpyxl.load_workbook(path).active
+    header_row = next(
+        row for row in range(1, ws.max_row + 1) if ws.cell(row, 1).value == "PartNumber"
+    )
+    headers = [
+        ws.cell(header_row, column).value
+        for column in range(1, ws.max_column + 1)
+        if ws.cell(header_row, column).value
+    ]
+
+    assert headers == ["PartNumber", "Description", "Aantal", "m\u00b2/st", "kg/st"]
+    assert "Materiaal" not in headers
+
+
 def test_standard_order_route_calculates_surface_and_weight_from_quantity(
     tmp_path, monkeypatch
 ):
@@ -57,6 +92,7 @@ def test_standard_order_route_calculates_surface_and_weight_from_quantity(
                 "Production": "Laser",
                 "Description": "Onderdeel",
                 "Materiaal": "S235",
+                "Length profile": "2500",
                 "Aantal": 4,
                 "Oppervlakte": "0,50",
                 "Gewicht": "7,80",
@@ -94,3 +130,5 @@ def test_standard_order_route_calculates_surface_and_weight_from_quantity(
     assert excel_section.total_weight_kg == pytest.approx(31.2)
     assert pdf_section.total_surface_m2 == pytest.approx(2.0)
     assert pdf_section.total_weight_kg == pytest.approx(31.2)
+    assert excel_section.items[0]["Lengte"] == "2500"
+    assert pdf_section.items[0]["Lengte"] == "2500"

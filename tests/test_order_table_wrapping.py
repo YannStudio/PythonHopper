@@ -77,6 +77,89 @@ def test_order_pdf_section_uses_square_meter_header():
     assert table._cellvalues[1][0].getPlainText() == "1"
 
 
+def test_order_pdf_section_drops_empty_standard_material_column():
+    pytest.importorskip("reportlab")
+    from reportlab.lib.styles import ParagraphStyle
+
+    section = OrderDocumentSection(
+        context_label="Assembly",
+        context_kind="productie",
+        items=[
+            {
+                "PartNumber": "ASM-1",
+                "Description": "Assembly item",
+                "Materiaal": "",
+                "Aantal": 1,
+                "Oppervlakte": "1.23",
+                "Gewicht": "4.56",
+            }
+        ],
+        total_surface_m2=1.23,
+        total_weight_kg=4.56,
+    )
+    story = []
+
+    _build_order_pdf_section_story(
+        section,
+        story=story,
+        usable_w=500,
+        palette=_order_palette({}),
+        section_title_style=ParagraphStyle("section"),
+        show_title=False,
+    )
+
+    table = story[-1]
+    header = _row_texts(table._cellvalues[0])
+    total = _row_texts(table._cellvalues[2])
+
+    assert header == ["Nr.", "PartNumber", "Omschrijving", "St.", "m\u00b2/st", "kg/st"]
+    assert "Materiaal" not in header
+    assert total[1] == "Totaal"
+    assert total[header.index("m\u00b2/st")] == "1.23"
+    assert total[header.index("kg/st")] == "4.56"
+
+
+def test_order_pdf_section_adds_standard_length_column_when_available():
+    pytest.importorskip("reportlab")
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    from reportlab.lib.styles import ParagraphStyle
+
+    section = OrderDocumentSection(
+        context_label="Cutting",
+        context_kind="productie",
+        items=[
+            {
+                "PartNumber": "CUT-1",
+                "Description": "Wood panel",
+                "Materiaal": "Thermowood",
+                "Lengte": "2500",
+                "Aantal": 2,
+            }
+        ],
+    )
+    story = []
+
+    _build_order_pdf_section_story(
+        section,
+        story=story,
+        usable_w=500,
+        palette=_order_palette({}),
+        section_title_style=ParagraphStyle("section"),
+        show_title=False,
+    )
+
+    table = story[-1]
+    header = _row_texts(table._cellvalues[0])
+    row = _row_texts(table._cellvalues[1])
+
+    assert header == ["Nr.", "PartNumber", "Omschrijving", "Materiaal", "Lengte", "St."]
+    assert row[header.index("Lengte")] == "2500"
+    material_idx = header.index("Materiaal")
+    assert table._colWidths[material_idx] >= (
+        stringWidth("Thermowood", "Helvetica", 8.2) + 10
+    )
+
+
 def test_order_pdf_section_numbers_raw_material_rows_and_keeps_total_label():
     pytest.importorskip("reportlab")
     from reportlab.lib.styles import ParagraphStyle
@@ -302,6 +385,59 @@ def test_single_section_pdf_keeps_aantal_header_as_one_word(monkeypatch, tmp_pat
     assert getattr(qty_header.style, "splitLongWords", None) == 0
 
 
+def test_single_section_pdf_drops_empty_standard_material_column(monkeypatch, tmp_path):
+    pytest.importorskip("reportlab")
+
+    captured = {}
+
+    class FakeDoc:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def build(self, story):
+            captured["story"] = story
+
+    monkeypatch.setattr(orders, "SimpleDocTemplate", FakeDoc)
+
+    generate_pdf_order_platypus(
+        str(tmp_path / "bestelbon.pdf"),
+        {},
+        None,
+        production="Assembly",
+        items=[
+            {
+                "PartNumber": "ASM-1",
+                "Description": "Assembly item",
+                "Materiaal": "",
+                "Aantal": 1,
+                "Oppervlakte": "1.23",
+                "Gewicht": "4.56",
+            }
+        ],
+        total_surface_m2=1.23,
+        total_weight_kg=4.56,
+    )
+
+    tables = [
+        flowable
+        for flowable in captured["story"]
+        if hasattr(flowable, "_cellvalues")
+    ]
+    order_table = next(
+        table
+        for table in tables
+        if table._cellvalues and "PartNumber" in _row_texts(table._cellvalues[0])
+    )
+    header = _row_texts(order_table._cellvalues[0])
+    total = _row_texts(order_table._cellvalues[2])
+
+    assert header == ["PartNumber", "Omschrijving", "St.", "m\u00b2/st", "kg/st"]
+    assert "Materiaal" not in header
+    assert total[0] == "Totaal"
+    assert total[header.index("m\u00b2/st")] == "1.23"
+    assert total[header.index("kg/st")] == "4.56"
+
+
 def test_order_excel_section_compacts_price_headers():
     section = OrderDocumentSection(
         context_label="Document",
@@ -327,6 +463,58 @@ def test_order_excel_section_compacts_price_headers():
     assert "Eenheidsprijs (€)" not in df.columns
     assert "Totaalprijs (€)" not in df.columns
     assert list(df.columns)[-2:] == ["Prijs/st. (\u20ac)", "Totaal (\u20ac)"]
+
+
+def test_order_excel_section_drops_empty_standard_material_column():
+    section = OrderDocumentSection(
+        context_label="Assembly",
+        context_kind="productie",
+        items=[
+            {
+                "PartNumber": "ASM-1",
+                "Description": "Assembly item",
+                "Materiaal": "",
+                "Aantal": 1,
+                "Oppervlakte": "1.23",
+                "Gewicht": "4.56",
+            }
+        ],
+        total_surface_m2=1.23,
+        total_weight_kg=4.56,
+    )
+
+    df, _left_cols, _wrap_cols = _build_order_excel_section_data(section)
+
+    assert list(df.columns) == ["PartNumber", "Description", "Aantal", "m\u00b2/st", "kg/st"]
+    assert list(df["PartNumber"]) == ["ASM-1", "Totaal"]
+    assert "Materiaal" not in df.columns
+
+
+def test_order_excel_section_adds_standard_length_column_when_available():
+    section = OrderDocumentSection(
+        context_label="Cutting",
+        context_kind="productie",
+        items=[
+            {
+                "PartNumber": "CUT-1",
+                "Description": "Wood panel",
+                "Materiaal": "Thermowood",
+                "Lengte": "2500",
+                "Aantal": 2,
+            }
+        ],
+    )
+
+    df, _left_cols, _wrap_cols = _build_order_excel_section_data(section)
+
+    assert list(df.columns) == [
+        "PartNumber",
+        "Description",
+        "Materiaal",
+        "Lengte",
+        "Aantal",
+    ]
+    assert df.loc[0, "Lengte"] == "2500"
 
 
 def test_order_pdf_section_moves_vat_summary_below_table():
