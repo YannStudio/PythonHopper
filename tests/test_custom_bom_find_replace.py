@@ -20,6 +20,14 @@ class _DummyTable:
         return True
 
 
+class _DummyVar:
+    def __init__(self, value):
+        self.value = value
+
+    def get(self):
+        return self.value
+
+
 def _build_tab(df: pd.DataFrame, *, selected_rows=None):
     tab = object.__new__(BOMCustomTab)
     tab.HEADERS = BOMCustomTab.HEADERS
@@ -101,6 +109,77 @@ def test_find_matching_rows_supports_exact_and_all_columns() -> None:
 
     assert _find_matching_rows(df, ["Material"], "aluminium", match_mode="exact") == [0]
     assert _find_matching_rows(df, None, "aluminium", match_mode="contains") == [0, 1]
+
+
+def test_find_matching_rows_respects_case_sensitive_flag() -> None:
+    df = pd.DataFrame(
+        [
+            {"Material": "Dummy Part"},
+            {"Material": "Dummy part"},
+        ]
+    )
+
+    assert _find_matching_rows(
+        df,
+        ["Material"],
+        "Dummy Part",
+        match_mode="contains",
+        case_sensitive=True,
+    ) == [0]
+    assert _find_matching_rows(
+        df,
+        ["Material"],
+        "Dummy Part",
+        match_mode="contains",
+        case_sensitive=False,
+    ) == [0, 1]
+
+
+def test_find_replace_preview_explains_case_sensitive_near_misses() -> None:
+    df = pd.DataFrame({"Material": ["Dummy part"]})
+    tab, _statuses = _build_tab(df)
+    tab._find_replace_query_var = _DummyVar("Dummy Part")
+    tab._find_replace_column_var = _DummyVar("Material")
+    tab._find_replace_scope_var = _DummyVar(BOMCustomTab.FIND_SCOPE_ALL_LABEL)
+    tab._find_replace_match_mode_var = _DummyVar("Bevat")
+    tab._find_replace_case_sensitive_var = _DummyVar(True)
+
+    matches, message = BOMCustomTab._describe_find_matches(tab)
+
+    assert matches == []
+    assert message == "0 rijen met exact deze hoofdletters; 1 rij zonder dit vinkje."
+
+
+def test_replace_reports_case_sensitive_near_miss_when_no_cells_changed() -> None:
+    df = pd.DataFrame({"Material": ["Dummy part"]})
+    tab, statuses = _build_tab(df)
+    tab._find_replace_query_var = _DummyVar("Dummy Part")
+    tab._find_replace_replacement_var = _DummyVar("Dummy part")
+    tab._find_replace_column_var = _DummyVar("Material")
+    tab._find_replace_scope_var = _DummyVar(BOMCustomTab.FIND_SCOPE_ALL_LABEL)
+    tab._find_replace_match_mode_var = _DummyVar("Bevat")
+    tab._find_replace_case_sensitive_var = _DummyVar(True)
+
+    BOMCustomTab._replace_find_replace_matches(tab)
+
+    assert statuses[-1] == "0 rijen met exact deze hoofdletters; 1 rij zonder dit vinkje."
+
+
+def test_replace_matching_cells_supports_case_only_replacements() -> None:
+    df = pd.DataFrame({"Material": ["Dummy Part"]})
+
+    updated, changed_cells, changed_rows = _replace_matching_cells(
+        df,
+        ["Material"],
+        "Dummy Part",
+        "Dummy part",
+        match_mode="contains",
+        case_sensitive=True,
+    )
+
+    assert updated["Material"].tolist() == ["Dummy part"]
+    assert changed_cells == [(0, 0)]
+    assert changed_rows == [0]
 
 
 def test_replace_matching_cells_limits_changes_to_selected_rows() -> None:

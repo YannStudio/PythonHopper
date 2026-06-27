@@ -134,8 +134,10 @@ from export_session_log import (
 )
 from en1090 import EN1090_NOTE_TEXT, default_en1090_enabled, normalize_en1090_key
 from opticutter import (
+    WASTE_WARNING_THRESHOLD_PCT,
     StockScenarioResult,
     analyse_profiles,
+    has_excessive_waste,
     parse_length_to_mm,
     prepare_opticutter_export,
 )
@@ -11229,21 +11231,28 @@ def start_gui():
                 master=self.opticutter_frame,
                 value="Laad een BOM om profielen te bekijken.",
             )
-            tk.Label(
+            self.opticutter_info_label = tk.Label(
                 self.opticutter_frame,
                 textvariable=self.opticutter_info_var,
                 anchor="w",
                 justify="left",
                 font=tkfont.nametofont("TkDefaultFont"),
-            ).pack(fill="x", pady=(0, 12))
+            )
+            self.opticutter_info_default_fg = self.opticutter_info_label.cget("fg")
+            self.opticutter_info_label.pack(fill="x", pady=(0, 12))
 
             opticutter_table_container = tk.Frame(self.opticutter_frame)
             opticutter_table_container.pack(fill="both", expand=True, pady=(0, 8))
+            self.opticutter_table_container = opticutter_table_container
 
             opticutter_left_frame = tk.Frame(opticutter_table_container)
+            opticutter_left_frame.pack_propagate(False)
             opticutter_left_frame.pack(
-                side="left", fill="both", expand=True, padx=(0, 12)
+                side="left", fill="both", expand=False, padx=(0, 12)
             )
+            opticutter_left_frame.rowconfigure(0, weight=1)
+            opticutter_left_frame.columnconfigure(0, weight=1)
+            self.opticutter_parts_frame = opticutter_left_frame
 
             opticutter_columns = (
                 "PartNumber",
@@ -11259,19 +11268,26 @@ def start_gui():
                 show="headings",
                 selectmode="browse",
             )
+            opticutter_column_widths = {
+                "PartNumber": 135,
+                "Profile": 135,
+                "Material": 95,
+                "Production": 95,
+                "Profile length": 95,
+                "QTY.": 48,
+            }
             for col in opticutter_columns:
                 anchor = "center" if col == "QTY." else "w"
                 self.opticutter_tree.heading(col, text=col, anchor=anchor)
-                minwidth = 40
-                if col in {"Material", "Production"}:
-                    minwidth = 120
-                elif col == "Profile length":
-                    minwidth = 110
+                minwidth = 42
+                if col in {"Material", "Production", "Profile length"}:
+                    minwidth = 80
                 self.opticutter_tree.column(
                     col,
                     anchor=anchor,
                     stretch=False,
                     minwidth=minwidth,
+                    width=opticutter_column_widths[col],
                 )
 
             opticutter_scroll = ttk.Scrollbar(
@@ -11279,11 +11295,25 @@ def start_gui():
                 orient="vertical",
                 command=self.opticutter_tree.yview,
             )
-            self.opticutter_tree.configure(yscrollcommand=opticutter_scroll.set)
-            self.opticutter_tree.pack(
-                side="left", fill="both", expand=True, anchor="w", padx=(0, 4)
+            opticutter_x_scroll = ttk.Scrollbar(
+                opticutter_left_frame,
+                orient="horizontal",
+                command=self.opticutter_tree.xview,
             )
-            opticutter_scroll.pack(side="left", fill="y")
+            self.opticutter_tree.configure(
+                yscrollcommand=opticutter_scroll.set,
+                xscrollcommand=opticutter_x_scroll.set,
+            )
+            self.opticutter_tree.grid(row=0, column=0, sticky="nsew")
+            opticutter_scroll.grid(row=0, column=1, sticky="ns")
+            self.opticutter_tree_x_scroll = opticutter_x_scroll
+            self.opticutter_tree_v_scroll = opticutter_scroll
+            self._sync_opticutter_parts_table_width()
+            opticutter_table_container.bind(
+                "<Configure>",
+                lambda _e: self._sync_opticutter_parts_table_width(),
+                add="+",
+            )
 
             opticutter_summary_frame = tk.Frame(opticutter_table_container)
             opticutter_summary_frame.pack(side="left", fill="y")
@@ -11325,14 +11355,25 @@ def start_gui():
             )
             for col in summary_common_columns:
                 anchor = "w"
-                minwidth = 170 if col == "Profile" else 140
+                if col == "Profile":
+                    minwidth = 150
+                elif col == "Material":
+                    minwidth = 105
+                else:
+                    minwidth = 90
                 base_tree.heading(col, text=summary_headings[col], anchor=anchor)
                 base_tree.column(
                     col,
                     anchor=anchor,
                     stretch=True,
                     minwidth=minwidth,
+                    width=minwidth,
                 )
+            base_tree.tag_configure(
+                "high_waste",
+                background="#FEE2E2",
+                foreground="#B91C1C",
+            )
 
             base_scrollbar = ttk.Scrollbar(
                 base_frame, orient="vertical", command=base_tree.yview
@@ -11371,14 +11412,25 @@ def start_gui():
                 )
                 for col in summary_metric_columns:
                     anchor = "center"
-                    minwidth = 100 if col == "Waste" else 90
+                    if col == "Bars":
+                        minwidth = 58
+                    elif col == "Waste":
+                        minwidth = 68
+                    else:
+                        minwidth = 82
                     tree.heading(col, text=summary_headings[col], anchor=anchor)
                     tree.column(
                         col,
                         anchor=anchor,
                         stretch=True,
                         minwidth=minwidth,
+                        width=minwidth,
                     )
+                tree.tag_configure(
+                    "high_waste",
+                    background="#FEE2E2",
+                    foreground="#B91C1C",
+                )
 
                 scrollbar = ttk.Scrollbar(
                     section_frame, orient="vertical", command=tree.yview
@@ -16025,6 +16077,59 @@ def start_gui():
                 self._opticutter_selection_update_in_progress = False
                 self.opticutter_profile_selection_choice[key] = chosen
 
+        def _sync_opticutter_parts_table_width(self) -> None:
+            tree = getattr(self, "opticutter_tree", None)
+            frame = getattr(self, "opticutter_parts_frame", None)
+            if tree is None or frame is None:
+                return
+
+            try:
+                columns = tree["columns"]
+                column_width = sum(int(tree.column(col, "width")) for col in columns)
+            except tk.TclError:
+                return
+
+            vertical_scroll = getattr(self, "opticutter_tree_v_scroll", None)
+            scrollbar_width = 18
+            if vertical_scroll is not None:
+                try:
+                    scrollbar_width = max(18, vertical_scroll.winfo_reqwidth())
+                except tk.TclError:
+                    pass
+
+            desired_width = column_width + scrollbar_width + 4
+            container = getattr(self, "opticutter_table_container", None)
+            max_width = 680
+            if container is not None:
+                try:
+                    available_width = container.winfo_width()
+                except tk.TclError:
+                    available_width = 0
+                if available_width > 1:
+                    max_width = max(460, min(720, int(available_width * 0.36)))
+
+            visible_width = min(desired_width, max_width)
+            try:
+                frame.configure(width=visible_width)
+            except tk.TclError:
+                return
+
+            x_scrollbar = getattr(self, "opticutter_tree_x_scroll", None)
+            if x_scrollbar is None:
+                return
+
+            needs_horizontal_scroll = desired_width > visible_width + 2
+            try:
+                if needs_horizontal_scroll:
+                    if not x_scrollbar.winfo_ismapped():
+                        x_scrollbar.grid(row=1, column=0, sticky="ew")
+                else:
+                    if x_scrollbar.winfo_ismapped():
+                        x_scrollbar.grid_remove()
+                    tree.xview_moveto(0)
+            except tk.TclError:
+                pass
+
         def _refresh_opticutter_table(self, analysis_override=None) -> None:
             after_id = getattr(self, "_opticutter_refresh_after_id", None)
             if after_id is not None:
@@ -16045,6 +16150,7 @@ def start_gui():
                 for item in tree.get_children():
                     tree.delete(item)
                 _autosize_tree_columns(tree)
+                self._sync_opticutter_parts_table_width()
 
             if base_summary_tree is not None:
                 for item in base_summary_tree.get_children():
@@ -16060,7 +16166,15 @@ def start_gui():
             column_maps = getattr(self, "opticutter_summary_column_map", {})
 
             info_var = getattr(self, "opticutter_info_var", None)
+            info_label = getattr(self, "opticutter_info_label", None)
             default_message = "Laad een BOM om profielen te bekijken."
+            if info_label is not None:
+                try:
+                    info_label.configure(
+                        fg=getattr(self, "opticutter_info_default_fg", "#000000")
+                    )
+                except tk.TclError:
+                    pass
             if info_var is not None:
                 info_var.set(default_message)
 
@@ -16141,6 +16255,7 @@ def start_gui():
                         ),
                     )
                 _autosize_tree_columns(tree)
+                self._sync_opticutter_parts_table_width()
 
             summary_frames = getattr(self, "opticutter_summary_frames", {})
             custom_frame = summary_frames.get("custom")
@@ -16164,6 +16279,36 @@ def start_gui():
                     return "—"
                 return f"{result.waste_pct:.1f}%"
 
+            def _scenario_tags(result: Optional[StockScenarioResult]) -> tuple[str, ...]:
+                if has_excessive_waste(result):
+                    return ("high_waste",)
+                return ()
+
+            def _waste_tooltip(result: StockScenarioResult) -> str:
+                message = f"Totale restlengte: {result.waste_mm:.0f} mm"
+                if has_excessive_waste(result):
+                    warning = (
+                        f"Let op: {result.waste_pct:.1f}% snijverlies is hoger dan "
+                        f"{WASTE_WARNING_THRESHOLD_PCT:g}%. Controleer verkoopprijs "
+                        "of vooraf berekende prijs."
+                    )
+                    return f"{warning}\n{message}"
+                return message
+
+            def _profile_has_excessive_waste(profile) -> bool:
+                return any(
+                    has_excessive_waste(result)
+                    for result in profile.scenarios.values()
+                )
+
+            def _profile_warning_label(profile) -> str:
+                details = ", ".join(
+                    part for part in (profile.material, profile.production) if part
+                )
+                if details:
+                    return f"{profile.profile} ({details})"
+                return profile.profile
+
             def _format_cuts(result: Optional[StockScenarioResult]) -> str:
                 if result is None or result.dropped_pieces or result.bars == 0:
                     return "—"
@@ -16178,9 +16323,12 @@ def start_gui():
                     return f"{length_label} – niet mogelijk (stukken te lang)"
                 details = [
                     f"{result.bars} staven",
-                    f"{result.waste_pct:.1f}% afval",
                     f"{result.cuts} zaagsneden",
                 ]
+                if has_excessive_waste(result):
+                    details.insert(1, f"LET OP: {result.waste_pct:.1f}% snijverlies")
+                else:
+                    details.insert(1, f"{result.waste_pct:.1f}% afval")
                 return f"{length_label} – {', '.join(details)}"
 
             def _join_blockers(blocker_values: Iterable[str], stock_length: int) -> str:
@@ -16207,19 +16355,33 @@ def start_gui():
             selection_scenarios: Dict[
                 tuple[str, str, str], Dict[str, StockScenarioResult]
             ] = {}
+            high_waste_warnings: List[str] = []
+
+            def _record_high_waste(profile, scenario_label: str, result) -> None:
+                if not has_excessive_waste(result):
+                    return
+                high_waste_warnings.append(
+                    f"{_profile_warning_label(profile)} / {scenario_label}: "
+                    f"{result.waste_pct:.1f}%"
+                )
 
             if base_summary_tree is not None:
                 for profile in analysis.profiles:
                     base_summary_tree.insert(
                         "",
                         "end",
+                        tags=(
+                            ("high_waste",)
+                            if _profile_has_excessive_waste(profile)
+                            else ()
+                        ),
                         values=(
                             profile.profile,
                             profile.material,
                             profile.production,
                         ),
                     )
-                _autosize_tree_columns(base_summary_tree)
+                _autosize_tree_columns(base_summary_tree, padding=12)
 
             for profile in analysis.profiles:
                 scenario_map = profile.scenarios
@@ -16290,9 +16452,11 @@ def start_gui():
                 tree_6m = summary_trees.get("6m")
                 if tree_6m is not None:
                     result_6m = scenario_map.get("6000")
+                    _record_high_waste(profile, "6000 mm", result_6m)
                     item_id_6m = tree_6m.insert(
                         "",
                         "end",
+                        tags=_scenario_tags(result_6m),
                         values=(
                             _format_bars(result_6m),
                             _format_waste(result_6m),
@@ -16330,7 +16494,7 @@ def start_gui():
                                 tooltip_6m.set(
                                     item_id_6m,
                                     column_id,
-                                    f"Totale restlengte: {result_6m.waste_mm:.0f} mm",
+                                    _waste_tooltip(result_6m),
                                 )
                             column_id = columns_6m.get("Bars")
                             if column_id:
@@ -16350,9 +16514,11 @@ def start_gui():
                 tree_12m = summary_trees.get("12m")
                 if tree_12m is not None:
                     result_12m = scenario_map.get("12000")
+                    _record_high_waste(profile, "12000 mm", result_12m)
                     item_id_12m = tree_12m.insert(
                         "",
                         "end",
+                        tags=_scenario_tags(result_12m),
                         values=(
                             _format_bars(result_12m),
                             _format_waste(result_12m),
@@ -16390,7 +16556,7 @@ def start_gui():
                                 tooltip_12m.set(
                                     item_id_12m,
                                     column_id,
-                                    f"Totale restlengte: {result_12m.waste_mm:.0f} mm",
+                                    _waste_tooltip(result_12m),
                                 )
                             column_id = columns_12m.get("Bars")
                             if column_id:
@@ -16410,6 +16576,13 @@ def start_gui():
                 tree_custom = summary_trees.get("custom")
                 if tree_custom is not None:
                     result_custom = scenario_map.get("custom")
+                    if "custom" in scenario_map:
+                        custom_label = (
+                            f"{custom_stock_mm} mm"
+                            if custom_stock_mm is not None
+                            else "Custom lengte"
+                        )
+                        _record_high_waste(profile, custom_label, result_custom)
                     values_custom = (
                         _format_bars(result_custom)
                         if "custom" in scenario_map
@@ -16421,7 +16594,16 @@ def start_gui():
                         if "custom" in scenario_map
                         else "—",
                     )
-                    item_id_custom = tree_custom.insert("", "end", values=values_custom)
+                    item_id_custom = tree_custom.insert(
+                        "",
+                        "end",
+                        tags=(
+                            _scenario_tags(result_custom)
+                            if "custom" in scenario_map
+                            else ()
+                        ),
+                        values=values_custom,
+                    )
                     tooltip_custom = tooltip_managers.get("custom")
                     columns_custom = column_maps.get("custom", {})
                     if tooltip_custom is not None:
@@ -16460,7 +16642,7 @@ def start_gui():
                                 tooltip_custom.set(
                                     item_id_custom,
                                     column_id,
-                                    f"Totale restlengte: {result_custom.waste_mm:.0f} mm",
+                                    _waste_tooltip(result_custom),
                                 )
                             column_id = columns_custom.get("Bars")
                             if column_id:
@@ -16478,7 +16660,7 @@ def start_gui():
                                 )
 
             for summary_tree in summary_trees.values():
-                _autosize_tree_columns(summary_tree)
+                _autosize_tree_columns(summary_tree, padding=10)
 
             self.opticutter_profile_selection_scenarios = selection_scenarios
             self._update_opticutter_selection_rows(selection_entries)
@@ -16510,6 +16692,25 @@ def start_gui():
                     warnings.append(
                         "Sommige profiel lengtes konden niet worden gelezen."
                     )
+                if high_waste_warnings:
+                    shown_waste = high_waste_warnings[:5]
+                    remaining_waste = len(high_waste_warnings) - len(shown_waste)
+                    waste_message = (
+                        f"Let op: meer dan {WASTE_WARNING_THRESHOLD_PCT:g}% "
+                        "snijverlies bij "
+                        + "; ".join(shown_waste)
+                    )
+                    if remaining_waste:
+                        waste_message += f"; +{remaining_waste} extra"
+                    waste_message += (
+                        ". Controleer verkoopprijs of vooraf berekende prijs."
+                    )
+                    warnings.append(waste_message)
+                    if info_label is not None:
+                        try:
+                            info_label.configure(fg="#B91C1C")
+                        except tk.TclError:
+                            pass
 
                 if warnings:
                     base_message = base_message + "\n" + " ".join(warnings)

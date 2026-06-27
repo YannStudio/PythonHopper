@@ -1441,20 +1441,38 @@ class BOMCustomTab(ttk.Frame):
         ):
             return [], "Geen geselecteerde rijen als zoekbereik."
 
+        case_sensitive = (
+            bool(self._find_replace_case_sensitive_var.get())
+            if self._find_replace_case_sensitive_var is not None
+            else False
+        )
         matches = _find_matching_rows(
             self.table_model.df,
             columns,
             query,
             match_mode=self._resolve_find_replace_match_mode(),
-            case_sensitive=bool(
-                self._find_replace_case_sensitive_var.get()
-            )
-            if self._find_replace_case_sensitive_var is not None
-            else False,
+            case_sensitive=case_sensitive,
             row_scope=row_scope,
         )
         count = len(matches)
         label = "rij" if count == 1 else "rijen"
+        if count == 0 and case_sensitive:
+            insensitive_matches = _find_matching_rows(
+                self.table_model.df,
+                columns,
+                query,
+                match_mode=self._resolve_find_replace_match_mode(),
+                case_sensitive=False,
+                row_scope=row_scope,
+            )
+            insensitive_count = len(insensitive_matches)
+            if insensitive_count:
+                insensitive_label = "rij" if insensitive_count == 1 else "rijen"
+                return (
+                    matches,
+                    "0 rijen met exact deze hoofdletters; "
+                    f"{insensitive_count} {insensitive_label} zonder dit vinkje.",
+                )
         return matches, f"{count} {label} voldoen aan de zoekcriteria."
 
     def _update_find_replace_preview(self, *_args) -> None:
@@ -1686,7 +1704,8 @@ class BOMCustomTab(ttk.Frame):
             row_scope=row_scope,
         )
         if not changed_cells:
-            self._update_status("Geen waarden vervangen.")
+            matches, message = self._describe_find_matches()
+            self._update_status(message if not matches else "Geen waarden vervangen.")
             self._update_find_replace_preview()
             return "break" if event is not None else None
 

@@ -426,6 +426,23 @@
       "favorite": false
     },
     {
+      "supplier": "Hilti Belgie",
+      "description": "Tools - Drilling & fastening",
+      "supplier_id": "SUPP_152",
+      "adres_1": "Chaussee de Mons 1424",
+      "adres_2": "B-1070 Anderlecht",
+      "postcode": "1070",
+      "gemeente": "Anderlecht",
+      "land": "Belgie",
+      "btw": "BE 0402 914 739",
+      "contact_sales": "Klantendienst Belgie",
+      "sales_email": null,
+      "phone": "0800 995 95",
+      "product_type": "Tools",
+      "product_description": "Tools - Drilling & fastening",
+      "favorite": false
+    },
+    {
       "supplier": "HMG",
       "description": "Steeldeck",
       "supplier_id": "SUPP_026",
@@ -746,6 +763,23 @@
       "phone": "+31 1 13 57 38 78",
       "product_type": "Metal processing",
       "product_description": "Metal processing - Bending Sheetmetal",
+      "favorite": false
+    },
+    {
+      "supplier": "MCB Belgie",
+      "description": "Steel - Semi-finished products",
+      "supplier_id": "SUPP_151",
+      "adres_1": "Rue J.L. Defrene 107",
+      "adres_2": "B-4340 Awans",
+      "postcode": "4340",
+      "gemeente": "Awans",
+      "land": "Belgie",
+      "btw": "BE 0404 399 730",
+      "contact_sales": "Verkoop Belgie",
+      "sales_email": "info@mcb.be",
+      "phone": "+32 (0)4 239 66 11",
+      "product_type": "Steel",
+      "product_description": "Steel - Semi-finished products",
       "favorite": false
     },
     {

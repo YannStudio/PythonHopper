@@ -12,6 +12,7 @@ from helpers import _to_str
 STOCK_LENGTH_MM = 6000
 LONG_STOCK_LENGTH_MM = 12000
 DEFAULT_KERF_MM = 5.0
+WASTE_WARNING_THRESHOLD_PCT = 20.0
 
 
 @dataclass(slots=True)
@@ -165,6 +166,15 @@ def _calculate_stock_scenario(
     if bars > 0:
         waste_pct = waste_mm / (bars * stock_length_mm) * 100.0
     return StockScenarioResult(bars, waste_mm, waste_pct, dropped, cuts)
+
+
+def has_excessive_waste(
+    result: Optional[StockScenarioResult],
+    threshold_pct: float = WASTE_WARNING_THRESHOLD_PCT,
+) -> bool:
+    if result is None or result.dropped_pieces or result.bars <= 0:
+        return False
+    return result.waste_pct > threshold_pct
 
 
 def _normalize_production(value: str) -> str:
