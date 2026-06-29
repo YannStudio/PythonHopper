@@ -1,8 +1,8 @@
 {
-  "source_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2026/20260030 - CIAW Huldenberg schuilhuisje/CAD/3D Soldiworks Files/V4",
-  "dest_folder": "C:/Users/jeroe/Downloads",
-  "project_number": "20260030",
-  "project_name": "Huldenberg",
+  "source_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2026/20260133 - Basketbalpaal Buyyaert/CAD/3D Soldiworks Files/V1",
+  "dest_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2026/20260133 - Basketbalpaal Buyyaert/CAD/Bestellingen",
+  "project_number": "20260133",
+  "project_name": "Basketbalpaal",
   "file_extensions": [
     {
       "key": "pdf",
@@ -60,10 +60,10 @@
       "enabled": false
     }
   ],
-  "zip_per_production": false,
+  "zip_per_production": true,
   "combine_pdf_per_production": false,
   "copy_finish_exports": true,
-  "zip_finish_exports": false,
+  "zip_finish_exports": true,
   "export_processed_bom": true,
   "export_related_bom_files": true,
   "export_date_prefix": false,
@@ -94,7 +94,7 @@
     "sheetmetal": false,
     "sheetmetal 4m": true,
     "spare part": false,
-    "tube laser": false,
+    "tube laser": true,
     "tube laser l": true,
     "onbekend": false,
     "assembly": false,
