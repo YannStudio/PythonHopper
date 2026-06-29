@@ -59,31 +59,38 @@ SPARE_PART_QUICK_START_STEPS = [
         "title": "3. Spare parts controleren",
         "description": (
             "Open het tabblad `Spare parts`. Controleer de status bovenaan en de "
-            "groepen links. De kolom `Mist` toont hoeveel regels in een groep nog "
-            "Supplier/Manufacturer of code-informatie missen."
+            "groepen links. De kolom `Aandacht` toont hoeveel regels in een groep nog "
+            "Supplier/Manufacturer of code-informatie missen. De documentcontrole "
+            "toont in een regel of klaarleglijst, groepen, leverancier/fabrikant en "
+            "codes klaar zijn."
         ),
     },
     {
         "title": "4. Groepen bijsturen",
         "description": (
-            "Selecteer onderdelen rechts en zet ze met `Zet selectie` in een "
-            "bestelgroep. Gebruik `Nieuwe groep` voor een eigen groep en `Auto` om "
-            "terug naar automatische Supplier/Manufacturer-groepering te gaan. "
-            "Dit wijzigt de originele BOM niet."
+            "Selecteer onderdelen rechts en gebruik `Verplaats` om ze in de gekozen "
+            "bestelgroep te zetten. Gebruik `Nieuwe groep van selectie` voor een "
+            "eigen groep. Met `Selecteer hele groep` kun je een volledige zichtbare "
+            "groep in een keer meenemen; met `Selecteer aandacht` pak je alleen de "
+            "open of onvolledige regels. Gebruik `Zet op open` voor nog te beslissen "
+            "regels en `Terug naar automatische groep` om opnieuw "
+            "Supplier/Manufacturer-groepering te gebruiken. Links kun je een groep "
+            "ook hernoemen of samenvoegen met een bestaande eigen groep. Dit wijzigt "
+            "de originele BOM niet."
         ),
     },
     {
-        "title": "5. Presets gebruiken",
+        "title": "5. Aandachtspunten controleren",
         "description": (
-            "Gebruik presets voor terugkerende regels. Match bijvoorbeeld op "
-            "`Supplier`, `Supplier code`, `Manufacturer` of `Manufacturer code` en "
-            "stuur de regel naar een vaste bestelgroep."
+            "Klik op `Aandachtspunten` om meteen naar open of onvolledige spare-part "
+            "informatie te springen. Controleer vooral regels zonder leverancier, "
+            "fabrikant of bestelcode voordat je documenten maakt."
         ),
     },
     {
         "title": "6. Klaarleglijst nakijken",
         "description": (
-            "De `Volledige lijst` is een klaarleglijst en krijgt geen leverancier "
+            "De `Klaarleglijst - alle spare parts` krijgt geen leverancier "
             "in de documentkop. De regels tonen wel `Supplier`, `Supplier code`, "
             "`Manufacturer`, `Manufacturer code`, `Bestelgroep` en `Status`."
         ),
@@ -91,9 +98,10 @@ SPARE_PART_QUICK_START_STEPS = [
     {
         "title": "7. Documenten klaarmaken",
         "description": (
-            "Klik op `Documenten klaarmaken`. Controleer daarna per spare-parts "
-            "groep documenttype, leverancier, leveradres, opmerkingen en prijzen "
-            "voordat je exporteert."
+            "Klik op `Documenten klaarmaken`. Als de documentcontrole nog "
+            "aandachtspunten ziet, krijg je eerst een korte bevestiging. Controleer "
+            "daarna per spare-parts groep documenttype, leverancier, leveradres, "
+            "opmerkingen en prijzen voordat je exporteert."
         ),
     },
     {

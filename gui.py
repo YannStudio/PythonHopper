@@ -6437,7 +6437,7 @@ def start_gui():
                 (
                     "spare_parts",
                     "Spare-parts verdeling",
-                    "Handmatige/preset spare-part-groepen uit de exportlog.",
+                    "Handmatige spare-part-groepen uit de exportlog.",
                 ),
             ]
             vars_by_section: Dict[str, tk.BooleanVar] = {}
@@ -12118,6 +12118,10 @@ def start_gui():
                 textvariable=self.spare_parts_status_var,
                 anchor="w",
             ).grid(row=0, column=0, sticky="ew", padx=(0, 12))
+            self.spare_parts_ready_var = tk.StringVar(
+                master=self,
+                value="Documentcontrole: geen BOM geladen.",
+            )
 
             def _spare_toolbar_button(
                 parent,
@@ -12126,12 +12130,15 @@ def start_gui():
                 command,
                 tooltip: str,
                 primary: bool = False,
+                state: Optional[str] = None,
             ) -> "tk.Button":
                 kwargs = {
                     "text": text,
                     "command": command,
                     "takefocus": False,
                 }
+                if state is not None:
+                    kwargs["state"] = state
                 if primary:
                     kwargs.update(
                         {
@@ -12149,13 +12156,6 @@ def start_gui():
 
             top_actions = tk.Frame(toolbar)
             top_actions.grid(row=0, column=1, sticky="e")
-            quick_manual_btn = _spare_toolbar_button(
-                top_actions,
-                text="Quick manual",
-                command=self._open_spare_parts_quick_manual,
-                tooltip="Open de interne quick manual meteen op de spare-parts uitleg.",
-            )
-            quick_manual_btn.pack(side="left", padx=(0, 8))
             document_btn = _spare_toolbar_button(
                 top_actions,
                 text="Documenten klaarmaken",
@@ -12163,12 +12163,32 @@ def start_gui():
                 tooltip="Open de bestelbonnenflow voor de voorbereide spare-parts groepen.",
                 primary=True,
             )
-            document_btn.pack(side="left")
+            document_btn.pack(side="left", padx=(0, 8))
+            self.spare_parts_attention_btn = _spare_toolbar_button(
+                top_actions,
+                text="Aandachtspunten",
+                command=self._show_spare_parts_attention,
+                tooltip="Ga naar de eerste groep met open of onvolledige spare-part gegevens.",
+                state="disabled",
+            )
+            self.spare_parts_attention_btn.pack(side="left", padx=(0, 8))
+            quick_manual_btn = _spare_toolbar_button(
+                top_actions,
+                text="Quick manual",
+                command=self._open_spare_parts_quick_manual,
+                tooltip="Open de interne quick manual meteen op de spare-parts uitleg.",
+            )
+            quick_manual_btn.pack(side="left")
 
-            group_controls = tk.Frame(toolbar)
+            group_controls = tk.LabelFrame(
+                toolbar,
+                text="Geselecteerde onderdelen",
+                padx=8,
+                pady=6,
+            )
             group_controls.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
             group_controls.grid_columnconfigure(1, weight=1)
-            tk.Label(group_controls, text="Bestelgroep:").grid(
+            tk.Label(group_controls, text="Verplaats selectie naar:").grid(
                 row=0, column=0, sticky="w"
             )
             self.spare_parts_group_var = tk.StringVar(master=self, value="")
@@ -12186,73 +12206,96 @@ def start_gui():
                 "Kies of typ de bestelgroep waar geselecteerde spare-parts regels naartoe moeten.",
             )
 
-            group_buttons = tk.Frame(group_controls)
-            group_buttons.grid(row=0, column=2, sticky="w")
-            assign_btn = _spare_toolbar_button(
-                group_buttons,
-                text="Zet selectie",
+            self.spare_parts_assign_btn = _spare_toolbar_button(
+                group_controls,
+                text="Verplaats",
                 command=self._assign_selected_spare_parts_to_group,
                 tooltip="Zet de geselecteerde onderdelen in de ingevulde bestelgroep.",
+                state="disabled",
             )
-            assign_btn.pack(side="left", padx=(0, 4))
-            new_group_btn = _spare_toolbar_button(
-                group_buttons,
-                text="Nieuwe groep",
+            self.spare_parts_assign_btn.grid(row=0, column=2, sticky="w", padx=(0, 4))
+            self.spare_parts_new_group_btn = _spare_toolbar_button(
+                group_controls,
+                text="Nieuwe groep van selectie",
                 command=self._create_spare_part_group_from_selection,
                 tooltip="Maak een nieuwe bestelgroep en zet de selectie daar meteen in.",
+                state="disabled",
             )
-            new_group_btn.pack(side="left", padx=(0, 4))
-            unassigned_btn = _spare_toolbar_button(
-                group_buttons,
-                text="Terug open",
+            self.spare_parts_new_group_btn.grid(row=0, column=3, sticky="w", padx=(0, 4))
+            secondary_group_actions = tk.Frame(group_controls)
+            secondary_group_actions.grid(
+                row=1,
+                column=0,
+                columnspan=4,
+                sticky="w",
+                pady=(5, 0),
+            )
+            self.spare_parts_unassigned_btn = _spare_toolbar_button(
+                secondary_group_actions,
+                text="Zet op open",
                 command=self._mark_selected_spare_parts_unassigned,
                 tooltip="Zet de geselecteerde onderdelen terug naar Nog toe te wijzen.",
+                state="disabled",
             )
-            unassigned_btn.pack(side="left", padx=(0, 4))
-            auto_btn = _spare_toolbar_button(
-                group_buttons,
-                text="Auto",
+            self.spare_parts_unassigned_btn.pack(side="left", padx=(0, 4))
+            self.spare_parts_auto_btn = _spare_toolbar_button(
+                secondary_group_actions,
+                text="Terug naar automatische groep",
                 command=self._reset_selected_spare_parts_group,
                 tooltip="Verwijder de handmatige keuze en gebruik opnieuw automatische Supplier/Manufacturer-groepering.",
+                state="disabled",
             )
-            auto_btn.pack(side="left")
-
-            preset_buttons = tk.Frame(group_controls)
-            preset_buttons.grid(row=0, column=3, sticky="e", padx=(16, 0))
-            apply_presets_btn = _spare_toolbar_button(
-                preset_buttons,
-                text="Presets toepassen",
-                command=self._apply_spare_part_presets,
-                tooltip="Pas alle actieve spare-part presetregels toe op de huidige BOM.",
+            self.spare_parts_auto_btn.pack(side="left", padx=(0, 4))
+            self.spare_parts_select_group_btn = _spare_toolbar_button(
+                secondary_group_actions,
+                text="Selecteer hele groep",
+                command=self._select_visible_spare_part_group,
+                tooltip="Selecteer alle onderdelen die in de huidige groep zichtbaar zijn.",
+                state="disabled",
             )
-            apply_presets_btn.pack(side="left", padx=(0, 4))
-            add_preset_btn = _spare_toolbar_button(
-                preset_buttons,
-                text="Preset toevoegen",
-                command=self._open_spare_part_preset_dialog,
-                tooltip="Maak een nieuwe presetregel, eventueel op basis van de geselecteerde regel.",
+            self.spare_parts_select_group_btn.pack(side="left", padx=(0, 4))
+            self.spare_parts_select_attention_btn = _spare_toolbar_button(
+                secondary_group_actions,
+                text="Selecteer aandacht",
+                command=self._select_visible_spare_part_attention,
+                tooltip="Selecteer alleen open of onvolledige onderdelen in de huidige groep.",
+                state="disabled",
             )
-            add_preset_btn.pack(side="left", padx=(0, 4))
-            example_presets_btn = _spare_toolbar_button(
-                preset_buttons,
-                text="Voorbeelden",
-                command=self._add_spare_part_example_presets,
-                tooltip="Voeg veilige voorbeeldpresets toe zodat gebruikers de opbouw kunnen bekijken.",
+            self.spare_parts_select_attention_btn.pack(side="left")
+            self.spare_parts_selection_var = tk.StringVar(
+                master=self,
+                value="Geen onderdelen geselecteerd.",
             )
-            example_presets_btn.pack(side="left", padx=(0, 4))
-            manage_presets_btn = _spare_toolbar_button(
-                preset_buttons,
-                text="Presets beheren",
-                command=self._open_spare_part_presets_manager,
-                tooltip="Open het overzicht om presets te bewerken, aan/uit te zetten of te verwijderen.",
+            tk.Label(
+                group_controls,
+                textvariable=self.spare_parts_selection_var,
+                anchor="w",
+                foreground="#666666",
+            ).grid(row=2, column=0, columnspan=4, sticky="ew", pady=(5, 0))
+            self.spare_parts_group_combo.bind(
+                "<Return>",
+                lambda _event: self._assign_selected_spare_parts_to_group(),
             )
-            manage_presets_btn.pack(side="left")
+            self.spare_parts_ready_label = tk.Label(
+                toolbar,
+                textvariable=self.spare_parts_ready_var,
+                anchor="w",
+                justify="left",
+                foreground="#666666",
+            )
+            self.spare_parts_ready_label.grid(
+                row=2,
+                column=0,
+                columnspan=2,
+                sticky="ew",
+                pady=(6, 0),
+            )
 
             groups_frame = tk.LabelFrame(frame, text="Groepen", labelanchor="n")
             groups_frame.grid(row=1, column=0, sticky="nsw", padx=(0, 8))
             groups_frame.grid_rowconfigure(0, weight=1)
             groups_frame.grid_columnconfigure(0, weight=1)
-            group_columns = ("label", "route", "count", "missing")
+            group_columns = ("label", "route", "supplier", "count", "missing")
             self.spare_parts_groups_tree = ttk.Treeview(
                 groups_frame,
                 columns=group_columns,
@@ -12261,18 +12304,24 @@ def start_gui():
             )
             group_headers = {
                 "label": "Groep",
-                "route": "Route",
-                "count": "Aantal",
-                "missing": "Mist",
+                "route": "Herkomst",
+                "supplier": "Leverancier",
+                "count": "Regels",
+                "missing": "Aandacht",
             }
             group_widths = {
                 "label": 190,
-                "route": 110,
+                "route": 140,
+                "supplier": 130,
                 "count": 58,
-                "missing": 70,
+                "missing": 80,
             }
             for column in group_columns:
-                anchor = "center" if column == "missing" else ("e" if column == "count" else "w")
+                anchor = (
+                    "center"
+                    if column == "missing"
+                    else ("e" if column == "count" else "w")
+                )
                 self.spare_parts_groups_tree.heading(
                     column, text=group_headers[column], anchor=anchor
                 )
@@ -12292,6 +12341,36 @@ def start_gui():
             )
             self.spare_parts_group_tooltips = _TreeTooltipManager(
                 self.spare_parts_groups_tree
+            )
+            group_actions = tk.Frame(groups_frame)
+            group_actions.grid(
+                row=1,
+                column=0,
+                columnspan=2,
+                sticky="ew",
+                pady=(6, 0),
+            )
+            self.spare_parts_rename_group_btn = _spare_toolbar_button(
+                group_actions,
+                text="Groep hernoemen",
+                command=self._rename_selected_spare_part_group,
+                tooltip=(
+                    "Hernoem de geselecteerde groep. Automatische groepen worden "
+                    "hiermee een eigen groep zonder de BOM te wijzigen."
+                ),
+                state="disabled",
+            )
+            self.spare_parts_rename_group_btn.pack(side="left", padx=(0, 4))
+            self.spare_parts_merge_group_btn = _spare_toolbar_button(
+                group_actions,
+                text="Samenvoegen met...",
+                command=self._merge_selected_spare_part_group,
+                tooltip="Voeg de geselecteerde groep samen met een bestaande eigen groep of Open.",
+                state="disabled",
+            )
+            self.spare_parts_merge_group_btn.pack(side="left")
+            self.spare_parts_groups_tree.bind(
+                "<Double-1>", lambda _event: self._rename_selected_spare_part_group()
             )
 
             items_frame = tk.LabelFrame(frame, text="Onderdelen", labelanchor="n")
@@ -12364,8 +12443,25 @@ def start_gui():
             self.spare_parts_items_tree.tag_configure("missing", background="#FFF4D6")
             self.spare_parts_items_tree.tag_configure("unassigned", background="#FFECEC")
             self.spare_parts_items_tree.grid(row=0, column=0, sticky="nsew")
+            self.spare_parts_items_tree.bind(
+                "<<TreeviewSelect>>", self._on_spare_parts_item_select
+            )
+            self.spare_parts_items_tree.bind(
+                "<Control-a>", self._select_visible_spare_part_group
+            )
+            self.spare_parts_items_tree.bind(
+                "<Control-A>", self._select_visible_spare_part_group
+            )
+            self.spare_parts_items_tree.bind(
+                "<Return>",
+                lambda _event: self._assign_selected_spare_parts_to_group(),
+            )
+            self.spare_parts_items_tree.bind(
+                "<Control-Shift-A>", self._select_visible_spare_part_attention
+            )
             item_scroll_y.grid(row=0, column=1, sticky="ns")
             item_scroll_x.grid(row=1, column=0, sticky="ew")
+            self._update_spare_parts_selection_state()
 
         def _spare_part_groups_for_current_bom(self):
             bom_df = getattr(self, "bom_df", None)
@@ -12381,13 +12477,128 @@ def start_gui():
                 print(f"Kon spare-parts-lijst niet opbouwen: {exc}", file=sys.stderr)
                 return []
 
-        def _refresh_spare_parts_tab(self) -> None:
+        def _spare_parts_ready_checks(self, groups) -> List[Dict[str, object]]:
+            if not groups:
+                return [
+                    {
+                        "label": "Klaarleglijst",
+                        "ok": False,
+                        "detail": "geen spare parts gevonden",
+                    }
+                ]
+
+            full_group = next(
+                (group for group in groups if getattr(group, "is_full_list", False)),
+                groups[0],
+            )
+            items = list(getattr(full_group, "items", []) or [])
+            unassigned_count = sum(
+                getattr(group, "item_count", 0)
+                for group in groups
+                if getattr(group, "route_source", "") == "unassigned"
+            )
+            missing_route_count = sum(
+                1
+                for item in items
+                if not (
+                    _to_str(getattr(item, "supplier", "")).strip()
+                    or _to_str(getattr(item, "manufacturer", "")).strip()
+                )
+            )
+            missing_code_count = sum(
+                1
+                for item in items
+                if not (
+                    _to_str(getattr(item, "supplier_code", "")).strip()
+                    or _to_str(getattr(item, "manufacturer_code", "")).strip()
+                )
+            )
+            groups_without_supplier = sum(
+                1
+                for group in groups
+                if not getattr(group, "is_full_list", False)
+                and getattr(group, "route_source", "") != "supplier"
+                and getattr(group, "route_source", "") != "unassigned"
+                and not _to_str(getattr(group, "default_supplier", "")).strip()
+            )
+
+            return [
+                {
+                    "label": "Klaarleglijst",
+                    "ok": bool(items),
+                    "detail": "geen regels",
+                },
+                {
+                    "label": "Groepen",
+                    "ok": unassigned_count == 0,
+                    "detail": f"{unassigned_count} open",
+                },
+                {
+                    "label": "Leverancier/fabrikant",
+                    "ok": missing_route_count == 0,
+                    "detail": f"{missing_route_count} mist info",
+                },
+                {
+                    "label": "Codes",
+                    "ok": missing_code_count == 0,
+                    "detail": f"{missing_code_count} mist code",
+                },
+                {
+                    "label": "Groepsleverancier",
+                    "ok": groups_without_supplier == 0,
+                    "detail": f"{groups_without_supplier} kiezen in documentflow",
+                },
+            ]
+
+        def _update_spare_parts_ready_summary(self, groups) -> None:
+            ready_var = getattr(self, "spare_parts_ready_var", None)
+            ready_label = getattr(self, "spare_parts_ready_label", None)
+            if ready_var is None:
+                return
+            checks = self._spare_parts_ready_checks(groups)
+            if not groups:
+                ready_var.set("Documentcontrole: geen spare parts gevonden.")
+                if ready_label is not None:
+                    try:
+                        ready_label.configure(foreground="#666666")
+                    except tk.TclError:
+                        pass
+                return
+
+            all_ready = all(bool(check.get("ok")) for check in checks)
+            parts = [
+                (
+                    f"{_to_str(check.get('label'))} OK"
+                    if bool(check.get("ok"))
+                    else f"{_to_str(check.get('label'))}: {_to_str(check.get('detail'))}"
+                )
+                for check in checks
+            ]
+            prefix = "Documentcontrole klaar" if all_ready else "Documentcontrole"
+            ready_var.set(f"{prefix}: {'; '.join(parts)}.")
+            if ready_label is not None:
+                try:
+                    ready_label.configure(
+                        foreground="#2E7D32" if all_ready else "#9A5B00"
+                    )
+                except tk.TclError:
+                    pass
+
+        def _refresh_spare_parts_tab(
+            self,
+            *,
+            preferred_group_label: str = "",
+        ) -> None:
             group_tree = getattr(self, "spare_parts_groups_tree", None)
             item_tree = getattr(self, "spare_parts_items_tree", None)
             status_var = getattr(self, "spare_parts_status_var", None)
             if group_tree is None or item_tree is None or status_var is None:
                 return
 
+            selected_group = ""
+            current_selection = group_tree.selection()
+            if current_selection:
+                selected_group = _to_str(current_selection[0]).strip()
             for item_id in group_tree.get_children():
                 group_tree.delete(item_id)
             for item_id in item_tree.get_children():
@@ -12400,19 +12611,27 @@ def start_gui():
             groups = self._spare_part_groups_for_current_bom()
             if not groups:
                 status_var.set("Geen spare parts in de huidige BOM.")
+                self._set_spare_parts_attention_available(False)
+                self._update_spare_parts_ready_summary(groups)
+                self._update_spare_parts_group_action_state()
+                self._update_spare_parts_selection_state()
                 return
 
+            self._update_spare_parts_ready_summary(groups)
             full_group = groups[0]
             manual_count = len(getattr(self, "_spare_part_group_overrides", {}) or {})
             warnings = summarize_spare_part_warnings(groups)
+            route_group_count = sum(1 for group in groups[1:] if group.item_count)
+            attention_count = int(getattr(full_group, "missing_count", 0) or 0)
             status_text = (
-                f"{full_group.item_count} spare parts, "
-                f"{sum(1 for group in groups[1:] if group.item_count)} groepen"
-                + (f", {manual_count} manueel gezet." if manual_count else ".")
+                f"{full_group.item_count} spare parts, {route_group_count} groepen, "
+                f"{attention_count} aandachtspunt(en)"
+                + (f", {manual_count} handmatig gezet." if manual_count else ".")
             )
             if warnings:
                 status_text += f" Let op: {'; '.join(warnings)}."
             status_var.set(status_text)
+            self._set_spare_parts_attention_available(bool(warnings))
             group_combo = getattr(self, "spare_parts_group_combo", None)
             if group_combo is not None:
                 group_options = [
@@ -12424,24 +12643,38 @@ def start_gui():
                     group_combo.configure(values=tuple(dict.fromkeys(group_options)))
                 except tk.TclError:
                     pass
+            preferred_label_key = _to_str(preferred_group_label).strip().casefold()
+            preferred_group_key = ""
             for group in groups:
                 group_key = _to_str(group.key).strip()
                 if not group_key:
                     continue
                 self._spare_parts_group_records[group_key] = group
+                group_label = (
+                    "Klaarleglijst - alle spare parts"
+                    if group.is_full_list
+                    else group.label
+                )
                 route_label = {
-                    "full": "Lijst",
-                    "supplier": "Supplier",
-                    "manufacturer": "Manufacturer",
+                    "full": "Klaarleglijst",
+                    "supplier": "Auto via Supplier",
+                    "manufacturer": "Auto via Manufacturer",
+                    "custom": "Eigen groep",
                     "unassigned": "Open",
                 }.get(group.route_source, group.route_source)
+                if (
+                    preferred_label_key
+                    and _to_str(group.label).strip().casefold() == preferred_label_key
+                ):
+                    preferred_group_key = group_key
                 group_tree.insert(
                     "",
                     "end",
                     iid=group_key,
                     values=(
-                        group.label,
+                        group_label,
                         route_label,
+                        group.default_supplier or "",
                         group.item_count,
                         group.missing_count or "",
                     ),
@@ -12449,14 +12682,26 @@ def start_gui():
                 if tooltip_manager is not None and group.missing_count:
                     tooltip_manager.set(
                         group_key,
-                        "#4",
+                        "#5",
                         "Aantal regels in deze groep met ontbrekende "
                         "Supplier/Manufacturer of code-informatie.",
                     )
-            first_id = group_tree.get_children()[0]
-            group_tree.selection_set(first_id)
-            group_tree.focus(first_id)
-            self._populate_spare_parts_items(first_id)
+            target_id = ""
+            if preferred_group_key and group_tree.exists(preferred_group_key):
+                target_id = preferred_group_key
+            elif selected_group and group_tree.exists(selected_group):
+                target_id = selected_group
+            else:
+                children = group_tree.get_children()
+                target_id = children[0] if children else ""
+            if target_id:
+                group_tree.selection_set(target_id)
+                group_tree.focus(target_id)
+                group_tree.see(target_id)
+                self._populate_spare_parts_items(target_id)
+            else:
+                self._update_spare_parts_selection_state()
+            self._update_spare_parts_group_action_state()
 
         def _populate_spare_parts_items(self, group_key: str) -> None:
             item_tree = getattr(self, "spare_parts_items_tree", None)
@@ -12466,6 +12711,7 @@ def start_gui():
                 item_tree.delete(item_id)
             group = getattr(self, "_spare_parts_group_records", {}).get(group_key)
             if group is None:
+                self._update_spare_parts_selection_state()
                 return
             for index, item in enumerate(group.items):
                 item_key = item.identity_key
@@ -12497,6 +12743,7 @@ def start_gui():
                     ),
                     tags=(tag,),
                 )
+            self._update_spare_parts_selection_state()
 
         def _on_spare_parts_group_select(self, _event=None) -> None:
             group_tree = getattr(self, "spare_parts_groups_tree", None)
@@ -12505,6 +12752,375 @@ def start_gui():
             selected = group_tree.selection()
             if selected:
                 self._populate_spare_parts_items(selected[0])
+            self._update_spare_parts_group_action_state()
+
+        def _on_spare_parts_item_select(self, _event=None) -> None:
+            self._update_spare_parts_selection_state()
+
+        def _selected_spare_part_group_key(self) -> str:
+            group_tree = getattr(self, "spare_parts_groups_tree", None)
+            if group_tree is None:
+                return ""
+            selected = group_tree.selection()
+            return _to_str(selected[0]).strip() if selected else ""
+
+        def _selected_spare_part_group(self):
+            group_key = self._selected_spare_part_group_key()
+            if not group_key:
+                return None
+            return getattr(self, "_spare_parts_group_records", {}).get(group_key)
+
+        def _spare_part_group_item_keys(self, group) -> List[str]:
+            return [
+                _to_str(getattr(item, "identity_key", "")).strip()
+                for item in (getattr(group, "items", []) or [])
+                if _to_str(getattr(item, "identity_key", "")).strip()
+            ]
+
+        def _spare_part_group_editable(self, group) -> bool:
+            return bool(
+                group is not None
+                and not getattr(group, "is_full_list", False)
+                and getattr(group, "item_count", 0)
+            )
+
+        def _spare_part_merge_target_options(self, source_group=None) -> List[str]:
+            source_label = _to_str(getattr(source_group, "label", "")).strip().casefold()
+            labels: List[str] = []
+            for group in (getattr(self, "_spare_parts_group_records", {}) or {}).values():
+                if getattr(group, "is_full_list", False):
+                    continue
+                label = _to_str(getattr(group, "label", "")).strip()
+                if not label or label.casefold() == source_label:
+                    continue
+                if getattr(group, "route_source", "") == "custom":
+                    labels.append(label)
+            if source_label != SPARE_PARTS_UNASSIGNED_LABEL.casefold():
+                labels.append(SPARE_PARTS_UNASSIGNED_LABEL)
+            return list(dict.fromkeys(labels))
+
+        def _spare_part_group_label_exists(self, label: object, source_group=None) -> bool:
+            label_key = _to_str(label).strip().casefold()
+            if not label_key:
+                return False
+            source_key = _to_str(getattr(source_group, "key", "")).strip()
+            for group in (getattr(self, "_spare_parts_group_records", {}) or {}).values():
+                if source_key and _to_str(getattr(group, "key", "")).strip() == source_key:
+                    continue
+                if _to_str(getattr(group, "label", "")).strip().casefold() == label_key:
+                    return True
+            return False
+
+        def _update_spare_parts_group_action_state(self) -> None:
+            group = self._selected_spare_part_group()
+            editable = self._spare_part_group_editable(group)
+            merge_options = self._spare_part_merge_target_options(group)
+            button_states = {
+                "spare_parts_rename_group_btn": editable,
+                "spare_parts_merge_group_btn": editable and bool(merge_options),
+            }
+            for attr, enabled in button_states.items():
+                button = getattr(self, attr, None)
+                if button is None:
+                    continue
+                try:
+                    button.configure(state="normal" if enabled else "disabled")
+                except tk.TclError:
+                    pass
+
+        def _ask_spare_part_merge_target(
+            self,
+            source_group,
+            values: List[str],
+        ) -> str:
+            if not values:
+                return ""
+            win = tk.Toplevel(self)
+            win.title("Groep samenvoegen")
+            win.transient(self)
+            win.grab_set()
+            win.columnconfigure(1, weight=1)
+
+            source_label = _to_str(getattr(source_group, "label", "")).strip()
+            tk.Label(win, text="Bron:").grid(
+                row=0, column=0, sticky="e", padx=8, pady=(10, 4)
+            )
+            tk.Label(win, text=source_label, anchor="w").grid(
+                row=0, column=1, sticky="ew", padx=8, pady=(10, 4)
+            )
+            tk.Label(win, text="Samenvoegen met:").grid(
+                row=1, column=0, sticky="e", padx=8, pady=4
+            )
+            target_var = tk.StringVar(value=values[0])
+            target_combo = ttk.Combobox(
+                win,
+                textvariable=target_var,
+                values=tuple(values),
+                state="readonly",
+                width=34,
+            )
+            target_combo.grid(row=1, column=1, sticky="ew", padx=8, pady=4)
+
+            result = {"value": ""}
+
+            def _confirm() -> None:
+                result["value"] = target_var.get().strip()
+                win.destroy()
+
+            buttons = tk.Frame(win)
+            buttons.grid(row=2, column=0, columnspan=2, sticky="e", padx=8, pady=10)
+            tk.Button(buttons, text="Samenvoegen", command=_confirm).pack(
+                side="left", padx=(0, 4)
+            )
+            tk.Button(buttons, text="Annuleer", command=win.destroy).pack(side="left")
+            _place_window_near_parent(win, self)
+            win.after_idle(target_combo.focus_set)
+            self.wait_window(win)
+            return _to_str(result.get("value")).strip()
+
+        def _rename_selected_spare_part_group(self) -> None:
+            group = self._selected_spare_part_group()
+            if not self._spare_part_group_editable(group):
+                messagebox.showinfo(
+                    "Spare parts",
+                    "Selecteer eerst een groep die onderdelen bevat.",
+                    parent=self,
+                )
+                return
+            old_label = _to_str(getattr(group, "label", "")).strip()
+            response = simpledialog.askstring(
+                "Groep hernoemen",
+                "Nieuwe groepsnaam:",
+                initialvalue=old_label,
+                parent=self,
+            )
+            new_label = _to_str(response).strip()
+            if not new_label or new_label.casefold() == old_label.casefold():
+                return
+            if self._spare_part_group_label_exists(new_label, group):
+                messagebox.showwarning(
+                    "Groep hernoemen",
+                    (
+                        f"Er bestaat al een groep met de naam '{new_label}'. "
+                        "Gebruik 'Samenvoegen met...' om groepen samen te voegen."
+                    ),
+                    parent=self,
+                )
+                return
+            item_keys = self._spare_part_group_item_keys(group)
+            for item_key in item_keys:
+                self._spare_part_group_overrides[item_key] = new_label
+                self._spare_part_preset_override_keys.discard(item_key)
+            self.spare_parts_group_var.set(new_label)
+            self._sync_spare_part_override_state()
+            self._refresh_spare_parts_tab(preferred_group_label=new_label)
+            self._refresh_spare_parts_order_flow()
+            self.status_var.set(
+                f"Groep '{old_label}' hernoemd naar '{new_label}' "
+                f"({len(item_keys)} regel(s))."
+            )
+
+        def _merge_selected_spare_part_group(self) -> None:
+            group = self._selected_spare_part_group()
+            if not self._spare_part_group_editable(group):
+                messagebox.showinfo(
+                    "Spare parts",
+                    "Selecteer eerst een groep die onderdelen bevat.",
+                    parent=self,
+                )
+                return
+            options = self._spare_part_merge_target_options(group)
+            if not options:
+                messagebox.showinfo(
+                    "Spare parts",
+                    "Er is nog geen andere eigen groep om mee samen te voegen.",
+                    parent=self,
+                )
+                return
+            target_label = self._ask_spare_part_merge_target(group, options)
+            if not target_label:
+                return
+            source_label = _to_str(getattr(group, "label", "")).strip()
+            item_keys = self._spare_part_group_item_keys(group)
+            for item_key in item_keys:
+                self._spare_part_group_overrides[item_key] = target_label
+                self._spare_part_preset_override_keys.discard(item_key)
+            self.spare_parts_group_var.set(target_label)
+            self._sync_spare_part_override_state()
+            self._refresh_spare_parts_tab(preferred_group_label=target_label)
+            self._refresh_spare_parts_order_flow()
+            self.status_var.set(
+                f"Groep '{source_label}' samengevoegd met '{target_label}' "
+                f"({len(item_keys)} regel(s))."
+            )
+
+        def _set_spare_parts_attention_available(self, available: bool) -> None:
+            button = getattr(self, "spare_parts_attention_btn", None)
+            if button is None:
+                return
+            try:
+                button.configure(state="normal" if available else "disabled")
+            except tk.TclError:
+                pass
+
+        def _select_visible_spare_part_group(self, _event=None):
+            item_tree = getattr(self, "spare_parts_items_tree", None)
+            if item_tree is None:
+                return "break" if _event is not None else None
+            item_ids = item_tree.get_children()
+            if not item_ids:
+                self._update_spare_parts_selection_state()
+                return "break" if _event is not None else None
+            item_tree.selection_set(item_ids)
+            item_tree.focus(item_ids[0])
+            item_tree.see(item_ids[0])
+            self._update_spare_parts_selection_state()
+            return "break" if _event is not None else None
+
+        def _visible_spare_part_attention_item_ids(self) -> List[str]:
+            item_tree = getattr(self, "spare_parts_items_tree", None)
+            if item_tree is None:
+                return []
+            attention_ids: List[str] = []
+            for item_id in item_tree.get_children():
+                tags = set(item_tree.item(item_id, "tags") or ())
+                if tags.intersection({"missing", "unassigned"}):
+                    attention_ids.append(item_id)
+            return attention_ids
+
+        def _select_visible_spare_part_attention(self, _event=None):
+            item_tree = getattr(self, "spare_parts_items_tree", None)
+            if item_tree is None:
+                return "break" if _event is not None else None
+            item_ids = self._visible_spare_part_attention_item_ids()
+            if not item_ids:
+                self._update_spare_parts_selection_state()
+                status_var = getattr(self, "spare_parts_status_var", None)
+                if status_var is not None:
+                    status_var.set("Geen aandachtspunten in de huidige groep.")
+                return "break" if _event is not None else None
+            item_tree.selection_set(item_ids)
+            item_tree.focus(item_ids[0])
+            item_tree.see(item_ids[0])
+            self._update_spare_parts_selection_state()
+            return "break" if _event is not None else None
+
+        def _update_spare_parts_selection_state(self) -> None:
+            selected_count = len(self._selected_spare_part_item_keys())
+            has_selection = selected_count > 0
+            item_tree = getattr(self, "spare_parts_items_tree", None)
+            visible_count = 0
+            if item_tree is not None:
+                try:
+                    visible_count = len(item_tree.get_children())
+                except tk.TclError:
+                    visible_count = 0
+            attention_count = len(self._visible_spare_part_attention_item_ids())
+            selection_var = getattr(self, "spare_parts_selection_var", None)
+            if selection_var is not None:
+                if has_selection:
+                    selection_var.set(
+                        f"{selected_count} onderdeel(en) geselecteerd."
+                    )
+                elif visible_count:
+                    suffix = (
+                        f", {attention_count} aandachtspunt(en)"
+                        if attention_count
+                        else ""
+                    )
+                    selection_var.set(
+                        f"{visible_count} onderdeel(en) zichtbaar in deze groep{suffix}."
+                    )
+                else:
+                    selection_var.set(
+                        "Geen onderdelen zichtbaar in de huidige groep."
+                    )
+
+            for attr in (
+                "spare_parts_assign_btn",
+                "spare_parts_new_group_btn",
+                "spare_parts_unassigned_btn",
+                "spare_parts_auto_btn",
+            ):
+                button = getattr(self, attr, None)
+                if button is None:
+                    continue
+                try:
+                    button.configure(state="normal" if has_selection else "disabled")
+                except tk.TclError:
+                    pass
+            select_group_btn = getattr(self, "spare_parts_select_group_btn", None)
+            if select_group_btn is not None:
+                try:
+                    select_group_btn.configure(
+                        state="normal" if visible_count else "disabled"
+                    )
+                except tk.TclError:
+                    pass
+            select_attention_btn = getattr(
+                self,
+                "spare_parts_select_attention_btn",
+                None,
+            )
+            if select_attention_btn is not None:
+                try:
+                    select_attention_btn.configure(
+                        state="normal" if attention_count else "disabled"
+                    )
+                except tk.TclError:
+                    pass
+
+        def _show_spare_parts_attention(self) -> None:
+            group_tree = getattr(self, "spare_parts_groups_tree", None)
+            item_tree = getattr(self, "spare_parts_items_tree", None)
+            if group_tree is None or item_tree is None:
+                return
+
+            records = getattr(self, "_spare_parts_group_records", {}) or {}
+            target_group_key = ""
+            for group_key, group in records.items():
+                if getattr(group, "is_full_list", False):
+                    continue
+                if getattr(group, "route_source", "") == "unassigned" and getattr(
+                    group, "item_count", 0
+                ):
+                    target_group_key = group_key
+                    break
+                if getattr(group, "missing_count", 0):
+                    target_group_key = group_key
+                    break
+            if not target_group_key:
+                for group_key, group in records.items():
+                    if getattr(group, "is_full_list", False):
+                        continue
+                    if getattr(group, "route_source", "") != "supplier" and not _to_str(
+                        getattr(group, "default_supplier", "")
+                    ).strip():
+                        target_group_key = group_key
+                        break
+            if not target_group_key:
+                for group_key, group in records.items():
+                    if getattr(group, "missing_count", 0):
+                        target_group_key = group_key
+                        break
+            if not target_group_key or not group_tree.exists(target_group_key):
+                status_var = getattr(self, "spare_parts_status_var", None)
+                if status_var is not None:
+                    status_var.set("Geen open of onvolledige spare-part regels gevonden.")
+                return
+
+            group_tree.selection_set(target_group_key)
+            group_tree.focus(target_group_key)
+            group_tree.see(target_group_key)
+            self._populate_spare_parts_items(target_group_key)
+            for item_id in item_tree.get_children():
+                tags = set(item_tree.item(item_id, "tags") or ())
+                if tags.intersection({"missing", "unassigned"}):
+                    item_tree.selection_set(item_id)
+                    item_tree.focus(item_id)
+                    item_tree.see(item_id)
+                    break
+            self._update_spare_parts_selection_state()
 
         def _selected_spare_part_item_keys(self) -> List[str]:
             item_tree = getattr(self, "spare_parts_items_tree", None)
@@ -12529,11 +13145,12 @@ def start_gui():
                 )
                 return
 
+            preferred_group_label = ""
             if reset_to_auto:
                 for item_key in selected_keys:
                     self._spare_part_group_overrides.pop(item_key, None)
                     self._spare_part_preset_override_keys.discard(item_key)
-                action_text = "terug op automatische groepering gezet"
+                action_text = "terug naar automatische groep gezet"
             else:
                 clean_label = _to_str(group_label).strip()
                 if not clean_label:
@@ -12546,10 +13163,11 @@ def start_gui():
                 for item_key in selected_keys:
                     self._spare_part_group_overrides[item_key] = clean_label
                     self._spare_part_preset_override_keys.discard(item_key)
-                action_text = f"naar '{clean_label}' gezet"
+                preferred_group_label = clean_label
+                action_text = f"naar '{clean_label}' verplaatst"
 
             self._sync_spare_part_override_state()
-            self._refresh_spare_parts_tab()
+            self._refresh_spare_parts_tab(preferred_group_label=preferred_group_label)
             self._refresh_spare_parts_order_flow()
             self.status_var.set(
                 f"{len(selected_keys)} spare-part regel(s) {action_text}."
@@ -13129,13 +13747,34 @@ def start_gui():
 
             if not self._ensure_bom_loaded():
                 return
-            if not self._spare_part_groups_for_current_bom():
+            groups = self._spare_part_groups_for_current_bom()
+            if not groups:
                 messagebox.showinfo(
                     "Spare parts",
                     "Geen spare parts gevonden in de huidige BOM.",
                     parent=self,
                 )
                 return
+            checks = self._spare_parts_ready_checks(groups)
+            open_checks = [check for check in checks if not bool(check.get("ok"))]
+            if open_checks:
+                lines = [
+                    f"- {_to_str(check.get('label'))}: {_to_str(check.get('detail'))}"
+                    for check in open_checks
+                ]
+                if not messagebox.askyesno(
+                    "Spare parts controleren",
+                    (
+                        "Er zijn nog aandachtspunten voor deze spare parts:\n\n"
+                        + "\n".join(lines)
+                        + "\n\nJe kunt leveranciers en documentdetails straks nog "
+                        "aanvullen in de bestelbonnenflow.\n\n"
+                        "Toch documenten klaarmaken?"
+                    ),
+                    parent=self,
+                ):
+                    self._show_spare_parts_attention()
+                    return
             self._show_supplier_selection_tab(select_tab=True, prompt_opticutter=True)
 
         def _set_export_progress_visible(self, visible: bool) -> None:
