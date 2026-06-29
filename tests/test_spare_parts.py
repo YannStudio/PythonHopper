@@ -20,6 +20,7 @@ from spare_parts import (
     is_spare_parts_production,
     make_custom_spare_part_group_key,
     match_spare_part_group_overrides,
+    spare_part_document_readiness,
     spare_part_identity_match_key,
     summarize_spare_part_warnings,
 )
@@ -156,6 +157,76 @@ def test_spare_part_warnings_summarize_open_data_and_supplier_gaps():
     assert "1 zonder Supplier/Manufacturer" in warnings
     assert "2 zonder Supplier code/Manufacturer code" in warnings
     assert "2 groep(en) zonder standaardleverancier" in warnings
+
+
+def test_spare_part_document_readiness_reports_open_checks():
+    items = collect_spare_part_items(
+        [
+            {
+                "PartNumber": "A",
+                "Production": "Spare Parts",
+                "Supplier": "Electro",
+            },
+            {
+                "PartNumber": "B",
+                "Production": "Spare Parts",
+                "Manufacturer": "Maker",
+                "Manufacturer code": "M-1",
+            },
+            {"PartNumber": "C", "Production": "Spare Parts"},
+        ]
+    )
+
+    checks = {
+        check["label"]: check for check in spare_part_document_readiness(
+            build_spare_part_groups(items)
+        )
+    }
+
+    assert checks["Klaarleglijst"]["ok"] is True
+    assert checks["Groepen"]["ok"] is False
+    assert checks["Groepen"]["detail"] == "1 open"
+    assert checks["Leverancier/fabrikant"]["ok"] is False
+    assert checks["Codes"]["ok"] is False
+    assert checks["Groepsleverancier"]["ok"] is False
+
+
+def test_spare_part_document_readiness_accepts_manual_groups():
+    df = pd.DataFrame(
+        [
+            {
+                "PartNumber": "A",
+                "Production": "Spare Parts",
+                "Supplier": "RS",
+                "Supplier code": "RS-1",
+            },
+            {
+                "PartNumber": "B",
+                "Production": "Spare Parts",
+                "Supplier": "RS",
+                "Supplier code": "RS-2",
+            },
+        ]
+    )
+    items = collect_spare_part_items(df)
+    groups = build_spare_part_groups(
+        items,
+        group_overrides={
+            items[0].identity_key: "Electro",
+            items[1].identity_key: "Electro",
+        },
+    )
+
+    checks = {
+        check["label"]: check for check in spare_part_document_readiness(groups)
+    }
+
+    assert checks["Klaarleglijst"]["ok"] is True
+    assert checks["Groepen"]["ok"] is True
+    assert checks["Leverancier/fabrikant"]["ok"] is True
+    assert checks["Codes"]["ok"] is True
+    assert checks["Groepsleverancier"]["ok"] is False
+    assert checks["Groepsleverancier"]["detail"] == "1 kiezen in documentflow"
 
 
 def test_spare_part_groups_accept_manual_overrides_without_mutating_bom():

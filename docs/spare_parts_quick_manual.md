@@ -12,7 +12,7 @@ gelijk is aan `Spare Parts`.
 
 ## BOM-kolommen
 
-Houd de BOM-propertynamen overal hetzelfde. De spare-parts tab, presets en
+Houd de BOM-propertynamen overal hetzelfde. De spare-parts tab en
 exportdocumenten gebruiken deze namen:
 
 - `PartNumber`
@@ -55,8 +55,8 @@ je de documenten definitief exporteert.
 9. Gebruik `Nieuwe groep` om snel een eigen groep te maken.
 10. Gebruik `Auto` om geselecteerde regels terug naar automatische
     Supplier/Manufacturer-groepering te zetten.
-11. Gebruik `Presets toepassen` wanneer terugkerende onderdelen altijd naar
-    dezelfde bestelgroep moeten.
+11. Gebruik `Selecteer aandacht`, `Groep hernoemen` en `Samenvoegen met...`
+    om uitzonderingen snel af te werken.
 12. Klik `Documenten klaarmaken`.
 13. Controleer in de bestelbonnenflow per spare-parts groep:
     documenttype, leverancier, documentnummer, leveradres, opmerkingen,
@@ -121,25 +121,18 @@ onnodig te blokkeren.
   overgeslagen met een statusmelding.
 - De klaarleglijst mag zonder leverancier blijven.
 
-## Presets
+## Groepen beheren
 
-Presets groeperen regels automatisch op basis van een BOM-property. Gebruik bij
-voorkeur deze matchvelden:
+Filehopper maakt automatisch groepen op basis van `Supplier` en daarna
+`Manufacturer`. Voor projectgebonden uitzonderingen gebruik je de handmatige
+groepsacties:
 
-- `Supplier`
-- `Supplier code`
-- `Manufacturer`
-- `Manufacturer code`
-
-Voorbeelden:
-
-- `Supplier` bevat `RS` -> doelgroep `Electro`
-- `Manufacturer` is `Festo` -> doelgroep `Pneumatica`
-- `Manufacturer code` begint met `SM-` -> doelgroep `Mechanisch`
-
-Gebruik `Voorbeelden` in de Spare parts-tab of in `Presets beheren` om enkele
-uitgeschakelde voorbeeldpresets toe te voegen. Die voorbeelden tonen de opbouw
-zonder direct regels te verplaatsen.
+- `Verplaats` zet geselecteerde regels in de gekozen bestelgroep.
+- `Nieuwe groep van selectie` maakt meteen een eigen groep.
+- `Selecteer hele groep` en `Selecteer aandacht` versnellen bulkwerk.
+- `Groep hernoemen` en `Samenvoegen met...` ruimen bestaande eigen groepen op.
+- `Terug naar automatische groep` verwijdert de handmatige keuze voor de
+  geselecteerde regels.
 
 ## Belangrijke afspraken
 

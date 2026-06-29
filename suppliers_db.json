@@ -1659,10 +1659,15 @@
     "Wood": "Byttebier-hout",
     "Spare Parts::custom--locinox": "Locinox",
     "Spare Parts::custom--steeldeck": "Joriside",
-    "Spare Parts::supplier--locinox": "Locinox"
+    "Spare Parts::supplier--locinox": "Locinox",
+    "Tube laser L": "Saey",
+    "Sheetmetal +4m": "Meeuwsen bv"
   },
   "defaults_by_finish": {
     "Finish-Galvanised": "Van Gils Coating - Beringen/Maasmechelen",
-    "Finish-Powder coating": "Van Gils Coating - Beringen/Maasmechelen"
+    "Finish-Powder coating": "Van Gils Coating - Beringen/Maasmechelen",
+    "Finish-Galvanised _ Powder coating-RAL 7000": "Van Gils Coating - Beringen/Maasmechelen",
+    "Finish-Galvanised _ Powdercoating-RAL 7000": "Van Gils Coating - Beringen/Maasmechelen",
+    "Finish-Powder coating-RAL 7000": "Van Gils Coating - Beringen/Maasmechelen"
   }
 }

@@ -1,8 +1,8 @@
 {
-  "source_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2024/20240158 - GBS De Droomwolk Kieldrecht/CAD/3D Soldiworks Files/Mod2/MOD2 V2",
-  "dest_folder": "C:/Users/jeroe/Desktop",
-  "project_number": "20240158",
-  "project_name": "Droomwolk Mod2",
+  "source_folder": "C:/Users/jeroe/Tecno Art/Tecno Art - TA - server/01 - Projecten/2026/20260030 - CIAW Huldenberg schuilhuisje/CAD/3D Soldiworks Files/V4",
+  "dest_folder": "C:/Users/jeroe/Downloads",
+  "project_number": "20260030",
+  "project_name": "Huldenberg",
   "file_extensions": [
     {
       "key": "pdf",
@@ -67,12 +67,12 @@
   "export_processed_bom": true,
   "export_related_bom_files": true,
   "export_date_prefix": false,
-  "export_date_suffix": true,
+  "export_date_suffix": false,
   "custom_prefix_enabled": false,
   "custom_prefix_text": "",
   "custom_suffix_enabled": false,
   "custom_suffix_text": "",
-  "document_filename_profile": "short",
+  "document_filename_profile": "compact",
   "document_filename_show_doc_type": true,
   "document_filename_show_doc_number": true,
   "document_filename_show_context": false,

@@ -483,6 +483,69 @@ def summarize_spare_part_warnings(groups: Sequence[SparePartGroup]) -> list[str]
     return warnings
 
 
+def spare_part_document_readiness(
+    groups: Sequence[SparePartGroup],
+) -> list[dict[str, object]]:
+    """Return checklist records for preparing spare-part order documents."""
+
+    if not groups:
+        return [
+            {
+                "label": "Klaarleglijst",
+                "ok": False,
+                "detail": "geen spare parts gevonden",
+            }
+        ]
+
+    full_group = next((group for group in groups if group.is_full_list), groups[0])
+    items = list(full_group.items)
+    unassigned_count = sum(
+        group.item_count for group in groups if group.route_source == "unassigned"
+    )
+    missing_route_count = sum(
+        1 for item in items if not (item.supplier or item.manufacturer)
+    )
+    missing_code_count = sum(
+        1 for item in items if not (item.supplier_code or item.manufacturer_code)
+    )
+    groups_without_supplier = sum(
+        1
+        for group in groups
+        if not group.is_full_list
+        and group.route_source != "supplier"
+        and group.route_source != "unassigned"
+        and not group.default_supplier
+    )
+
+    return [
+        {
+            "label": "Klaarleglijst",
+            "ok": bool(items),
+            "detail": "geen regels",
+        },
+        {
+            "label": "Groepen",
+            "ok": unassigned_count == 0,
+            "detail": f"{unassigned_count} open",
+        },
+        {
+            "label": "Leverancier/fabrikant",
+            "ok": missing_route_count == 0,
+            "detail": f"{missing_route_count} mist info",
+        },
+        {
+            "label": "Codes",
+            "ok": missing_code_count == 0,
+            "detail": f"{missing_code_count} mist code",
+        },
+        {
+            "label": "Groepsleverancier",
+            "ok": groups_without_supplier == 0,
+            "detail": f"{groups_without_supplier} kiezen in documentflow",
+        },
+    ]
+
+
 def collect_spare_part_groups(
     source: object,
     *,

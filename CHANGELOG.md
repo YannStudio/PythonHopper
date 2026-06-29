@@ -3,16 +3,16 @@
 ## 3.3 - 2026-06-05
 
 - Spare-parts-regels in de BOM krijgen een eigen flow met volledige monteurslijst, groepering per leverancier/fabrikant en bestelgerichte codes op bonnen en exports.
-- Spare-parts tab, presets en exportdocumenten tonen nu dezelfde BOM-propertynamen voor Supplier/Manufacturer-velden, bevatten een interne quick manual en kunnen veilige voorbeeldpresets toevoegen.
-- De standaard spare-part presetdata bevat nu veilige, uitgeschakelde voorbeeldregels voor Supplier/Manufacturer-matching.
+- Spare-parts tab, groepsbeheer en exportdocumenten tonen nu dezelfde BOM-propertynamen voor Supplier/Manufacturer-velden en bevatten een interne quick manual.
+- Spare-parts worden nu projectgericht via selectieacties, hernoemen en samenvoegen gegroepeerd in plaats van via eigen presetdata.
 - De spare-parts quick manual legt nu de automatische flow, klaarleglijst, waarschuwingen en leverancierkeuze uitgebreider uit.
-- Spare-parts-groepen kunnen nu met beheerbare presets voorbereid worden; exportlogs bewaren en herstellen ook de spare-part-verdeling.
-- Spare-parts groepsoverzicht en presetbeheer gebruiken duidelijkere kolombreedtes en uitlijning voor missende info en prioriteiten.
+- Spare-parts-groepen kunnen nu handmatig voorbereid worden; exportlogs bewaren en herstellen ook de spare-part-verdeling.
+- Spare-parts groepsoverzicht gebruikt duidelijkere kolombreedtes en uitlijning voor missende info en prioriteiten.
 - Spare-part bestelbonnen/offerteaanvragen zonder leverancier geven nu een bevestiging vlak voor export.
 - Exportlog-controle toont herstelbare custom spare-partgroepen nu apart van echt ontbrekende bestelbonregels.
 - Spare-partsverdelingen uit exportlogs worden robuuster hersteld wanneer BOM-rijindexen verschuiven.
 - Spare-part identity keys bewaren lege veldposities, zodat toekomstig exportlog-herstel minder ambigu is.
-- Handmatige en preset spare-partgroepen blijven beter behouden bij het verversen van een BOM met verschoven rijindexen.
+- Handmatige spare-partgroepen blijven beter behouden bij het verversen van een BOM met verschoven rijindexen.
 - De volledige spare-partlijst wordt in UI/export duidelijker als klaarleglijst benoemd.
 - De spare-part klaarleglijst gedraagt zich in de Bestelbonnen-flow niet meer als leveranciersbon.
 - De spare-part klaarleglijst kan niet meer als gekoppelde bon of groepsmaster gebruikt worden.
@@ -22,7 +22,7 @@
 - De spare-parts klaarleglijst krijgt in de PDF-werkdossierplanning altijd het vaste label "Klaarleglijst".
 - Oudere PDF-dossierrecords zonder sparepart::full worden ook als klaarleglijst herkend wanneer context of bestandsnaam dat duidelijk aangeeft.
 - PDF-dossierknoppen en meldingen spreken nu consequent over document-PDF's in plaats van alleen bon-PDF's.
-- Diagnostiek waarschuwt nu ook voor lege of overlappende spare-part presetregels.
+- Diagnostiek controleert de resterende order- en PDF-instellingen, zonder aparte spare-part groepsdata.
 - PDF dossier wist na het kiezen van een volgordepreset de gearceerde comboboxselectie, zoals bij de moduskeuze.
 - Informatietekst bij de PDF dossier-modus en volgordepreset gebruikt nu dezelfde tekstkleur.
 - Bestelbon- en werkdossieruitvoer verwerkt maatvelden, totalen en plaat-/profielgegevens consequenter in Excel en PDF.

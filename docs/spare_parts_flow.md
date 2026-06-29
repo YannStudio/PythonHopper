@@ -43,30 +43,22 @@ Leveranciersgroepen krijgen voorrang op fabrikantgroepen. Dat houdt de bestelstr
 
 Handmatige groepskeuzes blijven in de app-state zolang de huidige BOM actief is. Ze wijzigen de originele BOM-kolom `Production` niet.
 
-## Presets
+## Groepen bijsturen
 
-Gebruik `Preset toevoegen` of `Presets beheren` om terugkerende spare-part-regels automatisch naar een bestelgroep te sturen. De presetbeheerder laat regels bekijken, bewerken, aan/uit zetten en verwijderen. De eerste versie ondersteunt deze matchvelden:
+De Spare parts-tab maakt automatisch groepen op basis van `Supplier` en daarna
+`Manufacturer`. Projectspecifieke uitzonderingen stuur je handmatig bij:
 
-- `Supplier`
-- `Supplier code`
-- `Manufacturer`
-- `Manufacturer code`
+- selecteer een of meer regels en kies/typ een bestelgroep;
+- gebruik `Nieuwe groep van selectie` voor een eigen groep;
+- gebruik `Selecteer hele groep` of `Selecteer aandacht` voor bulkacties;
+- gebruik `Groep hernoemen` of `Samenvoegen met...` om bestaande eigen groepen
+  op te ruimen;
+- gebruik `Terug naar automatische groep` om de automatische Supplier- of
+  Manufacturer-groepering opnieuw te gebruiken.
 
-Mogelijke matchtypes:
-
-- `Exact`
-- `Bevat`
-- `Begint met`
-
-Voorbeelden:
-
-- `Manufacturer = Herbaroof` -> doelgroep `Herbaroof`.
-- `Supplier bevat RS Components` -> doelgroep `Electro`.
-- `Manufacturer code begint met XYZ` -> doelgroep `Pneumatica`.
-
-Gebruik `Presets toepassen` om actieve regels op de huidige BOM toe te passen. Filehopper wist daarbij eerst eerdere presetresultaten en berekent ze opnieuw, terwijl handmatige groepskeuzes behouden blijven. De presets worden opgeslagen in `spare_part_presets.json`. Een preset wijzigt alleen de interne spare-part-groepering; de BOM-kolom `Production` blijft `Spare Parts`.
-
-Met `Voorbeelden` kan Filehopper enkele uitgeschakelde voorbeeldpresets toevoegen. Die regels zijn bedoeld als startpunt om de opbouw te tonen en worden pas toegepast wanneer je ze zelf activeert of bewerkt.
+Deze keuzes wijzigen de originele BOM niet. Ze worden intern en in de exportlog
+bewaard, zodat een latere refresh of herladen van de exportlog de verdeling kan
+herstellen.
 
 ## Waarschuwingen
 

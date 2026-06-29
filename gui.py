@@ -50,12 +50,6 @@ from order_presets_db import (
     OrderPresetRule,
     OrderPresetsDB,
 )
-from spare_part_presets import (
-    SPARE_PART_PRESETS_DB_FILE,
-    SparePartPresetRule,
-    SparePartPresetsDB,
-    example_spare_part_preset_rules,
-)
 from pdf_workdossier_presets import (
     PDF_WORKDOSSIER_PRESETS_DB_FILE,
     PdfWorkDossierPreset,
@@ -115,6 +109,7 @@ from spare_parts import (
     collect_spare_part_items,
     is_spare_parts_production,
     match_spare_part_group_overrides,
+    spare_part_document_readiness,
     summarize_spare_part_warnings,
 )
 from progress import ProgressEvent
@@ -161,7 +156,6 @@ RUNTIME_DATA_FILES = [
     "delivery_addresses_db.json",
     "app_settings.json",
     "order_presets.json",
-    "spare_part_presets.json",
     "pdf_workdossier_presets.json",
 ]
 SUPPLIERS_TEMPLATE_FILE = "suppliers_template.csv"
@@ -10824,9 +10818,6 @@ def start_gui():
             self.client_db = ClientsDB.load(CLIENTS_DB_FILE)
             self.delivery_db = DeliveryAddressesDB.load(DELIVERY_DB_FILE)
             self.order_presets_db = OrderPresetsDB.load(ORDER_PRESETS_DB_FILE)
-            self.spare_part_presets_db = SparePartPresetsDB.load(
-                SPARE_PART_PRESETS_DB_FILE
-            )
             self.pdf_workdossier_presets_db = PdfWorkDossierPresetsDB.load(
                 PDF_WORKDOSSIER_PRESETS_DB_FILE
             )
@@ -11007,7 +10998,6 @@ def start_gui():
             self.bom_df: Optional["pd.DataFrame"] = None
             self.bom_source_path: Optional[str] = None
             self._spare_part_group_overrides: Dict[str, str] = {}
-            self._spare_part_preset_override_keys: set[str] = set()
             self.sel_frame: Optional["SupplierSelectionFrame"] = None
             self._last_supplier_selection_state: Optional[SupplierSelectionState] = None
             self._pdf_action_running = False
@@ -12006,29 +11996,17 @@ def start_gui():
         def _sync_spare_part_override_state(self, *, reset: bool = False) -> None:
             if reset or self.bom_df is None or getattr(self.bom_df, "empty", True):
                 self._spare_part_group_overrides.clear()
-                self._spare_part_preset_override_keys.clear()
                 return
             try:
                 items = collect_spare_part_items(self.bom_df)
             except Exception:
                 return
-            valid_keys = {item.identity_key for item in items}
             matched_overrides = match_spare_part_group_overrides(
                 items,
                 self._spare_part_group_overrides,
             )
             self._spare_part_group_overrides.clear()
             self._spare_part_group_overrides.update(matched_overrides)
-
-            preset_keys = {
-                _to_str(key).strip(): "__preset__"
-                for key in self._spare_part_preset_override_keys
-                if _to_str(key).strip()
-            }
-            matched_preset_keys = match_spare_part_group_overrides(items, preset_keys)
-            self._spare_part_preset_override_keys = {
-                key for key in matched_preset_keys if key in valid_keys
-            }
 
         def _spare_part_export_log_info(
             self,
@@ -12477,85 +12455,12 @@ def start_gui():
                 print(f"Kon spare-parts-lijst niet opbouwen: {exc}", file=sys.stderr)
                 return []
 
-        def _spare_parts_ready_checks(self, groups) -> List[Dict[str, object]]:
-            if not groups:
-                return [
-                    {
-                        "label": "Klaarleglijst",
-                        "ok": False,
-                        "detail": "geen spare parts gevonden",
-                    }
-                ]
-
-            full_group = next(
-                (group for group in groups if getattr(group, "is_full_list", False)),
-                groups[0],
-            )
-            items = list(getattr(full_group, "items", []) or [])
-            unassigned_count = sum(
-                getattr(group, "item_count", 0)
-                for group in groups
-                if getattr(group, "route_source", "") == "unassigned"
-            )
-            missing_route_count = sum(
-                1
-                for item in items
-                if not (
-                    _to_str(getattr(item, "supplier", "")).strip()
-                    or _to_str(getattr(item, "manufacturer", "")).strip()
-                )
-            )
-            missing_code_count = sum(
-                1
-                for item in items
-                if not (
-                    _to_str(getattr(item, "supplier_code", "")).strip()
-                    or _to_str(getattr(item, "manufacturer_code", "")).strip()
-                )
-            )
-            groups_without_supplier = sum(
-                1
-                for group in groups
-                if not getattr(group, "is_full_list", False)
-                and getattr(group, "route_source", "") != "supplier"
-                and getattr(group, "route_source", "") != "unassigned"
-                and not _to_str(getattr(group, "default_supplier", "")).strip()
-            )
-
-            return [
-                {
-                    "label": "Klaarleglijst",
-                    "ok": bool(items),
-                    "detail": "geen regels",
-                },
-                {
-                    "label": "Groepen",
-                    "ok": unassigned_count == 0,
-                    "detail": f"{unassigned_count} open",
-                },
-                {
-                    "label": "Leverancier/fabrikant",
-                    "ok": missing_route_count == 0,
-                    "detail": f"{missing_route_count} mist info",
-                },
-                {
-                    "label": "Codes",
-                    "ok": missing_code_count == 0,
-                    "detail": f"{missing_code_count} mist code",
-                },
-                {
-                    "label": "Groepsleverancier",
-                    "ok": groups_without_supplier == 0,
-                    "detail": f"{groups_without_supplier} kiezen in documentflow",
-                },
-            ]
-
         def _update_spare_parts_ready_summary(self, groups) -> None:
             ready_var = getattr(self, "spare_parts_ready_var", None)
             ready_label = getattr(self, "spare_parts_ready_label", None)
             if ready_var is None:
                 return
-            checks = self._spare_parts_ready_checks(groups)
+            checks = spare_part_document_readiness(groups)
             if not groups:
                 ready_var.set("Documentcontrole: geen spare parts gevonden.")
                 if ready_label is not None:
@@ -12910,7 +12815,6 @@ def start_gui():
             item_keys = self._spare_part_group_item_keys(group)
             for item_key in item_keys:
                 self._spare_part_group_overrides[item_key] = new_label
-                self._spare_part_preset_override_keys.discard(item_key)
             self.spare_parts_group_var.set(new_label)
             self._sync_spare_part_override_state()
             self._refresh_spare_parts_tab(preferred_group_label=new_label)
@@ -12944,7 +12848,6 @@ def start_gui():
             item_keys = self._spare_part_group_item_keys(group)
             for item_key in item_keys:
                 self._spare_part_group_overrides[item_key] = target_label
-                self._spare_part_preset_override_keys.discard(item_key)
             self.spare_parts_group_var.set(target_label)
             self._sync_spare_part_override_state()
             self._refresh_spare_parts_tab(preferred_group_label=target_label)
@@ -13149,7 +13052,6 @@ def start_gui():
             if reset_to_auto:
                 for item_key in selected_keys:
                     self._spare_part_group_overrides.pop(item_key, None)
-                    self._spare_part_preset_override_keys.discard(item_key)
                 action_text = "terug naar automatische groep gezet"
             else:
                 clean_label = _to_str(group_label).strip()
@@ -13162,7 +13064,6 @@ def start_gui():
                     return
                 for item_key in selected_keys:
                     self._spare_part_group_overrides[item_key] = clean_label
-                    self._spare_part_preset_override_keys.discard(item_key)
                 preferred_group_label = clean_label
                 action_text = f"naar '{clean_label}' verplaatst"
 
@@ -13205,542 +13106,8 @@ def start_gui():
                 print(f"Kon spare-parts-regels niet uitlezen: {exc}", file=sys.stderr)
                 return []
 
-        def _selected_spare_part_item(self):
-            selected_keys = set(self._selected_spare_part_item_keys())
-            if not selected_keys:
-                return None
-            for item in self._spare_part_items_for_current_bom():
-                if item.identity_key in selected_keys:
-                    return item
-            return None
-
-        def _apply_spare_part_presets(self, *, show_messages: bool = True) -> int:
-            from tkinter import messagebox
-
-            items = self._spare_part_items_for_current_bom()
-            if not items:
-                if show_messages:
-                    messagebox.showinfo(
-                        "Spare parts",
-                        "Geen spare parts gevonden in de huidige BOM.",
-                        parent=self,
-                    )
-                return 0
-
-            presets_db = getattr(self, "spare_part_presets_db", None)
-            previous_preset_keys = set(
-                getattr(self, "_spare_part_preset_override_keys", set()) or set()
-            )
-            for item_key in previous_preset_keys:
-                self._spare_part_group_overrides.pop(item_key, None)
-            self._spare_part_preset_override_keys.clear()
-            if presets_db is None or not getattr(presets_db, "rules", []):
-                if previous_preset_keys:
-                    self._sync_spare_part_override_state()
-                    self._refresh_spare_parts_tab()
-                    self._refresh_spare_parts_order_flow()
-                self.status_var.set("Geen spare-part presets beschikbaar.")
-                if show_messages:
-                    messagebox.showinfo(
-                        "Spare parts",
-                        "Er zijn nog geen spare-part presets.",
-                        parent=self,
-                    )
-                return 0
-
-            overrides = presets_db.overrides_for_items(items)
-            if not overrides:
-                self.status_var.set("Geen spare-part presets gematcht.")
-                if show_messages:
-                    messagebox.showinfo(
-                        "Spare parts",
-                        "Geen presetregel matcht de huidige spare parts.",
-                        parent=self,
-                    )
-                if previous_preset_keys:
-                    self._sync_spare_part_override_state()
-                    self._refresh_spare_parts_tab()
-                    self._refresh_spare_parts_order_flow()
-                return 0
-
-            self._spare_part_group_overrides.update(overrides)
-            self._spare_part_preset_override_keys.update(overrides.keys())
-            self._sync_spare_part_override_state()
-            self._refresh_spare_parts_tab()
-            self._refresh_spare_parts_order_flow()
-            self.status_var.set(
-                f"{len(overrides)} spare-part regel(s) via presets gegroepeerd"
-                + (
-                    f", {len(previous_preset_keys)} vorige presetresultaten vervangen."
-                    if previous_preset_keys
-                    else "."
-                )
-            )
-            return len(overrides)
-
-        def _spare_part_group_options(self) -> List[str]:
-            groups = self._spare_part_groups_for_current_bom()
-            values = [
-                group.label
-                for group in groups
-                if not getattr(group, "is_full_list", False) and group.label
-            ]
-            return list(dict.fromkeys(values))
-
-        def _open_spare_part_preset_dialog(
-            self,
-            rule: Optional[SparePartPresetRule] = None,
-            *,
-            old_name: str = "",
-            parent=None,
-            on_saved=None,
-        ) -> None:
-            from tkinter import messagebox
-
-            parent = parent or self
-            default_field = "Manufacturer"
-            default_pattern = ""
-            selected_item = None if rule is not None else self._selected_spare_part_item()
-            if selected_item is not None:
-                if selected_item.supplier:
-                    default_field = "Supplier"
-                    default_pattern = selected_item.supplier
-                elif selected_item.manufacturer:
-                    default_field = "Manufacturer"
-                    default_pattern = selected_item.manufacturer
-
-            default_group = self.spare_parts_group_var.get().strip()
-            if not default_group and selected_item is not None:
-                default_group = self._spare_part_group_overrides.get(
-                    selected_item.identity_key, ""
-                )
-            if not default_group:
-                default_group = "Electro"
-
-            win = tk.Toplevel(self)
-            win.title("Spare-part preset bewerken" if rule is not None else "Spare-part preset")
-            win.transient(parent)
-            win.grab_set()
-            win.columnconfigure(1, weight=1)
-
-            field_labels = {
-                "Supplier": "supplier",
-                "Supplier code": "supplier_code",
-                "Manufacturer": "manufacturer",
-                "Manufacturer code": "manufacturer_code",
-            }
-            match_labels = {
-                "Exact": "exact",
-                "Bevat": "contains",
-                "Begint met": "startswith",
-            }
-            field_values = {value: label for label, value in field_labels.items()}
-            match_values = {value: label for label, value in match_labels.items()}
-
-            if rule is not None:
-                initial_name = rule.name
-                initial_field = field_values.get(rule.match_field, "Manufacturer")
-                initial_match = match_values.get(rule.match_type, "Exact")
-                initial_pattern = rule.pattern
-                initial_target = rule.target_group
-                initial_priority = str(rule.priority)
-                initial_enabled = 1 if rule.enabled else 0
-            else:
-                initial_name = ""
-                initial_field = default_field
-                initial_match = "Exact"
-                initial_pattern = default_pattern
-                initial_target = default_group
-                initial_priority = "100"
-                initial_enabled = 1
-
-            name_var = tk.StringVar(value=initial_name)
-            field_var = tk.StringVar(value=initial_field)
-            match_var = tk.StringVar(value=initial_match)
-            pattern_var = tk.StringVar(value=initial_pattern)
-            target_var = tk.StringVar(value=initial_target)
-            priority_var = tk.StringVar(value=initial_priority)
-            enabled_var = tk.IntVar(value=initial_enabled)
-
-            def row(label: str, widget: tk.Widget, row_index: int) -> None:
-                tk.Label(win, text=label).grid(
-                    row=row_index, column=0, sticky="e", padx=8, pady=4
-                )
-                widget.grid(row=row_index, column=1, sticky="ew", padx=8, pady=4)
-
-            name_entry = tk.Entry(win, textvariable=name_var, width=38)
-            row("Naam:", name_entry, 0)
-            field_combo = ttk.Combobox(
-                win,
-                textvariable=field_var,
-                values=tuple(field_labels.keys()),
-                state="readonly",
-                width=24,
-            )
-            row("Matchveld:", field_combo, 1)
-            match_combo = ttk.Combobox(
-                win,
-                textvariable=match_var,
-                values=tuple(match_labels.keys()),
-                state="readonly",
-                width=24,
-            )
-            row("Matchtype:", match_combo, 2)
-            pattern_entry = tk.Entry(win, textvariable=pattern_var, width=38)
-            row("Waarde:", pattern_entry, 3)
-            target_combo = ttk.Combobox(
-                win,
-                textvariable=target_var,
-                values=tuple(self._spare_part_group_options()),
-                state="normal",
-                width=28,
-            )
-            row("Doelgroep:", target_combo, 4)
-            priority_entry = tk.Entry(win, textvariable=priority_var, width=10)
-            row("Prioriteit:", priority_entry, 5)
-            tk.Checkbutton(win, text="Actief", variable=enabled_var).grid(
-                row=6, column=1, sticky="w", padx=8, pady=(2, 6)
-            )
-
-            def _sync_name(*_args) -> None:
-                if name_var.get().strip():
-                    return
-                pattern = pattern_var.get().strip()
-                target = target_var.get().strip()
-                field = field_var.get().strip()
-                if pattern and target:
-                    name_var.set(f"{field} {pattern} -> {target}")
-
-            if rule is None:
-                pattern_var.trace_add("write", _sync_name)
-                target_var.trace_add("write", _sync_name)
-                _sync_name()
-
-            buttons = tk.Frame(win)
-            buttons.grid(row=7, column=0, columnspan=2, sticky="e", padx=8, pady=8)
-
-            def _save() -> None:
-                name = name_var.get().strip()
-                pattern = pattern_var.get().strip()
-                target = target_var.get().strip()
-                if not name or not pattern or not target:
-                    messagebox.showwarning(
-                        "Spare-part preset",
-                        "Vul naam, waarde en doelgroep in.",
-                        parent=win,
-                    )
-                    return
-                try:
-                    priority = int(priority_var.get().strip() or "100")
-                except ValueError:
-                    messagebox.showwarning(
-                        "Spare-part preset",
-                        "Prioriteit moet een geheel getal zijn.",
-                        parent=win,
-                    )
-                    return
-                replace_name = old_name or (rule.name if rule is not None else "")
-                existing = self.spare_part_presets_db.get(name)
-                if (
-                    existing is not None
-                    and (
-                        not replace_name
-                        or name.casefold() != replace_name.casefold()
-                    )
-                ):
-                    messagebox.showwarning(
-                        "Spare-part preset",
-                        f"Er bestaat al een preset met de naam '{name}'.",
-                        parent=win,
-                    )
-                    return
-                preset_rule = SparePartPresetRule(
-                    name=name,
-                    enabled=bool(enabled_var.get()),
-                    priority=priority,
-                    match_field=field_labels.get(field_var.get(), "manufacturer"),
-                    match_type=match_labels.get(match_var.get(), "exact"),
-                    pattern=pattern,
-                    target_group=target,
-                )
-                self.spare_part_presets_db.upsert(
-                    preset_rule,
-                    old_name=replace_name or None,
-                )
-                self.spare_part_presets_db.save(SPARE_PART_PRESETS_DB_FILE)
-                win.destroy()
-                self.status_var.set(f"Spare-part preset opgeslagen: {preset_rule.name}.")
-                if callable(on_saved):
-                    on_saved(preset_rule)
-                else:
-                    self._apply_spare_part_presets()
-
-            tk.Button(buttons, text="Opslaan", command=_save).pack(side="left", padx=4)
-            tk.Button(buttons, text="Annuleer", command=win.destroy).pack(
-                side="left", padx=4
-            )
-
-            _place_window_near_parent(win, parent)
-            win.after_idle(name_entry.focus_set)
-
         def _open_spare_parts_quick_manual(self) -> None:
             self._show_quick_start("spare_parts")
-
-        def _add_spare_part_example_presets(
-            self,
-            *,
-            parent=None,
-            on_added=None,
-        ) -> int:
-            from tkinter import messagebox
-
-            parent = parent or self
-            db = getattr(self, "spare_part_presets_db", None)
-            if db is None:
-                self.spare_part_presets_db = SparePartPresetsDB()
-                db = self.spare_part_presets_db
-
-            added: list[SparePartPresetRule] = []
-            for rule in example_spare_part_preset_rules():
-                if db.get(rule.name) is not None:
-                    continue
-                db.upsert(rule)
-                added.append(rule)
-
-            if not added:
-                messagebox.showinfo(
-                    "Spare-part voorbeelden",
-                    "De voorbeeldpresets staan al in de lijst.",
-                    parent=parent,
-                )
-                return 0
-
-            db.save(SPARE_PART_PRESETS_DB_FILE)
-            if callable(on_added):
-                on_added()
-            self.status_var.set(
-                f"{len(added)} voorbeeldpreset(s) toegevoegd. Ze staan standaard uit."
-            )
-            messagebox.showinfo(
-                "Spare-part voorbeelden",
-                "Voorbeeldpresets toegevoegd.\n\n"
-                "Ze staan standaard uit, zodat ze niets toepassen tot je ze bewust "
-                "aanzet of bewerkt.",
-                parent=parent,
-            )
-            return len(added)
-
-        def _open_spare_part_presets_manager(self) -> None:
-            from tkinter import messagebox
-
-            db = getattr(self, "spare_part_presets_db", None)
-            if db is None:
-                self.spare_part_presets_db = SparePartPresetsDB()
-                db = self.spare_part_presets_db
-
-            win = tk.Toplevel(self)
-            win.title("Spare-part presets beheren")
-            win.transient(self)
-            win.geometry("900x430")
-            win.columnconfigure(0, weight=1)
-            win.rowconfigure(0, weight=1)
-
-            columns = ("status", "name", "match", "target", "priority")
-            tree = ttk.Treeview(win, columns=columns, show="headings", selectmode="browse")
-            headers = {
-                "status": "Status",
-                "name": "Naam",
-                "match": "Match",
-                "target": "Doelgroep",
-                "priority": "Prio",
-            }
-            widths = {
-                "status": 80,
-                "name": 220,
-                "match": 310,
-                "target": 160,
-                "priority": 80,
-            }
-            for column in columns:
-                anchor = "center" if column == "priority" else "w"
-                tree.heading(column, text=headers[column], anchor=anchor)
-                tree.column(
-                    column,
-                    width=widths[column],
-                    anchor=anchor,
-                    stretch=column != "priority",
-                )
-            tree.grid(row=0, column=0, sticky="nsew", padx=(12, 0), pady=12)
-            scroll = ttk.Scrollbar(win, orient="vertical", command=tree.yview)
-            scroll.grid(row=0, column=1, sticky="ns", pady=12)
-            tree.configure(yscrollcommand=scroll.set)
-
-            rule_names_by_iid: Dict[str, str] = {}
-            status_var = tk.StringVar(value="")
-
-            field_display = {
-                "supplier": "Supplier",
-                "supplier_code": "Supplier code",
-                "manufacturer": "Manufacturer",
-                "manufacturer_code": "Manufacturer code",
-            }
-            match_display = {
-                "exact": "is",
-                "contains": "bevat",
-                "startswith": "begint met",
-            }
-
-            def _match_text(preset_rule: SparePartPresetRule) -> str:
-                field = field_display.get(preset_rule.match_field, preset_rule.match_field)
-                match_type = match_display.get(
-                    preset_rule.match_type,
-                    preset_rule.match_type,
-                )
-                return f"{field} {match_type} {preset_rule.pattern}"
-
-            def _refresh(select_name: str = "") -> None:
-                rule_names_by_iid.clear()
-                for iid in tree.get_children():
-                    tree.delete(iid)
-                for index, preset_rule in enumerate(db.rules_sorted()):
-                    iid = f"preset_{index}"
-                    rule_names_by_iid[iid] = preset_rule.name
-                    tree.insert(
-                        "",
-                        "end",
-                        iid=iid,
-                        values=(
-                            "Actief" if preset_rule.enabled else "Uit",
-                            preset_rule.name,
-                            _match_text(preset_rule),
-                            preset_rule.target_group,
-                            preset_rule.priority,
-                        ),
-                    )
-                    if select_name and preset_rule.name.casefold() == select_name.casefold():
-                        tree.selection_set(iid)
-                        tree.focus(iid)
-                if not tree.selection() and tree.get_children():
-                    first = tree.get_children()[0]
-                    tree.selection_set(first)
-                    tree.focus(first)
-                count = len(db.rules)
-                status_var.set(f"{count} spare-part presetregel(s).")
-
-            def _selected_rule() -> Optional[SparePartPresetRule]:
-                selected = tree.selection()
-                if not selected:
-                    return None
-                name = rule_names_by_iid.get(selected[0], "")
-                return db.get(name)
-
-            def _after_saved(saved_rule: SparePartPresetRule) -> None:
-                _refresh(saved_rule.name)
-                self._apply_spare_part_presets(show_messages=False)
-
-            def _new_rule() -> None:
-                self._open_spare_part_preset_dialog(parent=win, on_saved=_after_saved)
-
-            def _edit_rule() -> None:
-                selected_rule = _selected_rule()
-                if selected_rule is None:
-                    messagebox.showinfo(
-                        "Spare-part presets",
-                        "Selecteer eerst een presetregel.",
-                        parent=win,
-                    )
-                    return
-                self._open_spare_part_preset_dialog(
-                    selected_rule,
-                    old_name=selected_rule.name,
-                    parent=win,
-                    on_saved=_after_saved,
-                )
-
-            def _toggle_rule() -> None:
-                selected_rule = _selected_rule()
-                if selected_rule is None:
-                    messagebox.showinfo(
-                        "Spare-part presets",
-                        "Selecteer eerst een presetregel.",
-                        parent=win,
-                    )
-                    return
-                updated = SparePartPresetRule.from_any(selected_rule)
-                updated.enabled = not selected_rule.enabled
-                db.upsert(updated, old_name=selected_rule.name)
-                db.save(SPARE_PART_PRESETS_DB_FILE)
-                _refresh(updated.name)
-                self._apply_spare_part_presets(show_messages=False)
-                self.status_var.set(
-                    f"Spare-part preset {'geactiveerd' if updated.enabled else 'uitgezet'}: "
-                    f"{updated.name}."
-                )
-
-            def _delete_rule() -> None:
-                selected_rule = _selected_rule()
-                if selected_rule is None:
-                    messagebox.showinfo(
-                        "Spare-part presets",
-                        "Selecteer eerst een presetregel.",
-                        parent=win,
-                    )
-                    return
-                if not messagebox.askyesno(
-                    "Preset verwijderen",
-                    f"Spare-part preset '{selected_rule.name}' verwijderen?",
-                    parent=win,
-                ):
-                    return
-                if db.remove(selected_rule.name):
-                    db.save(SPARE_PART_PRESETS_DB_FILE)
-                    _refresh()
-                    self._apply_spare_part_presets(show_messages=False)
-                    self.status_var.set(
-                        f"Spare-part preset verwijderd: {selected_rule.name}."
-                    )
-
-            def _apply_presets_from_manager() -> None:
-                count = self._apply_spare_part_presets(show_messages=False)
-                self.status_var.set(
-                    f"Spare-part presets toegepast: {count} regel(s) gegroepeerd."
-                )
-
-            def _add_examples_from_manager() -> None:
-                self._add_spare_part_example_presets(parent=win, on_added=_refresh)
-
-            tree.bind("<Double-1>", lambda _event: _edit_rule())
-
-            buttons = tk.Frame(win)
-            buttons.grid(row=1, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 12))
-            buttons.grid_columnconfigure(0, weight=1)
-            tk.Label(buttons, textvariable=status_var, anchor="w").grid(
-                row=0, column=0, sticky="w"
-            )
-            tk.Button(buttons, text="Nieuw", command=_new_rule).grid(
-                row=0, column=1, padx=(6, 0)
-            )
-            tk.Button(buttons, text="Bewerk", command=_edit_rule).grid(
-                row=0, column=2, padx=(6, 0)
-            )
-            tk.Button(buttons, text="Aan/uit", command=_toggle_rule).grid(
-                row=0, column=3, padx=(6, 0)
-            )
-            tk.Button(buttons, text="Verwijder", command=_delete_rule).grid(
-                row=0, column=4, padx=(6, 0)
-            )
-            tk.Button(buttons, text="Voorbeelden", command=_add_examples_from_manager).grid(
-                row=0, column=5, padx=(12, 0)
-            )
-            tk.Button(buttons, text="Toepassen", command=_apply_presets_from_manager).grid(
-                row=0, column=6, padx=(6, 0)
-            )
-            tk.Button(buttons, text="Sluiten", command=win.destroy).grid(
-                row=0, column=7, padx=(6, 0)
-            )
-
-            _refresh()
-            _place_window_near_parent(win, self)
 
         def _open_spare_parts_order_flow(self) -> None:
             from tkinter import messagebox
@@ -13755,7 +13122,7 @@ def start_gui():
                     parent=self,
                 )
                 return
-            checks = self._spare_parts_ready_checks(groups)
+            checks = spare_part_document_readiness(groups)
             open_checks = [check for check in checks if not bool(check.get("ok"))]
             if open_checks:
                 lines = [
