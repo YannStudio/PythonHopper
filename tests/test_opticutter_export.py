@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from opticutter import analyse_profiles
-from orders import copy_per_production_and_orders
+from orders import copy_per_production_and_orders, make_opticutter_selection_key
 from suppliers_db import SuppliersDB
 
 
@@ -119,3 +119,63 @@ def test_opticutter_files_written(tmp_path):
     assert not (
         prod1_dir / f"Bestelbon_brutemateriaal_Prod1_{today}.xlsx"
     ).exists(), "Overzichtsbestand Bestelbon_brutemateriaal zou niet mogen bestaan"
+
+
+def test_opticutter_stock_choice_skips_raw_material_order(tmp_path):
+    src = tmp_path / "src"
+    dest = tmp_path / "dest"
+    src.mkdir()
+    dest.mkdir()
+
+    df = pd.DataFrame(
+        [
+            {
+                "PartNumber": "P-001",
+                "Description": "Kort stockstuk",
+                "Production": "Prod1",
+                "Profile": "Koker-20",
+                "Length profile": 120,
+                "Materiaal": "Staal",
+                "Aantal": 4,
+                "Gewicht": 0.2,
+            },
+        ]
+    )
+
+    analysis = analyse_profiles(df)
+    choices = {profile.key: "stock" for profile in analysis.profiles}
+
+    _copied, chosen = copy_per_production_and_orders(
+        str(src),
+        str(dest),
+        df,
+        [".pdf"],
+        SuppliersDB([]),
+        {},
+        {},
+        {},
+        False,
+        opticutter_analysis=analysis,
+        opticutter_choices=choices,
+        opticutter_override_map={"Prod1": "SteelCo"},
+        export_bom=False,
+    )
+
+    assert make_opticutter_selection_key("Prod1") not in chosen
+
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    prod_dir = dest / "Prod1"
+    scenario_path = prod_dir / f"Opticutter_Prod1_{today}.xlsx"
+    assert scenario_path.exists(), "Opticutter scenario workbook ontbreekt"
+
+    scenario_df = pd.read_excel(scenario_path, sheet_name="Scenario")
+    assert scenario_df.loc[0, "Keuze"] == "Op stock - niet bestellen"
+    assert "Reeds op stock" in scenario_df.loc[0, "Opmerking"]
+
+    workbook = openpyxl.load_workbook(scenario_path)
+    assert "Bestelling" not in workbook.sheetnames
+    assert not [
+        path
+        for path in prod_dir.glob("*.xlsx")
+        if path.name.startswith("Bestelbon") and "Brutemateriaal" in path.name
+    ]

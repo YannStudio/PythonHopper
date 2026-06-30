@@ -77,6 +77,7 @@ from orders import (
     combine_workdossier_pdf_from_source,
     build_pdf_workdossier_plan,
     PdfWorkDossierPlanItem,
+    _generated_order_interleaf_productions,
     find_related_bom_exports,
     make_bom_export_filename,
     _prefix_for_doc_type,
@@ -5124,7 +5125,10 @@ def start_gui():
                 )
 
                 comp = (self.opticutter_details or {}).get(prod)
-                if comp and getattr(comp, "selection_count", 0):
+                if comp and (
+                    getattr(comp, "has_valid_bars", False)
+                    or bool(getattr(comp, "order_rows", []))
+                ):
                     summary_bits: List[str] = []
                     if getattr(comp, "total_bars", 0):
                         summary_bits.append(f"{comp.total_bars} staven")
@@ -14227,7 +14231,7 @@ def start_gui():
             selection_scenarios = {}
             for profile in analysis.profiles:
                 selection_scenarios[profile.key] = profile.scenarios
-                available_values = set(profile.scenarios.keys()) | {"input"}
+                available_values = set(profile.scenarios.keys()) | {"input", "stock"}
                 previous_choice = self.opticutter_profile_selection_choice.get(
                     profile.key
                 )
@@ -16394,6 +16398,7 @@ def start_gui():
                 selection_scenarios[profile.key] = scenario_map
 
                 option_items: List[tuple[str, str]] = [
+                    ("stock", "Op stock - niet bestellen"),
                     ("input", "Input lengte – per stuk zagen"),
                     (
                         "6000",
@@ -18300,6 +18305,13 @@ def start_gui():
                     if _to_str(item.role).strip().lower() == "order"
                     and _to_str(item.production).strip()
                 }
+                order_productions.update(
+                    _generated_order_interleaf_productions(
+                        generated_order_documents,
+                        order_document_root,
+                        include_offers=bool(options.get("include_offers")),
+                    )
+                )
                 missing_orders = sorted(
                     drawing_productions - order_productions,
                     key=lambda value: value.casefold(),

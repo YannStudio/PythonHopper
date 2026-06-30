@@ -76,8 +76,12 @@ class OpticutterSelection:
         return self.choice == "input"
 
     @property
+    def is_stock(self) -> bool:
+        return self.choice == "stock"
+
+    @property
     def is_valid(self) -> bool:
-        if self.result is None or self.is_manual_input:
+        if self.result is None or self.is_manual_input or self.is_stock:
             return False
         if self.result.dropped_pieces:
             return False
@@ -430,6 +434,8 @@ def _choice_label(
     if choice.startswith("manual:"):
         length = choice.split(":", 1)[1]
         return f"Aangepaste lengte ({length} mm)"
+    if choice == "stock":
+        return "Op stock - niet bestellen"
     if choice == "input":
         return "Input lengte – per stuk zagen"
     return choice
@@ -460,7 +466,7 @@ def prepare_opticutter_export(
     productions: Dict[str, OpticutterProductionExport] = {}
 
     for profile in analysis.profiles:
-        allowed = set(profile.scenarios.keys()) | {"input"}
+        allowed = set(profile.scenarios.keys()) | {"input", "stock"}
         choice = selection_map.get(profile.key, profile.best_choice)
         if choice not in allowed:
             choice = profile.best_choice

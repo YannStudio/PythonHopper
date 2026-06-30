@@ -10,6 +10,7 @@ from orders import (
     combine_pdfs_per_production,
     combine_pdfs_from_source,
     combine_workdossier_pdf_from_source,
+    _generated_order_interleaf_productions,
     make_finish_selection_key,
     make_production_selection_key,
     make_spare_part_selection_key,
@@ -426,6 +427,101 @@ def test_workdossier_can_insert_order_documents_before_production(tmp_path):
         91,
         90,
     ]
+
+
+def test_workdossier_inserts_generated_compact_order_documents(tmp_path):
+    source = tmp_path / "src"
+    order_root = tmp_path / "pdf-dossier-docs"
+    dest = tmp_path / "out"
+    source.mkdir()
+    order_root.mkdir()
+    dest.mkdir()
+
+    _blank_pdf(source / "LAS-1.pdf", width=90)
+    (order_root / "Laser").mkdir()
+    _blank_pdf(order_root / "Laser" / "BB123.pdf", width=81)
+
+    bom_df = pd.DataFrame(
+        [{"PartNumber": "LAS-1", "Production": "Laser"}]
+    )
+    generated_documents = [
+        {
+            "path": str(Path("Laser") / "BB123.pdf"),
+            "kind": "order",
+            "format": "pdf",
+            "selection_key": make_production_selection_key("Laser"),
+            "context_kind": "Productie",
+            "context_label": "Laser",
+            "doc_type": "Bestelbon",
+            "doc_number": "BB123",
+        }
+    ]
+
+    result = combine_workdossier_pdf_from_source(
+        str(source),
+        bom_df,
+        str(dest),
+        "2023-01-01",
+        include_order_documents=True,
+        order_document_root=str(order_root),
+        generated_order_documents=generated_documents,
+    )
+
+    reader = PdfReader(result.output_files[0])
+    assert [float(page.mediabox.width) for page in reader.pages] == [81, 90]
+
+
+def test_workdossier_grouped_compact_order_document_covers_each_production_once(tmp_path):
+    source = tmp_path / "src"
+    order_root = tmp_path / "pdf-dossier-docs"
+    source.mkdir()
+    order_root.mkdir()
+
+    _blank_pdf(source / "LAS-1.pdf", width=90)
+    _blank_pdf(source / "PLA-1.pdf", width=100)
+    (order_root / "Laser").mkdir()
+    _blank_pdf(order_root / "Laser" / "BB200.pdf", width=81)
+
+    bom_df = pd.DataFrame(
+        [
+            {"PartNumber": "LAS-1", "Production": "Laser"},
+            {"PartNumber": "PLA-1", "Production": "Plasma"},
+        ]
+    )
+    generated_documents = [
+        {
+            "path": str(Path("Laser") / "BB200.pdf"),
+            "kind": "order",
+            "format": "pdf",
+            "selection_key": make_production_selection_key("Laser"),
+            "selection_keys": [
+                make_production_selection_key("Laser"),
+                make_production_selection_key("Plasma"),
+            ],
+            "context_kind": "Productie",
+            "context_label": "Laser",
+            "doc_type": "Bestelbon",
+            "doc_number": "BB200",
+        }
+    ]
+
+    plan = build_pdf_workdossier_plan(
+        str(source),
+        bom_df,
+        include_order_documents=True,
+        order_document_root=str(order_root),
+        generated_order_documents=generated_documents,
+    )
+
+    assert [Path(item.path).name for item in plan] == [
+        "BB200.pdf",
+        "LAS-1.pdf",
+        "PLA-1.pdf",
+    ]
+    assert _generated_order_interleaf_productions(
+        generated_documents,
+        str(order_root),
+    ) == {"Laser", "Plasma"}
 
 
 def test_workdossier_skips_spare_part_full_list_without_option(tmp_path):

@@ -243,6 +243,12 @@ def _wrap_words_to_lines(
 
 
 _BOM_STATUS_COLUMNS: Tuple[str, ...] = ("Bestanden gevonden", "Status", "Link")
+_BOM_ORDER_AUDIT_COLUMNS: Tuple[str, ...] = (
+    "Besteld bij",
+    "Bon type",
+    "Bon nummer",
+    "EN1090 certificaat besteld",
+)
 _BOM_EXPORT_BASE_COLUMNS: Tuple[str, ...] = (
     "PartNumber",
     "Description",
@@ -259,6 +265,7 @@ _BOM_EXPORT_BASE_COLUMNS: Tuple[str, ...] = (
     "RAL color",
     "Oppervlakte",
     "Gewicht",
+    *_BOM_ORDER_AUDIT_COLUMNS,
 )
 
 
@@ -320,6 +327,7 @@ class OrderDocumentSection:
     context_kind: str
     items: List[Dict[str, object]]
     selection_key: str = ""
+    row_indices: List[object] = field(default_factory=list)
     total_surface_m2: float | None = None
     total_weight_kg: float | None = None
     column_layout: Optional[List[Dict[str, object]]] = None
@@ -341,6 +349,7 @@ class OrderDocumentCandidate:
     doc_num_display: str
     order_remark: str | None
     items: List[Dict[str, object]]
+    row_indices: List[object] = field(default_factory=list)
     total_surface_m2: float | None = None
     total_weight_kg: float | None = None
     column_layout: Optional[List[Dict[str, object]]] = None
@@ -360,6 +369,17 @@ class OrderDocumentJob:
     delivery: DeliveryAddress | None
     order_remark: str | None
     sections: List[OrderDocumentSection] = field(default_factory=list)
+    en1090_required: bool = False
+
+
+@dataclass(slots=True, frozen=True)
+class BomOrderAuditEntry:
+    """Order metadata projected back onto the exported BOM rows."""
+
+    context: str
+    supplier: str
+    doc_type: str
+    doc_number: str
     en1090_required: bool = False
 
 
@@ -1095,6 +1115,172 @@ def _create_combined_output_dir(
     return candidate
 
 
+def _bom_row_audit_key(index: object) -> str:
+    if index is None:
+        return ""
+    return _to_str(index).strip()
+
+
+def _bom_row_indices_from_rows(rows: Sequence[object]) -> List[object]:
+    indices: List[object] = []
+    for row in rows:
+        index = getattr(row, "name", None)
+        if index is not None:
+            indices.append(index)
+    return indices
+
+
+def _spare_part_row_index_from_identity_key(value: object) -> object | None:
+    text = _to_str(value).strip()
+    prefix = "sparepart:"
+    if not text.startswith(prefix):
+        return None
+    row_index = text[len(prefix) :].split("|", 1)[0].strip()
+    return row_index if row_index else None
+
+
+def _opticutter_row_match_key(row: Mapping[str, object]) -> Tuple[str, str, str]:
+    material = row.get("Material", row.get("Materiaal", ""))
+    return (
+        _to_str(row.get("Profile")).strip(),
+        _to_str(material).strip(),
+        _to_str(row.get("Production")).strip(),
+    )
+
+
+def _opticutter_order_row_indices(
+    rows: Sequence[Mapping[str, object]],
+    opticutter_prod: OpticutterProductionExport | None,
+) -> List[object]:
+    if opticutter_prod is None:
+        return []
+    order_keys = {
+        selection.profile.key
+        for selection in opticutter_prod.selections
+        if _to_str(selection.choice).strip() != "stock"
+    }
+    if not order_keys:
+        return []
+    indices: List[object] = []
+    for row in rows:
+        if _opticutter_row_match_key(row) not in order_keys:
+            continue
+        index = getattr(row, "name", None)
+        if index is not None:
+            indices.append(index)
+    return indices
+
+
+def _clean_bom_audit_supplier(value: object) -> str:
+    text = _to_str(value).strip()
+    if text in {"", "Onbekend", NO_SUPPLIER_PLACEHOLDER}:
+        return ""
+    return text
+
+
+def _bom_audit_context_for_section(section: OrderDocumentSection) -> str:
+    kind = _to_str(section.context_kind).strip()
+    normalized = kind.casefold()
+    if normalized.startswith("product"):
+        return "Productie"
+    if normalized.startswith("afwerking"):
+        return "Afwerking"
+    if normalized.startswith("spare"):
+        return "Spare parts"
+    if normalized.startswith("brute"):
+        return "Brutemateriaal"
+    return kind or "Bestelling"
+
+
+def _append_bom_order_audit(
+    audit_by_row: Dict[str, List[BomOrderAuditEntry]],
+    row_indices: Sequence[object],
+    *,
+    context: str,
+    supplier: object,
+    doc_type: object,
+    doc_number: object,
+    en1090_required: bool = False,
+) -> None:
+    clean_context = _to_str(context).strip() or "Bestelling"
+    entry = BomOrderAuditEntry(
+        context=clean_context,
+        supplier=_clean_bom_audit_supplier(supplier),
+        doc_type=_to_str(doc_type).strip(),
+        doc_number=_to_str(doc_number).strip(),
+        en1090_required=bool(en1090_required),
+    )
+    for row_index in row_indices:
+        key = _bom_row_audit_key(row_index)
+        if not key:
+            continue
+        entries = audit_by_row[key]
+        if entry not in entries:
+            entries.append(entry)
+
+
+def _format_bom_audit_values(
+    entries: Sequence[BomOrderAuditEntry],
+    attr: str,
+) -> str:
+    values: List[Tuple[str, str]] = []
+    seen_pairs: set[Tuple[str, str]] = set()
+    unique_values: List[str] = []
+    seen_values: set[str] = set()
+    for entry in entries:
+        value = _to_str(getattr(entry, attr, "")).strip()
+        if not value:
+            continue
+        pair = (entry.context, value)
+        if pair in seen_pairs:
+            continue
+        seen_pairs.add(pair)
+        values.append(pair)
+        if value not in seen_values:
+            seen_values.add(value)
+            unique_values.append(value)
+
+    if not values:
+        return ""
+    if len(unique_values) == 1:
+        return unique_values[0]
+    return "; ".join(f"{context}: {value}" for context, value in values)
+
+
+def _apply_bom_order_audit_columns(
+    bom_df: pd.DataFrame,
+    audit_by_row: Mapping[str, Sequence[BomOrderAuditEntry]],
+) -> pd.DataFrame:
+    export_df = bom_df.copy()
+    for column in _BOM_ORDER_AUDIT_COLUMNS:
+        if column == "EN1090 certificaat besteld":
+            export_df[column] = "nee"
+        else:
+            export_df[column] = ""
+
+    for row_index in export_df.index:
+        key = _bom_row_audit_key(row_index)
+        entries = list(audit_by_row.get(key, []) or [])
+        if not entries:
+            continue
+        export_df.at[row_index, "Besteld bij"] = _format_bom_audit_values(
+            entries,
+            "supplier",
+        )
+        export_df.at[row_index, "Bon type"] = _format_bom_audit_values(
+            entries,
+            "doc_type",
+        )
+        export_df.at[row_index, "Bon nummer"] = _format_bom_audit_values(
+            entries,
+            "doc_number",
+        )
+        export_df.at[row_index, "EN1090 certificaat besteld"] = (
+            "ja" if any(entry.en1090_required for entry in entries) else "nee"
+        )
+    return export_df
+
+
 def _export_bom_workbook(bom_df: pd.DataFrame, dest: str, filename: str) -> str:
     """Write the processed BOM dataframe to an Excel workbook."""
 
@@ -1102,6 +1288,11 @@ def _export_bom_workbook(bom_df: pd.DataFrame, dest: str, filename: str) -> str:
         filename = f"{filename}.xlsx"
     target_path = os.path.join(dest, filename)
     export_df = bom_df.reset_index(drop=True).copy()
+    for column in _BOM_ORDER_AUDIT_COLUMNS:
+        if column not in export_df.columns:
+            export_df[column] = (
+                "nee" if column == "EN1090 certificaat besteld" else ""
+            )
     # Drop status-related columns that are only useful inside the app.
     to_drop = [col for col in _BOM_STATUS_COLUMNS if col in export_df.columns]
     if to_drop:
@@ -1718,6 +1909,7 @@ def _build_grouped_document_jobs(
                         context_kind=member.context_kind,
                         items=list(member.items),
                         selection_key=member.selection_key,
+                        row_indices=list(member.row_indices),
                         total_surface_m2=member.total_surface_m2,
                         total_weight_kg=member.total_weight_kg,
                         column_layout=(
@@ -2003,7 +2195,9 @@ def _compute_opticutter_order_exports(
         stock_length = selection.stock_length_mm
 
         remark_lines: List[str] = []
-        if selection.choice == "input":
+        if selection.choice == "stock":
+            remark_lines.append("Reeds op stock - niet bestellen.")
+        elif selection.choice == "input":
             remark_lines.append("Per stuk zagen (inputlengte).")
         elif result is None:
             remark_lines.append("Geen scenario berekend.")
@@ -2060,6 +2254,9 @@ def _compute_opticutter_order_exports(
                     "Lengte (mm)": piece.length_mm,
                 }
             )
+
+        if selection.choice == "stock":
+            continue
 
         if selection.choice == "input":
             order_remark_text = "Handmatig zagen per stuk."
@@ -4795,6 +4992,8 @@ def copy_per_production_and_orders(
         if clean and clean not in document_status_messages:
             document_status_messages.append(clean)
 
+    bom_order_audit_by_row: Dict[str, List[BomOrderAuditEntry]] = defaultdict(list)
+
     def _report_export_path(path: str) -> str:
         try:
             relative = os.path.relpath(os.path.abspath(path), dest_abs)
@@ -5046,6 +5245,7 @@ def copy_per_production_and_orders(
                 doc_num_display=doc_num_display,
                 order_remark=order_remark or None,
                 items=items,
+                row_indices=_bom_row_indices_from_rows(rows),
                 total_surface_m2=total_surface_m2,
                 total_weight_kg=total_weight_kg,
                 column_layout=column_layout,
@@ -5055,6 +5255,7 @@ def copy_per_production_and_orders(
 
         opticutter_order_items: List[Dict[str, object]] = []
         opticutter_total_weight: float | None = None
+        opticutter_has_order_request = False
         opticutter_has_selection = bool(
             opticutter_prod is not None and opticutter_prod.selections
         )
@@ -5140,8 +5341,11 @@ def copy_per_production_and_orders(
 
             opticutter_order_items = list(comp.raw_items)
             opticutter_total_weight = comp.total_weight_kg
+            opticutter_has_order_request = bool(
+                opticutter_order_items
+            ) or bool(should_write_order_overview)
 
-        if opticutter_has_selection and opticutter_allowed:
+        if opticutter_has_selection and opticutter_allowed and opticutter_has_order_request:
             opticutter_sel_key = make_opticutter_selection_key(prod)
             opticutter_supplier = pick_supplier_for_opticutter(
                 prod, db, opticutter_override_map, suppliers_sorted=suppliers_sorted
@@ -5269,6 +5473,15 @@ def copy_per_production_and_orders(
                     doc_type=opticutter_doc_type,
                     doc_number=opticutter_doc_num_display or "",
                     supplier=opticutter_supplier_name,
+                )
+                _append_bom_order_audit(
+                    bom_order_audit_by_row,
+                    _opticutter_order_row_indices(rows, opticutter_prod),
+                    context="Brutemateriaal",
+                    supplier=opticutter_supplier_name,
+                    doc_type=opticutter_doc_type,
+                    doc_number=opticutter_doc_num_display or "",
+                    en1090_required=opticutter_en1090,
                 )
 
                 opticutter_pdf_requested = f"{opticutter_document_base}.pdf"
@@ -5573,6 +5786,7 @@ def copy_per_production_and_orders(
                     doc_num_display=doc_num_display,
                     order_remark=finish_remark or None,
                     items=items,
+                    row_indices=_bom_row_indices_from_rows(rows),
                     total_surface_m2=total_surface_m2,
                     total_weight_kg=total_weight_kg,
                     column_layout=column_layout,
@@ -5625,9 +5839,14 @@ def copy_per_production_and_orders(
 
             raw_items = group.get("items") or []
             items: List[Dict[str, object]] = []
+            spare_row_indices: List[object] = []
             for raw_item in raw_items:
                 if not isinstance(raw_item, Mapping):
                     continue
+                raw_item_key = _to_str(raw_item.get("key")).strip()
+                raw_row_index = _spare_part_row_index_from_identity_key(raw_item_key)
+                if raw_row_index is not None:
+                    spare_row_indices.append(raw_row_index)
                 item = {
                     "PartNumber": raw_item.get("PartNumber", ""),
                     "Description": raw_item.get("Description", ""),
@@ -5640,7 +5859,7 @@ def copy_per_production_and_orders(
                     "Bestelgroep": raw_item.get("Bestelgroep", ""),
                     "Status": raw_item.get("Status", ""),
                 }
-                line_key = _to_str(raw_item.get("key")).strip()
+                line_key = raw_item_key
                 if not line_key:
                     line_key = build_order_pricing_item_key(
                         item,
@@ -5746,6 +5965,7 @@ def copy_per_production_and_orders(
                     doc_num_display=doc_num_display,
                     order_remark=order_remark or None,
                     items=priced_items,
+                    row_indices=spare_row_indices,
                     column_layout=column_layout,
                 )
             )
@@ -5875,6 +6095,21 @@ def copy_per_production_and_orders(
                 doc_number=job.doc_num_display or "",
                 supplier=supplier_name_clean,
             )
+            for section in job.sections:
+                if (
+                    _to_str(section.selection_key).strip()
+                    == make_spare_part_selection_key(SPARE_PARTS_FULL_LIST_KEY)
+                ):
+                    continue
+                _append_bom_order_audit(
+                    bom_order_audit_by_row,
+                    section.row_indices,
+                    context=_bom_audit_context_for_section(section),
+                    supplier=supplier_name_clean,
+                    doc_type=job.doc_type,
+                    doc_number=job.doc_num_display or "",
+                    en1090_required=job.en1090_required,
+                )
 
             pdf_requested = f"{document_base}.pdf"
             pdf_filename = _fit_filename_within_path(job.target_dir, pdf_requested)
@@ -5956,6 +6191,10 @@ def copy_per_production_and_orders(
                 ].copy()
             else:
                 bom_export_df = bom_df
+            bom_export_df = _apply_bom_order_audit_columns(
+                bom_export_df,
+                bom_order_audit_by_row,
+            )
             bom_export_path = _export_bom_workbook(
                 bom_export_df, dest, bom_filename
             )
@@ -6020,13 +6259,35 @@ def _append_pdf_production_group(
     include_order_documents: bool,
     order_document_root: str | None,
     include_offers: bool,
+    generated_order_documents: Sequence[Mapping[str, object]] | None = None,
 ) -> None:
     if include_order_documents:
-        for path in _find_order_interleaf_pdfs(
-            order_document_root,
-            production,
-            include_offers=include_offers,
-        ):
+        order_paths = []
+        order_paths.extend(
+            _find_order_interleaf_pdfs(
+                order_document_root,
+                production,
+                include_offers=include_offers,
+            )
+        )
+        order_paths.extend(
+            _find_generated_order_interleaf_pdfs(
+                order_document_root,
+                production,
+                include_offers=include_offers,
+                generated_order_documents=generated_order_documents,
+            )
+        )
+        seen_paths = {
+            os.path.abspath(item.path).casefold()
+            for item in plan
+            if _to_str(item.path).strip()
+        }
+        for path in order_paths:
+            key = os.path.abspath(path).casefold()
+            if key in seen_paths:
+                continue
+            seen_paths.add(key)
             plan.append(
                 PdfWorkDossierPlanItem(
                     path=path,
@@ -6101,7 +6362,86 @@ def _is_generated_order_pdf(
     doc_type = _to_str(record.get("doc_type")).strip().casefold()
     if doc_type.startswith("offerte") and not include_offers:
         return False
-    return _is_order_interleaf_pdf(path, include_offers=include_offers)
+    if not doc_type and not include_offers:
+        name = os.path.basename(path).strip().casefold()
+        if name.startswith("offerteaanvraag"):
+            return False
+    return True
+
+
+def _generated_order_document_production_ids(
+    record: Mapping[str, object],
+) -> List[str]:
+    result: List[str] = []
+    seen: set[str] = set()
+    for kind, identifier in _generated_order_document_selection_pairs(record):
+        if kind != "production":
+            continue
+        clean = _to_str(identifier).strip()
+        if not clean:
+            continue
+        key = clean.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(clean)
+    return result
+
+
+def _find_generated_order_interleaf_pdfs(
+    order_document_root: str | None,
+    production: str,
+    *,
+    include_offers: bool = False,
+    generated_order_documents: Sequence[Mapping[str, object]] | None = None,
+) -> List[str]:
+    production_key = _to_str(production).strip().casefold()
+    if not production_key:
+        return []
+
+    candidates: List[str] = []
+    seen: set[str] = set()
+    for record in generated_order_documents or []:
+        if not isinstance(record, Mapping):
+            continue
+        path = _generated_order_document_path(record, order_document_root)
+        if not _is_generated_order_pdf(record, path, include_offers=include_offers):
+            continue
+        if not os.path.isfile(path):
+            continue
+        production_ids = {
+            value.casefold()
+            for value in _generated_order_document_production_ids(record)
+        }
+        if production_key not in production_ids:
+            continue
+        key = os.path.abspath(path).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(path)
+
+    candidates.sort(key=_natural_pdf_name_key)
+    return candidates
+
+
+def _generated_order_interleaf_productions(
+    generated_order_documents: Sequence[Mapping[str, object]] | None,
+    order_document_root: str | None = None,
+    *,
+    include_offers: bool = False,
+) -> set[str]:
+    productions: set[str] = set()
+    for record in generated_order_documents or []:
+        if not isinstance(record, Mapping):
+            continue
+        path = _generated_order_document_path(record, order_document_root)
+        if not _is_generated_order_pdf(record, path, include_offers=include_offers):
+            continue
+        if not os.path.isfile(path):
+            continue
+        productions.update(_generated_order_document_production_ids(record))
+    return productions
 
 
 def _is_generated_spare_part_full_list(
@@ -6325,6 +6665,7 @@ def build_pdf_workdossier_plan(
                 include_order_documents=include_order_documents,
                 order_document_root=order_document_root,
                 include_offers=include_offers,
+                generated_order_documents=generated_order_documents,
             )
         if include_order_documents or include_spare_part_list:
             _append_pdf_supplementary_order_documents(
@@ -6390,6 +6731,7 @@ def build_pdf_workdossier_plan(
                 include_order_documents=include_order_documents,
                 order_document_root=order_document_root,
                 include_offers=include_offers,
+                generated_order_documents=generated_order_documents,
             )
 
         if getattr(section, "include_unmatched", False) and not unmatched_inserted:
@@ -6403,6 +6745,7 @@ def build_pdf_workdossier_plan(
                     include_order_documents=include_order_documents,
                     order_document_root=order_document_root,
                     include_offers=include_offers,
+                    generated_order_documents=generated_order_documents,
                 )
 
     if preset.include_unmatched and not unmatched_inserted:
@@ -6415,6 +6758,7 @@ def build_pdf_workdossier_plan(
                 include_order_documents=include_order_documents,
                 order_document_root=order_document_root,
                 include_offers=include_offers,
+                generated_order_documents=generated_order_documents,
             )
 
     if include_order_documents or include_spare_part_list:
