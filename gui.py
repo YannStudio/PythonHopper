@@ -442,21 +442,6 @@ def start_gui():
 
     _parse_length_to_mm = parse_length_to_mm
 
-    def _bold_digits(text: str) -> str:
-        bold_map = {
-            "0": "𝟬",
-            "1": "𝟭",
-            "2": "𝟮",
-            "3": "𝟯",
-            "4": "𝟰",
-            "5": "𝟱",
-            "6": "𝟲",
-            "7": "𝟳",
-            "8": "𝟴",
-            "9": "𝟵",
-        }
-        return "".join(bold_map.get(ch, ch) for ch in str(text))
-
     @dataclass
     class StockScenarioResult:
         bars: int
@@ -11246,8 +11231,11 @@ def start_gui():
                 anchor="w",
                 justify="left",
                 wraplength=900,
-                fg="#B91C1C",
+                fg="#92400E",
+                bg="#FFF7ED",
                 font=tkfont.nametofont("TkDefaultFont"),
+                padx=8,
+                pady=5,
             )
             self.opticutter_warning_label.pack(fill="x", pady=(0, 10))
             self.opticutter_warning_label.pack_forget()
@@ -11345,43 +11333,38 @@ def start_gui():
                 "Profile",
                 "Material",
                 "Production",
-                "6mBars",
-                "6mWaste",
-                "6mCuts",
-                "12mBars",
-                "12mWaste",
-                "12mCuts",
-                "customBars",
-                "customWaste",
-                "customCuts",
+                "scenario6000",
+                "scenario12000",
+                "scenarioCustom",
             )
             summary_headings = {
                 "Profile": "Profiel",
                 "Material": "Materiaal",
                 "Production": "Productie",
-                "6mBars": "6m st.",
-                "6mWaste": "6m %",
-                "6mCuts": "6m zaag",
-                "12mBars": "12m st.",
-                "12mWaste": "12m %",
-                "12mCuts": "12m zaag",
-                "customBars": "Eigen st.",
-                "customWaste": "Eigen %",
-                "customCuts": "Eigen zaag",
+                "scenario6000": "6000 mm",
+                "scenario12000": "12000 mm",
+                "scenarioCustom": "Eigen lengte",
             }
+            base_summary_widths = {
+                "Profile": 150,
+                "Material": 100,
+                "Production": 104,
+                "scenario6000": 168,
+                "scenario12000": 176,
+                "scenarioCustom": 184,
+            }
+            try:
+                heading_font = tkfont.nametofont("TkHeadingFont")
+            except tk.TclError:
+                heading_font = tkfont.nametofont("TkDefaultFont")
             summary_widths = {
-                "Profile": 96,
-                "Material": 58,
-                "Production": 58,
-                "6mBars": 42,
-                "6mWaste": 46,
-                "6mCuts": 50,
-                "12mBars": 44,
-                "12mWaste": 48,
-                "12mCuts": 52,
-                "customBars": 50,
-                "customWaste": 52,
-                "customCuts": 58,
+                col: (
+                    max(
+                        base_summary_widths[col],
+                        heading_font.measure(summary_headings[col]) + 28,
+                    )
+                )
+                for col in summary_columns
             }
 
             summary_tree = ttk.Treeview(
@@ -11398,14 +11381,13 @@ def start_gui():
                     col,
                     anchor=anchor,
                     stretch=False,
-                    minwidth=min(summary_widths[col], 38),
+                    minwidth=min(summary_widths[col], 90),
                     width=summary_widths[col],
                 )
-            summary_tree.tag_configure(
-                "high_waste",
-                background="#FEE2E2",
-                foreground="#B91C1C",
-            )
+            summary_tree.tag_configure("odd", background="#FFFFFF")
+            summary_tree.tag_configure("even", background="#F7F7F7")
+            summary_tree.tag_configure("odd_high_waste", background="#FFF1F2")
+            summary_tree.tag_configure("even_high_waste", background="#FDECEF")
             summary_v_scroll = ttk.Scrollbar(
                 opticutter_summary_frame,
                 orient="vertical",
@@ -11426,10 +11408,10 @@ def start_gui():
 
             self.opticutter_profile_summary_tree = summary_tree
             self.opticutter_summary_tooltip = _TreeTooltipManager(summary_tree)
-            self.opticutter_summary_column_map: Dict[str, Dict[str, str]] = {
-                "6m": {"Bars": "#4", "Waste": "#5", "Cuts": "#6"},
-                "12m": {"Bars": "#7", "Waste": "#8", "Cuts": "#9"},
-                "custom": {"Bars": "#10", "Waste": "#11", "Cuts": "#12"},
+            self.opticutter_summary_column_map: Dict[str, str] = {
+                "6m": "#4",
+                "12m": "#5",
+                "custom": "#6",
             }
 
             selection_section = tk.LabelFrame(
@@ -16290,47 +16272,27 @@ def start_gui():
                 _autosize_tree_columns(tree)
                 self._sync_opticutter_parts_table_width()
 
-            def _format_bars(result: Optional[StockScenarioResult]) -> str:
-                if result is None:
-                    return "—"
-                if result.dropped_pieces:
-                    return "❌"
-                return _bold_digits(str(result.bars))
-
-            def _format_waste(result: Optional[StockScenarioResult]) -> str:
-                if result is None or result.dropped_pieces or result.bars == 0:
-                    return "—"
-                return f"{result.waste_pct:.1f}%"
-
-            def _waste_tooltip(result: StockScenarioResult) -> str:
-                message = f"Totale restlengte: {result.waste_mm:.0f} mm"
-                if has_excessive_waste(result):
-                    warning = (
-                        f"Let op: {result.waste_pct:.1f}% snijverlies is hoger dan "
-                        f"{WASTE_WARNING_THRESHOLD_PCT:g}%. Controleer verkoopprijs "
-                        "of vooraf berekende prijs."
-                    )
-                    return f"{warning}\n{message}"
-                return message
-
             def _profile_has_excessive_waste(profile) -> bool:
                 return any(
                     has_excessive_waste(result)
                     for result in profile.scenarios.values()
                 )
 
-            def _profile_warning_label(profile) -> str:
-                details = ", ".join(
-                    part for part in (profile.material, profile.production) if part
+            def _format_scenario_summary(
+                result: Optional[StockScenarioResult],
+                missing_label: str = "Geen berekening",
+            ) -> str:
+                if result is None:
+                    return missing_label
+                if result.dropped_pieces:
+                    return "Past niet"
+                if result.bars <= 0:
+                    return "Geen staven"
+                marker = " !" if has_excessive_waste(result) else ""
+                return (
+                    f"{result.bars} st. | {result.waste_pct:.1f}% | "
+                    f"{result.cuts} zaag{marker}"
                 )
-                if details:
-                    return f"{profile.profile} ({details})"
-                return profile.profile
-
-            def _format_cuts(result: Optional[StockScenarioResult]) -> str:
-                if result is None or result.dropped_pieces or result.bars == 0:
-                    return "—"
-                return _bold_digits(str(result.cuts))
 
             def _describe_option(
                 length_label: str, result: Optional[StockScenarioResult]
@@ -16370,32 +16332,34 @@ def start_gui():
             ) -> None:
                 if summary_tooltip is None:
                     return
-                columns = column_maps.get(scenario_key, {})
+                column_id = column_maps.get(scenario_key)
+                if not column_id:
+                    return
 
                 if result is None:
-                    for column_key in ("Bars", "Waste", "Cuts"):
-                        column_id = columns.get(column_key)
-                        if column_id:
-                            summary_tooltip.set(item_id, column_id, missing_message)
+                    summary_tooltip.set(item_id, column_id, missing_message)
                     return
 
                 if result.dropped_pieces:
-                    messages = {
-                        "Bars": _join_blockers(blocker_values, stock_length),
-                        "Waste": "Afval niet beschikbaar door te lange stukken.",
-                        "Cuts": "Zaagplan niet beschikbaar door te lange stukken.",
-                    }
+                    message = _join_blockers(blocker_values, stock_length)
                 else:
-                    messages = {
-                        "Bars": f"{result.bars} staaf/staven nodig",
-                        "Waste": _waste_tooltip(result),
-                        "Cuts": f"Geschat aantal zaagsneden: {result.cuts}",
-                    }
+                    lines = [
+                        f"Staven: {result.bars}",
+                        f"Snijverlies: {result.waste_pct:.1f}%",
+                        f"Zaagsneden: {result.cuts}",
+                        f"Totale restlengte: {result.waste_mm:.0f} mm",
+                    ]
+                    if has_excessive_waste(result):
+                        lines.insert(
+                            0,
+                            (
+                                f"Let op: boven {WASTE_WARNING_THRESHOLD_PCT:g}% "
+                                "snijverlies."
+                            ),
+                        )
+                    message = "\n".join(lines)
 
-                for column_key, message in messages.items():
-                    column_id = columns.get(column_key)
-                    if column_id:
-                        summary_tooltip.set(item_id, column_id, message)
+                summary_tooltip.set(item_id, column_id, message)
 
             selection_entries: List[
                 tuple[
@@ -16410,20 +16374,14 @@ def start_gui():
             selection_scenarios: Dict[
                 tuple[str, str, str], Dict[str, StockScenarioResult]
             ] = {}
-            high_waste_warnings: List[tuple[float, str]] = []
+            high_waste_warnings: List[float] = []
 
-            def _record_high_waste(profile, scenario_label: str, result) -> None:
+            def _record_high_waste(result) -> None:
                 if not has_excessive_waste(result):
                     return
-                high_waste_warnings.append(
-                    (
-                        result.waste_pct,
-                        f"{_profile_warning_label(profile)} / {scenario_label}: "
-                        f"{result.waste_pct:.1f}%",
-                    )
-                )
+                high_waste_warnings.append(result.waste_pct)
 
-            for profile in analysis.profiles:
+            for summary_index, profile in enumerate(analysis.profiles):
                 scenario_map = profile.scenarios
                 selection_scenarios[profile.key] = scenario_map
 
@@ -16493,46 +16451,37 @@ def start_gui():
                 result_6m = scenario_map.get("6000")
                 result_12m = scenario_map.get("12000")
                 result_custom = scenario_map.get("custom")
-                _record_high_waste(profile, "6000 mm", result_6m)
-                _record_high_waste(profile, "12000 mm", result_12m)
+                _record_high_waste(result_6m)
+                _record_high_waste(result_12m)
                 if "custom" in scenario_map:
-                    custom_label = (
-                        f"{custom_stock_mm} mm"
-                        if custom_stock_mm is not None
-                        else "Custom lengte"
-                    )
-                    _record_high_waste(profile, custom_label, result_custom)
+                    _record_high_waste(result_custom)
 
                 if summary_tree is not None:
-                    empty_value = _format_bars(None)
-                    custom_values = (
-                        (
-                            _format_bars(result_custom),
-                            _format_waste(result_custom),
-                            _format_cuts(result_custom),
-                        )
+                    custom_value = (
+                        _format_scenario_summary(result_custom)
                         if "custom" in scenario_map
-                        else (empty_value, empty_value, empty_value)
+                        else "Niet ingesteld"
                     )
+                    has_high_waste = _profile_has_excessive_waste(profile)
+                    if has_high_waste:
+                        row_tag = (
+                            "even_high_waste"
+                            if summary_index % 2
+                            else "odd_high_waste"
+                        )
+                    else:
+                        row_tag = "even" if summary_index % 2 else "odd"
                     item_id = summary_tree.insert(
                         "",
                         "end",
-                        tags=(
-                            ("high_waste",)
-                            if _profile_has_excessive_waste(profile)
-                            else ()
-                        ),
+                        tags=(row_tag,),
                         values=(
                             profile.profile,
                             profile.material,
                             profile.production,
-                            _format_bars(result_6m),
-                            _format_waste(result_6m),
-                            _format_cuts(result_6m),
-                            _format_bars(result_12m),
-                            _format_waste(result_12m),
-                            _format_cuts(result_12m),
-                            *custom_values,
+                            _format_scenario_summary(result_6m),
+                            _format_scenario_summary(result_12m),
+                            custom_value,
                         ),
                     )
                     _set_summary_tooltips(
@@ -16600,20 +16549,15 @@ def start_gui():
                 if warning_parts:
                     warning_lines.append("Aandacht: " + ", ".join(warning_parts) + ".")
                 if high_waste_warnings:
-                    ordered_waste = sorted(
-                        high_waste_warnings, key=lambda item: item[0], reverse=True
-                    )
-                    shown_waste = [text for _pct, text in ordered_waste[:3]]
-                    remaining_waste = len(high_waste_warnings) - len(shown_waste)
+                    highest_waste = max(high_waste_warnings)
                     waste_message = (
                         f"{len(high_waste_warnings)} scenario's met meer dan "
-                        f"{WASTE_WARNING_THRESHOLD_PCT:g}% snijverlies."
+                        f"{WASTE_WARNING_THRESHOLD_PCT:g}% snijverlies. "
+                        f"Hoogste: {highest_waste:.1f}%."
                     )
-                    if shown_waste:
-                        waste_message += " Hoogste: " + "; ".join(shown_waste)
-                    if remaining_waste:
-                        waste_message += f"; +{remaining_waste} extra"
-                    waste_message += ". Details staan in de rode tabelcellen."
+                    waste_message += (
+                        " Bekijk de roze rijen; beweeg over een scenariocel voor details."
+                    )
                     warning_lines.append(waste_message)
 
                 info_var.set(base_message)
