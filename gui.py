@@ -11230,14 +11230,36 @@ def start_gui():
                 textvariable=self.opticutter_info_var,
                 anchor="w",
                 justify="left",
+                wraplength=900,
                 font=tkfont.nametofont("TkDefaultFont"),
             )
             self.opticutter_info_default_fg = self.opticutter_info_label.cget("fg")
-            self.opticutter_info_label.pack(fill="x", pady=(0, 12))
+            self.opticutter_info_label.pack(fill="x", pady=(0, 2))
+
+            self.opticutter_warning_var = tk.StringVar(
+                master=self.opticutter_frame,
+                value="",
+            )
+            self.opticutter_warning_label = tk.Label(
+                self.opticutter_frame,
+                textvariable=self.opticutter_warning_var,
+                anchor="w",
+                justify="left",
+                wraplength=900,
+                fg="#B91C1C",
+                font=tkfont.nametofont("TkDefaultFont"),
+            )
+            self.opticutter_warning_label.pack(fill="x", pady=(0, 10))
+            self.opticutter_warning_label.pack_forget()
 
             opticutter_table_container = tk.Frame(self.opticutter_frame)
             opticutter_table_container.pack(fill="both", expand=True, pady=(0, 8))
             self.opticutter_table_container = opticutter_table_container
+            self.opticutter_frame.bind(
+                "<Configure>",
+                lambda e: self._sync_opticutter_message_wraplength(e.width),
+                add="+",
+            )
 
             opticutter_left_frame = tk.Frame(opticutter_table_container)
             opticutter_left_frame.pack_propagate(False)
@@ -11309,136 +11331,106 @@ def start_gui():
                 add="+",
             )
 
-            opticutter_summary_frame = tk.Frame(opticutter_table_container)
-            opticutter_summary_frame.pack(side="left", fill="y")
+            opticutter_summary_frame = tk.LabelFrame(
+                opticutter_table_container,
+                text="Scenario-overzicht",
+                padx=8,
+                pady=8,
+            )
+            opticutter_summary_frame.pack(side="left", fill="both", expand=True)
+            opticutter_summary_frame.rowconfigure(0, weight=1)
+            opticutter_summary_frame.columnconfigure(0, weight=1)
 
-            summary_common_columns = ("Profile", "Material", "Production")
-            summary_metric_columns = ("Bars", "Waste", "Cuts")
+            summary_columns = (
+                "Profile",
+                "Material",
+                "Production",
+                "6mBars",
+                "6mWaste",
+                "6mCuts",
+                "12mBars",
+                "12mWaste",
+                "12mCuts",
+                "customBars",
+                "customWaste",
+                "customCuts",
+            )
             summary_headings = {
                 "Profile": "Profiel",
                 "Material": "Materiaal",
                 "Production": "Productie",
-                "Bars": "Staven",
-                "Waste": "Afval",
-                "Cuts": "Zaagsneden",
+                "6mBars": "6m st.",
+                "6mWaste": "6m %",
+                "6mCuts": "6m zaag",
+                "12mBars": "12m st.",
+                "12mWaste": "12m %",
+                "12mCuts": "12m zaag",
+                "customBars": "Eigen st.",
+                "customWaste": "Eigen %",
+                "customCuts": "Eigen zaag",
+            }
+            summary_widths = {
+                "Profile": 96,
+                "Material": 58,
+                "Production": 58,
+                "6mBars": 42,
+                "6mWaste": 46,
+                "6mCuts": 50,
+                "12mBars": 44,
+                "12mWaste": 48,
+                "12mCuts": 52,
+                "customBars": 50,
+                "customWaste": 52,
+                "customCuts": 58,
             }
 
-            self.opticutter_profile_summary_base_tree: Optional["ttk.Treeview"] = None
-            self.opticutter_profile_summary_trees: Dict[str, "ttk.Treeview"] = {}
-            self.opticutter_summary_tooltips: Dict[str, _TreeTooltipManager] = {}
-            self.opticutter_summary_column_map: Dict[str, Dict[str, str]] = {}
-            self.opticutter_summary_frames: Dict[str, "tk.LabelFrame"] = {}
-
-            summary_container = tk.Frame(opticutter_summary_frame)
-            summary_container.pack(fill="both", expand=True)
-
-            base_frame = tk.LabelFrame(
-                summary_container,
-                text="Profiel, materiaal en productie",
-                padx=8,
-                pady=8,
-            )
-            base_frame.pack(side="left", fill="both", padx=(0, 8))
-
-            base_tree = ttk.Treeview(
-                base_frame,
-                columns=summary_common_columns,
+            summary_tree = ttk.Treeview(
+                opticutter_summary_frame,
+                columns=summary_columns,
                 show="headings",
                 selectmode="none",
                 height=8,
             )
-            for col in summary_common_columns:
-                anchor = "w"
-                if col == "Profile":
-                    minwidth = 150
-                elif col == "Material":
-                    minwidth = 105
-                else:
-                    minwidth = 90
-                base_tree.heading(col, text=summary_headings[col], anchor=anchor)
-                base_tree.column(
+            for col in summary_columns:
+                anchor = "w" if col in {"Profile", "Material", "Production"} else "center"
+                summary_tree.heading(col, text=summary_headings[col], anchor=anchor)
+                summary_tree.column(
                     col,
                     anchor=anchor,
-                    stretch=True,
-                    minwidth=minwidth,
-                    width=minwidth,
+                    stretch=False,
+                    minwidth=min(summary_widths[col], 38),
+                    width=summary_widths[col],
                 )
-            base_tree.tag_configure(
+            summary_tree.tag_configure(
                 "high_waste",
                 background="#FEE2E2",
                 foreground="#B91C1C",
             )
-
-            base_scrollbar = ttk.Scrollbar(
-                base_frame, orient="vertical", command=base_tree.yview
+            summary_v_scroll = ttk.Scrollbar(
+                opticutter_summary_frame,
+                orient="vertical",
+                command=summary_tree.yview,
             )
-            base_tree.configure(yscrollcommand=base_scrollbar.set)
-            base_tree.pack(side="left", fill="both", expand=True, padx=(0, 4))
-            base_scrollbar.pack(side="left", fill="y")
+            summary_x_scroll = ttk.Scrollbar(
+                opticutter_summary_frame,
+                orient="horizontal",
+                command=summary_tree.xview,
+            )
+            summary_tree.configure(
+                yscrollcommand=summary_v_scroll.set,
+                xscrollcommand=summary_x_scroll.set,
+            )
+            summary_tree.grid(row=0, column=0, sticky="nsew")
+            summary_v_scroll.grid(row=0, column=1, sticky="ns")
+            summary_x_scroll.grid(row=1, column=0, sticky="ew")
 
-            self.opticutter_profile_summary_base_tree = base_tree
-
-            scenarios_frame = tk.Frame(summary_container)
-            scenarios_frame.pack(side="left", fill="both", expand=True)
-
-            summary_sections = [
-                ("6m", "6000 mm parameters"),
-                ("12m", "12000 mm parameters"),
-                ("custom", "Aangepaste lengte"),
-            ]
-
-            for index, (section_key, section_title) in enumerate(summary_sections):
-                section_frame = tk.LabelFrame(
-                    scenarios_frame,
-                    text=section_title,
-                    padx=8,
-                    pady=8,
-                )
-                padx = (0, 8) if index < len(summary_sections) - 1 else (0, 0)
-                section_frame.pack(side="left", fill="both", expand=True, padx=padx)
-
-                tree = ttk.Treeview(
-                    section_frame,
-                    columns=summary_metric_columns,
-                    show="headings",
-                    selectmode="none",
-                    height=8,
-                )
-                for col in summary_metric_columns:
-                    anchor = "center"
-                    if col == "Bars":
-                        minwidth = 58
-                    elif col == "Waste":
-                        minwidth = 68
-                    else:
-                        minwidth = 82
-                    tree.heading(col, text=summary_headings[col], anchor=anchor)
-                    tree.column(
-                        col,
-                        anchor=anchor,
-                        stretch=True,
-                        minwidth=minwidth,
-                        width=minwidth,
-                    )
-                tree.tag_configure(
-                    "high_waste",
-                    background="#FEE2E2",
-                    foreground="#B91C1C",
-                )
-
-                scrollbar = ttk.Scrollbar(
-                    section_frame, orient="vertical", command=tree.yview
-                )
-                tree.configure(yscrollcommand=scrollbar.set)
-                tree.pack(side="left", fill="both", expand=True, padx=(0, 4))
-                scrollbar.pack(side="left", fill="y")
-
-                self.opticutter_profile_summary_trees[section_key] = tree
-                self.opticutter_summary_tooltips[section_key] = _TreeTooltipManager(tree)
-                self.opticutter_summary_column_map[section_key] = {
-                    name: f"#{idx + 1}" for idx, name in enumerate(summary_metric_columns)
-                }
-                self.opticutter_summary_frames[section_key] = section_frame
+            self.opticutter_profile_summary_tree = summary_tree
+            self.opticutter_summary_tooltip = _TreeTooltipManager(summary_tree)
+            self.opticutter_summary_column_map: Dict[str, Dict[str, str]] = {
+                "6m": {"Bars": "#4", "Waste": "#5", "Cuts": "#6"},
+                "12m": {"Bars": "#7", "Waste": "#8", "Cuts": "#9"},
+                "custom": {"Bars": "#10", "Waste": "#11", "Cuts": "#12"},
+            }
 
             selection_section = tk.LabelFrame(
                 self.opticutter_frame, text="Lengte selectie per profiel"
@@ -16087,6 +16079,41 @@ def start_gui():
                 self._opticutter_selection_update_in_progress = False
                 self.opticutter_profile_selection_choice[key] = chosen
 
+        def _sync_opticutter_message_wraplength(self, width: int) -> None:
+            wraplength = max(320, int(width) - 32)
+            for attr_name in ("opticutter_info_label", "opticutter_warning_label"):
+                label = getattr(self, attr_name, None)
+                if label is None:
+                    continue
+                try:
+                    label.configure(wraplength=wraplength)
+                except tk.TclError:
+                    pass
+
+        def _set_opticutter_warning_message(self, message: str) -> None:
+            warning_var = getattr(self, "opticutter_warning_var", None)
+            warning_label = getattr(self, "opticutter_warning_label", None)
+            if warning_var is not None:
+                warning_var.set(message)
+            if warning_label is None:
+                return
+            try:
+                if message:
+                    if not warning_label.winfo_ismapped():
+                        table_container = getattr(
+                            self, "opticutter_table_container", None
+                        )
+                        if table_container is not None:
+                            warning_label.pack(
+                                fill="x", pady=(0, 10), before=table_container
+                            )
+                        else:
+                            warning_label.pack(fill="x", pady=(0, 10))
+                elif warning_label.winfo_ismapped():
+                    warning_label.pack_forget()
+            except tk.TclError:
+                pass
+
         def _sync_opticutter_parts_table_width(self) -> None:
             tree = getattr(self, "opticutter_tree", None)
             frame = getattr(self, "opticutter_parts_frame", None)
@@ -16116,7 +16143,10 @@ def start_gui():
                 except tk.TclError:
                     available_width = 0
                 if available_width > 1:
-                    max_width = max(460, min(720, int(available_width * 0.36)))
+                    if available_width < 1100:
+                        max_width = max(220, min(300, int(available_width * 0.25)))
+                    else:
+                        max_width = max(340, min(560, int(available_width * 0.32)))
 
             visible_width = min(desired_width, max_width)
             try:
@@ -16147,13 +16177,10 @@ def start_gui():
                     self.after_cancel(after_id)
                 except tk.TclError:
                     pass
-                self._opticutter_refresh_after_id = None
+            self._opticutter_refresh_after_id = None
             tree = getattr(self, "opticutter_tree", None)
-            summary_trees = getattr(self, "opticutter_profile_summary_trees", {})
-            base_summary_tree = getattr(
-                self, "opticutter_profile_summary_base_tree", None
-            )
-            if tree is None and base_summary_tree is None and not summary_trees:
+            summary_tree = getattr(self, "opticutter_profile_summary_tree", None)
+            if tree is None and summary_tree is None:
                 return
 
             if tree is not None:
@@ -16162,19 +16189,14 @@ def start_gui():
                 _autosize_tree_columns(tree)
                 self._sync_opticutter_parts_table_width()
 
-            if base_summary_tree is not None:
-                for item in base_summary_tree.get_children():
-                    base_summary_tree.delete(item)
-
-            for summary_tree in summary_trees.values():
+            if summary_tree is not None:
                 for item in summary_tree.get_children():
                     summary_tree.delete(item)
 
-            tooltip_managers = getattr(self, "opticutter_summary_tooltips", {})
-            for manager in tooltip_managers.values():
-                manager.clear()
+            summary_tooltip = getattr(self, "opticutter_summary_tooltip", None)
+            if summary_tooltip is not None:
+                summary_tooltip.clear()
             column_maps = getattr(self, "opticutter_summary_column_map", {})
-
             info_var = getattr(self, "opticutter_info_var", None)
             info_label = getattr(self, "opticutter_info_label", None)
             default_message = "Laad een BOM om profielen te bekijken."
@@ -16187,6 +16209,7 @@ def start_gui():
                     pass
             if info_var is not None:
                 info_var.set(default_message)
+            self._set_opticutter_warning_message("")
 
             df = self.bom_df
             if df is None:
@@ -16267,16 +16290,6 @@ def start_gui():
                 _autosize_tree_columns(tree)
                 self._sync_opticutter_parts_table_width()
 
-            summary_frames = getattr(self, "opticutter_summary_frames", {})
-            custom_frame = summary_frames.get("custom")
-            if custom_frame is not None:
-                if custom_stock_mm is not None:
-                    custom_frame.configure(
-                        text=f"Aangepaste lengte ({custom_stock_mm} mm)"
-                    )
-                else:
-                    custom_frame.configure(text="Aangepaste lengte")
-
             def _format_bars(result: Optional[StockScenarioResult]) -> str:
                 if result is None:
                     return "—"
@@ -16288,11 +16301,6 @@ def start_gui():
                 if result is None or result.dropped_pieces or result.bars == 0:
                     return "—"
                 return f"{result.waste_pct:.1f}%"
-
-            def _scenario_tags(result: Optional[StockScenarioResult]) -> tuple[str, ...]:
-                if has_excessive_waste(result):
-                    return ("high_waste",)
-                return ()
 
             def _waste_tooltip(result: StockScenarioResult) -> str:
                 message = f"Totale restlengte: {result.waste_mm:.0f} mm"
@@ -16352,6 +16360,43 @@ def start_gui():
                 ]
                 return "\n".join(lines)
 
+            def _set_summary_tooltips(
+                item_id: str,
+                scenario_key: str,
+                result: Optional[StockScenarioResult],
+                blocker_values: Iterable[str],
+                stock_length: int,
+                missing_message: str = "Geen berekening beschikbaar.",
+            ) -> None:
+                if summary_tooltip is None:
+                    return
+                columns = column_maps.get(scenario_key, {})
+
+                if result is None:
+                    for column_key in ("Bars", "Waste", "Cuts"):
+                        column_id = columns.get(column_key)
+                        if column_id:
+                            summary_tooltip.set(item_id, column_id, missing_message)
+                    return
+
+                if result.dropped_pieces:
+                    messages = {
+                        "Bars": _join_blockers(blocker_values, stock_length),
+                        "Waste": "Afval niet beschikbaar door te lange stukken.",
+                        "Cuts": "Zaagplan niet beschikbaar door te lange stukken.",
+                    }
+                else:
+                    messages = {
+                        "Bars": f"{result.bars} staaf/staven nodig",
+                        "Waste": _waste_tooltip(result),
+                        "Cuts": f"Geschat aantal zaagsneden: {result.cuts}",
+                    }
+
+                for column_key, message in messages.items():
+                    column_id = columns.get(column_key)
+                    if column_id:
+                        summary_tooltip.set(item_id, column_id, message)
+
             selection_entries: List[
                 tuple[
                     tuple[str, str, str],
@@ -16365,33 +16410,18 @@ def start_gui():
             selection_scenarios: Dict[
                 tuple[str, str, str], Dict[str, StockScenarioResult]
             ] = {}
-            high_waste_warnings: List[str] = []
+            high_waste_warnings: List[tuple[float, str]] = []
 
             def _record_high_waste(profile, scenario_label: str, result) -> None:
                 if not has_excessive_waste(result):
                     return
                 high_waste_warnings.append(
-                    f"{_profile_warning_label(profile)} / {scenario_label}: "
-                    f"{result.waste_pct:.1f}%"
-                )
-
-            if base_summary_tree is not None:
-                for profile in analysis.profiles:
-                    base_summary_tree.insert(
-                        "",
-                        "end",
-                        tags=(
-                            ("high_waste",)
-                            if _profile_has_excessive_waste(profile)
-                            else ()
-                        ),
-                        values=(
-                            profile.profile,
-                            profile.material,
-                            profile.production,
-                        ),
+                    (
+                        result.waste_pct,
+                        f"{_profile_warning_label(profile)} / {scenario_label}: "
+                        f"{result.waste_pct:.1f}%",
                     )
-                _autosize_tree_columns(base_summary_tree, padding=12)
+                )
 
             for profile in analysis.profiles:
                 scenario_map = profile.scenarios
@@ -16460,218 +16490,82 @@ def start_gui():
 
                 blockers = profile.blockers
 
-                tree_6m = summary_trees.get("6m")
-                if tree_6m is not None:
-                    result_6m = scenario_map.get("6000")
-                    _record_high_waste(profile, "6000 mm", result_6m)
-                    item_id_6m = tree_6m.insert(
-                        "",
-                        "end",
-                        tags=_scenario_tags(result_6m),
-                        values=(
-                            _format_bars(result_6m),
-                            _format_waste(result_6m),
-                            _format_cuts(result_6m),
-                        ),
+                result_6m = scenario_map.get("6000")
+                result_12m = scenario_map.get("12000")
+                result_custom = scenario_map.get("custom")
+                _record_high_waste(profile, "6000 mm", result_6m)
+                _record_high_waste(profile, "12000 mm", result_12m)
+                if "custom" in scenario_map:
+                    custom_label = (
+                        f"{custom_stock_mm} mm"
+                        if custom_stock_mm is not None
+                        else "Custom lengte"
                     )
-                    tooltip_6m = tooltip_managers.get("6m")
-                    columns_6m = column_maps.get("6m", {})
-                    if tooltip_6m is not None and result_6m is not None:
-                        if result_6m.dropped_pieces:
-                            column_id = columns_6m.get("Bars")
-                            if column_id:
-                                tooltip_6m.set(
-                                    item_id_6m,
-                                    column_id,
-                                    _join_blockers(blockers.get("6m", set()), STOCK_LENGTH_MM),
-                                )
-                            column_id = columns_6m.get("Waste")
-                            if column_id:
-                                tooltip_6m.set(
-                                    item_id_6m,
-                                    column_id,
-                                    "Afval niet beschikbaar door te lange stukken.",
-                                )
-                            column_id = columns_6m.get("Cuts")
-                            if column_id:
-                                tooltip_6m.set(
-                                    item_id_6m,
-                                    column_id,
-                                    "Zaagplan niet beschikbaar door te lange stukken.",
-                                )
-                        else:
-                            column_id = columns_6m.get("Waste")
-                            if column_id:
-                                tooltip_6m.set(
-                                    item_id_6m,
-                                    column_id,
-                                    _waste_tooltip(result_6m),
-                                )
-                            column_id = columns_6m.get("Bars")
-                            if column_id:
-                                tooltip_6m.set(
-                                    item_id_6m,
-                                    column_id,
-                                    f"{result_6m.bars} staaf/staven nodig",
-                                )
-                            column_id = columns_6m.get("Cuts")
-                            if column_id:
-                                tooltip_6m.set(
-                                    item_id_6m,
-                                    column_id,
-                                    f"Geschat aantal zaagsneden: {result_6m.cuts}",
-                                )
+                    _record_high_waste(profile, custom_label, result_custom)
 
-                tree_12m = summary_trees.get("12m")
-                if tree_12m is not None:
-                    result_12m = scenario_map.get("12000")
-                    _record_high_waste(profile, "12000 mm", result_12m)
-                    item_id_12m = tree_12m.insert(
-                        "",
-                        "end",
-                        tags=_scenario_tags(result_12m),
-                        values=(
-                            _format_bars(result_12m),
-                            _format_waste(result_12m),
-                            _format_cuts(result_12m),
-                        ),
-                    )
-                    tooltip_12m = tooltip_managers.get("12m")
-                    columns_12m = column_maps.get("12m", {})
-                    if tooltip_12m is not None and result_12m is not None:
-                        if result_12m.dropped_pieces:
-                            column_id = columns_12m.get("Bars")
-                            if column_id:
-                                tooltip_12m.set(
-                                    item_id_12m,
-                                    column_id,
-                                    _join_blockers(blockers.get("12m", set()), LONG_STOCK_LENGTH_MM),
-                                )
-                            column_id = columns_12m.get("Waste")
-                            if column_id:
-                                tooltip_12m.set(
-                                    item_id_12m,
-                                    column_id,
-                                    "Afval niet beschikbaar door te lange stukken.",
-                                )
-                            column_id = columns_12m.get("Cuts")
-                            if column_id:
-                                tooltip_12m.set(
-                                    item_id_12m,
-                                    column_id,
-                                    "Zaagplan niet beschikbaar door te lange stukken.",
-                                )
-                        else:
-                            column_id = columns_12m.get("Waste")
-                            if column_id:
-                                tooltip_12m.set(
-                                    item_id_12m,
-                                    column_id,
-                                    _waste_tooltip(result_12m),
-                                )
-                            column_id = columns_12m.get("Bars")
-                            if column_id:
-                                tooltip_12m.set(
-                                    item_id_12m,
-                                    column_id,
-                                    f"{result_12m.bars} staaf/staven nodig",
-                                )
-                            column_id = columns_12m.get("Cuts")
-                            if column_id:
-                                tooltip_12m.set(
-                                    item_id_12m,
-                                    column_id,
-                                    f"Geschat aantal zaagsneden: {result_12m.cuts}",
-                                )
-
-                tree_custom = summary_trees.get("custom")
-                if tree_custom is not None:
-                    result_custom = scenario_map.get("custom")
-                    if "custom" in scenario_map:
-                        custom_label = (
-                            f"{custom_stock_mm} mm"
-                            if custom_stock_mm is not None
-                            else "Custom lengte"
+                if summary_tree is not None:
+                    empty_value = _format_bars(None)
+                    custom_values = (
+                        (
+                            _format_bars(result_custom),
+                            _format_waste(result_custom),
+                            _format_cuts(result_custom),
                         )
-                        _record_high_waste(profile, custom_label, result_custom)
-                    values_custom = (
-                        _format_bars(result_custom)
                         if "custom" in scenario_map
-                        else "—",
-                        _format_waste(result_custom)
-                        if "custom" in scenario_map
-                        else "—",
-                        _format_cuts(result_custom)
-                        if "custom" in scenario_map
-                        else "—",
+                        else (empty_value, empty_value, empty_value)
                     )
-                    item_id_custom = tree_custom.insert(
+                    item_id = summary_tree.insert(
                         "",
                         "end",
                         tags=(
-                            _scenario_tags(result_custom)
-                            if "custom" in scenario_map
+                            ("high_waste",)
+                            if _profile_has_excessive_waste(profile)
                             else ()
                         ),
-                        values=values_custom,
+                        values=(
+                            profile.profile,
+                            profile.material,
+                            profile.production,
+                            _format_bars(result_6m),
+                            _format_waste(result_6m),
+                            _format_cuts(result_6m),
+                            _format_bars(result_12m),
+                            _format_waste(result_12m),
+                            _format_cuts(result_12m),
+                            *custom_values,
+                        ),
                     )
-                    tooltip_custom = tooltip_managers.get("custom")
-                    columns_custom = column_maps.get("custom", {})
-                    if tooltip_custom is not None:
-                        if "custom" not in scenario_map:
-                            message = "Stel een aangepaste staaflengte in om scenario's te berekenen."
-                            for column_key in ("Bars", "Waste", "Cuts"):
-                                column_id = columns_custom.get(column_key)
-                                if column_id:
-                                    tooltip_custom.set(item_id_custom, column_id, message)
-                        elif result_custom is not None and result_custom.dropped_pieces:
-                            column_id = columns_custom.get("Bars")
-                            if column_id:
-                                tooltip_custom.set(
-                                    item_id_custom,
-                                    column_id,
-                                    _join_blockers(blockers.get("custom", set()),
-                                                  custom_stock_mm if custom_stock_mm is not None else 0),
-                                )
-                            column_id = columns_custom.get("Waste")
-                            if column_id:
-                                tooltip_custom.set(
-                                    item_id_custom,
-                                    column_id,
-                                    "Afval niet beschikbaar door te lange stukken.",
-                                )
-                            column_id = columns_custom.get("Cuts")
-                            if column_id:
-                                tooltip_custom.set(
-                                    item_id_custom,
-                                    column_id,
-                                    "Zaagplan niet beschikbaar door te lange stukken.",
-                                )
-                        elif result_custom is not None:
-                            column_id = columns_custom.get("Waste")
-                            if column_id:
-                                tooltip_custom.set(
-                                    item_id_custom,
-                                    column_id,
-                                    _waste_tooltip(result_custom),
-                                )
-                            column_id = columns_custom.get("Bars")
-                            if column_id:
-                                tooltip_custom.set(
-                                    item_id_custom,
-                                    column_id,
-                                    f"{result_custom.bars} staaf/staven nodig",
-                                )
-                            column_id = columns_custom.get("Cuts")
-                            if column_id:
-                                tooltip_custom.set(
-                                    item_id_custom,
-                                    column_id,
-                                    f"Geschat aantal zaagsneden: {result_custom.cuts}",
-                                )
-
-            for summary_tree in summary_trees.values():
-                _autosize_tree_columns(summary_tree, padding=10)
+                    _set_summary_tooltips(
+                        item_id,
+                        "6m",
+                        result_6m,
+                        blockers.get("6m", set()),
+                        STOCK_LENGTH_MM,
+                    )
+                    _set_summary_tooltips(
+                        item_id,
+                        "12m",
+                        result_12m,
+                        blockers.get("12m", set()),
+                        LONG_STOCK_LENGTH_MM,
+                    )
+                    if "custom" in scenario_map:
+                        _set_summary_tooltips(
+                            item_id,
+                            "custom",
+                            result_custom,
+                            blockers.get("custom", set()),
+                            custom_stock_mm if custom_stock_mm is not None else 0,
+                        )
+                    else:
+                        _set_summary_tooltips(
+                            item_id,
+                            "custom",
+                            None,
+                            set(),
+                            0,
+                            "Stel een aangepaste staaflengte in om dit scenario te berekenen.",
+                        )
 
             self.opticutter_profile_selection_scenarios = selection_scenarios
             self._update_opticutter_selection_rows(selection_entries)
@@ -16694,39 +16588,36 @@ def start_gui():
                         f"{base_message} | Custom staaflengte: {custom_stock_mm} mm"
                     )
 
-                warnings: List[str] = []
+                warning_parts: List[str] = []
                 if analysis.oversized_profiles_6m:
-                    warnings.append("Let op: sommige profielen zijn langer dan 6m.")
+                    warning_parts.append("stukken langer dan 6m")
                 if analysis.oversized_profiles_12m:
-                    warnings.append("Let op: sommige profielen zijn langer dan 12m.")
+                    warning_parts.append("stukken langer dan 12m")
                 if analysis.unparsed_lengths:
-                    warnings.append(
-                        "Sommige profiel lengtes konden niet worden gelezen."
-                    )
+                    warning_parts.append("onleesbare profiellengtes")
+
+                warning_lines: List[str] = []
+                if warning_parts:
+                    warning_lines.append("Aandacht: " + ", ".join(warning_parts) + ".")
                 if high_waste_warnings:
-                    shown_waste = high_waste_warnings[:5]
+                    ordered_waste = sorted(
+                        high_waste_warnings, key=lambda item: item[0], reverse=True
+                    )
+                    shown_waste = [text for _pct, text in ordered_waste[:3]]
                     remaining_waste = len(high_waste_warnings) - len(shown_waste)
                     waste_message = (
-                        f"Let op: meer dan {WASTE_WARNING_THRESHOLD_PCT:g}% "
-                        "snijverlies bij "
-                        + "; ".join(shown_waste)
+                        f"{len(high_waste_warnings)} scenario's met meer dan "
+                        f"{WASTE_WARNING_THRESHOLD_PCT:g}% snijverlies."
                     )
+                    if shown_waste:
+                        waste_message += " Hoogste: " + "; ".join(shown_waste)
                     if remaining_waste:
                         waste_message += f"; +{remaining_waste} extra"
-                    waste_message += (
-                        ". Controleer verkoopprijs of vooraf berekende prijs."
-                    )
-                    warnings.append(waste_message)
-                    if info_label is not None:
-                        try:
-                            info_label.configure(fg="#B91C1C")
-                        except tk.TclError:
-                            pass
-
-                if warnings:
-                    base_message = base_message + "\n" + " ".join(warnings)
+                    waste_message += ". Details staan in de rode tabelcellen."
+                    warning_lines.append(waste_message)
 
                 info_var.set(base_message)
+                self._set_opticutter_warning_message("\n".join(warning_lines))
 
         def _refresh_tree(self):
             self.item_links.clear()
